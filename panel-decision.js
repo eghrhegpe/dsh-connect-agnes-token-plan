@@ -1,5 +1,5 @@
 /**
- * The panel's own reading and decision — extracted from the real client.
+ * The panel's own reading and decision — the real module, not a copy.
  *
  * This logic used to be tested through a hand-written copy called
  * `panelDecision`, described in its own comment as "mirrored from PanelPage".
@@ -9,25 +9,21 @@
  * throttling fields (`retryAfterMs`, `needsUserAction`), so the greying-out
  * behaviour added to fix the account lockout was never actually covered.
  *
- * `client.js` is a browser bundle that cannot be imported from Node, so this
- * module does not re-implement the panel's logic: it READS it straight out of
- * the shipped client source and evaluates it. If the panel changes, these
- * checks follow automatically — which is the entire point.
+ * The second attempt cut the logic out of `client.js`'s source with
+ * balanced-brace walks and evaluated the snippets with `new Function`. Better
+ * than a mirror — but its anchors were the client's FORMATTING: a renamed
+ * variable or a moved brace broke the checks for reasons unrelated to
+ * behaviour, and the module was quietly a mini-compiler over text.
  *
- * WARNING: This module locates functions in client.js by exact string matching.
- * If you rename a function, move a block, or reformat client.js, the markers
- * below will silently stop matching. If `moved()` fires, update the marker
- * strings in this file to match the new client.js structure — do NOT delete
- * the failing extraction and replace it with a hand-written copy.
+ * This version loads `client.js` as a module (`client-surface.js`) and calls
+ * the functions the browser itself calls. There is no anchor to maintain: if
+ * the panel changes, these checks follow automatically — which is the entire
+ * point. The exported names are unchanged, so the suites that consume them
+ * did not have to change with the mechanism.
  * @module dsh-connect-sensenova-token-plan/panel-decision
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-// This module sits at the plugin root, beside the client it reads.
-const CLIENT_PATH = join(dirname(fileURLToPath(import.meta.url)), "client.js");
+import { surface } from "./client-surface.js";
 
 /** What the panel can render in its empty state. */
 export const RENDER = {
@@ -39,139 +35,66 @@ export const RENDER = {
   TEXT: "text-only"
 };
 
-const source = readFileSync(CLIENT_PATH, "utf8");
-
-/**
- * Fail loudly when the client's structure moves out from under these checks.
- *
- * Silently testing a stale copy is the failure mode this module exists to
- * remove, so an unrecognised shape is an error, never an empty result.
- * @param {string} what - what was being looked for.
- * @returns {never}
- */
-function moved(what) {
-  throw new Error(
-    `could not locate ${what} in client.js. The panel's structure changed; update ` +
-      "panel-decision.js to match it, so these checks keep testing the real code " +
-      "rather than a copy that has drifted."
-  );
-}
-
-/**
- * Cut one function declaration out of the client source, braces balanced.
- * @param {string} declaration - the line that starts the function.
- * @returns {string} the function's source.
- */
-export function extractFunction(declaration) {
-  const start = source.indexOf(declaration);
-  if (start === -1) moved(`"${declaration.trim().slice(0, 48)}"`);
-  // A destructured signature like `function PoolCard({ pool, tt })` carries a
-  // `{` of its own; walking braces from there returns half a header. Balance
-  // the parameter list's parentheses first, so the brace walk starts at the
-  // body's opening brace.
-  let i = source.indexOf("(", start);
-  let depth = 0;
-  for (; i < source.length; i += 1) {
-    if (source[i] === "(") depth += 1;
-    else if (source[i] === ")" && --depth === 0) {
-      i += 1;
-      break;
-    }
-  }
-  i = source.indexOf("{", i);
-  depth = 0;
-  for (; i < source.length; i += 1) {
-    if (source[i] === "{") depth += 1;
-    else if (source[i] === "}" && --depth === 0) return source.slice(start, i + 1);
-  }
-  moved(`the body of "${declaration.trim()}"`);
-}
-
 /**
  * The panel's own reading of a snapshot body, as the browser defines it.
- *
  * @type {(body: unknown) => {data: object|null, error: object|string|null}}
  */
-export const interpretSnapshot = new Function(
-  `${extractFunction("function interpretSnapshot(body)")} return interpretSnapshot;`
-)();
+export const interpretSnapshot = surface.interpretSnapshot;
 
 /**
- * The panel's own view model, as the browser defines it.
- *
- * The decision runs as a run of `const` statements in the component, not a
- * function, so it is lifted as a block and wrapped. It ends at `guidance`:
- * everything after that builds React elements, which needs the browser.
- *
- * `tt` and `format` are supplied as identity stubs. The decision is about
- * WHICH dictionary key applies, not the text behind it, and the dictionary
- * does not exist outside the browser.
- * @type {(data: object|null, error: any) => object}
+ * The panel's own decision function, as the browser defines it.
+ * @type {(data: object|null, error: any, tt: Function) => object}
  */
-/**
- * Cut one object literal out of the client source, braces balanced.
- * @param {string} declaration - the line that opens the literal.
- * @returns {string} the literal's source, starting at its `{`.
- */
-export function extractObjectLiteral(declaration) {
-  const start = source.indexOf(declaration);
-  if (start === -1) moved(`"${declaration}"`);
-  const open = source.indexOf("{", start);
-  let depth = 0;
-  for (let i = open; i < source.length; i += 1) {
-    if (source[i] === "{") depth += 1;
-    else if (source[i] === "}" && --depth === 0) return source.slice(open, i + 1);
-  }
-  moved(`the body of "${declaration}"`);
-}
+export const viewOf = surface.viewOf;
 
 /**
- * Every failure-code literal the panel compares against.
+ * The panel's dictionaries, as the browser defines them.
  *
- * `client.js` is a browser bundle and cannot import `codes.js`, so it spells
- * the codes out — a fourth copy of the taxonomy, and the one furthest from
- * the module that produces them. It cannot be deduplicated here, but it can
- * be checked: a code the panel branches on that the Host never sends, or a
- * typo in one, fails the suite instead of quietly never matching.
- *
- * Two shapes are read: comparisons (`failure.code === "…"`) and the keys of
- * the refusal-to-message table (`login_rejected: "auth.badCredentials"`).
- */
-export const clientCodeLiterals = Object.freeze([...new Set([
-  ...[...source.matchAll(/\bcode\s*(?:===|!==)\s*"([a-z_]+)"/g)].map((match) => match[1]),
-  ...[...source.matchAll(/^\s+([a-z_]+):\s*"auth\.[A-Za-z]+"/gm)].map((match) => match[1])
-])]);
-
-/**
- * The panel's own dictionaries, as the browser defines them.
- *
- * Lifted from the shipped client for the same reason the decision is: a key
+ * Exposed rather than re-declared for the same reason as the decision: a key
  * added to one language and not the other is invisible in the language that
- * has it, and shows as a raw key in the one that does not. The check that
- * keeps them equal therefore has to read the real dictionaries, not a copy.
+ * has it, and shows as a raw key in the one that does not — so the equality
+ * check has to read the real dictionaries.
  */
-export const dictionaries = Object.freeze({
-  zh: new Function(`return ${extractObjectLiteral("const zh = {")}`)(),
-  en: new Function(`return ${extractObjectLiteral("const en = {")}`)()
-});
+export const dictionaries = Object.freeze(surface.dictionaries);
 
-export const decidePanelView = new Function(
-  "tt",
-  "format",
-  (() => {
-    const start = source.indexOf("const failure = error === null");
-    const endMarker = ": tt(guidanceKey);";
-    const end = source.indexOf(endMarker);
-    if (start === -1 || end === -1 || end < start) moved("the panel decision");
-    const block = source.slice(start, end + endMarker.length);
-    return `return (data, error) => { ${block}
-      return {
-        failure, auth, needsSetup, guidanceKey,
-        render: needsSetup ? "AccountForm" : (data === null ? "text-only" : "pools"),
-        canManageAccount: auth !== null && auth.hasAccount === true,
-        coolingMs: typeof auth?.retryAfterMs === "number" && auth.retryAfterMs > 0 ? auth.retryAfterMs : null,
-        needsUserAction: auth?.needsUserAction === true
-      };
-    };`;
-  })()
-)((key) => key, (template) => template);
+/**
+ * The failure-code tables the client branches on, as the browser defines
+ * them. `test/panel.test.mjs` pins them against `codes.js`: every key must be
+ * a declared wire code, the form-excluded set must equal `NO_LOGIN_CODES`,
+ * and every credential refusal must carry a line of text.
+ */
+export const tables = Object.freeze(surface.tables);
+
+/** `tt`/`format` stand-ins: the decision is about WHICH key applies. */
+const identity = (value) => value;
+
+/**
+ * The panel's view model for one snapshot, evaluated exactly as the browser
+ * evaluates it.
+ *
+ * `tt` and `format` are identity here: the decision is about which dictionary
+ * key applies, not the text behind it, and the dictionary is exercised
+ * separately through {@link dictionaries}.
+ *
+ * @param {object|null} data - the snapshot, or null when none was read.
+ * @param {object|string|null} error - a transport string or a structured failure.
+ * @returns {{failure: object|null, auth: object|null, needsSetup: boolean,
+ *   guidanceKey: string|null, guidance: string|null, render: string,
+ *   canManageAccount: boolean, coolingMs: number|null, needsUserAction: boolean}}
+ */
+export function decidePanelView(data, error) {
+  const view = viewOf(data, error, identity);
+  return {
+    failure: view.failure,
+    auth: view.auth,
+    needsSetup: view.needsSetup,
+    guidanceKey: view.guidanceKey,
+    guidance: view.guidance,
+    render: view.needsSetup ? RENDER.FORM : (data === null ? RENDER.TEXT : RENDER.PANELS),
+    canManageAccount: view.auth !== null && view.auth.hasAccount === true,
+    coolingMs: typeof view.auth?.retryAfterMs === "number" && view.auth.retryAfterMs > 0
+      ? view.auth.retryAfterMs
+      : null,
+    needsUserAction: view.auth?.needsUserAction === true
+  };
+}

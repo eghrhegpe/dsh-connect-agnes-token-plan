@@ -43,14 +43,16 @@ for (const entry of entries) {
 
 /**
  * Static relative imports of one module: `from "./x.js"`, `import "./x.js"`,
- * `import("./x.js")`. Bare specifiers (react, peer packages) are ignored —
- * those are the runtime's problem, not the tarball's.
+ * `import("./x.js")`, and — added after a bare `require("./client-core.js")`
+ * shipped to HEAD unnoticed — factory-form `require("./x.js")`. Bare
+ * specifiers (react, peer packages) are ignored: those are the runtime's
+ * problem, not the tarball's.
  * @param {string} source - the module's text.
  * @returns {string[]} the imported paths, without the `./` prefix.
  */
 function staticImports(source) {
   const found = [];
-  const pattern = /(?:from\s*|import\s*\(?\s*)["'](\.\/[^"']+)["']/g;
+  const pattern = /(?:from\s*|import\s*\(?\s*|require\s*\(\s*)["'](\.\/[^"']+)["']/g;
   for (const match of source.matchAll(pattern)) {
     found.push(match[1].replace(/^\.\//, ""));
   }
@@ -95,6 +97,29 @@ const rootModules = readdirSync(root).filter((name) => name.endsWith(".js"));
 for (const name of rootModules) {
   if (seen.has(name)) continue;
   check(`${name} is not shipped while unreferenced`, !shipped.has(name), shipped.has(name) ? "shipped but unreachable from the entries" : "");
+}
+
+// --- 5. the browser bundle resolves packages, never paths ------------------
+// The Client module table's synchronous `require` (dsh-client-modules,
+// `makeRequire`) looks specifiers up by seed word and registered FACTORY ID;
+// only `require.async` accepts a `./` path, and only for build-time chunks.
+// An unbuilt bundle that requires a relative path therefore loads fine under
+// Node in tests — where `import` resolves paths — and throws "missed the
+// module table" in the browser: a split that is green everywhere except the
+// thing it ships to. This pins the bundle to package specifiers only.
+{
+  // Full-line comments are dropped first: the bundle documents its own
+  // loading story in prose that mentions example specifiers, and a pin that
+  // red-flags its own documentation would be deleted rather than kept.
+  const clientSource = readFileSync(join(root, "client.js"), "utf8")
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+    .join("\n");
+  const relatives = [...clientSource.matchAll(/require\s*\(\s*["'](\.\/[^"']+)["']/g)].map((match) => match[1]);
+  check("the browser bundle requires no relative path", relatives.length === 0, relatives.join(", "));
+  const required = [...new Set([...clientSource.matchAll(/require\s*\(\s*["']([^"']+)["']/g)].map((match) => match[1]))];
+  check("the browser bundle requires only the platform's package seeds",
+    required.every((spec) => spec === "react"), required.join(", "));
 }
 
 console.log(JSON.stringify(results, null, 2));

@@ -1,16 +1,17 @@
 /**
  * The panel's own decisions, run against the code the browser actually loads.
  *
- * There is no mirror here. `panel-decision.js` lifts the decision out of
- * client.js itself, so these checks fail when the PANEL's behaviour changes —
- * not when a hand-written copy of it changes. The cases that matter most are
- * the throttle fields, which the old mirror did not model at all: the
- * greying-out added to stop a bad password becoming a lockout was, as a
- * consequence, entirely uncovered.
+ * There is no mirror here AND no source-scraping: `panel-decision.js` loads
+ * client.js as a module (via `client-surface.js`) and calls the functions the
+ * browser calls, so these checks fail when the PANEL's behaviour changes —
+ * not when a hand-written copy changes, and not when the client's formatting
+ * changes. The cases that matter most are the throttle fields, which the old
+ * mirror did not model at all: the greying-out added to stop a bad password
+ * becoming a lockout was, as a consequence, entirely uncovered.
  */
 import { readFile } from "node:fs/promises";
-import { clientCodeLiterals, decidePanelView, dictionaries, interpretSnapshot, RENDER } from "../panel-decision.js";
-import { CODE } from "../codes.js";
+import { decidePanelView, dictionaries, interpretSnapshot, tables, RENDER } from "../panel-decision.js";
+import { AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS, NO_LOGIN_CODES } from "../codes.js";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -143,18 +144,40 @@ const healthy = {
 }
 
 // === F2b. the panel only branches on codes the plugin declares ===========
-// client.js is a browser bundle and cannot import codes.js, so it spells the
-// codes out. It cannot share the taxonomy, but it must not invent one: a code
-// the Host never sends, or a typo in one, is a branch that never fires.
+// client.js is a browser bundle and cannot import codes.js, so it ships its
+// own tables — GUIDANCE_BY_CODE, REFUSAL_TEXT, FORM_EXCLUDED_CODES. It cannot
+// share the taxonomy, but it must not contradict one: these are semantic
+// assertions on the REAL tables the browser uses (the old version regexed the
+// source text for literals, which could only ever see spellings, never
+// meaning).
 {
   const declared = new Set(Object.values(CODE));
-  const unknown = clientCodeLiterals.filter((code) => !declared.has(code));
-  check("the panel's codes were read from the shipped client", clientCodeLiterals.length >= 6,
-    clientCodeLiterals.join(", "));
-  check("every code the panel branches on is declared", unknown.length === 0, unknown.join(", "));
+  const guided = Object.keys(tables.GUIDANCE_BY_CODE);
+  const refusals = Object.keys(tables.REFUSAL_TEXT);
+  const excluded = [...tables.FORM_EXCLUDED_CODES];
+  const handled = [...new Set([...guided, ...refusals, ...excluded])];
+  const unknown = handled.filter((code) => !declared.has(code));
+  check("the panel's tables were read from the shipped client", handled.length >= 6,
+    handled.join(", "));
+  check("every code the panel branches on is declared in codes.js", unknown.length === 0, unknown.join(", "));
   check("the panel can tell a console failure from an auth failure",
-    clientCodeLiterals.includes(CODE.CONSOLE_ERROR) && clientCodeLiterals.includes(CODE.AUTH_ERROR),
-    clientCodeLiterals.join(", "));
+    handled.includes(CODE.CONSOLE_ERROR) && handled.includes(CODE.AUTH_ERROR),
+    handled.join(", "));
+  // The declaration lives in codes.js; the client copy is pinned to it, so a
+  // code added to either side only fails here instead of quietly changing
+  // what the form does.
+  check("the form-excluded set equals codes.js NO_LOGIN_CODES",
+    excluded.length === NO_LOGIN_CODES.size && excluded.every((code) => NO_LOGIN_CODES.has(code)),
+    excluded.join(", "));
+  // Every credential refusal is the user's to correct, so the form must have
+  // a line of text for it — this is the check that would have caught the
+  // historical bug where account_locked was produced but never recognised.
+  const untexted = [...CREDENTIAL_REFUSALS].filter((code) => !(code in tables.REFUSAL_TEXT));
+  check("every credential refusal has a form line", untexted.length === 0, untexted.join(", "));
+  // No auth failure may be hidden behind the "no login can fix this" wall:
+  // each of them is answered by signing in, which is what the form offers.
+  const hidden = [...AUTH_FAILURE_CODES].filter((code) => tables.FORM_EXCLUDED_CODES.has(code));
+  check("no auth-failure code is hidden from the form", hidden.length === 0, hidden.join(", "));
 }
 
 // === F3. the two dictionaries carry the same keys ========================
@@ -177,18 +200,23 @@ const healthy = {
 // the Host held the real ones. Those are the kind of pair that drifts the first
 // time either side is tuned, so the bundle is checked for literals rather than
 // for behaviour it cannot exercise here.
+//
+// The check targets the POLL timer specifically: `setInterval(run, cadenceMs)`
+// in `PanelPage`, whose cadence the Host states in every snapshot. The form's
+// 1-second countdown timer is unrelated to polling and may stay a literal.
 {
   const source = await readFile(new URL("../client.js", import.meta.url), "utf8");
+  const pollTimers = source.match(/setInterval\(run,\s*[^)]*\)/g) ?? [];
   check("the poll timer takes a stated cadence, not a literal",
-    !/setInterval\(\s*\w+\s*,\s*\d/.test(source),
-    (source.match(/setInterval\([^)]*\)/g) ?? []).join(" | "));
+    pollTimers.length === 1 && /\d/.test(pollTimers[0]) === false,
+    pollTimers.join(" | "));
   check("the cache note quotes the snapshot's own number",
     /cache:\s*data\?\.cacheSeconds/.test(source),
-    (source.match(/cache:[^}]*/g) ?? []).slice(0, 3).join(" | "));
+    (source.match(/cache:[^,}]*cacheSeconds[^)]*\)/g) ?? []).join(" | "));
 }
 
-// === G. the extraction is not silently testing stale code ===============
-// Reaching here at all means both markers were found in the shipped client.
+// === G. the checks are running the shipped module, not a stale copy ======
+// Reaching here at all means client.js loaded and materialized its factory.
 {
   const result = view(healthy);
   check("the decision was read from the shipped client", typeof result === "object" && result !== null);

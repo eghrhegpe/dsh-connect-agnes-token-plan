@@ -165,3 +165,21 @@ export function isAuthFailure(error) {
 export function isCredentialRefusal(code) {
   return typeof code === "string" && CREDENTIAL_REFUSALS.has(code);
 }
+
+/**
+ * Failures that no sign-in can fix — the ones the panel must not answer with
+ * the account form.
+ *
+ *   `config_error` — a bad endpoint override; the operator must fix it.
+ *   `console_error` — the console did not answer; usually transient, and the
+ *                     text must say so instead of inviting a login.
+ *
+ * This is the declaration; `client.js` ships its own copy
+ * (`FORM_EXCLUDED_CODES`) because the browser bundle cannot import this
+ * module — and `test/panel.test.mjs` asserts the two sets are equal, so the
+ * copy cannot fall behind the declaration.
+ */
+export const NO_LOGIN_CODES = Object.freeze(new Set([
+  CODE.CONFIG_ERROR,
+  CODE.CONSOLE_ERROR
+]));
