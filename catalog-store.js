@@ -105,13 +105,24 @@ function parse(raw) {
  */
 export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = {}) {
   const file = join(dir, "catalog.json");
-  const temporary = join(dir, "catalog.json.tmp");
   /** Last read/written record, so `list()` costs no I/O after the first call. */
   let held;
+
+  /**
+   * A unique temporary path per write.
+   *
+   * Two Host processes can share this state directory (the module header says
+   * so), so a FIXED temp name would let both writes land on the same path and
+   * each `rename` could move the other's half-written file — a lost catalog
+   * that looks like a crash. A process-unique suffix keeps concurrent writers
+   * off each other; the rename is still atomic per path.
+   */
+  const temporaryOf = () => join(dir, `catalog.json.${process.pid}.${now()}.tmp`);
 
   /** Persist the held record atomically; a write failure only loses the cache. */
   const persist = async () => {
     if (held === null) return;
+    const temporary = temporaryOf();
     try {
       await mkdir(dir, { recursive: true, mode: 0o700 });
       const body = JSON.stringify(held);
@@ -119,6 +130,7 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = 
       await rename(temporary, file);
     } catch {
       // The in-memory record still serves this process.
+      await rm(temporary, { force: true }).catch(() => {});
     }
   };
 

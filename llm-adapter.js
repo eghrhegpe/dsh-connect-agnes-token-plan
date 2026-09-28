@@ -55,9 +55,12 @@ const INERT_AUTH = {
     async list() {
       return [];
     },
-    async modify() {
-      throw new Error(`${name}: the SenseNova route has no pi-ai credential lifecycle`);
-    },
+    // Deliberately a no-op, not a throw: pi-ai may call `modify` as an
+    // optional "persist the latest credential" hook during a normal request,
+    // and an exception there would 500 a conversation that is otherwise
+    // working. The credential lifecycle for this route lives in
+    // `api-key-store.js`, not here.
+    async modify() {},
     async delete() {}
   },
   authContext: {

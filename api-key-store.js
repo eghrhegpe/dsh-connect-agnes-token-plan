@@ -76,7 +76,18 @@ export function createApiKeyStore({ credentials = null, env = process.env } = {}
       if (typeof value !== "string" || value.trim() === "") {
         throw new Error("an API key is required");
       }
-      await backend().set(API_KEY_REF, value);
+      const service = resolveService();
+      if (service !== null && typeof service.set === "function") {
+        // The durable copy first: a save the service refuses must propagate
+        // and leave nothing behind, as the route reports it.
+        await service.set(API_KEY_REF, value);
+        // Mirror into this process's memory as well — the service may
+        // unregister between this save and a later resolve, and a key that
+        // was durably stored must not read back as absent when it does.
+        memory.set(API_KEY_REF, value);
+      } else {
+        memory.set(API_KEY_REF, value);
+      }
     },
 
     /**

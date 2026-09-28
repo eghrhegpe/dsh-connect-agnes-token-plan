@@ -17,6 +17,40 @@ export function str(value, fallback) {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : fallback;
 }
 
+/**
+ * Redact credential-shaped strings from any text that may reach a log, an
+ * error message, or a panel-facing response.
+ *
+ * AGENTS.md's red line: "凭据不入库" — a credential never reaches a log or a
+ * response. The login trace already sanitizes in `sensenova-auth.js`; this is
+ * the counterpart for the LLM route, where an HTTP error object's `message`
+ * often embeds the request headers it was built from (axios/fetch errors do),
+ * and a SenseNova 4xx body may echo the `sk-` key back. Without this gate a
+ * registration failure would leak the key through `providerState.error` and
+ * `ctx.logger.warn`.
+ * @param {string} text - any string that might carry a credential.
+ * @returns {string} the text with credential patterns replaced by `[REDACTED]`.
+ */
+export function redactSecrets(text) {
+  const raw = typeof text === "string" ? text : "";
+  return (
+    raw
+      // 1) Header values FIRST, so a whole `"authorization":"sk-..."` value is
+      //    consumed in one pass instead of leaving the token behind. The
+      //    `(?!Bearer\s)` skip keeps this from eating the word "Bearer" that
+      //    rule 2 leaves tagged.
+      .replace(/(["']?[Aa]uthorization["']?\s*[:=]\s*["']?)(?!Bearer\s)[^"',;\s]+/g, "$1[REDACTED]")
+      // 2) Bearer / Basic tokens.
+      .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [REDACTED]")
+      // 3) Bare SenseNova inference keys, e.g. sk-a1b2c3... (long alnum + - _ .)
+      .replace(/\bsk-[A-Za-z0-9._-]{8,}/g, "sk-[REDACTED]")
+      // 4) Known secret JSON pairs, quoted: {"api_key":"..."}.
+      .replace(/(["']?(?:password|access_token|refresh_token|api[_-]?key|token)["']?\s*:\s*["'])[^"']+(?=["'])/gi, "$1[REDACTED]")
+      // 5) Known secret key=value pairs.
+      .replace(/\b(password|access_token|refresh_token|api[_-]?key|token)\s*=\s*[^&;\s]+/gi, "$1=[REDACTED]")
+  );
+}
+
 /** Read a plain object, else `{}`. */
 export function obj(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};

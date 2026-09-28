@@ -40,7 +40,7 @@ import {
 import { fetchConsole, fetchModelCatalog } from "./console-client.js";
 import { parsePools, parseTrend, checkShape, identifyVisionModel } from "./parsers.js";
 import { writeLoginTrace } from "./trace.js";
-import { str } from "./util.js";
+import { str, redactSecrets } from "./util.js";
 
 /**
  * The record address format, matching `@deepseek-ai/dsh-credentials`.
@@ -297,6 +297,9 @@ function apply(ctx, config = {}, deps = {}) {
    * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
    */
   const publishProvider = async (entries, enabledIds) => {
+    const previousBuilt = providerState.built;
+    const previousEntries = providerState.entries;
+    const previousEnabledIds = providerState.enabledIds;
     providerState.entries = Array.isArray(entries) ? entries : [];
     providerState.enabledIds = Array.isArray(enabledIds) ? enabledIds : [];
     // Opt-in: with the switch off there must be no registration left behind
@@ -317,7 +320,6 @@ function apply(ctx, config = {}, deps = {}) {
       providerState.error = "the Host exposes no llm registration service";
       return { ok: false, error: providerState.error };
     }
-    const previousBuilt = providerState.built;
     let createSensenovaAdapter;
     let built;
     try {
@@ -331,14 +333,16 @@ function apply(ctx, config = {}, deps = {}) {
       });
     } catch (error) {
       const why = error instanceof Error ? error.message : String(error);
-      providerState.error = why;
-      // The failure a reader cannot diagnose from the message alone: the LLM
+      // A credential never reaches the panel or a log. The failure a reader
+      // cannot diagnose from the message alone: the LLM
       // peer packages ship INSIDE the Host, so a plugin directory the Host's
       // node_modules cannot be reached from — a dev checkout symlinked into
       // the profile, say — has no way to import them. Say so, with the remedy,
       // because the panel can only report "provider absent".
+      const note = redactSecrets(why);
+      providerState.error = note;
       ctx.logger?.warn?.(
-        `${name}: cannot build the SenseNova adapter: ${why}` +
+        `${name}: cannot build the SenseNova adapter: ${note}` +
           (error?.code === "ERR_MODULE_NOT_FOUND"
             ? " — the llm peer packages ship with the Host; install this plugin where they resolve" +
               " (or link them into its own node_modules)"
@@ -367,6 +371,10 @@ function apply(ctx, config = {}, deps = {}) {
     } catch (error) {
       releaseProvider();
       providerState.built = null;
+      // The snapshot's `offered` set must describe what is really serving, so
+      // a failed re-registration restores the previous pair's identity too.
+      providerState.entries = previousEntries;
+      providerState.enabledIds = previousEnabledIds;
       // Restore the pair that was serving, if any.
       if (previousBuilt !== null) {
         try {
@@ -389,7 +397,7 @@ function apply(ctx, config = {}, deps = {}) {
       } else {
         providerState.registered = false;
       }
-      providerState.error = error instanceof Error ? error.message : String(error);
+      providerState.error = redactSecrets(error instanceof Error ? error.message : String(error));
       return { ok: false, error };
     }
     providerState.built = built;

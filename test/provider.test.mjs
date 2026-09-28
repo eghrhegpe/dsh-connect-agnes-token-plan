@@ -34,6 +34,7 @@ import {
   createMemoryCatalogStore
 } from "../catalog-store.js";
 import { createApiKeyStore, API_KEY_REF } from "../api-key-store.js";
+import { redactSecrets } from "../util.js";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -398,6 +399,37 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     fail("service failure fall-through", error);
   } finally {
     restoreEnv();
+  }
+}
+
+// --- 14. redactSecrets: a credential never reaches the panel or a log ------
+// The LLM route's `providerState.error` and `ctx.logger.warn` both pass
+// through `redactSecrets`, because an HTTP error object's `message` often
+// embeds the request headers it was built from. Pin the patterns it must
+// catch, and the texts it must leave alone.
+{
+  try {
+    check("a bare sk- key is redacted",
+      redactSecrets("cannot build: sk-a1b2c3d4e5f6g7h8") === "cannot build: sk-[REDACTED]",
+      redactSecrets("cannot build: sk-a1b2c3d4e5f6g7h8"));
+    check("a Bearer token is redacted",
+      redactSecrets("Authorization: Bearer abc.def.ghi.jkl") === "Authorization: Bearer [REDACTED]",
+      redactSecrets("Authorization: Bearer abc.def.ghi.jkl"));
+    check("an Authorization header value is redacted",
+      redactSecrets('request failed with "authorization": "sk-xxx123456"')
+        === 'request failed with "authorization": "[REDACTED]"',
+      redactSecrets('request failed with "authorization": "sk-xxx123456"'));
+    check("a JSON api_key pair is redacted",
+      redactSecrets('{"api_key":"sk-live-123456789"}') === '{"api_key":"[REDACTED]"}',
+      redactSecrets('{"api_key":"sk-live-123456789"}'));
+    // Non-secret text passes through unchanged — the gate must not eat
+    // diagnostic detail that has nothing to do with credentials.
+    check("a credential-free error message passes through",
+      redactSecrets("the llm peer packages ship with the Host")
+        === "the llm peer packages ship with the Host");
+    check("non-string input reads as empty", redactSecrets(undefined) === "" && redactSecrets(null) === "");
+  } catch (error) {
+    fail("redactSecrets strips credentials", error);
   }
 }
 
