@@ -40,7 +40,17 @@ export const LLM_PROVIDER_ID = "sensenova-token-plan";
 /** What the DSH model picker shows as the provider's name. */
 export const LLM_DISPLAY_NAME = "SenseNova Token Plan";
 
-/** Per-token prices are unknowable for a quota plan; report zero everywhere. */
+/**
+ * Per-token prices are unknowable for a quota plan; report zero everywhere.
+ *
+ * ⚠️ The zeros are a SENTINEL, not "free". SenseNova Token Plan is a credit
+ * pool billed by pool usage, so a per-token USD price simply does not exist on
+ * this route — but the model still burns credits. A panel row showing
+ * "$0.00" is describing "no per-token price known", never "this model costs
+ * nothing". Keep this comment next to the set so a future reader does not
+ * "fix" it to real prices or, worse, to `null` (which pi-ai may render as an
+ * unknown-cost row and break the picker's cost arithmetic).
+ */
 export const NO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
 /**

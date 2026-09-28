@@ -24,6 +24,7 @@ import {
   contextWindowOf,
   toPiDescriptor,
   buildDescriptors,
+  filterByEnabled,
   summarizeCatalog
 } from "../llm-models.js";
 import {
@@ -155,6 +156,38 @@ const BASE_URL = "https://token.sensenova.cn/v1";
       summarizeCatalog(undefined).visionCount === 0);
   } catch (error) {
     fail("summarizeCatalog", error);
+  }
+}
+
+// --- 5.5 filterByEnabled: empty list means "no filter" ---------------------
+// A fresh install has curated nothing and must still be offered every model.
+// Once non-empty the list is a strict allow-list; a stale id simply matches
+// nothing. This is the one pure function in this module with NO coverage
+// elsewhere — it had never been asserted directly.
+{
+  try {
+    const entries = [
+      { id: "a" },
+      { id: "b" },
+      { id: "c" }
+    ];
+    check("absent enabledIds offers every entry", filterByEnabled(entries).length === 3);
+    check("an empty enabledIds is the same as absent",
+      filterByEnabled(entries, []).length === 3);
+    check("a non-array enabledIds behaves as absent",
+      filterByEnabled(entries, "a").length === 3);
+    check("a non-empty list is a strict allow-list",
+      JSON.stringify(filterByEnabled(entries, ["a", "c"]).map((e) => e.id)) === JSON.stringify(["a", "c"]));
+    check("a stale id matches nothing rather than throwing",
+      filterByEnabled(entries, ["zzz"]).length === 0);
+    check("a non-array entries list reads as no entries",
+      filterByEnabled(null).length === 0);
+    // The allow-list composes with the dedup pass in buildDescriptors.
+    const built = buildDescriptors(entries, { baseUrl: BASE_URL, enabledIds: ["a", "c"] });
+    check("buildDescriptors honours the enabledIds allow-list",
+      built.map((d) => d.id).join(",") === "a,c", built.map((d) => d.id).join(","));
+  } catch (error) {
+    fail("filterByEnabled allow-list semantics", error);
   }
 }
 
