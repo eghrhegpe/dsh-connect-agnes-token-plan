@@ -267,6 +267,16 @@ function apply(ctx, config = {}, deps = {}) {
     built: null
   };
 
+  /**
+   * Set once the plugin is disposed.
+   *
+   * The mount seed publishes fire-and-forget, so nothing was stopping a publish
+   * that was still queued from registering a provider AFTER the plugin was
+   * unmounted — a provider no one owns and no one can release, left behind by
+   * a plugin the Host already forgot. Every publish checks this first.
+   */
+  let disposed = false;
+
   /** Read an optional service without throwing on a Host that lacks it. */
   const getService = (service) => {
     try {
@@ -300,6 +310,60 @@ function apply(ctx, config = {}, deps = {}) {
   };
 
   /**
+   * Hand one built adapter to the llm service and record its release functions.
+   *
+   * Defined once because the publish path and the rollback path both register a
+   * pair, and two copies will drift: a change to the directory row (a new
+   * field, a different `settingsNs`) made in one place and not the other leaves
+   * the ROLLBACK registering a provider the publish path would never have
+   * built — and a rollback only runs once something has already gone wrong,
+   * which is the worst possible moment to discover it.
+   *
+   * The releases are written straight onto `target` rather than returned: if
+   * the directory call throws after the adapter was registered, the adapter's
+   * release must still be reachable, or `releaseProvider()` cannot undo it and
+   * the adapter outlives the plugin.
+   * @param {object} llm - the registration service.
+   * @param {{providerIds: string[], adapter: unknown}} built - what to register.
+   * @param {object} target - where the release functions are recorded.
+   * @returns {void}
+   */
+  const registerPair = (llm, built, target) => {
+    target.releaseAdapter = llm.registerAdapter(built.providerIds, built.adapter);
+    // `registerConfigurableProviders` is how a provider gains its row on the
+    // models settings page; an older runtime without it still gets models
+    // through the adapter registration above.
+    target.releaseDirectory = typeof llm.registerConfigurableProviders === "function"
+      ? llm.registerConfigurableProviders([{
+          provider: LLM_PROVIDER_ID,
+          displayName: LLM_DISPLAY_NAME,
+          // This plugin's OWN row namespace; declared:false because the row
+          // exists as a patch already, not as a provider-declared schema.
+          settingsNs: name,
+          settingsPath: [],
+          declared: false
+        }])
+      : null;
+  };
+
+  /**
+   * Publishes are serialized through this chain.
+   *
+   * Concurrent publishes are not hypothetical: the mount seed below runs
+   * fire-and-forget and can still be mid-flight when the first panel poll
+   * publishes the catalog it just fetched, and an api-key forget or a provider
+   * switch can land on top of either. Two publishes interleaving means the
+   * SLOWER one wins — it releases the pair the faster one just registered and
+   * then registers its own — so the Host ends up serving a stale (possibly
+   * empty) catalog while the snapshot reports the fresh one, and the panel's
+   * model counts describe something that is not what is registered.
+   *
+   * The chain is the same shape `token-store.js` uses for `getToken`: no lock
+   * object, and a rejected link never poisons the ones behind it.
+   */
+  let publishChain = Promise.resolve();
+
+  /**
    * (Re)build and register the provider for one catalog/allow-list snapshot.
    *
    * Rebuild-and-reregister rather than mutate: `PiAiAdapter` memoizes its
@@ -310,7 +374,11 @@ function apply(ctx, config = {}, deps = {}) {
    * @param {string[]} enabledIds - the curated allow-list (empty = all).
    * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
    */
-  const publishProvider = async (entries, enabledIds) => {
+  const publishProviderOnce = async (entries, enabledIds) => {
+    // A publish that arrives after the plugin was disposed registers a
+    // provider into a Host that has already withdrawn this plugin: no owner,
+    // no release, and nothing on screen saying where it came from.
+    if (disposed) return { ok: false, skipped: true };
     const previousBuilt = providerState.built;
     const previousEntries = providerState.entries;
     const previousEnabledIds = providerState.enabledIds;
@@ -341,13 +409,24 @@ function apply(ctx, config = {}, deps = {}) {
     let built;
     try {
       createSensenovaAdapter = await resolveAdapterFactory();
-      built = createSensenovaAdapter({
+      // Awaited, not assumed synchronous: a factory that ever becomes async
+      // would otherwise hand a Promise to `registerAdapter`, and the Host
+      // would be offered a provider whose adapter is `undefined` — a failure
+      // that surfaces as broken model routing, nowhere near its cause.
+      built = await createSensenovaAdapter({
         entries: providerState.entries,
         enabledIds: providerState.enabledIds,
         baseUrl: settings.apiBase,
         resolveApiKey,
         get: getService
       });
+      // The same reason, stated: an adapter is registered Host-wide, so a
+      // factory that returns anything else must fail here rather than publish
+      // a provider that cannot serve a request.
+      if (built === null || typeof built !== "object"
+        || !Array.isArray(built.providerIds) || built.adapter === undefined) {
+        throw new Error("the adapter factory did not return { adapter, providerIds }");
+      }
     } catch (error) {
       const why = error instanceof Error ? error.message : String(error);
       // A credential never reaches the panel or a log. The failure a reader
@@ -370,21 +449,7 @@ function apply(ctx, config = {}, deps = {}) {
     // Build first (it can throw); only then take down the old pair.
     releaseProvider();
     try {
-      providerState.releaseAdapter = llm.registerAdapter(built.providerIds, built.adapter);
-      // `registerConfigurableProviders` is how a provider gains its row on the
-      // models settings page; an older runtime without it still gets models
-      // through the adapter registration above.
-      if (typeof llm.registerConfigurableProviders === "function") {
-        providerState.releaseDirectory = llm.registerConfigurableProviders([{
-          provider: LLM_PROVIDER_ID,
-          displayName: LLM_DISPLAY_NAME,
-          // This plugin's OWN row namespace; declared:false because the row
-          // exists as a patch already, not as a provider-declared schema.
-          settingsNs: name,
-          settingsPath: [],
-          declared: false
-        }]);
-      }
+      registerPair(llm, built, providerState);
     } catch (error) {
       releaseProvider();
       providerState.built = null;
@@ -395,16 +460,7 @@ function apply(ctx, config = {}, deps = {}) {
       // Restore the pair that was serving, if any.
       if (previousBuilt !== null) {
         try {
-          providerState.releaseAdapter = llm.registerAdapter(previousBuilt.providerIds, previousBuilt.adapter);
-          if (typeof llm.registerConfigurableProviders === "function") {
-            providerState.releaseDirectory = llm.registerConfigurableProviders([{
-              provider: LLM_PROVIDER_ID,
-              displayName: LLM_DISPLAY_NAME,
-              settingsNs: name,
-              settingsPath: [],
-              declared: false
-            }]);
-          }
+          registerPair(llm, previousBuilt, providerState);
           providerState.built = previousBuilt;
           providerState.registered = true;
         } catch {
@@ -427,6 +483,25 @@ function apply(ctx, config = {}, deps = {}) {
       // refresh on their own cadence.
     }
     return { ok: true };
+  };
+
+  /**
+   * Publish, queued behind every other publish in flight.
+   *
+   * The wrapper exists so no caller has to remember the queue: the mount seed,
+   * a catalog poll, an api-key forget and a provider switch all reach the same
+   * critical section, and any one of them racing another is the bug above.
+   * @param {object[]} entries - the normalized catalog entries.
+   * @param {string[]} enabledIds - the curated allow-list (empty = all).
+   * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
+   */
+  const publishProvider = (entries, enabledIds) => {
+    const queued = publishChain.then(
+      () => publishProviderOnce(entries, enabledIds),
+      () => publishProviderOnce(entries, enabledIds)
+    );
+    publishChain = queued.then(() => undefined, () => undefined);
+    return queued;
   };
 
   // Seed the registration from the persisted catalog so a restarted Host
@@ -868,6 +943,9 @@ function apply(ctx, config = {}, deps = {}) {
   });
 
   ctx.effect(() => () => {
+    // Before anything else: a publish still in flight (the mount seed's, or a
+    // poll's) must not register into a Host that is letting this plugin go.
+    disposed = true;
     // Stop offering the provider first, so a request cannot be routed to an
     // adapter whose Host services are already half gone.
     releaseProvider();

@@ -165,6 +165,39 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   }
 }
 
+// N) PITFALLS 的条目数：凡是写了「N 条」的地方，N 必须等于真实条目数
+// 这些数字散在三个文件里，已经各自漂移过一次（15 / 17 并存），而 PITFALLS
+// 是「改代码前先看」的第一站——一个过期数字会让读者以为自己看全了。
+{
+  const pitfalls = readFileSync(join(ROOT, "docs/PITFALLS.md"), "utf8");
+  const actual = (pitfalls.match(/^## \d+\./gm) ?? []).length;
+  let claims = 0;
+  let pointed = 0;
+  for (const f of mdFiles) {
+    const text = readFileSync(f, "utf8");
+    // 「N 条」是总数；「第 N 条」/「§N」是条号。两者都要查，但含义不同，
+    // 所以 `第` 后面的数字不能当成总数——那会把一条有效引用报成数字漂移。
+    // `(?<!\d)` 是必需的：「第 13 条」里的 `3 条` 也是 `\d+条`，没有它就会
+    // 把一条有效引用当成总数漂移报出来。
+    for (const m of text.matchAll(/PITFALLS\.md[^\n]*?(?<!第\s*)(?<!\d)(\d+)\s*条/g)) {
+      claims += 1;
+      const claimed = Number(m[1]);
+      if (claimed !== actual) {
+        bad(`${f.replace(ROOT + "\\", "")} 称 PITFALLS 有 ${claimed} 条，实际 ${actual} 条`);
+      }
+    }
+    for (const m of text.matchAll(/PITFALLS\.md[^\n]*?(?:第\s*(\d+)\s*条|§\s*(\d+))/g)) {
+      pointed += 1;
+      const cited = Number(m[1] ?? m[2]);
+      if (cited < 1 || cited > actual) {
+        bad(`${f.replace(ROOT + "\\", "")} 引用 PITFALLS 第 ${cited} 条，但只有 ${actual} 条`);
+      }
+    }
+  }
+  if (claims < 2) bad(`只找到 ${claims} 处「N 条」引用，检查本身可能已经失效`);
+  else note(`PITFALLS 条目数 ${actual}，${claims} 处总数引用与 ${pointed} 处条号引用全部有效`);
+}
+
 if (fails.length) {
   console.error(`\n❌ docs.test.mjs 失败 ${fails.length} 项：`);
   for (const f of fails) console.error(`  - ${f}`);

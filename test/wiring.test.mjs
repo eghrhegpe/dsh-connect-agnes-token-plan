@@ -109,9 +109,61 @@ function adapterDeps() {
   };
 }
 
+/**
+ * An adapter seam whose FIRST build parks until the test lets it go.
+ *
+ * The mount seed publishes fire-and-forget, so whether a second publish
+ * overlaps it is otherwise a matter of timing — and a race that only fails
+ * sometimes is a race that ships. Parking the first build makes the
+ * interleaving deterministic: the second publish runs to completion while the
+ * first is still inside the critical section, which is exactly the ordering
+ * that used to let the stale catalog win.
+ */
+function gatedAdapterDeps() {
+  const builds = [];
+  let count = 0;
+  let open = null;
+  return {
+    builds,
+    /** Let the parked build continue. */
+    release() { open?.(); },
+    loadAdapterModule: async () => ({
+      async createSensenovaAdapter(options) {
+        const n = (count += 1);
+        builds.push(options);
+        // Only the FIRST build parks, so the second can finish ahead of it.
+        if (n === 1) await new Promise((resolve) => { open = resolve; });
+        return { providerIds: ["sensenova-token-plan"], adapter: { tag: n } };
+      }
+    })
+  };
+}
+
 /** A minimal Host request, as Cordis would hand one to a handler. */
 function request(extra = {}) {
   return { method: "GET", headers: { host: "127.0.0.1:19387", ...extra } };
+}
+
+/**
+ * Let pending microtasks and I/O callbacks run to completion.
+ *
+ * The mount seed crosses several awaits before it publishes — two state-file
+ * reads, the provider switch file, the adapter factory — so a single
+ * `setTimeout(0)` is a coin toss that happens to land on a fast machine. A
+ * fixed number of turns costs milliseconds and makes the wait the same
+ * generous margin everywhere instead of a race that only fails under load.
+ */
+async function settle(turns = 10) {
+  for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** A POST with a JSON body, as Cordis would hand one to a handler. */
+function postRequest(body, extra = {}) {
+  return {
+    method: "POST",
+    headers: { host: "127.0.0.1:19387", ...extra },
+    async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body), "utf8"); }
+  };
 }
 
 function response() {
@@ -298,7 +350,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     de
   });
   // Let the mount seed's async publish settle.
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settle();
   check("the adapter pair was registered with the llm service",
     llm.calls.adapter === 1 && llm.calls.directory === 1,
     JSON.stringify({ adapter: llm.calls.adapter, directory: llm.calls.directory }));
@@ -332,12 +384,62 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 {
   const de = adapterDeps();
   const { llm, stop } = await bootPlugin({ withLlm: true, config: {}, de });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settle();
   check("with registerProvider off no pair is registered",
     llm.calls.adapter === 0 && llm.calls.directory === 0 && de.builds.length === 0,
     JSON.stringify({ adapter: llm.calls.adapter, builds: de.builds.length }));
   await stop();
   check("off leaves nothing to release", llm.calls.released === 0, String(llm.calls.released));
+}
+
+// === F3. concurrent publishes queue instead of interleaving ==============
+// A provider switch (or the first catalog poll) can publish while the mount
+// seed's publish is still in flight. Unserialized, the SLOWER one wins: it
+// releases the pair the faster one just registered and registers its own, so
+// the Host serves one catalog while the snapshot reports another — the seed's
+// empty list against a poll that just fetched models.
+{
+  const de = gatedAdapterDeps();
+  const { webServer, llm, stop } = await bootPlugin({
+    withLlm: true,
+    config: { registerProvider: true },
+    de
+  });
+  // Let the mount seed walk into its build and park there.
+  await settle();
+  check("the mount seed parked inside its first build", de.builds.length === 1,
+    JSON.stringify({ builds: de.builds.length }));
+
+  // A second publish on top of the parked one, not awaited yet: the provider
+  // switch route re-publishes whatever the plugin is currently holding.
+  const switching = webServer.registered.get("/api/dsh-connect-sensenova-token-plan/provider")(
+    postRequest({ enabled: true }), response()
+  );
+  await settle();
+  de.release();
+  await switching;
+  await settle();
+
+  check("both publishes built an adapter", de.builds.length === 2,
+    JSON.stringify({ builds: de.builds.length }));
+  // The publish asked for LAST must be the one still registered. A seed that
+  // merely resumed later must not overwrite the newer catalog with its own.
+  check("the publish asked for last is the one registered",
+    llm.calls.lastAdapter?.tag === 2,
+    JSON.stringify({ tag: llm.calls.lastAdapter?.tag, ...llm.calls, builds: de.builds.length }));
+  // Two registrations and one teardown between them: one pair left standing.
+  check("exactly one pair is left registered",
+    llm.calls.adapter === 2 && llm.calls.released === 2,
+    JSON.stringify({ adapter: llm.calls.adapter, released: llm.calls.released }));
+
+  const providerRes = response();
+  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/provider")(request(), providerRes);
+  check("the panel is told a provider is registered",
+    providerRes.payload?.providerRegistered === true, JSON.stringify(providerRes.payload));
+
+  await stop();
+  check("disposing released the surviving pair",
+    llm.calls.released === 4, JSON.stringify({ released: llm.calls.released }));
 }
 
 // === G. the wiring test itself stayed offline ===========================

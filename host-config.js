@@ -293,6 +293,16 @@ export function hostName(host) {
  * So: the `Host` must be one this Host answers as, AND any stated `Origin`
  * must agree with it. A request that states no `Origin` is the ordinary
  * same-origin GET and is admitted.
+ *
+ * The boundary this draws is the BROWSER, not the machine. A process running
+ * as the user sets `Host` and `Origin` to whatever it likes, and there is no
+ * CSRF token here to tell it apart from the panel — so anything that can open
+ * a socket to this port can also plant an account. That is the same trust the
+ * Host places in the user's own processes generally, but it is worth saying
+ * plainly: an `Origin` check reads like more protection than it is, and a
+ * reader who believes otherwise will build something on top of it. Closing
+ * that gap needs a token the Host serves in its own page and the POST carries
+ * back, not a header a client can choose.
  * @param request - the incoming HTTP request.
  * @param {Set<string>} allowedHosts - the host names this Host answers as.
  * @returns {boolean} whether the request may be served.
