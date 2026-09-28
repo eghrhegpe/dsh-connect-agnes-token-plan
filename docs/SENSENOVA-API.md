@@ -125,7 +125,7 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 
 本插件第三步以 provider `sensenova-token-plan` 直连 `https://token.sensenova.cn/v1` 注册 OpenAI 兼容适配器（见 [ARCHITECTURE.md](./ARCHITECTURE.md) §5.2 与 [SETUP.md](./SETUP.md) §3 的 `registerProvider`）。本节记录 **2026-09-29 对该端点的实测契约**（key 取凭据服务 `SENSENOVA_API_KEY`，共 24 个真实请求）。
 
-> ⚠️ 官方「SenseNova 6.8 Flash Lite」接口文档与平台实际行为有**三处不符，以本节实测为准**：`thinking` 参数不存在（四种写法全部 400）；`reasoning_effort` 合法取值是 `low/medium/high/xhigh/none`（**无 `max`**）；目录声明的采样参数只有 `temperature`、`stop`。详见 [PITFALLS.md](./PITFALLS.md) §20。
+> ⚠️ 官方「SenseNova 6.8 Flash Lite」页的 OpenAI 段与平台实际行为**多处不符，且各家模型文档互相矛盾**（GLM 页明说 `thinking.type:disabled` 会失败、实测可用；DeepSeek 页与 flash-lite 页都列 `reasoning_effort:"max"`、实测 flash-lite / v4-flash 都 400）。**一律以本节实测为准**，详见 [PITFALLS.md](./PITFALLS.md) §20 与 §21。
 
 ### 7.1 模型目录 `GET /v1/models`
 
@@ -155,18 +155,19 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 | `max_tokens` | ✅ | 上限即目录 `max_output_length` |
 | `stream` | ✅ | SSE；`delta` 含 `content`/`reasoning`/`role` |
 | `stream_options.include_usage` | ✅ | 流末块带完整 `usage` |
-| `reasoning_effort` | ✅ `low/medium/high/xhigh/none` | **默认 high**（思考开）；`none` 关思考（无 `reasoning` 字段、`reasoning_tokens=0`） |
+| `reasoning_effort` | ✅ `low/medium/high/xhigh/none` | 平台报错列表是**并集**，各模型支持面不同，见 §7.5/§7.6；默认 high（思考开）；`none` 关思考（无思考字段、`reasoning_tokens=0`） |
 | `response_format:{"type":"json_object"}` | ✅ | 官方提示：与思考模式不建议同开 |
-| `tools` + `tool_choice:"auto"` | ✅ | `finish_reason:"tool_calls"`，`message.tool_calls` 正常返回 |
+| `tools` + `tool_choice:"auto"` | ✅ | `finish_reason:"tool_calls"`，`message.tool_calls` 正常返回；DeepSeek 系带 tools 须回传历史 `reasoning_content`（§7.6） |
 | `temperature` / `stop` | ✅ | 目录声明仅此两项 |
-| `thinking` | ❌ **400** | **参数不存在**（`"enabled"`/`"disabled"`/`true`/`false` 全 400），官方文档有误 |
-| `reasoning_effort:"max"` | ❌ **400** | 官方文档写错；实际是 `xhigh`（平台报错原文：`should be one of: low, medium, high, xhigh, none`） |
+| `thinking`（object 形态） | ✅ deepseek-v4-flash / glm-5.2 | `{"type":"enabled"/"disabled"}` 实测有效（disabled → `reasoning_tokens=0`）；v4.1-flash 文档自述支持；flash-lite 当天模型抖动未测成 |
+| `thinking`（字符串形态） | ❌ **全线 400** | `"enabled"`/`"disabled"`/`true`/`false` 在 flash-lite / deepseek-v4-flash / glm-5.2 上全部 400——官方文档当字符串写是错的 |
+| `reasoning_effort:"max"` | ⚠️ 看模型 | glm-5.2 实测 **200**；flash-lite / deepseek-v4-flash 实测 **400**；v4.1-flash 文档自述原生支持（该 Key 套餐 403 未测） |
 
 ### 7.3 响应结构（实测）
 
 - 顶层：`id`、`created`、`model`、`object:"chat.completion"`、`request_id`。
 - `choices[0].finish_reason` ∈ `stop` / `length`（达 max_tokens 或上下文上限）/ `tool_calls` / `content_filter`。
-- `choices[0].message`：`role`、`content`；思考开时有 `reasoning`（思考正文）；调工具时有 `tool_calls[]`（`id`/`type`/`function{name,arguments}`）。
+- `choices[0].message`：`role`、`content`；思考开时**字段按模型家族分家**——flash-lite 吐 `reasoning`，deepseek/glm/kimi 家族吐 `reasoning_content`（官方 DeepSeek/GLM 文档确认，实测键集一致，见 §7.5）；调工具时有 `tool_calls[]`（`id`/`type`/`function{name,arguments}`）。
 - `usage`：`prompt_tokens`/`completion_tokens`/`total_tokens`，`completion_tokens_details.reasoning_tokens`、`prompt_tokens_details.cached_tokens`。
 
 **思考模式的真实代价**（2026-09-29 实测，同一极小 prompt）：默认（high）1044ms / prompt 88 tokens、`reasoning` 78 字、`reasoning_tokens` 43；`none` 361ms / prompt 62 tokens——默认思考每请求**多烧约 26 个 prompt token、慢约 2.9 倍**。本插件 descriptor 的 `reasoning:false` 表示思考内容大概率不会透出到会话，但每请求仍按默认 high 计费，见 [PITFALLS.md](./PITFALLS.md) §20。
@@ -176,3 +177,27 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 `content` 为内容块数组时支持 `image_url`：公网 URL 与 `data:image/*;base64,...` 均可，实测都能正确识别（gstatic 风景图答出「蓝色湖泊+山脉+小岛」、1×1 base64 图答「纯蓝色图片」）。
 
 **注意**：官方示例图 `https://www.sensenova.cn/marketing-home/showcase-hero.png` 实测直接请求 **400「inference request is invalid」且耗时约 91 秒**——该 URL 本机 HEAD 是 200 `image/png`，但体积 **4.28 MB**，是图太大、不是 URL 不可达。插件 `llm-adapter.js` 的 `requestImageMaxBytes: 1_048_576`（1 MB，dsh-llm 默认）比平台容忍度紧，超限图由插件本地处理，属正常保护。
+
+### 7.5 逐模型实测（2026-09-29，9 个目录模型）
+
+| 模型 | 对话可用 | 思考字段 | 实测备注 |
+|---|---|---|---|
+| `sensenova-6.8-flash-lite` | ✅ 200 | `reasoning` | 唯一吐 `reasoning` 的；当天曾整体 404「model is not found」（抖动，见 §7.6） |
+| `deepseek-v4-flash` | ✅ 200 | `reasoning_content` | 思考 ~20–32 rTok；`max` 400、`xhigh` 200 |
+| `deepseek-v4-pro` | ✅ 200 | `reasoning_content` | 思考 ~123 rTok（128 配额几乎全烧） |
+| `deepseek-flash` | ✅ 200 | `reasoning_content` | |
+| `glm-5.2` | ✅ 200 | `reasoning_content` | `max` **200 有效**；思考极烧 token（一句话 126 rTok）；`thinking` object `disabled` 有效（官方文档说会失败，实测可用） |
+| `kimi-k3` | ✅ 200 | `reasoning_content` | **超慢**：关思考 8s、开思考 14s（1 词回复） |
+| `sensenova-u1-fast` | ❌ **404** | — | 图像生成模型，非对话（`output_modalities:["image"]`）→ 插件选择器已排除（`isChatModel`） |
+| `sensenova-u1.5-lite` | ❌ **404** | — | 同上 |
+| `deepseek-v4.1-flash` | ❌ **403** | — | 目录有、当前 Key 套餐未开通（面板「需开通」）；文档自述 `thinking` object 形态 + 原生 `max`（该 Key 403 未实测） |
+
+### 7.6 家族差异与插件取舍
+
+- **思考字段分家**：flash-lite → `message.reasoning`；deepseek-v4-flash/v4-pro/deepseek-flash/glm-5.2/kimi-k3 → `message.reasoning_content`。DeepSeek 系文档：**带 `tools` 时须回传所有历史 `reasoning_content`**（否则工具调用链路不完整）；不带 tools 时回传了也会被忽略。
+- **`thinking` 参数**：字符串形态全线 400；object 形态 `{"type":"enabled"/"disabled"}` 在 deepseek-v4-flash / glm-5.2 实测有效（disabled → `reasoning_tokens=0`）；v4.1-flash 文档自述支持；GLM 官方文档称 disabled 会失败——实测可用（文档错）。
+- **`reasoning_effort`**：平台报错列表 `low/medium/high/xhigh/none` 是**并集**，各模型支持面不同：`max` 仅 glm（实测 200）与 v4.1-flash（文档原生）支持，flash-lite / v4-flash 400；`xhigh` v4-flash 实测 200（文档称映射到 high）。
+- **思考模式采样规则**（DeepSeek v4/v4.1 文档）：temperature / presence_penalty / frequency_penalty **不生效**（传入不报错）；top_p 思考模式最小 0.95、非思考固定 1.0。GLM top_p 默认 0.95。
+- **`max_tokens` 默认（文档）**：flash-lite 65535；v4-flash 非思考 8K / 思考 64K（`max` 档 128K）；v4.1-flash 131072（范围 [1,393216]）；glm 64K（[1,128K]）。目录 `max_output_length` 是权威值（v4.1-flash 目录为 65536，与文档默认 131072 不符——以目录为准）。
+- **U 系列不是对话模型**：`sensenova-u1-fast`/`u1.5-lite` 是图像生成（`output_modalities:["image"]`，独立 images 数组 API），对话端点 404。`llm-models.js` 的 `isChatModel` 按 `output_modalities` 把它们从**选择器 roster、descriptor 列表、注册计数**三处一致排除，杜绝「选了就 404」。
+- **可用性抖动**：flash-lite 当天出现整体 404「model is not found」（连 `reasoning_effort:"high"` 对照都 404）。按错误码文档（§14）404 = 模型下线或不存在，遇到先查平台状态，不是参数语义。

@@ -722,7 +722,12 @@ async function withNetwork(stub, body) {
     check("the llm block sees the credential reference",
       llm.hasApiKey === true && llm.keySource === "credentials", JSON.stringify(llm));
     check("the llm block counts models and vision models",
-      llm.modelCount === 2 && llm.visionCount === 1, JSON.stringify(llm));
+      llm.modelCount === 1 && llm.visionCount === 1, JSON.stringify(llm));
+    // The image-output model (sensenova-u1.5-lite) is not a chat model and
+    // must not appear in the picker roster (isChatModel, 2026-09-29).
+    check("the roster excludes the image-output model",
+      JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["sensenova-6.8-flash-lite"]),
+      JSON.stringify(llm.models));
     check("the provider stays unregistered with the switch off",
       llm.registerProvider === false && llm.providerRegistered === false, JSON.stringify(llm));
     check("the llm block never carries the key",

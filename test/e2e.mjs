@@ -453,9 +453,10 @@ try {
     check("the SenseNova provider is registered with the Host", llm.providerRegistered === true,
       JSON.stringify(llm).slice(0, 300));
     check("it registers under its own provider id", llm.providerId === "sensenova-token-plan", String(llm.providerId));
-    check("the offered models come from the catalog, vision included",
-      llm.modelCount === 3 && llm.visionCount === 1,
-      `modelCount=${String(llm.modelCount)} visionCount=${String(llm.visionCount)}`);
+    check("the offered models come from the catalog, image-output excluded",
+      llm.modelCount === 2 && llm.visionCount === 1 &&
+        JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["SenseNova-Lite", "SenseNova-Vision"]),
+      `modelCount=${String(llm.modelCount)} visionCount=${String(llm.visionCount)} models=${JSON.stringify(llm.models)}`);
   }
 
   // === a wrong password is classified, and the panel explains itself =====

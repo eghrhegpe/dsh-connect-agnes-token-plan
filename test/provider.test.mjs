@@ -22,6 +22,7 @@ import {
   NO_COST,
   FALLBACK_CONTEXT_WINDOW,
   contextWindowOf,
+  isChatModel,
   toPiDescriptor,
   buildDescriptors,
   filterByEnabled,
@@ -148,6 +149,46 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     check("base URL is shared by every descriptor", built.every((d) => d.baseUrl === BASE_URL));
   } catch (error) {
     fail("buildDescriptors normalization", error);
+  }
+}
+
+// --- 4.5 chat-model filtering: image-generation models are not offered -----
+// The catalog lists U-series image-generation models (output_modalities
+// ["image"]) that answer 404 on /v1/chat/completions; offering them as chat
+// models would only produce errors in DSH. Every "offered" surface — the
+// descriptors, the panel roster and the registration counts — must exclude
+// them identically.
+{
+  try {
+    const gen = { id: "u-gen", output_modalities: ["image"], input_modalities: ["text"] };
+    const visionChat = { id: "v-chat", output_modalities: ["text"], input_modalities: ["text", "image"] };
+    const textChat = { id: "t-chat", output_modalities: ["text"] };
+
+    check("an image-output model is not a chat model", isChatModel(gen) === false);
+    check("a vision chat model is a chat model", isChatModel(visionChat) === true);
+    check("a text-only model is a chat model", isChatModel(textChat) === true);
+    check("a missing output_modalities stays chat (permissive)", isChatModel({ id: "x" }) === true);
+    check("a non-array output_modalities stays chat", isChatModel({ id: "y", output_modalities: "text" }) === true);
+
+    const built = buildDescriptors([gen, visionChat, textChat], { baseUrl: BASE_URL });
+    check("buildDescriptors skips image-generation models",
+      built.length === 2 && JSON.stringify(built.map((d) => d.id)) === JSON.stringify(["v-chat", "t-chat"]));
+
+    const roster = rosterOf([gen, visionChat, textChat]);
+    check("rosterOf skips image-generation models",
+      JSON.stringify(roster.map((r) => r.id)) === JSON.stringify(["v-chat", "t-chat"]));
+
+    const summary = summarizeCatalog([gen, visionChat, textChat]);
+    check("summarizeCatalog counts only chat models", summary.modelCount === 2, String(summary.modelCount));
+    check("summarizeCatalog vision ids cover only offered models",
+      JSON.stringify(summary.visionIds) === JSON.stringify(["v-chat"]));
+
+    // A stale allow-list id for an image-generation model matches nothing.
+    const allowlisted = buildDescriptors([gen, textChat], { baseUrl: BASE_URL, enabledIds: ["u-gen", "t-chat"] });
+    check("an allow-listed image-generation id offers nothing",
+      JSON.stringify(allowlisted.map((d) => d.id)) === JSON.stringify(["t-chat"]));
+  } catch (error) {
+    fail("chat-model filtering", error);
   }
 }
 

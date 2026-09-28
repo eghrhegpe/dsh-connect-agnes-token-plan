@@ -85,6 +85,26 @@ export function contextWindowOf(entry) {
 }
 
 /**
+ * Whether a catalog entry can be addressed as a CHAT model on this provider's
+ * OpenAI-compatible endpoint.
+ *
+ * The catalog also lists image GENERATION models (`sensenova-u1-fast`,
+ * `sensenova-u1.5-lite`): their `output_modalities` is `["image"]` and they
+ * answer 404 "model is not found" on `/v1/chat/completions` (verified
+ * 2026-09-29), so offering them as chat models only produces errors in DSH.
+ * A missing/unknown `output_modalities` is treated as chat (permissive): the
+ * field is new enough that an entry without it should not vanish from the
+ * picker.
+ * @param {object} entry - one normalized catalog entry.
+ * @returns {boolean} whether the entry is usable as a chat model.
+ */
+export function isChatModel(entry) {
+  const out = entry?.output_modalities;
+  if (!Array.isArray(out)) return true;
+  return !out.includes("image");
+}
+
+/**
  * Map one catalog entry onto the pi-ai model descriptor the adapter offers.
  *
  * Vision is the SAME identification the snapshot publishes
@@ -192,6 +212,10 @@ export function rosterOf(entries) {
   const position = new Map();
   const out = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
+    // Image-generation models are not chat models and are not offered (see
+    // `isChatModel`): the roster and the registered offer must agree about
+    // which models exist, or a ticked model could become an unregistered one.
+    if (!isChatModel(entry)) continue;
     const id = str(entry?.id, "");
     if (id === "") continue;
     const row = {
@@ -220,7 +244,10 @@ export function rosterOf(entries) {
  * @returns {object[]} the pi-ai descriptors, in first-seen order.
  */
 export function buildDescriptors(entries, { providerId = LLM_PROVIDER_ID, baseUrl, enabledIds = [] } = {}) {
-  const filtered = filterByEnabled(entries, enabledIds);
+  // Image-generation models (`output_modalities: ["image"]`) cannot be
+  // addressed as chat models and are excluded BEFORE the allow-list, so a
+  // stale id in `enabledIds` matches nothing rather than resurrecting one.
+  const filtered = filterByEnabled(entries, enabledIds).filter(isChatModel);
   const seen = new Map();
   const out = [];
   for (const entry of Array.isArray(filtered) ? filtered : []) {
@@ -244,7 +271,7 @@ export function buildDescriptors(entries, { providerId = LLM_PROVIDER_ID, baseUr
  * @returns {{modelCount: number, visionCount: number, visionIds: string[]}}
  */
 export function summarizeCatalog(entries) {
-  const list = Array.isArray(entries) ? entries : [];
+  const list = (Array.isArray(entries) ? entries : []).filter(isChatModel);
   const visionIds = list
     .filter((entry) => str(entry?.id, "") !== "")
     .map((entry) => identifyVisionModel(entry))
