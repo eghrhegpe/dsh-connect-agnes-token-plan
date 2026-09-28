@@ -117,7 +117,8 @@ web 端安装（维持不变）：
 
 ```powershell
 # 由带 plugin_manager 的会话执行，或在插件管理器页面操作
-plugin_manager { action: "install_bundle", target: "C:\Users\zhujieling11\.dsh\plugins\dsh-connect-sensenova-token-plan" }
+# target 填本检出的绝对路径（一般在 `~\.dsh\plugins\` 下）
+plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-sensenova-token-plan" }
 ```
 
 ## 配置

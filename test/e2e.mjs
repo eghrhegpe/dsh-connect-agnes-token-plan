@@ -31,9 +31,21 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const PLUGIN_DIR = process.env.PANEL_DIR ?? "C:/Users/zhujieling11/.dsh/plugins/dsh-connect-sensenova-token-plan";
+/**
+ * Where this plugin lives, derived from the running file — never hard-coded.
+ *
+ * The default used to be one machine's absolute path, which made the run
+ * silently point at the wrong directory on every other checkout (and fail in CI
+ * for a reason that looked like a plugin bug). Forward slashes are normalised
+ * because the path is embedded into a profile `package.json` as a `link:`
+ * dependency value, where backslash-escapes do not survive JSON. `PANEL_DIR`
+ * still overrides, for an out-of-tree checkout.
+ */
+const PLUGIN_DIR = (process.env.PANEL_DIR ?? join(dirname(fileURLToPath(import.meta.url)), ".."))
+  .replace(/\\/g, "/");
 /** `dsh` from the npm global bin; the shim on PATH is preferred when present. */
 const DSH = process.env.DSH_CLI ?? "dsh";
 
@@ -128,7 +140,10 @@ function buildHome(fakePort) {
 /** Start the fake platform in this process and wait for it to listen. */
 async function startFake(port) {
   process.env.FAKE_PORT = String(port);
-  return import(`file://${join(PLUGIN_DIR, "test", "fake-platform.mjs")}?${Date.now()}`);
+  // Loaded from THIS file's directory, not from PLUGIN_DIR: even when
+  // PANEL_DIR points the Host at an out-of-tree checkout, the fake the run
+  // talks to stays the sibling of the runner that drives it.
+  return import(`${new URL("./fake-platform.mjs", import.meta.url).href}?${Date.now()}`);
 }
 
 /** Boot the Host and resolve with its launch token once it prints one. */

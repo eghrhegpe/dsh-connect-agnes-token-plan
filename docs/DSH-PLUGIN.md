@@ -100,7 +100,8 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 
 ```powershell
 # 由带 plugin_manager 的会话执行，或插件管理器页面操作
-plugin_manager { action: "install_bundle", target: "C:\Users\zhujieling11\.dsh\plugins\dsh-connect-sensenova-token-plan" }
+# target 填本检出的绝对路径（一般在 `~\.dsh\plugins\` 下）
+plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-sensenova-token-plan" }
 ```
 
 也可以 `dsh plugin --profile web add <本仓库路径>`（本地开发模式）。
