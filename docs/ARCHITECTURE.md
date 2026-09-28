@@ -105,8 +105,8 @@ client.js: interpretSnapshot(body) → {data, error}
 
 - **每个新模块 opt-in、默认关**，任何失败降级为「面板照常用、该模块缺席」
   （§5.2 的降级模式是范本）——不许再造「桌面端必需启动项」。
-- **凭据红线不动**（[AGENTS.md](../AGENTS.md) 红线 1/2）：多 Key 池同样只进
-  DSH 凭据服务，永不入库、永不进日志。
+- **凭据红线不动**（[AGENTS.md](../AGENTS.md) 红线 1/2）：新增凭据一律只进
+  DSH 凭据服务（含未来若引入多 Key 池），永不入库、永不进日志。
 - **只吸收与商汤 Key/账号线强相关的能力**，不做跨 provider 通用聚合——
   §5.3 里 `dsh-provider-quota` / `dsh-musage` 的定位边界就是本插件的边界。
 
@@ -226,7 +226,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 
 | 插件 | 核实到的形态 | 对本项目的意义 |
 |---|---|---|
-| `@alaxrpg/dsh-sensenova-provider`（desktop） | **直接竞品**：同样走商汤 OIDC+PKCE、注册 LLM provider，带多 Key 轮换与 vision | 证明「额度 + provider 合一」在 DSH 生态成立；多 Key 轮换是本插件还没有的能力，吸收进 429 自愈/多 Key 池模块 |
+| `@alaxrpg/dsh-sensenova-provider`（desktop） | **直接竞品**：同样走商汤 OIDC+PKCE、注册 LLM provider，带多 Key 轮换与 vision | 证明「额度 + provider 合一」在 DSH 生态成立；其多 Key 轮换是本插件没有的能力，但 Token Plan 同账号共享额度池、换 Key 不换池，**不吸收**（见 [ROADMAP.md](./ROADMAP.md) §1） |
 | `dsh-retry-boost` | 429 自愈网关：多 Key 池化、AIMD 限速；专门处理 SenseNova 把「配额不足」（insufficient_quota）混进 429 被误判重试的问题 | 429 自愈模块的同类先例；吸收时必须区分「限频（可退避重试）」与「配额不足（换 Key / 停）」 |
 | `dsh-draw-router` | 绘图路由，含 `sensenova-u1-fast` 出图 | 出图路由的对接参考（`sensenova-u1-fast` 即 catalog 里 output 为 `["image"]` 的出图模型，§5.1 已识别）；参考件放 `upstream/dsh-draw-router/` 作对照 |
 | `mmx-quota-tool` | 聚合面板基准：实时积分面板、跨 provider 汇总、用量告警 | 面板 UX 基准（实时性、告警形态）向它对齐；跨 provider 聚合本身**不**吸收 |

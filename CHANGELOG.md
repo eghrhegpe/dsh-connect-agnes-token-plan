@@ -2,6 +2,15 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.3.4] — 2026-09-29
+
+429 自愈与「清单自带识别」：Token Plan 池额度耗尽时，模型不再发出必失败的请求。
+
+- **provider 级重试策略**（`llm-retry.js` → `resolveRetryPolicy` 显式配置）：配额耗尽（`QUOTA`/`ACCOUNT_QUOTA`）**不重试、快速失败**；限频（`RATE_LIMIT`）按退避重试。候选路由在共享额度池上空转只会延长冷却窗口，故刻意不对配额做重试（对应上文「不做多 Key 池」）。
+- **清单自带识别**：某模型所属额度池耗尽（`remaining <= 0`）时，该模型从 DSH 模型选择器移除（不再发出必 429 的请求）；面板花名册则**保留**该模型并以 `available:false` / `quotaExhausted:true` 标记、灰色显示原因，用户可知「为什么这个模型不见了」。
+- **额度跨越零点自动重注册**：快照用 `quotaSignature` 去抖，仅在额度状态变化时才触发一次 `publishProvider` 重建（受 `PiAiAdapter` 对 profiles Map 引用记忆化约束，这是唯一生效路径），无需重启 Host。
+- **快照 `llm` 块新增** `quotaBlockedModelIds`；`models` 每行新增 `available` / `quotaExhausted` 字段，供面板渲染。
+
 ## [0.3.3] — 2026-09-29
 
 **安全姿态收紧：控制台密码不再落盘**（破坏性改动——老用户升级后需重新登录一次的情况见下）。

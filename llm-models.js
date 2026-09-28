@@ -37,6 +37,37 @@ import { str, num } from "./util.js";
 import { identifyVisionModel } from "./parsers.js";
 
 /**
+ * The model ids whose quota pool is exhausted.
+ *
+ * The panel's `pool-usage` response groups models into pools, each with a
+ * 5h and a 7d window carrying `limit`/`remaining`. A pool is "exhausted" when
+ * its limit is known (> 0) and its remaining credit has hit zero in EITHER
+ * window — at that point every model it covers would answer a chat request
+ * with `429 quota_exceeded`, so the picker should not offer them (and the
+ * panel should show them greyed). A pool whose limit is 0/unknown is NOT
+ * counted as exhausted: `credits()` returns 0 for an absent limit, and we must
+ * not mark half the catalogue unavailable on a shape drift.
+ * @param {object} pools - the `parsePools` result (`{ pools: [...] }`).
+ * @returns {string[]} the exhausted model ids, de-duplicated, in first-seen order.
+ */
+export function exhaustedModelIds(pools) {
+  const list = Array.isArray(pools?.pools) ? pools.pools : [];
+  const out = new Set();
+  for (const pool of list) {
+    const limit5 = num(pool?.window5h?.limit, 0);
+    const rem5 = num(pool?.window5h?.remaining, 0);
+    const limit7 = num(pool?.window7d?.limit, 0);
+    const rem7 = num(pool?.window7d?.remaining, 0);
+    const exhausted = (limit5 > 0 && rem5 <= 0) || (limit7 > 0 && rem7 <= 0);
+    if (!exhausted) continue;
+    for (const id of Array.isArray(pool?.modelIds) ? pool.modelIds : []) {
+      if (typeof id === "string" && id !== "") out.add(id);
+    }
+  }
+  return [...out];
+}
+
+/**
  * The provider id this plugin registers under.
  *
  * It must NOT be the bare `"sensenova"`: a hand-written `llm-pi-ai` row using
@@ -289,10 +320,11 @@ export function rosterOf(entries) {
  * @param {object} options - `{ providerId, baseUrl, enabledIds }`.
  * @returns {object[]} the pi-ai descriptors, in first-seen order.
  */
-export function buildDescriptors(entries, { providerId = LLM_PROVIDER_ID, baseUrl, enabledIds = [] } = {}) {
+export function buildDescriptors(entries, { providerId = LLM_PROVIDER_ID, baseUrl, enabledIds = [], unavailableModelIds = [] } = {}) {
   // Image-generation models (`output_modalities: ["image"]`) cannot be
   // addressed as chat models and are excluded BEFORE the allow-list, so a
   // stale id in `enabledIds` matches nothing rather than resurrecting one.
+  const blocked = new Set(Array.isArray(unavailableModelIds) ? unavailableModelIds : []);
   const filtered = filterByEnabled(entries, enabledIds).filter(isChatModel);
   const seen = new Map();
   const out = [];
@@ -300,11 +332,55 @@ export function buildDescriptors(entries, { providerId = LLM_PROVIDER_ID, baseUr
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
     const id = str(entry.id, "");
     if (id === "") continue;
+    // A model whose quota pool is exhausted would answer every request with
+    // `429 quota_exceeded`, so the picker must not offer it — the panel (via
+    // `rosterWithAvailability`) still shows it, greyed, with the reason. Skipping
+    // here means a doomed request is never even dispatched.
+    if (blocked.has(id)) continue;
     if (!seen.has(id)) {
       seen.set(id, out.length);
       out.push(undefined);
     }
     out[seen.get(id)] = toPiDescriptor({ ...entry, id }, { providerId, baseUrl });
+  }
+  return out;
+}
+
+/**
+ * The panel-facing roster with per-model quota availability.
+ *
+ * Like {@link rosterOf} it projects one row per chat-model id, but each row also
+ * carries whether the model's quota pool is currently exhausted — the
+ * "清单自带识别" the provider advertises to the panel. Unlike the PICKER
+ * (which drops exhausted models via `buildDescriptors` so no doomed request is
+ * dispatched), the panel keeps them in the list, greyed, so the user can see
+ * *why* a model is missing from the picker rather than wondering where it went.
+ * @param {object[]} entries - the normalized catalog entries.
+ * @param {object} pools - the `parsePools` result, or anything without a `pools`
+ *   array (in which case every row reads as available).
+ * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean}[]}
+ */
+export function rosterWithAvailability(entries, pools) {
+  const blocked = new Set(exhaustedModelIds(pools));
+  const position = new Map();
+  const out = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!isChatModel(entry)) continue;
+    const id = str(entry?.id, "");
+    if (id === "") continue;
+    const row = {
+      id,
+      name: str(entry.name, id),
+      vision: identifyVisionModel(entry).vision === true,
+      available: !blocked.has(id),
+      quotaExhausted: blocked.has(id)
+    };
+    if (position.has(id)) {
+      out[position.get(id)] = row;
+    } else {
+      position.set(id, out.length);
+      out.push(row);
+    }
   }
   return out;
 }

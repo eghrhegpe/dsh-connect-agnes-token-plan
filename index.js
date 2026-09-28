@@ -27,7 +27,7 @@ import { createFileThrottleStore } from "./throttle-store.js";
 import { createFileCatalogStore, normalizeEnabledIds } from "./catalog-store.js";
 import { createFileProviderStore } from "./provider-store.js";
 import { createApiKeyStore } from "./api-key-store.js";
-import { summarizeCatalog, filterByEnabled, rosterOf, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
+import { summarizeCatalog, filterByEnabled, rosterOf, rosterWithAvailability, exhaustedModelIds, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
 import { CODE, isAuthFailure } from "./codes.js";
 import {
   resolveSettings,
@@ -268,6 +268,11 @@ function apply(ctx, config = {}, deps = {}) {
     enabledIds: [],
     /** A cheap signature that only changes when the offered set changes. */
     signature: "",
+    /** A cheap signature of the quota-exhausted model set; flips when the pool
+     *  crosses zero so the picker can drop/restore the affected models. */
+    quotaSignature: "",
+    /** The last quota-exhausted model ids published to the picker. */
+    unavailableIds: [],
     /** Whether an `llm` service answering `registerAdapter` is present. */
     llmAvailable: false,
     /** Whether our provider pair is currently registered without error. */
@@ -387,7 +392,7 @@ function apply(ctx, config = {}, deps = {}) {
    * @param {string[]} enabledIds - the curated allow-list (empty = all).
    * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
    */
-  const publishProviderOnce = async (entries, enabledIds) => {
+  const publishProviderOnce = async (entries, enabledIds, unavailableModelIds = []) => {
     // A publish that arrives after the plugin was disposed registers a
     // provider into a Host that has already withdrawn this plugin: no owner,
     // no release, and nothing on screen saying where it came from.
@@ -395,8 +400,10 @@ function apply(ctx, config = {}, deps = {}) {
     const previousBuilt = providerState.built;
     const previousEntries = providerState.entries;
     const previousEnabledIds = providerState.enabledIds;
+    const previousUnavailable = providerState.unavailableIds;
     providerState.entries = Array.isArray(entries) ? entries : [];
     providerState.enabledIds = Array.isArray(enabledIds) ? enabledIds : [];
+    providerState.unavailableIds = Array.isArray(unavailableModelIds) ? unavailableModelIds : [];
     // Opt-in: with the switch off there must be no registration left behind
     // from a row that flipped it after mounting. The EFFECTIVE switch is
     // panel-first (`provider-store.js`), falling back to the patch value —
@@ -431,7 +438,8 @@ function apply(ctx, config = {}, deps = {}) {
         enabledIds: providerState.enabledIds,
         baseUrl: settings.apiBase,
         resolveApiKey,
-        get: getService
+        get: getService,
+        unavailableModelIds: providerState.unavailableIds
       });
       // The same reason, stated: an adapter is registered Host-wide, so a
       // factory that returns anything else must fail here rather than publish
@@ -483,6 +491,9 @@ function apply(ctx, config = {}, deps = {}) {
       } else {
         providerState.registered = false;
       }
+      // The failed re-registration must not leave the quota state pointing at
+      // the set we failed to publish; restore what was actually serving.
+      providerState.unavailableIds = previousUnavailable;
       providerState.error = redactSecrets(error instanceof Error ? error.message : String(error));
       return { ok: false, error };
     }
@@ -508,10 +519,10 @@ function apply(ctx, config = {}, deps = {}) {
    * @param {string[]} enabledIds - the curated allow-list (empty = all).
    * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
    */
-  const publishProvider = (entries, enabledIds) => {
+  const publishProvider = (entries, enabledIds, unavailableModelIds = []) => {
     const queued = publishChain.then(
-      () => publishProviderOnce(entries, enabledIds),
-      () => publishProviderOnce(entries, enabledIds)
+      () => publishProviderOnce(entries, enabledIds, unavailableModelIds),
+      () => publishProviderOnce(entries, enabledIds, unavailableModelIds)
     );
     publishChain = queued.then(() => undefined, () => undefined);
     return queued;
@@ -527,7 +538,7 @@ function apply(ctx, config = {}, deps = {}) {
         catalogStore.listEnabledIds()
       ]);
       providerState.signature = catalogSignature(stored, storedEnabled);
-      await publishProvider(stored, storedEnabled);
+      await publishProvider(stored, storedEnabled, []);
     } catch {
       // No seed catalog: the first successful poll publishes.
     }
@@ -651,6 +662,12 @@ function apply(ctx, config = {}, deps = {}) {
             lockedModels: []
           }));
         }
+        // Models whose quota pool is exhausted would answer every chat request
+        // with `429 quota_exceeded`. The picker must not offer them (the adapter
+        // drops them via `unavailableModelIds`), and the panel greys them (via
+        // `rosterWithAvailability`). The set also drives a re-registration when
+        // it flips between catalogue polls.
+        const unavailableModelIds = exhaustedModelIds(pools);
         // Which of the callable models can take image input — step one of the
         // vision plan (ARCHITECTURE.md §5.1): the info, not the execution.
         // Absent API key → no catalog → the list is simply undeclared, not "none".
@@ -684,14 +701,29 @@ function apply(ctx, config = {}, deps = {}) {
           // poll that serves a cached catalogue.
           const enabledIds = await catalogStore.listEnabledIds().catch(() => providerState.enabledIds);
           let offered = providerState.entries;
+          let catalogChanged = false;
           if (Array.isArray(catalog)) {
             const signature = catalogSignature(catalog, enabledIds);
             if (signature !== providerState.signature) {
+              catalogChanged = true;
               providerState.signature = signature;
               await catalogStore.replace(catalog, enabledIds).catch(() => {});
-              await publishProvider(catalog, enabledIds);
+              await publishProvider(catalog, enabledIds, unavailableModelIds);
             }
             offered = catalog;
+          }
+          // Quota state can flip (a pool hits zero, or its window resets) without
+          // the catalogue changing. When it does, rebuild the registration so the
+          // picker drops/restores the affected models — `PiAiAdapter` memoizes the
+          // profiles snapshot on Map identity, so only a fresh registration can
+          // change the offered set (ROADMAP.md §2.3). Skip when the catalogue
+          // branch already published this exact set a moment ago.
+          const quotaSig = [...unavailableModelIds].sort().join(",");
+          if (quotaSig !== providerState.quotaSignature) {
+            providerState.quotaSignature = quotaSig;
+            if (!catalogChanged) {
+              await publishProvider(providerState.entries, providerState.enabledIds, unavailableModelIds);
+            }
           }
           // The counts describe the OFFER, not the catalogue: the adapter is
           // built from the allow-list-filtered entries, so a panel line that
@@ -710,11 +742,12 @@ function apply(ctx, config = {}, deps = {}) {
             providerId: LLM_PROVIDER_ID,
             modelCount: summary.modelCount,
             visionCount: summary.visionCount,
-            // The picker's data: the whole roster this catalogue can offer,
-            // plus the curated allow-list it currently applies. An empty
-            // allow-list means "no filter" — every row is offered.
-            models: rosterOf(offered),
+            // The panel roster: every chat model this catalogue can offer, each
+            // tagged with whether its quota pool is currently exhausted, plus the
+            // curated allow-list. An empty allow-list means "no filter".
+            models: rosterWithAvailability(offered, pools),
             enabledModelIds: enabledIds,
+            quotaBlockedModelIds: unavailableModelIds,
             ...(providerState.error !== null ? { providerError: providerState.error } : {})
           };
         }
@@ -885,7 +918,8 @@ function apply(ctx, config = {}, deps = {}) {
           await catalogStore.clear().catch(() => {});
           cache.clear();
           providerState.signature = "";
-          await publishProvider([], []);
+          providerState.quotaSignature = "";
+          await publishProvider([], [], []);
           await answer();
         } catch (error) {
           await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
@@ -958,7 +992,7 @@ function apply(ctx, config = {}, deps = {}) {
         // whether the models are offered at all, not what they are. A failed
         // publish rolls back to the previous pair inside publishProvider and
         // surfaces its reason in providerState.error.
-        await publishProvider(providerState.entries, providerState.enabledIds);
+        await publishProvider(providerState.entries, providerState.enabledIds, providerState.unavailableIds ?? []);
       } catch (error) {
         await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
         return;
@@ -1020,7 +1054,7 @@ function apply(ctx, config = {}, deps = {}) {
         // Publish immediately with the CURRENT catalogue: the offer must not
         // wait for the next poll. A failed publish rolls back to the previous
         // pair inside publishProvider and surfaces its reason.
-        await publishProvider(providerState.entries, ids);
+        await publishProvider(providerState.entries, ids, providerState.unavailableIds ?? []);
       } catch (error) {
         await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
         return;

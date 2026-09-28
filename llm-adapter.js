@@ -26,6 +26,7 @@ import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { resolveRetryPolicy, resolveImageAttachmentAccess } from "@deepseek-ai/dsh-llm";
 import { name } from "./host-config.js";
 import { buildDescriptors, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
+import { buildRetryPolicyConfig } from "./llm-retry.js";
 
 /** Idle ceiling while one stream read is outstanding (dsh-llm-pi-ai default). */
 const STREAM_IDLE_TIMEOUT_MS = 300_000;
@@ -88,11 +89,13 @@ const INERT_AUTH = {
  *   `sk-` key per request.
  * @param {(service: string) => unknown} [options.get] - service resolver for
  *   the image hooks (`attachments`, `fs`).
+ * @param {string[]} [options.unavailableModelIds] - model ids whose quota pool
+ *   is exhausted; excluded from the offer so no doomed `429` request is sent.
  * @returns {{adapter: object, providerIds: string[]}} the adapter and the ids
  *   it owns.
  */
-export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, resolveApiKey, get }) {
-  const models = buildDescriptors(entries, { providerId: LLM_PROVIDER_ID, baseUrl, enabledIds });
+export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, resolveApiKey, get, unavailableModelIds = [] }) {
+  const models = buildDescriptors(entries, { providerId: LLM_PROVIDER_ID, baseUrl, enabledIds, unavailableModelIds });
 
   const provider = {
     ...createProvider({
@@ -124,7 +127,11 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
         provider: LLM_PROVIDER_ID,
         displayName: LLM_DISPLAY_NAME,
         streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
-        retryPolicy: resolveRetryPolicy(undefined, `${name}.${LLM_PROVIDER_ID}.retryPolicy`),
+        // Quota-aware retry policy: explicit (not `undefined`) so a future peer
+        // default change cannot silently alter this provider. Excludes the quota
+        // codes (a depleted pool cannot be retried into health; see
+        // `llm-retry.js`), keeps `RATE_LIMIT` with a gentle shared-pool backoff.
+        retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${LLM_PROVIDER_ID}.retryPolicy`),
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
         // The picker's "Default" pins to high. SenseNova thinks by default

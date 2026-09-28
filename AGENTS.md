@@ -8,7 +8,7 @@
 DSH 插件：参考上游应用 `upstream/sensenova-usage-dashboard`，从商汤 SenseNova 控制台 API 读 Token Plan 额度，渲染到 Harness Web 面板。
 Host（Node/cordis）走完整 OIDC+PKCE 登录并自续期；Client（React bundle）轮询本地路由。
 
-**定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈/多 Key 池，逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3。
+**定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md。
 
 在web端、desktop搜索同类插件：`~/.dsh/profiles`
 
