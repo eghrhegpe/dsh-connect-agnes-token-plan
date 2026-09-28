@@ -10,6 +10,22 @@ Host（Node/cordis）走完整 OIDC+PKCE 登录并自续期；Client（React bun
 
 在web端、desktop搜索同类插件：`~/.dsh/profiles`
 
+```
+@mars-sea/dsh-commandcode-provider
+非官方 Command Code 提供方：实时模型目录、多账号轮换、用量面板与套餐配额面板。
+
+@eghrhegpe/dsh-connect-qoder
+将本机已登录的 Qoder（国内版 Qoder CN / 国际版 Qoder）模型接入 DeepSeek Harness —— bring locally signed-in Qoder models into DeepSeek Harness with zero configuration.
+
+
+dsh-connect-trae
+把本机登录的 Trae 模型接入 DeepSeek Harness：国内版与国际版双供应商并行，提供用量/积分概览与每日签到领取。
+
+
+dsh-connect-workbuddy
+把本机登录的 WorkBuddy 模型接入 DeepSeek Harness，并提供只读的积分概览与模型管理。
+```
+
 ## 验证（按域裁剪，禁止无脑全量）
 
 ```bash
