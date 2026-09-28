@@ -27,6 +27,7 @@ import { createFileThrottleStore } from "./throttle-store.js";
 import { createFileCatalogStore, normalizeEnabledIds } from "./catalog-store.js";
 import { createFileProviderStore } from "./provider-store.js";
 import { createApiKeyStore } from "./api-key-store.js";
+import { defineDrawTool } from "./draw.js";
 import { summarizeCatalog, filterByEnabled, rosterOf, rosterWithAvailability, exhaustedModelIds, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
 import { CODE, isAuthFailure } from "./codes.js";
 import {
@@ -541,6 +542,45 @@ function apply(ctx, config = {}, deps = {}) {
       await publishProvider(stored, storedEnabled, []);
     } catch {
       // No seed catalog: the first successful poll publishes.
+    }
+  })();
+
+  // Draw absorption (ARCHITECTURE.md §5.4, route B): the `sensenova_draw_image`
+  // agent tool. Opt-in (`drawEnabled`, default off) and doubly degraded — a
+  // Host with no tools service never sees it, and a peer that fails to load
+  // leaves the panel and the provider untouched: the same "module absent,
+  // panel works" shape as the provider without an `llm` service. The tool
+  // itself is defined in the peer-free `draw.js` (structured `output_modalities`
+  // identification, per-call key resolution, failed-draw cooldown); only this
+  // import touches a peer, lazily, exactly like the adapter above.
+  const loadToolsModule = deps.loadToolsModule ?? (() => import("@deepseek-ai/dsh-tools"));
+  const drawFetch = deps.drawFetch ?? ((url, options) => fetch(url, options));
+  void (async () => {
+    if (configError !== null || settings.drawEnabled !== true) return;
+    const tools = getService("tools") ?? ctx.tools ?? null;
+    if (tools === null || typeof tools.register !== "function") return;
+    let defineTool;
+    try {
+      const mod = await Promise.resolve(loadToolsModule());
+      defineTool = mod?.defineTool ?? mod?.default?.defineTool ?? null;
+    } catch {
+      // No tools peer on this Host: the draw tool stays absent, nothing logs.
+      return;
+    }
+    if (typeof defineTool !== "function") return;
+    try {
+      tools.register(
+        defineDrawTool({
+          defineTool,
+          resolveApiKey,
+          getEntries: () => providerState.entries,
+          settings,
+          fetchImpl: drawFetch,
+          isDisposed: () => disposed
+        })
+      );
+    } catch {
+      // A refusing registry degrades identically: tool absent, panel fine.
     }
   })();
 

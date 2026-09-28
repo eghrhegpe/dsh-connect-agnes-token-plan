@@ -62,6 +62,9 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 | `consoleTimeoutMs` | `15000` | 单次控制台请求超时（`pool-usage` / `models`） |
 | `writeImageModelIds` | `false` | 视觉第二步（§5.1）：**opt-in**，是否把识别出的可看图模型清单写进本插件自己的 DSH settings row（`imageModelIds` / `visionModels` 两个字段），供后续 LLM connect 插件读取。默认关，纯读信息层 |
 | `registerProvider` | `false` | 第三步（§5.2）：**opt-in**，是否由本插件直接向 DSH 注册 OpenAI 兼容 LLM provider（id `sensenova-token-plan`，直连 `apiBase`）。开启后在面板「模型接入」保存 `sk-` Key 即可，catalog 轮询自动建/刷新模型列表，vision 模型自动带图片输入；catalog 与允许清单只存插件私有状态文件。默认关——注册模型源是 Host 级变更 |
+| `drawEnabled` | `false` | 出图吸收（§5.4 接法 B）：**opt-in**，是否给 agent 注册 `sensenova_draw_image` 工具（POST `{apiBase}/images/generations`，用面板保存的 `SENSENOVA_API_KEY`）。出图模型由 catalog 的 `output_modalities` 结构化识别（不用名字正则），Key 每次调用现取；失败后 30s 冷却。默认关——agent 工具是 Host 级变更；无 tools 服务的 Host 上该工具静默缺席 |
+| `drawModelId` | `""` | 首选出图模型 id；留空 = catalog 里第一把出图模型（如 `sensenova-u1-fast`）。工具调用显式传 `model` 时以调用为准 |
+| `drawTimeoutMs` | `120000` | 单次出图请求超时（出图模型很慢，别用对话级超时）；下限 5000 |
 
 端点类字段仅在企业镜像 / 预发环境指向别的主机时才需要动；全部不配即等于平台默认值。任意端点覆盖若不是合法的 http(s) 绝对地址，插件在**挂载时**就报 `config_error`（面板顶部显示），而不是等到第一次轮询才变成莫名其妙的网络错误。
 

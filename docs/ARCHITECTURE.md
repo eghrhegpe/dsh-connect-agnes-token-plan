@@ -262,6 +262,21 @@ draw-router 的多源能力时才有意义。
 顺手可借的小件：probe 失败 30 秒 cooldown（line 196）；
 lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115）。
 
+**接法 B 已落地（2026-09-29，`draw.js` + `index.js` 接线）**：
+
+- 工具名 `sensenova_draw_image`（带前缀，避免与 dsh-draw-router 的
+  `draw_image` 撞名），配置开关 `drawEnabled`（默认关）+ `drawModelId` +
+  `drawTimeoutMs`；只有 `drawEnabled === true` 且 Host 有 tools 服务时才
+  动态 `import("@deepseek-ai/dsh-tools")` 注册——无 tools 服务、peer 加载
+  失败、注册被拒都降级为「工具缺席、面板照常」，与 §5.2 的降级同型。
+- 识别走 `isImageGenModel`（`output_modalities` 严格方向：缺字段不算，
+  与 `isChatModel` 的宽松方向互补，两份清单不可能互相矛盾）；
+  Key 每次调用现取（`resolveApiKey`，轮换即生效）；失败分诊沿用 429 纪律
+  （`insufficient/quota` → 配额问题，别重试；其余 429 → 限频，等再试）；
+  失败后 30s 冷却（借自上游 line 196）。
+- 快照契约**零改动**（14 键不动，`API.md` 不变）：工具要么在要么不在，
+  agent 直接可见；面板不新增展示。
+
 ---
 
 ## 6. 与上游 Python 工具的差异（给移植 / 对照用）

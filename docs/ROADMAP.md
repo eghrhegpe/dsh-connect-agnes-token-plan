@@ -115,6 +115,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 |---|---|---|---|
 | **P0 ✅** | 429 spike + 配额联动（全局策略 `llm-retry.js` + per-model 可用性 `llm-models.js` + `index.js` quota 重注册） | 低（1 行 peer + peer-free 分类器 + 状态文件桥） | `e2e-gate`（dsh CLI 在则实跑）；`test/retry.test.mjs` 已落地 |
 | **P0 文档** | §5 纠偏 + 本文入库 | 无（仅 doc） | `docs.test.mjs` |
+| **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.js`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.js` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs`（56 项）已落地；离线 12 套件全绿 |
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
 | P1（可选） | §3 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |

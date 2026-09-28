@@ -86,3 +86,21 @@
         #「模型接入」switch (POST /api/<name>/provider) overrides it live,
         # with no restart. See docs/PROVIDER-HOT-RELOAD.md.
         registerProvider: false
+        # ------------------------------------------------------------------
+        # Draw absorption (docs/ARCHITECTURE.md §5.4, route B): when true AND
+        # the Host exposes a tools service, the agent gains a
+        # `sensenova_draw_image` tool that POSTs to
+        # `{apiBase}/images/generations` with the panel-saved
+        # `SENSENOVA_API_KEY`. Draw models are identified from the catalog's
+        # own `output_modalities` (never a name regex), the key is resolved
+        # per call, and a failed draw starts a 30s cooldown. Off by default -
+        # an agent tool is a Host-wide change; a Host without the tools
+        # service simply never sees it.
+        # drawEnabled: false
+        #   -> the opt-in switch (strict boolean).
+        # drawModelId: ""
+        #   -> preferred image model id; empty = first of the catalog
+        #      (e.g. sensenova-u1-fast).
+        # drawTimeoutMs: 120000
+        #   -> deadline for one image request (image models are slow).
+        # ------------------------------------------------------------------

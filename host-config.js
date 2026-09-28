@@ -83,7 +83,22 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * explicit opt-in and an operator with the hand-written `llm-pi-ai` row is
    * not suddenly offered two providers.
    */
-  registerProvider: false
+  registerProvider: false,
+  /**
+   * Draw absorption (ARCHITECTURE §5.4 route B): register the
+   * `sensenova_draw_image` agent tool. When true AND the Host exposes a tools
+   * service, image-generation requests go to `{apiBase}/images/generations`
+   * with the panel-saved `SENSENOVA_API_KEY`, and the model list comes from
+   * the catalog's own `output_modalities` (never a name regex). Off by
+   * default like every execution module: a tool the agent can call is a
+   * Host-wide change, and a Host without the tools service must simply never
+   * see it rather than fail.
+   */
+  drawEnabled: false,
+  /** Preferred draw model id; empty means "first image-gen model of the catalog". */
+  drawModelId: "",
+  /** Deadline for one image request. Image models are slow; chat deadlines do not apply. */
+  drawTimeoutMs: 120_000
 });
 
 /**
@@ -138,7 +153,14 @@ export function resolveSettings(config) {
           : CONFIG_DEFAULTS.visionModels,
         // Step three opt-in: register the OpenAI-compatible LLM provider
         // directly (strict boolean, like writeImageModelIds).
-        registerProvider: source.registerProvider === true
+        registerProvider: source.registerProvider === true,
+        // Draw absorption opt-in (strict boolean, same reasoning as
+        // registerProvider) plus its two knobs. The deadline has its own
+        // floor: image models regularly take tens of seconds, and a chat-
+        // sized deadline would abort healthy requests.
+        drawEnabled: source.drawEnabled === true,
+        drawModelId: str(source.drawModelId, ""),
+        drawTimeoutMs: Math.max(5_000, Math.floor(num(source.drawTimeoutMs, CONFIG_DEFAULTS.drawTimeoutMs)))
       },
       configError: null
     };

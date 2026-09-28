@@ -24,7 +24,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 ```jsonc
 {
   "name": "dsh-connect-sensenova-token-plan",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "main": "./index.js",                 // Host 半边入口
   "exports": {
     ".": "./index.js",
@@ -37,7 +37,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
                                         // 由 test/package.test.mjs 钉住（panel-*.js 是测试基建，不进包）
     "index.js", "codes.js", "client.js", "console-client.js", "host-config.js",
     "parsers.js", "throttle-store.js", "catalog-store.js", "provider-store.js", "api-key-store.js",
-    "llm-models.js", "llm-adapter.js",
+    "llm-models.js", "llm-adapter.js", "llm-retry.js", "draw.js",
     "trace.js", "util.js",
     "sensenova-auth.js", "sensenova-crypto.js", "token-store.js",
     "cordis.patch.yml", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"

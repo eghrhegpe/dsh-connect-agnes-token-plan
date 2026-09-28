@@ -2,6 +2,16 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.4.0] — 2026-09-29
+
+出图吸收（大统一 §5.4 接法 B）：本插件可以给 agent 提供商汤出图能力了。
+
+- **新增 agent 工具 `sensenova_draw_image`**（opt-in，配置 `drawEnabled: false` 默认关）：POST `{apiBase}/images/generations`，鉴权用面板「模型接入」保存的 `SENSENOVA_API_KEY` 引用（每次调用现取，轮换 Key 无需重启）。
+- **出图模型识别用结构化字段，不用名字正则**：从 catalog 的 `output_modalities` 判定（与 chat 清单的排除逻辑互为反向，两份清单不可能矛盾）。社区同类 `dsh-draw-router` 的名字正则会漏掉 `sensenova-u1.5-lite`，本实现不会（对照见 `docs/ARCHITECTURE.md` §5.4）。
+- **429 分诊与失败冷却**：出图失败时区分「配额不足（别盲重试）」与「限频（等再试）」；失败后 30s 冷却，防止 agent 在耗尽的共享池上打转。
+- **降级同型**：无 tools 服务的 Host、peer 加载失败、注册被拒——工具静默缺席，面板与 provider 不受影响；快照契约零改动（14 键不变）。
+- 配套：`drawModelId`（首选模型）与 `drawTimeoutMs`（默认 120s）两个配置；`test/draw.test.mjs`（56 项，peer-free）。
+
 ## [0.3.4] — 2026-09-29
 
 429 自愈与「清单自带识别」：Token Plan 池额度耗尽时，模型不再发出必失败的请求。

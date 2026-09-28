@@ -1084,12 +1084,15 @@ async function withNetwork(stub, body) {
           enableSwitch.payload.registerProvider === true, JSON.stringify(enableSwitch.payload));
 
       // Q2. The picker's own read: the snapshot hands the roster to it.
+      // Rows carry the per-model availability markers (ROADMAP §2.2): the
+      // panel shows every chat model, greyed with the reason when its pool
+      // is exhausted, so `available`/`quotaExhausted` travel even when true.
       const snapshot = await call(SNAPSHOT_PATH, makeRequest());
       check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
         JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([
-          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false },
-          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true },
-          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false }
+          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false },
+          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false },
+          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false }
         ]), JSON.stringify(snapshot.payload.llm?.models));
       check("Q2 an uncurated install reports an empty allow-list",
         JSON.stringify(snapshot.payload.llm?.enabledModelIds) === JSON.stringify([]),
