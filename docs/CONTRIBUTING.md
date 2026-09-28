@@ -12,7 +12,7 @@
 - `fix:` 修复
 - 正文用中文说明「为什么」，而非「改了什么」（diff 自明）。
 
-例：`fix: stop retrying a refused sign-in, so a bad password cannot lock the account`
+例：`fix: 被拒的登录不再自动重试，避免错密码把账号锁死`
 
 ---
 

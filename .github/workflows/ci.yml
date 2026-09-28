@@ -2,7 +2,7 @@ name: CI
 
 # Two tiers, on purpose.
 #
-#   offline — the nine peer-free / stubbed-network suites. These are the real
+#   offline — the ten peer-free / stubbed-network suites. These are the real
 #             gate: they run on a clean checkout with no DSH install and no
 #             network (test/peer-roots.mjs installs a sentinel that fails any
 #             request escaping a stub), so a red here is always a regression.
@@ -50,6 +50,7 @@ jobs:
           node test/parsers.test.mjs
           node test/config.test.mjs
           node test/package.test.mjs
+          node test/docs.test.mjs
           node test/wiring.test.mjs
 
   e2e:

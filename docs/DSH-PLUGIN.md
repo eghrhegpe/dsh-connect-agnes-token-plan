@@ -19,6 +19,8 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 
 ## 2. bundle 结构（本插件 `package.json` 真实字段）
 
+> 以下片段为**教学示意**，以仓库内真实 [package.json](../package.json) 为准；它不被任何测试钉住，改动 package.json 字段后请同步本片段。
+
 ```jsonc
 {
   "name": "dsh-connect-sensenova-token-plan",
@@ -129,9 +131,9 @@ plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-s
 ## 7. 测试与构建（本插件）
 
 - 本插件测试**无需 `npm install`**：网络层打桩，密码用临时密钥加密，不碰真实账号；peer 依赖由 `test/peer-roots.mjs` 在 DSH 运行时就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到会列全部查过的位置，而非静默跳过。
-- 跑 `npm test`（九个离线套件：`auth` / `store` / `routes` / `panel` / `render` / `parsers` / `config` / `package` / `wiring`），末尾接 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。
+- 跑 `npm test`（十个离线套件：`auth` / `store` / `routes` / `panel` / `render` / `parsers` / `config` / `package` / `docs` / `wiring`），末尾接 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。
 - 本插件 **Client 半边无构建步骤**：`client.js` 直接随 bundle 注入，没有 `src/` → 产物的分离（这点与 `dsh-connect-qoder` 不同，后者有 `src/client/` 经 `tsdown` 重建 `lib/client.js`）。
-- 所有离线测试均已通过（当前快照：auth 38 / store 24 / routes 16 / panel 41 / render 16 / parsers 21 / config 22 / package 9 / wiring 24，共 211 项）。测试数会随并行会话变化，详见 [TESTING.md](./TESTING.md)。
+- 所有离线测试均已通过；各套件用例数会随并行会话变化，以 `npm test` 实际输出为准，不在此处保留快照（详见 [TESTING.md](./TESTING.md)）。
 
 ---
 

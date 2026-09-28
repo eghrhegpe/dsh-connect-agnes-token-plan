@@ -23,6 +23,23 @@ plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-s
 
 安装后，Harness Web UI 侧边栏出现「积分面板」入口；首次打开会提示连接商汤控制台。
 
+### 环境隔离（web 优先，桌面端后置）——强制约束
+
+**本插件当前只允许挂在 `web` profile；`desktop` profile 禁止接入**，直到插件在 web 端
+稳定运行一个观察期（含一次完整的登录/续期/限流周期）再考虑下发桌面端。理由是教训换来的：
+
+- 桌面端把本插件列为**必需启动项**（`dsh.profile.bundles`），插件任何激活失败都会拖垮
+  整个桌面端——2026-09-27 本插件往共享凭据库写入宿主不认识的 `kind: throttle` 记录，
+  直接把桌面端炸到 startup failed，就是这条链路的实录；
+- web 端与桌面端**共享同一份** `~/.dsh/.credentials.yaml`，但桌面端崩溃的爆炸半径
+  （九个插件全部卡死）远大于 web 端；
+- 开发期底层协议改动（如登录 JWE 封装重做）必须先在爆炸半径小的环境验证。
+
+当前桌面端已做三重隔离（恢复方法见宿主机器 `~/.dsh/profiles/desktop/cordis.patch.yml`
+内的 tombstone 注释——该路径在宿主 profile 目录，**不在本仓库**）：`dsh.profile.bundles`
+已移除、`link:` 依赖已移除、`node_modules` 符号链接已删除、patch 层留有
+`disabled: true` 的墓碑行。
+
 ---
 
 ## 3. 配置
@@ -79,3 +96,15 @@ plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-s
 3. 之后令牌自动续期，无需再操作。面板底部可清除已保存账号。
 
 登录失败的排查见 [AUTH.md](./AUTH.md)。
+
+---
+
+## 6. 常见信号与处置
+
+| 面板 / 接口信号 | 含义 | 怎么做 |
+|---|---|---|
+| 面板顶部 `config_error` | 配置面有非法端点地址等挂载期错误 | 检查 `cordis.patch.yml` 的端点类字段（§3），改后重装 / 重载 Host |
+| 快照带 `shapeWarnings` | 控制台返回结构与预期不符（如字段改名） | 对照 [SENSENOVA-API.md](./SENSENOVA-API.md) 核对接口字段——这是接口变更的第一信号，不是「暂无数据」 |
+| 面板 `console_error` | 控制台没应答 | 通常是下一轮轮询自愈；持续出现再查网络与控制台状态 |
+| 快照接口没有 `auth` 字段 | 跑的还是旧代码 | 完全退出 DSH（含托盘）再启动（见 §4） |
+| 面板提示需要重新登录 | refresh_token 被吊销且环境已无密码 | 面板表单填一次账号密码即可 |

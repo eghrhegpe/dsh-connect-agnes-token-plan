@@ -98,7 +98,7 @@ client.js: interpretSnapshot(body) → {data, error}
 | 层 | 谁干 | 本插件的角色 |
 |---|---|---|
 | 额度 / 登录 / 模型清单 | **本插件** | 维持现状 |
-| 「哪些模型能看图」的识别与信息下发 | **本插件（扩展中，见 §5.1）** | 算 `visionModels` 发进 `/snapshot`；后续写 `imageModelIds` 进 provider settings |
+| 「哪些模型能看图」的识别与信息下发 | **本插件（见 §5.1）** | 第一步算 `visionModels` 发进 `/snapshot`；第二步（opt-in）把清单写进**本插件自己的** settings row，供后续 LLM connect 插件读取 |
 | 真把图喂给模型（视觉/绘图路由） | `dsh-media-skills` / `dsh-draw-router`（社区） | 不碰 |
 | 429 自愈网关（多 Key 池化、AIMD 限速） | `st-rotator`（独立 Python 进程） | 不碰 |
 
@@ -134,13 +134,29 @@ client.js: interpretSnapshot(body) → {data, error}
 里、`process.env` 里根本没有这条——所以旧版「读不到 key」并不等于「没有
 key」，是读错了层。
 
-**第二步（下期，单独验收）**：把识别结果写进 DSH provider settings 的
-`imageModelIds`（对齐 `dsh-connect-trae` / `dsh-connect-workbuddy` /
-`llm-qoder` 的 connect 家族设计；`profiles/*/cordis.patch.yml` 里已有
-`imageModelIds` 与 `imageOverrides` 实例，trae 源码注释亦声明「Provider API
-不暴露模态元数据，image 输入靠显式 `imageModelIds` 声明」——该注释对商汤
-**不成立**：商汤已经暴露 `input_modalities`，见上）。写入属 DSH
-行为面，风险高于第一步，故不合并验收。
+**第二步（本期已实现，opt-in）**：把第一步算出的可看图模型清单写进
+**本插件自己那一行 DSH settings**（`imageModelIds` / `visionModels`
+两个字段，走 DSH 官方写路径
+`settings.update(rowId, patch, revision)`），供后续
+`dsh-provider-sensenova` 之类的 LLM connect 插件读取，从而让 DSH 的图片
+offload 链路知道这把 Key 里哪些模型可以接图。
+
+设计守口（对应 §5「只做信息、不做执行」）：
+- **只写本插件自己的 row**，绝不碰其它 provider（trae / workbuddy 等）
+  的 `imageModelIds` 格子——算错一份模型清单，最坏影响的是面板自己的
+  一行字，不会波及 DSH 的模型路由。
+- **默认关闭**（`writeImageModelIds: false`）。不显式打开时，这个插件
+  仍然只是信息层；打开后，Host 在每次 catalog poll 算出 `visionModels`
+  后会幂等地写回本 row（清单没变就不写，不刷 revision 计数）。
+- 写入是**旁路增强**：被拒/无 settings 服务时只打日志，poll 照常应答，
+  面板照常显示——写不写成功不影响读的那一半。
+
+宿主机器 `~/.dsh/profiles/*/cordis.patch.yml` 里已有 `imageModelIds`
+与 `imageOverrides` 实例（该路径在宿主 profile 目录，不在本仓库），
+trae 源码注释「Provider API 不暴露模态元数据，image 输入靠显式
+`imageModelIds` 声明」对商汤**不成立**：商汤已经暴露
+`input_modalities`（见上），第二步只是把这份现成信息按 DSH 的
+settings 写路径交出去，不做识别逻辑。
 
 ---
 
