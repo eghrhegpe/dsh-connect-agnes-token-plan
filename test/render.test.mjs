@@ -13,7 +13,7 @@
  * components stay uncalled until a check expands them — the tree a check sees
  * is the tree React would receive.
  */
-import { render, styles as S, texts, findElement } from "../panel-render.js";
+import { render, styles as S, texts, findElement, findAll } from "../panel-render.js";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -110,12 +110,39 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the table is a table, not the empty note", !out.includes("trend.none"), out.join("\n"));
 }
 
+// === E2. the trend card visualises which model consumed the most ========
+// The bare table earned a card and a per-row bar: each bar is relative to
+// the LARGEST consumer, so the top model fills the track and the rest
+// shrink proportionally — that is the "who is burning credits" answer.
+{
+  const tree = treeOf(render.TrendTable, {
+    trend: { models: [{ model: "Alpha", credits: 42.5 }, { model: "Beta", credits: 0 }] },
+    tt
+  });
+  check("the trend rows sit inside a card like the quota cards",
+    tree.props?.style?.background === S.card.background && tree.props?.style?.borderRadius === S.card.borderRadius,
+    JSON.stringify(tree.props?.style ?? {}));
+  const bars = findAll(tree, (props) => props["aria-valuenow"] !== undefined);
+  check("each model row carries its own bar", bars.length === 2, `found ${bars.length}`);
+  const widths = bars.map((bar) => findElement(bar, (p) => typeof p.style?.width === "string")?.props.style?.width);
+  check("the biggest consumer fills the track", widths.includes("100%"), JSON.stringify(widths));
+  check("a zero-credit model gets an empty track", widths.includes("0%"), JSON.stringify(widths));
+  check("the bars report the same fractions to assistive tech",
+    bars[0]?.props["aria-valuenow"] === 100 && bars[1]?.props["aria-valuenow"] === 0,
+    bars.map((bar) => bar.props["aria-valuenow"]).join(", "));
+  check("the absolute amount still sits beside the model name",
+    texts(tree).includes("42.5") && texts(tree).includes("0"), texts(tree).join("\n"));
+}
+
 // === F. an empty trend says so instead of rendering an empty table ========
 {
   const out = rendered(render.TrendTable, { trend: { models: [] }, tt });
   check("an empty trend shows the empty note", out.includes("trend.none"), out.join("\n"));
   const none = rendered(render.TrendTable, { trend: null, tt });
   check("a missing trend shows the empty note too", none.includes("trend.none"), none.join("\n"));
+  const emptyTree = treeOf(render.TrendTable, { trend: { models: [] }, tt });
+  check("the empty note sits inside a card too",
+    emptyTree.props?.style?.background === S.card.background, JSON.stringify(emptyTree.props?.style ?? {}));
 }
 
 // === G. the pool card assembles its own sections ==========================
@@ -153,6 +180,50 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   });
   check("the callable list wins over the plan list",
     scoped.includes("Model-A") && !scoped.includes("Model-B"), scoped.join("\n"));
+}
+
+// === G2. sections are collapsible card headers, expanded by default ======
+// The two content sections live behind a workbuddy-style card header: a
+// full-width button (title + rotating chevron) that tucks the body away.
+// The header is hook-free — `open`/`onToggle` arrive as props — so the
+// toggle is exercised here; `PanelPage` starts both sections expanded.
+{
+  const children = ["inner"];
+  const openTree = treeOf(render.SectionCard, {
+    title: "section.pools", open: true, onToggle: () => {}, tt, children
+  });
+  check("the section sits in a card like the quota cards",
+    openTree.props?.style?.background === S.card.background && openTree.props?.style?.borderRadius === S.card.borderRadius,
+    JSON.stringify(openTree.props?.style ?? {}));
+  const head = findElement(openTree, (props) => props["aria-expanded"] !== undefined);
+  check("the section header is a real button", head?.type === "button", String(head?.type));
+  check("an open section reports aria-expanded=true", head?.props["aria-expanded"] === true,
+    String(head?.props["aria-expanded"]));
+  check("the header announces the collapse action",
+    head?.props["aria-label"] === "section.collapse: section.pools", String(head?.props["aria-label"]));
+  check("the header hands the click to the toggle", typeof head?.props.onClick === "function", "");
+  check("an open section renders its body", texts(openTree).includes("inner"), texts(openTree).join("\n"));
+  check("an open body is not hidden",
+    findElement(openTree, (props) => props.hidden !== undefined)?.props.hidden === false, "");
+  const chev = findElement(openTree, (props) => typeof props.viewBox === "string");
+  check("the header carries a chevron", chev !== null, "");
+  check("the chevron flips when the section is open",
+    chev?.props.style?.transform === "rotate(180deg)", String(chev?.props.style?.transform));
+
+  const closedTree = treeOf(render.SectionCard, {
+    title: "section.trend", open: false, onToggle: () => {}, tt, children
+  });
+  const closedHead = findElement(closedTree, (props) => props["aria-expanded"] !== undefined);
+  check("a closed section reports aria-expanded=false", closedHead?.props["aria-expanded"] === false,
+    String(closedHead?.props["aria-expanded"]));
+  check("the header announces the expand action",
+    closedHead?.props["aria-label"] === "section.expand: section.trend", String(closedHead?.props["aria-label"]));
+  check("a closed section hides its body", !texts(closedTree).includes("inner"), texts(closedTree).join("\n"));
+  check("the body stays mounted but hidden when closed",
+    findElement(closedTree, (props) => props.hidden !== undefined)?.props.hidden === true, "");
+  const closedChev = findElement(closedTree, (props) => typeof props.viewBox === "string");
+  check("the chevron points down when the section is closed",
+    closedChev?.props.style?.transform === undefined, String(closedChev?.props.style?.transform));
 }
 
 // === H. the rendering came from the shipped client ========================

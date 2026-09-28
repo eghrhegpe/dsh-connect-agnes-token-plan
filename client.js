@@ -97,6 +97,8 @@ function clientFactory(require) {
     "shape.api": "接口",
     "shape.missing": "缺少字段",
     "section.trend": "每模型消耗（近 {hours} 小时）",
+    "section.collapse": "收起",
+    "section.expand": "展开",
     "trend.model": "模型",
     "trend.credits": "积分",
     "trend.none": "该区间内没有消耗记录。",
@@ -161,6 +163,8 @@ function clientFactory(require) {
     "shape.api": "endpoint",
     "shape.missing": "missing field",
     "section.trend": "Per-model consumption (last {hours} h)",
+    "section.collapse": "Collapse",
+    "section.expand": "Expand",
     "trend.model": "Model",
     "trend.credits": "Credits",
     "trend.none": "No consumption in this range.",
@@ -187,6 +191,16 @@ function clientFactory(require) {
       spacer: { flex: 1 },
       button: { height: 30, padding: "0 12px", borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-primary)", fontSize: 13, cursor: "pointer" },
       sectionTitle: { margin: "22px 0 10px", fontSize: 13, fontWeight: 600, color: "var(--dsw-alias-label-secondary)" },
+      // Content sections are workbuddy-style collapsible cards: a bordered
+      // card whose header is a full-width button (title + rotating chevron).
+      // `PanelPage` starts both sections expanded; the reader can tuck one
+      // away to focus on the other.
+      sectionCard: { border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, background: "var(--dsw-alias-bg-layer-1)", overflow: "hidden", marginTop: 22 },
+      sectionHead: { display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "12px 16px", background: "none", border: "none", cursor: "pointer", textAlign: "left" },
+      sectionHeadTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: "var(--dsw-alias-label-primary)" },
+      chevron: { display: "inline-flex", flex: "none", transition: "transform 0.15s ease", color: "var(--dsw-alias-label-secondary)" },
+      chevronOpen: { transform: "rotate(180deg)" },
+      sectionBody: { borderTop: "1px solid var(--dsw-alias-border-l1)", margin: "0 16px", padding: "12px 0 16px" },
       // Pool cards live in the responsive `poolsGrid` (gap owns the spacing),
       // so the card itself carries no bottom margin.
       card: { background: "var(--dsw-alias-bg-layer-1)", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, padding: 16 },
@@ -477,6 +491,38 @@ function clientFactory(require) {
     }
 
     /**
+     * One content section as a workbuddy-style collapsible card: a full-width
+     * header button (title + rotating chevron) over a bordered card body.
+     * Auto-expanded by default in `PanelPage`; the reader can tuck a section
+     * away to focus on the other. Hook-free on purpose — `open` and `onToggle`
+     * arrive as props, so the render tests exercise the toggle without faking
+     * React state (children travel as a regular `children` prop, as in React).
+     */
+    function SectionCard({ title, open, onToggle, children, tt }) {
+      return h(
+        "div",
+        { style: S.sectionCard },
+        h(
+          "button",
+          {
+            type: "button",
+            style: S.sectionHead,
+            "aria-expanded": open,
+            "aria-label": `${tt(open ? "section.collapse" : "section.expand")}: ${title}`,
+            onClick: onToggle
+          },
+          h("span", { style: S.sectionHeadTitle }, title),
+          h(
+            "svg",
+            { viewBox: "0 0 16 16", width: 14, height: 14, fill: "none", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", style: open ? { ...S.chevron, ...S.chevronOpen } : S.chevron },
+            h("path", { d: "M3 6l5 5 5-5" })
+          )
+        ),
+        h("div", { style: S.sectionBody, hidden: !open }, open ? children : null)
+      );
+    }
+
+    /**
      * Read one snapshot response into the (data, error) pair the panel renders.
      *
      * The Host answers HTTP 200 for every expected outcome and signals the
@@ -594,8 +640,11 @@ function clientFactory(require) {
      * and a password once, and the Host signs in, stores the account in the
      * DSH credentials, and renews the token from then on. No `.env` editing,
      * no restart, and the password is never sent anywhere but this Host.
+     *
+     * `bare` strips the inner card and title: the account section card that
+     * embeds this form (when a token already works) supplies both itself.
      */
-    function AccountForm({ auth, onDone, tt }) {
+    function AccountForm({ auth, onDone, tt, bare }) {
       const [username, setUsername] = useState("");
       const [password, setPassword] = useState("");
       // The user must be able to see what they actually typed: a browser
@@ -728,8 +777,10 @@ function clientFactory(require) {
 
       return h(
         "div",
-        { style: { ...S.card, maxWidth: 420 } },
-        h("div", { style: S.sectionTitle }, tt("auth.title")),
+        { style: bare ? {} : { ...S.card, maxWidth: 420 } },
+        // `bare` drops the inner card and title: the caller (the account
+        // section card) already supplies both.
+        bare ? null : h("div", { style: S.sectionTitle }, tt("auth.title")),
         h(
           "form",
           { onSubmit: submit },
@@ -818,8 +869,12 @@ function clientFactory(require) {
       const [data, setData] = useState(null);
       const [error, setError] = useState(null);
       const [updatedAt, setUpdatedAt] = useState(0);
-      const [managing, setManaging] = useState(false);
       const [, setLocaleRevision] = useState(0);
+      // The content sections start expanded — the panel opens showing
+      // everything — while the account editor starts collapsed: it is a
+      // maintenance action, one click away. Remounting on a page switch
+      // restores these defaults.
+      const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false });
 
       // The Host half registers the dictionaries, but a runtime language switch
       // only reaches this page through the locale face's subscribe: without it a
@@ -861,6 +916,10 @@ function clientFactory(require) {
         } catch (reason) {
           setError(reason instanceof Error ? reason.message : String(reason));
         }
+      }, []);
+
+      const toggleSection = useCallback((key) => {
+        setOpenSections((current) => ({ ...current, [key]: !current[key] }));
       }, []);
 
       // One effect owns the whole polling cycle: an immediate load on mount,
@@ -915,48 +974,53 @@ function clientFactory(require) {
                     detail: shapeWarnings.map((entry) => `${tt("shape.api")} ${entry.api} ${tt("shape.missing")} ${entry.missing}`).join("; ")
                   }))
               : null,
-            h("div", { style: S.sectionTitle }, tt("section.pools")),
-            pools && pools.plan.name
-              ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 10 } }, pools.plan.name)
-              : null,
+            // Both content sections are collapsible card headers, auto-expanded
+            // by default: the panel opens showing everything, and the reader
+            // can tuck the chart or the pools away to focus on the other.
             h(
-              "div",
-              { style: S.poolsGrid },
-              (pools?.pools || []).map((pool) => h(PoolCard, { key: pool.id, pool, tt }))
+              SectionCard,
+              { title: tt("section.pools"), open: openSections.pools, onToggle: () => toggleSection("pools"), tt },
+              pools && pools.plan.name
+                ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 10 } }, pools.plan.name)
+                : null,
+              h(
+                "div",
+                { style: S.poolsGrid },
+                (pools?.pools || []).map((pool) => h(PoolCard, { key: pool.id, pool, tt }))
+              ),
+              data.uncountedModels && data.uncountedModels.length > 0
+                ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
+                    format(tt("pool.uncounted"), { models: data.uncountedModels.join(" · ") }))
+                : null,
+              // Step one of the vision plan: which of THIS key's models take
+              // image input. Only shown when the Host actually had a catalog to
+              // ask (no API key → the field is absent → no claim either way).
+              data.visionModels && data.visionModels.length > 0
+                ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
+                    format(tt("pool.vision"), {
+                      models: data.visionModels.map((entry) => entry.id).join(" · ") + (data.visionModels.every((entry) => entry.source === "name") ? tt("pool.visionInferred") : "")
+                    }))
+                : null
             ),
-            data.uncountedModels && data.uncountedModels.length > 0
-              ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
-                  format(tt("pool.uncounted"), { models: data.uncountedModels.join(" · ") }))
-              : null,
-            // Step one of the vision plan: which of THIS key's models take
-            // image input. Only shown when the Host actually had a catalog to
-            // ask (no API key → the field is absent → no claim either way).
-            data.visionModels && data.visionModels.length > 0
-              ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
-                  format(tt("pool.vision"), {
-                    models: data.visionModels.map((entry) => entry.id).join(" · ") + (data.visionModels.every((entry) => entry.source === "name") ? tt("pool.visionInferred") : "")
-                  }))
-              : null,
-            h("div", { style: S.sectionTitle }, format(tt("section.trend"), { hours: trend?.hours ?? 24 })),
-            h(TrendTable, { trend, tt }),
+            h(
+              SectionCard,
+              { title: format(tt("section.trend"), { hours: trend?.hours ?? 24 }), open: openSections.trend, onToggle: () => toggleSection("trend"), tt },
+              h(TrendTable, { trend, tt })
+            ),
             // The cache age is quoted from the snapshot, not written down here:
             // a note that says 60 while the Host caches for 300 is a lie the
             // reader has no way to catch.
             h("div", { style: S.note }, format(tt("note"), { cache: data?.cacheSeconds ?? 60 })),
-            // Re-openable while everything works, so changing the stored
-            // account never requires signing out first.
+            // The stored account stays manageable while everything works:
+            // a collapsed section (unlike the content sections) keeps the
+            // editor one click away without cluttering the quota view.
             authManage
               ? h(
-                  "div",
-                  { style: { marginTop: 18 } },
-                  h(
-                    "button",
-                    { type: "button", style: S.button, onClick: () => setManaging(true) },
-                    tt("auth.title")
-                  )
+                  SectionCard,
+                  { title: tt("auth.title"), open: openSections.account, onToggle: () => toggleSection("account"), tt },
+                  h(AccountForm, { auth, onDone: () => void load(), tt, bare: true })
                 )
-              : null,
-            managing ? h("div", { style: { marginTop: 12 } }, h(AccountForm, { auth, onDone: () => { setManaging(false); void load(); }, tt })) : null
+              : null
           );
 
       return h(
@@ -1083,7 +1147,7 @@ function clientFactory(require) {
       tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
       styles: S,
       helpers: Object.freeze({ clock, clockLong, count, format }),
-      components: Object.freeze({ QuotaCard, PoolCard, TrendTable, AccountForm, PanelPage })
+      components: Object.freeze({ QuotaCard, PoolCard, TrendTable, SectionCard, AccountForm, PanelPage })
     });
 
     return { inject, apply, panel };
