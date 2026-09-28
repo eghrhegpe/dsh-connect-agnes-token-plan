@@ -24,6 +24,9 @@
 import { createAuth } from "./sensenova-auth.js";
 import { createTokenStore } from "./token-store.js";
 import { createFileThrottleStore } from "./throttle-store.js";
+import { createFileCatalogStore } from "./catalog-store.js";
+import { createApiKeyStore } from "./api-key-store.js";
+import { summarizeCatalog, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
 import { CODE, isAuthFailure } from "./codes.js";
 import {
   resolveSettings,
@@ -68,6 +71,16 @@ const SNAPSHOT_PATH = `/api/${name}/snapshot`;
  * from planting a SenseNova account into the user's panel.
  */
 const ACCOUNT_PATH = `/api/${name}/account`;
+/**
+ * The inference API-key route (`sk-…`), step three of the one-stop plan.
+ *
+ * The key authenticates BOTH the `/v1/models` catalog poll and the directly
+ * registered LLM provider. It is held as the `SENSENOVA_API_KEY` credential
+ * reference (never written to this plugin's directory, never echoed back),
+ * with the raw process environment kept as a fallback. Same trust fence and
+ * body ceiling as the account route.
+ */
+const API_KEY_PATH = `/api/${name}/api-key`;
 /** Ceiling on a submitted account, so a hostile page cannot stream a body. */
 const MAX_ACCOUNT_BODY_BYTES = 4096;
 /** Family default response headers for a JSON route. */
@@ -136,6 +149,25 @@ function failureCode(error) {
 }
 
 /**
+ * A cheap signature of the model set a provider registration would offer.
+ *
+ * It only has to answer "would rebuilding change anything?": the model ids in
+ * catalog order, each tagged with the SAME vision decision the descriptors
+ * use (an id whose modality flipped must rebuild even though the id list did
+ * not change), plus the curated allow-list. Anything else changing in a
+ * catalog entry does not affect the registered offer.
+ * @param {object[]} entries - the normalized catalog entries.
+ * @param {string[]} enabledIds - the allow-list (empty = all).
+ * @returns {string}
+ */
+function catalogSignature(entries, enabledIds) {
+  const models = (Array.isArray(entries) ? entries : [])
+    .map((entry) => `${str(entry?.id, "")}:${identifyVisionModel(entry).vision === true ? 1 : 0}`)
+    .join(",");
+  return `${models}|${(Array.isArray(enabledIds) ? enabledIds : []).join(",")}`;
+}
+
+/**
  * Host body: mount the snapshot route. The panel polls it; each poll reads
  * the console through a short-lived cache and a self-renewing token.
  * @param ctx - host root context.
@@ -144,7 +176,16 @@ function failureCode(error) {
  *   are consumed (`createAuth` throws on a malformed origin) and the failure
  *   is surfaced through the snapshot instead of crashing the route.
  */
-function apply(ctx, config = {}) {
+function apply(ctx, config = {}, deps = {}) {
+  // The peer-dependent adapter is loaded LAZILY and only when the opt-in is
+  // actually on: `llm-adapter.js` imports Host-shipped peers (`pi-ai`,
+  // `dsh-llm-pi-ai`) which are not resolvable from a bare plugin checkout, so
+  // a static import would take down every offline suite that mounts this file.
+  // The real Host loader resolves the sibling fine at runtime; the optional
+  // `deps.loadAdapterModule` seam lets the wiring suite inject a fake factory
+  // (the real peer assembly is covered end-to-end by test/e2e.mjs).
+  const loadAdapterModule = deps.loadAdapterModule ?? (() => import("./llm-adapter.js"));
+  let adapterFactoryPromise;
   // A malformed row is reported through the snapshot rather than thrown out of
   // `apply`, which would take the whole plugin down at mount.
   const { settings, configError: rowError } = resolveSettings(config);
@@ -161,31 +202,223 @@ function apply(ctx, config = {}) {
       configError = error instanceof Error ? error.message : String(error);
     }
   }
-  // The API key is the same one the LLM provider route uses. DSH's providers
-  // resolve it through the credentials service's reference layer (the
-  // "user-level environment" the panel's read-only input points at) and only
-  // fall back to the raw process environment — the value may live in
+  // The inference API key (`sk-…`) is shared by the catalog poll and the
+  // directly-registered LLM provider. It is held as the `SENSENOVA_API_KEY`
+  // CREDENTIAL REFERENCE (owner-only credentials service), with the raw
+  // process environment as a fallback — the value may live in
   // `~/.dsh/.credentials.yaml` alone, which a sibling shell never sees, so
   // reading `process.env` first is what left this panel blind on machines
-  // where the key is stored there. Treated as optional: absent → the model
-  // lists degrade, the quota panel still works.
-  const resolveApiKey = async () => {
-    try {
-      const credentials = ctx.get("credentials") ?? null;
-      if (credentials && typeof credentials.resolve === "function") {
-        const resolved = await credentials.resolve("SENSENOVA_API_KEY");
-        const value = resolved?.value;
-        if (typeof value === "string" && value.trim() !== "") return value;
-      }
-    } catch {
-      // No credentials service or the reference absent: fall through.
-    }
-    return str(process.env.SENSENOVA_API_KEY, "");
-  };
+  // where the key is stored there. The panel save/forget route below writes
+  // the reference through the same store. Treated as optional: absent → the
+  // model lists and provider degrade, the quota panel still works.
+  const apiKeyStore = createApiKeyStore({
+    credentials: () => ctx.get("credentials") ?? null
+  });
+  const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
   /** @type {Map<string, import("./console-client.js").CacheEntry>} */
   const cache = new Map();
   /** One in-flight console fetch per URL, so concurrent polls share a call. */
   const inflight = new Map();
+
+  // Step three's PRIVATE catalog file: the last `/v1/models` answer the key
+  // fetched, plus the curated enabled-model allow-list. It lives under
+  // `$DSH_HOME/state/<plugin>/catalog.json`, never in the settings row or the
+  // patch layer — a catalog is operational state, not an operator decision.
+  // It lets the registered provider offer models before the first poll of a
+  // restart, and survives with no console login at all.
+  const catalogStore = createFileCatalogStore();
+
+  // The directly-registered provider's live registration state.
+  // `llm` is an OPTIONAL service (this plugin injects only `webServer`), read
+  // through `ctx.get` like the other optional services: on a Host without an
+  // LLM runtime the panel still works and `llm.providerRegistered` simply
+  // stays false. Everything registration-related is wrapped so a peer that
+  // fails to load degrades to "models absent", never "panel down".
+  const providerState = {
+    /** The catalog entries the current registration was built from. */
+    entries: [],
+    /** The curated allow-list at registration time (empty = all models). */
+    enabledIds: [],
+    /** A cheap signature that only changes when the offered set changes. */
+    signature: "",
+    /** Whether an `llm` service answering `registerAdapter` is present. */
+    llmAvailable: false,
+    /** Whether our provider pair is currently registered without error. */
+    registered: false,
+    /** The last registration error, surfaced secret-free in the snapshot. */
+    error: null,
+    releaseAdapter: null,
+    releaseDirectory: null,
+    /** The built adapter the active release functions belong to. */
+    built: null
+  };
+
+  /** Read an optional service without throwing on a Host that lacks it. */
+  const getService = (service) => {
+    try {
+      return ctx.get?.(service) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** Release the registered pair. Releases are idempotent in the Host. */
+  const releaseProvider = () => {
+    const release = (fn) => {
+      try {
+        fn?.();
+      } catch {
+        // The service may already be gone during shutdown or rollback.
+      }
+    };
+    release(providerState.releaseAdapter);
+    release(providerState.releaseDirectory);
+    providerState.releaseAdapter = null;
+    providerState.releaseDirectory = null;
+  };
+
+  /** Resolve (and memoize) the peer-dependent adapter factory. */
+  const resolveAdapterFactory = async () => {
+    if (adapterFactoryPromise === undefined) {
+      adapterFactoryPromise = Promise.resolve(loadAdapterModule()).then((mod) => mod.createSensenovaAdapter);
+    }
+    return adapterFactoryPromise;
+  };
+
+  /**
+   * (Re)build and register the provider for one catalog/allow-list snapshot.
+   *
+   * Rebuild-and-reregister rather than mutate: `PiAiAdapter` memoizes its
+   * profiles snapshot internally, so only a fresh registration can change the
+   * offered model list. On a failed registration the PREVIOUS pair is restored,
+   * so a bad publish can never take down models that were already serving.
+   * @param {object[]} entries - the normalized catalog entries.
+   * @param {string[]} enabledIds - the curated allow-list (empty = all).
+   * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
+   */
+  const publishProvider = async (entries, enabledIds) => {
+    providerState.entries = Array.isArray(entries) ? entries : [];
+    providerState.enabledIds = Array.isArray(enabledIds) ? enabledIds : [];
+    // Opt-in: with the switch off there must be no registration left behind
+    // from a row that flipped it after mounting (the mount-time setting is
+    // re-read here on every poll from the same resolved settings object).
+    if (settings.registerProvider !== true) {
+      releaseProvider();
+      providerState.registered = false;
+      providerState.built = null;
+      providerState.error = null;
+      return { ok: true, skipped: true };
+    }
+    const llm = getService("llm");
+    providerState.llmAvailable = llm !== null && typeof llm.registerAdapter === "function";
+    if (!providerState.llmAvailable) {
+      releaseProvider();
+      providerState.registered = false;
+      providerState.error = "the Host exposes no llm registration service";
+      return { ok: false, error: providerState.error };
+    }
+    const previousBuilt = providerState.built;
+    let createSensenovaAdapter;
+    let built;
+    try {
+      createSensenovaAdapter = await resolveAdapterFactory();
+      built = createSensenovaAdapter({
+        entries: providerState.entries,
+        enabledIds: providerState.enabledIds,
+        baseUrl: settings.apiBase,
+        resolveApiKey,
+        get: getService
+      });
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      providerState.error = why;
+      // The failure a reader cannot diagnose from the message alone: the LLM
+      // peer packages ship INSIDE the Host, so a plugin directory the Host's
+      // node_modules cannot be reached from — a dev checkout symlinked into
+      // the profile, say — has no way to import them. Say so, with the remedy,
+      // because the panel can only report "provider absent".
+      ctx.logger?.warn?.(
+        `${name}: cannot build the SenseNova adapter: ${why}` +
+          (error?.code === "ERR_MODULE_NOT_FOUND"
+            ? " — the llm peer packages ship with the Host; install this plugin where they resolve" +
+              " (or link them into its own node_modules)"
+            : "")
+      );
+      return { ok: false, error };
+    }
+    // Build first (it can throw); only then take down the old pair.
+    releaseProvider();
+    try {
+      providerState.releaseAdapter = llm.registerAdapter(built.providerIds, built.adapter);
+      // `registerConfigurableProviders` is how a provider gains its row on the
+      // models settings page; an older runtime without it still gets models
+      // through the adapter registration above.
+      if (typeof llm.registerConfigurableProviders === "function") {
+        providerState.releaseDirectory = llm.registerConfigurableProviders([{
+          provider: LLM_PROVIDER_ID,
+          displayName: LLM_DISPLAY_NAME,
+          // This plugin's OWN row namespace; declared:false because the row
+          // exists as a patch already, not as a provider-declared schema.
+          settingsNs: name,
+          settingsPath: [],
+          declared: false
+        }]);
+      }
+    } catch (error) {
+      releaseProvider();
+      providerState.built = null;
+      // Restore the pair that was serving, if any.
+      if (previousBuilt !== null) {
+        try {
+          providerState.releaseAdapter = llm.registerAdapter(previousBuilt.providerIds, previousBuilt.adapter);
+          if (typeof llm.registerConfigurableProviders === "function") {
+            providerState.releaseDirectory = llm.registerConfigurableProviders([{
+              provider: LLM_PROVIDER_ID,
+              displayName: LLM_DISPLAY_NAME,
+              settingsNs: name,
+              settingsPath: [],
+              declared: false
+            }]);
+          }
+          providerState.built = previousBuilt;
+          providerState.registered = true;
+        } catch {
+          providerState.built = null;
+          providerState.registered = false;
+        }
+      } else {
+        providerState.registered = false;
+      }
+      providerState.error = error instanceof Error ? error.message : String(error);
+      return { ok: false, error };
+    }
+    providerState.built = built;
+    providerState.registered = true;
+    providerState.error = null;
+    try {
+      ctx.emit?.("llm/adapters-updated");
+    } catch {
+      // A Host that refuses the event still has the registration; readers
+      // refresh on their own cadence.
+    }
+    return { ok: true };
+  };
+
+  // Seed the registration from the persisted catalog so a restarted Host
+  // offers models before its first poll (and with no console login at all).
+  // Fire-and-forget: a state dir that cannot be read just waits for the poll.
+  void (async () => {
+    try {
+      const [stored, storedEnabled] = await Promise.all([
+        catalogStore.list(),
+        catalogStore.listEnabledIds()
+      ]);
+      providerState.signature = catalogSignature(stored, storedEnabled);
+      await publishProvider(stored, storedEnabled);
+    } catch {
+      // No seed catalog: the first successful poll publishes.
+    }
+  })();
 
   // The credentials service is how the console token and account are held and
   // renewed. It is optional: a Host without one still gets a working panel,
@@ -319,6 +552,43 @@ function apply(ctx, config = {}) {
         if (visionModels !== undefined) {
           void visionPublish.current?.(visionModels, visionModels.map((entry) => entry.id)).catch(() => {});
         }
+        // Step three: persist the fetched catalog to the PRIVATE state file
+        // and rebuild the registered provider, but ONLY when the offered set
+        // actually changed — the catalog fetch is cached for an hour while the
+        // panel polls every 30 s, so a write/re-register per poll would be pure
+        // churn. The reported model counts come from the fresh catalog when
+        // one arrived, else from whatever the mount seed had stored.
+        let llmStatus;
+        {
+          const keyState = await apiKeyStore
+            .state()
+            .catch(() => ({ hasApiKey: false, keySource: null, ephemeral: false }));
+          let offered = providerState.entries;
+          let enabledIds = providerState.enabledIds;
+          if (Array.isArray(catalog)) {
+            enabledIds = await catalogStore.listEnabledIds().catch(() => providerState.enabledIds);
+            const signature = catalogSignature(catalog, enabledIds);
+            if (signature !== providerState.signature) {
+              providerState.signature = signature;
+              await catalogStore.replace(catalog, enabledIds).catch(() => {});
+              await publishProvider(catalog, enabledIds);
+            }
+            offered = catalog;
+          }
+          const summary = summarizeCatalog(offered);
+          // Secret-free by construction: the store reports booleans/source
+          // only, never the key value.
+          llmStatus = {
+            ...keyState,
+            registerProvider: settings.registerProvider === true,
+            llmAvailable: providerState.llmAvailable,
+            providerRegistered: providerState.registered,
+            providerId: LLM_PROVIDER_ID,
+            modelCount: summary.modelCount,
+            visionCount: summary.visionCount,
+            ...(providerState.error !== null ? { providerError: providerState.error } : {})
+          };
+        }
         writeJson(response, 200, {
           ok: true,
           now: Date.now(),
@@ -339,6 +609,9 @@ function apply(ctx, config = {}) {
           uncountedModels: Array.isArray(catalog)
             ? catalogIds.filter((model) => !pools.pools.some((pool) => pool.modelIds.includes(model)))
             : [],
+          // Step three status: key presence/source, opt-in, registration
+          // state, and model/vision counts — never the key itself.
+          llm: llmStatus,
           pools,
           trend,
           shapeWarnings
@@ -437,8 +710,78 @@ function apply(ctx, config = {}) {
     }
   });
 
+  const offApiKey = ctx.webServer.register({
+    kind: "exact",
+    path: API_KEY_PATH,
+    handler: async (request, response) => {
+      // Same trust fence as the other two routes: a foreign page must not be
+      // able to plant or wipe an inference key.
+      if (!isAdmitted(request, settings.allowedHosts)) {
+        writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+        return;
+      }
+      const method = request.method === undefined ? "GET" : request.method;
+      // The secret-free state is all the form ever gets: present or not, and
+      // whether it came from the credentials service or the environment.
+      const answer = async (extra = {}) =>
+        writeJson(
+          response,
+          200,
+          { ok: true, ...(await apiKeyStore.state().catch(() => ({
+            hasApiKey: false,
+            keySource: null,
+            ephemeral: false
+          }))), ...extra },
+          { "cache-control": "no-store" }
+        );
+      if (method === "GET") {
+        await answer();
+        return;
+      }
+      if (method !== "POST") {
+        writeJson(response, 405, { ok: false, error: "method not allowed" });
+        return;
+      }
+      const body = await readJsonBody(request);
+      if (!body.ok) {
+        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
+        return;
+      }
+      // Forget: drop the panel-saved REFERENCE only. An environment value is
+      // deliberately left standing (forget cannot delete an operator's .env),
+      // and the cached catalog answers the old key until the poll after.
+      if (body.value.forget === true) {
+        try {
+          await apiKeyStore.forget();
+          await catalogStore.clear().catch(() => {});
+          cache.clear();
+          providerState.signature = "";
+          await publishProvider([], []);
+          await answer();
+        } catch (error) {
+          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+        return;
+      }
+      try {
+        await apiKeyStore.save(body.value.apiKey);
+      } catch (error) {
+        await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      // The next poll fetches the catalog with the new key; a stale catalog
+      // cached under a previous key must not survive it. The key itself is
+      // resolved per REQUEST by the adapter, so no provider rebuild is needed.
+      cache.clear();
+      await answer();
+    }
+  });
+
   ctx.effect(() => () => {
-    for (const off of [offRoute, offAccount]) {
+    // Stop offering the provider first, so a request cannot be routed to an
+    // adapter whose Host services are already half gone.
+    releaseProvider();
+    for (const off of [offRoute, offAccount, offApiKey]) {
       try {
         off();
       } catch {

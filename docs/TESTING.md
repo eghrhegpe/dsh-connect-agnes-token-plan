@@ -7,7 +7,7 @@
 ## 1. 运行
 
 ```powershell
-npm test       # 依次跑 auth / store / routes / panel / render / parsers / config / package / docs / wiring，末尾 e2e-gate（无 dsh CLI 则 SKIP）
+npm test       # 依次跑 auth / store / routes / panel / render / parsers / provider / config / package / docs / wiring，末尾 e2e-gate（无 dsh CLI 则 SKIP）
 npm run test:e2e    # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
 npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可达
 ```
@@ -22,14 +22,15 @@ npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可
 |---|---|
 | `test/auth.test.mjs` | JWE 封包（RSA-OAEP + A256GCM）round-trip、PKCE（S256 向量）、登录分类（错密码 / 锁号 / 限频 / 验证码）、拒绝消息取平台原话、**登录 trace 成功与失败都要上报**、**错误码 taxonomy 一致性** |
 | `test/store.test.mjs` | 令牌存储与续期、并发轮询只触发一次刷新、401 拒绝记忆、节流状态跨进程、env 账号识别、内存态 ephemeral、**真实凭据服务解析器校验写入记录**（非 `grant` kind 即红） |
-| `test/routes.test.mjs` | 把面板的判断逻辑**原样跑在真实接口响应上**，专门守住「无凭据服务时表单仍可达」这条路径；同源校验、body 上限、跨域拒绝、**一个请求只答一次** |
+| `test/routes.test.mjs` | 把面板的判断逻辑**原样跑在真实接口响应上**，专门守住「无凭据服务时表单仍可达」这条路径；同源校验、body 上限、跨域拒绝、**一个请求只答一次**；第三步的 api-key 路由（credentials/memory/env 三来源、不回显、forget 不动环境变量）、快照 `llm` 块与 provider 注册/签名去抖/无 llm 降级（假 adapter 工厂经 apply 第三参注入，不碰真 peer） |
 | `test/panel.test.mjs` | 面板「显示什么」的决策，**直接从 `client.js` 抠出决策块求值**（见 `panel-decision.js`），而不是手写副本——逻辑一变测试自动跟；**中英文字典键集一致**；控制台故障不伪装成登录表单 |
 | `test/render.test.mjs` | 面板「数字怎么上屏」的渲染，`panel-render.js` 抠出 `WindowRow` / `PoolCard` / `TrendTable` 真源码、以记录型 `h` 在 Node 求值：`used/limit` 写反、剩余量丢失、进度条色阶错档、除零 NaN 都会红 |
 | `test/parsers.test.mjs` | **控制台响应解析层**（纯函数、无网络）：字符串数值与 epoch 归一（§11）、`reset_at="0"` 不得读成 1970、`checkShape` 双向漂移检测（§12 `shapeWarnings` 的来源）、trend 对 points **求和**而非取首个 |
+| `test/provider.test.mjs` | **第三步纯逻辑层（无 peer、干净检出可跑）**：`llm-models` descriptor 映射（vision 自动识别、`supportsDeveloperRole:false`、不声明 maxTokens 值、contextWindow fallback、去重、允许清单空=不过滤）、`catalog-store`（版本号拒绝、损坏即忽略、原子往返、只读目录降级内存）、`api-key-store`（credentials→memory→env 优先级、save/forget、forget 不动环境变量、凭据服务故障穿透） |
 | `test/config.test.mjs` | **配置单一事实源钉子**：`CONFIG_DEFAULTS` 与 `cordis.patch.yml` 不得静默漂移；不依赖 peer，干净检出即可跑 |
 | `test/package.test.mjs` | **打包清单钉子**：从 `main`/`exports` 走静态 import 闭包，可达模块必须在 `files` 里（曾漏 5 个 → tarball 加载即崩）；反向钉住"`files` 里却无人引用"的死重；不依赖 peer，干净检出即可跑 |
 | `test/docs.test.mjs` | **文档一致性钉子**：内部链接全部可解析、同一张表格不出现在 ≥2 个文件（防多源事实）、根 `README.md` 行数上限、`DSH-PLUGIN.md` 教学快照与 `package.json` 同步、**`API.md` 快照示例与契约键集一致**；不依赖 peer，干净检出即可跑 |
-| `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误 |
+| `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误；第三步的可选 `ctx.get("llm")` 注册对（`registerAdapter` + `registerConfigurableProviders`，id `sensenova-token-plan`）、opt-in 关闭不注册、fiber dispose 释放注册对与三条路由 |
 | `test/live-jwks.test.mjs` | （仅 `test:live`）真实拉取 JWKS 文档，确认封包公钥可达 |
 
 不碰真实账号的保证：网络层打桩，密码用临时密钥加密，不发往商汤；`routes.test.mjs` 用真实响应形状但全 stub。
@@ -56,4 +57,4 @@ npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可
 - **视觉模型识别的信源字段已确认（2026-09 拉真实响应）。** 商汤 `GET /v1/models` 在**每个**条目上都带 `input_modalities`（字符串数组，如 `["text","image"]`）与 `output_modalities`。`identifyVisionModel` 已按字段判定（`"image"` ∈ `input_modalities`），名字规律（`vl`/`vision`）仅作平台某天不下发模态字段时的兜底，且已删掉 `flash-lite`（实测 `sensenova-6.8-flash-lite` 靠字段判为可看图、而 `sensenova-u1.5-lite` 是出图不是看图，纯名字会误判）。`test/parsers.test.mjs` 第 6 组钉住：字段优先、text-only 不算、出图不算（只看 input）、字段压过相悖的名字、无字段时按名字、无 id 仍出行。
 - **视觉第二步（opt-in 写入本插件 settings row）钉在 `test/routes.test.mjs` M 组。** `writeImageModelIds: true` 且无 settings 服务的 Host 上，poll 照常成功、`visionModels` 照常进 snapshot（写入是旁路，失败不拖垮应答）；`ctx.get("settings")` 缺席时 `visionPublish.current` 保持 null，poll 不炸。写入本身的正确性（写了真的落进 row、revision 计数）依赖 settings 服务在运行——由 DSH 侧的 `settings.update` 契约保证，本套件不重复验。
 - **路由测试用的是假 `response`，不是真实的 `http.ServerResponse`。** 它会计数写入次数（这是抓住「保存账号答了两次」的原因），但不会复现真实对象的 `ERR_HTTP_HEADERS_SENT`、`setHeader` 顺序与流语义。
-- **端到端已进 `npm test` 门禁，但依赖 dsh CLI。** `test/e2e.mjs` 拉起**真 Host 进程**（`dsh web`）+ 一个 127.0.0.1 上的**假商汤平台**（`test/fake-platform.mjs`，自带独立 `$DSH_HOME`、零真实凭据、全部端点重定向到本机），断言登录/池用量/节流分类等端到端行为，并校验假平台真的收到了流量。它曾长期被排除在默认跑之外——而「嵌套 `auth:` 块打到真平台锁号」这类最危险的 bug 只有它能抓。现在 `npm test` 末尾接 `test/e2e-gate.mjs`：探到 dsh CLI 就实跑（失败即红），探不到就打醒目 SKIP 并退出 0。缺 CLI 不是回归，但一次绿跑若跳过了端到端，装配路径就没被真正验过——`.github/workflows/ci.yml` 把它列为独立的 best-effort job 正是为了让这个信号不被离线绿灯掩盖。
+- **端到端已进 `npm test` 门禁，但依赖 dsh CLI。** `test/e2e.mjs` 拉起**真 Host 进程**（`dsh web`）+ 一个 127.0.0.1 上的**假商汤平台**（`test/fake-platform.mjs`，自带独立 `$DSH_HOME`、零真实凭据、全部端点重定向到本机），断言登录/池用量/节流分类等端到端行为，并校验假平台真的收到了流量。它曾长期被排除在默认跑之外——而「嵌套 `auth:` 块打到真平台锁号」这类最危险的 bug 只有它能抓。现在 `npm test` 末尾接 `test/e2e-gate.mjs`：探到 dsh CLI 就实跑（失败即红），探不到就打醒目 SKIP 并退出 0。缺 CLI 不是回归，但一次绿跑若跳过了端到端，装配路径就没被真正验过——`.github/workflows/ci.yml` 把它列为独立的 best-effort job 正是为了让这个信号不被离线绿灯掩盖。**它自己也开着 `registerProvider: true` 并断言 provider 真的注册上了**（含目录/vision/去密状态），所以第三步那套 Host 侧装配不会被「离线全绿」掩盖；同时它把 `SENSENOVA_API_KEY`/`SENSENOVA_USERNAME`/`SENSENOVA_PASSWORD` 从子进程环境里删掉——否则开发机的 Key 会被凭据服务当成只读环境值传进 Host，目录不再降级、面板保存被拒，测试只在作者机器上红（PITFALLS §17）。

@@ -27,7 +27,7 @@ const jwk = publicKey.export({ format: "jwk" });
 const privateJwk = privateKey.export({ format: "jwk" });
 
 /** Counters the test asserts on, so "did it log in?" is answerable. */
-export const log = { jwks: 0, auth: 0, iam: 0, token: 0, poolUsage: 0, trend: 0, badPassword: 0 };
+export const log = { jwks: 0, auth: 0, iam: 0, token: 0, poolUsage: 0, trend: 0, catalog: 0, badPassword: 0 };
 
 /** A JWT the panel will accept, expiring in an hour. */
 function freshJwt() {
@@ -230,12 +230,15 @@ const server = createServer(async (req, res) => {
     return json(res, 200, TREND_BODY);
   }
   if (path.includes("model")) {
+    log.catalog += 1;
     // One text-only, one vision-capable, and one image-output-only model,
     // so the catalog exercise distinguishes input-modality from
     // output-modality (step-two publish must not treat an out model as a
-    // vision model).
+    // vision model). The envelope is `{data:[…]}` — the OpenAI-compatible
+    // shape `fetchModelCatalog` unwraps; a fake answering `{models:[…]}`
+    // would hand the plugin an empty catalog and let a broken unwrap pass.
     return json(res, 200, {
-      models: [
+      data: [
         { id: "SenseNova-Lite", name: "SenseNova-Lite", input_modalities: ["text"] },
         { id: "SenseNova-Vision", name: "SenseNova-Vision", input_modalities: ["text", "image"], output_modalities: ["text"] },
         { id: "SenseNova-Draw", name: "SenseNova-Draw", input_modalities: ["text"], output_modalities: ["image"] }

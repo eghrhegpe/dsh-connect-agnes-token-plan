@@ -70,7 +70,20 @@ export const CONFIG_DEFAULTS = Object.freeze({
   /** The last published image-model id list (the reader's primary field). */
   imageModelIds: [],
   /** The last full vision identification (id + source marker per model). */
-  visionModels: []
+  visionModels: [],
+  /**
+   * Step three ("one-stop service"): register the LLM provider DIRECTLY.
+   *
+   * When true, the plugin calls `ctx.llm.registerAdapter` itself with an
+   * OpenAI-compatible pi-ai adapter aimed at `apiBase`, the catalog poll feeds
+   * its model list, vision models carry image input automatically, and the
+   * panel-saved `SENSENOVA_API_KEY` reference authenticates requests. Off by
+   * default for the same reason `writeImageModelIds` is: registering a model
+   * source is a Host-wide change, not a read-only panel view, so it stays an
+   * explicit opt-in and an operator with the hand-written `llm-pi-ai` row is
+   * not suddenly offered two providers.
+   */
+  registerProvider: false
 });
 
 /**
@@ -122,7 +135,10 @@ export function resolveSettings(config) {
           : CONFIG_DEFAULTS.imageModelIds,
         visionModels: Array.isArray(source.visionModels)
           ? source.visionModels.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
-          : CONFIG_DEFAULTS.visionModels
+          : CONFIG_DEFAULTS.visionModels,
+        // Step three opt-in: register the OpenAI-compatible LLM provider
+        // directly (strict boolean, like writeImageModelIds).
+        registerProvider: source.registerProvider === true
       },
       configError: null
     };

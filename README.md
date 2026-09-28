@@ -28,6 +28,10 @@ Host 通过只读路由 `GET /api/dsh-connect-sensenova-token-plan/snapshot` 提
 
 登录 / 续期 / 节流的完整设计见 [docs/AUTH.md](docs/AUTH.md)。
 
+## 可选：面板里直接接入 LLM provider
+
+不想手写 `llm-pi-ai` 配置行时，在本插件 row 上把 `registerProvider` 设为 `true`（字段见 [docs/SETUP.md](docs/SETUP.md) §3），再在面板「模型接入（API Key）」区粘贴 `sk-` Key 保存：Host 即以 `sensenova-token-plan` 之名直连 `token.sensenova.cn/v1` 注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入。Key 只进 DSH 凭据（`SENSENOVA_API_KEY` 环境变量仍兜底）、面板永不回显；catalog 缓存只写插件私有状态文件。开关默认关闭，改动后须重启 Host，设计守口见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5.2。
+
 ## 改代码后必须重启 Host
 
 **插件的 Host 半边（`index.js` / `token-store.js` / `sensenova-auth.js`）在启动时加载一次。** 改完这些文件，运行中的 `dsh web` 不会自动重载，必须完全退出 DSH 再启动（托盘也要退）。只改 `client.js` 时，浏览器刷新页面即可。
@@ -55,12 +59,12 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 ## 测试
 
 ```powershell
-npm test         # 十个离线测试文件依次跑（含文档一致性检查），末尾再跑端到端（无 dsh CLI 时自动 SKIP）
+npm test         # 十一个离线测试文件依次跑（含文档一致性检查），末尾再跑端到端（无 dsh CLI 时自动 SKIP）
 npm run test:e2e # 只跑端到端：拉起真 Host + 假平台（需 dsh CLI 在 PATH）
 npm run test:live  # 额外验一次平台真实 JWKS（显式联网，默认不跑）
 ```
 
-前十个文件**完全离线**（网络层打桩、密码用临时密钥，且这一点被 `test/peer-roots.mjs` 的网络哨兵断言而非声称），测试无需 `npm install`。各套件职责、面板测试机制（`client-surface.js` / `panel-decision.js`）与已知缺口见 [docs/TESTING.md](docs/TESTING.md)。
+前十一个文件**完全离线**（网络层打桩、密码用临时密钥，且这一点被 `test/peer-roots.mjs` 的网络哨兵断言而非声称），测试无需 `npm install`。各套件职责、面板测试机制（`client-surface.js` / `panel-decision.js`）与已知缺口见 [docs/TESTING.md](docs/TESTING.md)。
 
 ## 文档体系
 
@@ -73,7 +77,7 @@ npm run test:live  # 额外验一次平台真实 JWKS（显式联网，默认不
 - [docs/API.md](docs/API.md) — 本地路由与控制台端点、快照返回结构
 - [docs/TESTING.md](docs/TESTING.md) — 离线测试体系、面板测试机制、已知缺口
 - [docs/SENSENOVA-API.md](docs/SENSENOVA-API.md) — 商汤接口全集（认证/OIDC、密码 JWE、用量接口、错误码）
-- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑经历（现象→根因→修法，15 条）
+- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑经历（现象→根因→修法，17 条）
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — 提交约定、红线、仓库整洁
 - [CHANGELOG.md](CHANGELOG.md) — 公开行为变化的版本记录（非 git log 替代）
 
@@ -92,6 +96,10 @@ dsh-connect-sensenova-token-plan/
 ├── sensenova-crypto.js # 密码 JWE 封包（平台 JWKS 公钥 RSA-OAEP + A256GCM）
 ├── console-client.js   # 控制台 API 客户端（pool-usage / credit-usage-trend / models）
 ├── parsers.js          # 响应解析层：字符串数值/epoch 归一、checkShape 漂移检测、trend 求和
+├── llm-models.js       # 第三步（无 peer 依赖）：catalog entry → pi-ai descriptor 映射（vision 自动）
+├── llm-adapter.js      # 第三步（peer 懒加载）：PiAiAdapter 装配，直连 token.sensenova.cn/v1
+├── catalog-store.js    # 第三步：私有 catalog/允许清单状态文件（state/<name>/catalog.json，不进 dsh 配置）
+├── api-key-store.js    # 第三步：sk- Key 凭据引用 SENSENOVA_API_KEY（credentials→memory→env）
 ├── trace.js            # 登录 trace 落盘（成功/失败，值级脱敏）
 ├── util.js             # 共享工具函数
 ├── client.js           # Client：侧边栏 + 面板页 + 账号表单（工厂即模块，自带 panel 测试面）
@@ -101,7 +109,7 @@ dsh-connect-sensenova-token-plan/
 ├── AGENTS.md           # AI 协作会话纪律：验证、红线、文档地图
 ├── cordis.patch.yml    # 配置面（含全部配置字段）
 ├── package.json        # bundle 清单 + npm test 脚本
-├── test/               # 离线检查（10 套件 + e2e-gate）+ 单独跑（e2e/live）+ 基建（peer-roots/fake-platform）
+├── test/               # 离线检查（11 套件 + e2e-gate）+ 单独跑（e2e/live）+ 基建（peer-roots/fake-platform）
 ├── docs/               # 文档体系（见上）
 ├── .github/            # CI workflow（离线十套件硬门禁 + 端到端 best-effort）
 └── upstream/           # ⚠️ 被 .gitignore 忽略：上游 Python 桌面工具，自带独立 .git 与
@@ -122,8 +130,9 @@ dsh-connect-sensenova-token-plan/
 |---|---|---|
 | `/api/dsh-connect-sensenova-token-plan/snapshot` | GET | 面板轮询的聚合结果 |
 | `/api/dsh-connect-sensenova-token-plan/account` | GET / POST | 账号状态（不含密码）/ 保存账号 / `{forget:true}` 清除 |
+| `/api/dsh-connect-sensenova-token-plan/api-key` | GET / POST | 推理 Key 去密状态 / 保存 `sk-` Key / `{forget:true}` 清除（永不回显明文） |
 
-两条路由都经过双层信任围栏（Host 本机白名单挡 DNS rebinding + Origin 与 Host 一致挡跨站伪造），请求体上限 4 KB；返回结构与细节见 [docs/API.md](docs/API.md) §1。
+三条路由都经过双层信任围栏（Host 本机白名单挡 DNS rebinding + Origin 与 Host 一致挡跨站伪造），请求体上限 4 KB；返回结构与细节见 [docs/API.md](docs/API.md) §1。
 
 ## 许可证
 

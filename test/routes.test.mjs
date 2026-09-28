@@ -35,6 +35,7 @@ function fail(name, error) {
 
 const SNAPSHOT_PATH = "/api/dsh-connect-sensenova-token-plan/snapshot";
 const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
+const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
 const RECORD_KEY = credentialKey("dsh-connect-sensenova-token-plan", "sensenova-console");
 
 const POOL_BODY = {
@@ -106,15 +107,25 @@ function makeResponse() {
   };
 }
 
-/** Mount the real routes; `credentials: null` models a Host without them. */
-async function mount(credentials, config = {}) {
+/**
+ * Mount the real routes; `credentials: null` models a Host without them.
+ * @param {object|null} credentials - the fake credentials service.
+ * @param {object} [config] - raw row config.
+ * @param {object} [deps] - extra seam wiring:
+ *   `llm` a fake llm service, `loadAdapterModule` the peer adapter seam.
+ */
+async function mount(credentials, config = {}, deps = {}) {
   const host = await import(`../index.js?route=${Math.random()}`);
   const handlers = new Map();
+  const services = { credentials, llm: deps.llm };
   host.apply({
-    get: (s) => (s === "credentials" ? credentials : undefined),
+    get: (s) => services[s],
+    emit: deps.emit ?? (() => {}),
     effect: () => () => {},
     webServer: { register(spec) { handlers.set(spec.path, spec.handler); return () => {}; } }
-  }, { consoleBase: "https://console.test", cacheSeconds: 5, ...config });
+  }, { consoleBase: "https://console.test", cacheSeconds: 5, ...config }, {
+    loadAdapterModule: deps.loadAdapterModule
+  });
   return async (path, request) => {
     const response = makeResponse();
     await handlers.get(path)(request, response);
@@ -701,7 +712,246 @@ async function withNetwork(stub, body) {
       snapshot.payload.visionModels.length === 1 &&
       snapshot.payload.visionModels[0].id === "sensenova-6.8-flash-lite",
       JSON.stringify(snapshot.payload.visionModels));
+    // Step three status rides the same poll: the key ref is recognized, the
+    // counts follow the catalog, and the opt-in defaults to off.
+    const llm = snapshot.payload.llm;
+    check("the snapshot carries the secret-free llm block",
+      llm && llm.ok === undefined && typeof llm.hasApiKey === "boolean", JSON.stringify(llm));
+    check("the llm block sees the credential reference",
+      llm.hasApiKey === true && llm.keySource === "credentials", JSON.stringify(llm));
+    check("the llm block counts models and vision models",
+      llm.modelCount === 2 && llm.visionCount === 1, JSON.stringify(llm));
+    check("the provider stays unregistered with the switch off",
+      llm.registerProvider === false && llm.providerRegistered === false, JSON.stringify(llm));
+    check("the llm block never carries the key",
+      !JSON.stringify(llm).includes("sk-test-key-for-routing-only"));
   }).catch((error) => fail("M: vision publish without settings service", error));
+}
+
+// === N. the inference API-key route: save / state / forget / fence =========
+// The `sk-` key is a credential REFERENCE the catalog poll and the registered
+// provider share. These checks pin the three sources (reference, memory, env),
+// the no-echo contract, and the same-origin fence the account route has.
+{
+  // N1. a credentials-backed Host: reference save and forget.
+  try {
+    const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
+    const call = await mount(credentials);
+    const initial = await call(API_KEY_PATH, makeRequest());
+    check("N1 GET reports no key initially",
+      initial.payload.ok === true && initial.payload.hasApiKey === false &&
+      initial.payload.keySource === null && initial.payload.ephemeral === false,
+      JSON.stringify(initial.payload));
+    check("N1 the state never echoes a value field",
+      !("value" in initial.payload) && !("apiKey" in initial.payload));
+
+    const blank = await call(API_KEY_PATH, makePost({ apiKey: "   " }));
+    check("N1 a whitespace key is refused", blank.payload.ok === false && typeof blank.payload.error === "string",
+      JSON.stringify(blank.payload));
+
+    const saved = await call(API_KEY_PATH, makePost({ apiKey: "sk-panel-saved" }));
+    check("N1 save stores the shared reference",
+      saved.payload.ok === true && saved.payload.hasApiKey === true &&
+      saved.payload.keySource === "credentials" && credentials.refs.get("SENSENOVA_API_KEY") === "sk-panel-saved",
+      JSON.stringify(saved.payload));
+    check("N1 the save response carries no echo",
+      !JSON.stringify(saved.payload).includes("sk-panel-saved"));
+
+    // The catalog poll resolves the SAME reference (the two surfaces share one
+    // stored value): the snapshot's secret-free state agrees.
+    const net = await loginNetwork();
+    await withNetwork(async (url, init) => {
+      const target = String(url);
+      if (target.includes("/v1/models") || target.includes("/models")) {
+        return new Response(JSON.stringify({ data: [{ id: "m1", input_modalities: ["text"] }] }),
+          { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return net(url, init);
+    }, async () => {
+      const polled = await call(SNAPSHOT_PATH, makeRequest());
+      check("N1 the snapshot sees the panel-saved key",
+        polled.payload.ok === true && polled.payload.llm?.keySource === "credentials" &&
+        polled.payload.catalogAvailable === true, JSON.stringify(polled.payload.llm));
+    });
+
+    const forgotten = await call(API_KEY_PATH, makePost({ forget: true }));
+    check("N1 forget clears the reference",
+      forgotten.payload.ok === true && forgotten.payload.hasApiKey === false &&
+      !credentials.refs.has("SENSENOVA_API_KEY"), JSON.stringify(forgotten.payload));
+  } catch (error) { fail("N1: credentials-backed API-key route", error); }
+
+  // N2. a Host with no credentials service: memory + ephemeral.
+  try {
+    const call = await mount(null);
+    const saved = await call(API_KEY_PATH, makePost({ apiKey: "sk-memory" }));
+    check("N2 a keyless-service host keeps the key in memory and says so",
+      saved.payload.ok === true && saved.payload.hasApiKey === true &&
+      saved.payload.keySource === "memory" && saved.payload.ephemeral === true,
+      JSON.stringify(saved.payload));
+    const forgotten = await call(API_KEY_PATH, makePost({ forget: true }));
+    check("N2 forget clears the in-memory key",
+      forgotten.payload.ok === true && forgotten.payload.hasApiKey === false,
+      JSON.stringify(forgotten.payload));
+  } catch (error) { fail("N2: memory API-key route", error); }
+
+  // N3. the environment fallback stays authoritative without a reference.
+  {
+    process.env.SENSENOVA_API_KEY = "sk-from-env";
+    try {
+      const credentials = makeCredentials(null);
+      const call = await mount(credentials);
+      const state = await call(API_KEY_PATH, makeRequest());
+      check("N3 an env key is reported with its source",
+        state.payload.hasApiKey === true && state.payload.keySource === "env",
+        JSON.stringify(state.payload));
+      await call(API_KEY_PATH, makePost({ forget: true }));
+      const after = await call(API_KEY_PATH, makeRequest());
+      check("N3 forget leaves the environment value standing",
+        after.payload.hasApiKey === true && after.payload.keySource === "env",
+        JSON.stringify(after.payload));
+    } catch (error) {
+      fail("N3: env fallback", error);
+    } finally {
+      delete process.env.SENSENOVA_API_KEY;
+    }
+  }
+
+  // N4. the trust fence: a foreign page cannot plant or read the key.
+  try {
+    const call = await mount(makeCredentials(null));
+    const foreign = await call(API_KEY_PATH, {
+      method: "POST",
+      headers: { host: "127.0.0.1:19387", origin: "https://evil.example", "content-type": "application/json" },
+      async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ apiKey: "sk-x" }), "utf8"); }
+    });
+    check("N4 a cross-origin API-key POST is refused", foreign.statusCode === 403,
+      String(foreign.statusCode));
+  } catch (error) { fail("N4: API-key trust fence", error); }
+}
+
+// === O. step three registration: the opt-in drives the llm service =========
+// The peer-dependent adapter never loads in this suite: a fake factory is
+// injected through apply's third argument, so what is asserted here is the
+// WIRING — register/re-register with the catalog, the event, teardown on
+// forget, and graceful absence of an llm service. The real peer assembly is
+// covered by test/e2e.mjs.
+{
+  const makeFakeLlm = () => {
+    const calls = { adapter: [], directory: [], releases: 0, events: [] };
+    const llm = {
+      calls,
+      registerAdapter(ids, adapter) {
+        calls.adapter.push({ ids, adapter });
+        return () => { calls.releases += 1; };
+      },
+      registerConfigurableProviders(rows) {
+        calls.directory.push(rows);
+        return () => { calls.releases += 1; };
+      }
+    };
+    return llm;
+  };
+  const makeFakeAdapterDeps = () => {
+    const builds = [];
+    return {
+      builds,
+      loadAdapterModule: async () => ({
+        createSensenovaAdapter(options) {
+          builds.push(options);
+          return { providerIds: ["sensenova-token-plan"], adapter: { fake: true, builtFrom: options.entries.length } };
+        }
+      })
+    };
+  };
+
+  // O1. enabled + llm service + a catalog poll: one registration for the set.
+  try {
+    const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
+    credentials.refs.set("SENSENOVA_API_KEY", "sk-routing");
+    const llm = makeFakeLlm();
+    const adapterDeps = makeFakeAdapterDeps();
+    const events = [];
+    const net = await loginNetwork();
+    await withNetwork(async (url, init) => {
+      const target = String(url);
+      if (target.includes("/v1/models") || target.includes("/models")) {
+        return new Response(JSON.stringify({
+          data: [
+            { id: "SenseNova-Lite", input_modalities: ["text"] },
+            { id: "SenseNova-Vision", input_modalities: ["text", "image"] }
+          ]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return net(url, init);
+    }, async () => {
+      const call = await mount(credentials, { registerProvider: true }, {
+        llm, ...adapterDeps, emit: (event) => events.push(event)
+      });
+      // Let the mount seed (reads the private catalog store) settle.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+      check("O1 the snapshot reports the provider registered",
+        snapshot.payload.llm?.registerProvider === true &&
+        snapshot.payload.llm?.llmAvailable === true &&
+        snapshot.payload.llm?.providerRegistered === true, JSON.stringify(snapshot.payload.llm));
+      check("O1 the adapter was registered under the own (non-colliding) id",
+        llm.calls.adapter.length >= 1 &&
+        JSON.stringify(llm.calls.adapter.at(-1).ids) === JSON.stringify(["sensenova-token-plan"]),
+        JSON.stringify(llm.calls.adapter.map((c) => c.ids)));
+      check("O1 the provider directory row was declared",
+        llm.calls.directory.length >= 1 &&
+        llm.calls.directory.at(-1)[0]?.provider === "sensenova-token-plan",
+        JSON.stringify(llm.calls.directory));
+      const lastBuild = adapterDeps.builds.at(-1);
+      check("O1 the adapter was built from the two catalog models at apiBase",
+        lastBuild.entries.length === 2 && lastBuild.baseUrl === "https://token.sensenova.cn/v1",
+        JSON.stringify({ count: lastBuild.entries.length, baseUrl: lastBuild.baseUrl }));
+      check("O1 the rebuild notified catalog readers",
+        events.includes("llm/adapters-updated"), JSON.stringify(events));
+
+      // A second identical poll must NOT rebuild: the signature gate.
+      const again = await call(SNAPSHOT_PATH, makeRequest());
+      const buildsAfterSecond = adapterDeps.builds.length;
+      await call(SNAPSHOT_PATH, makeRequest());
+      check("O1 an unchanged catalog does not rebuild the provider",
+        adapterDeps.builds.length === buildsAfterSecond,
+        `${buildsAfterSecond} -> ${adapterDeps.builds.length}`);
+      check("O1 the repeated poll still reports registered", again.payload.llm?.providerRegistered === true);
+
+      // Forgetting the key tears the offer down (empty model list).
+      await call(API_KEY_PATH, makePost({ forget: true }));
+      check("O1 forget republishes with an empty model set",
+        adapterDeps.builds.at(-1).entries.length === 0,
+        String(adapterDeps.builds.at(-1).entries.length));
+      check("O1 the previous registration pair was released on republish",
+        llm.calls.releases >= 2, String(llm.calls.releases));
+    });
+  } catch (error) { fail("O1: provider registration on catalog poll", error); }
+
+  // O2. enabled on a Host WITHOUT an llm service degrades, never crashes.
+  try {
+    const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
+    credentials.refs.set("SENSENOVA_API_KEY", "sk-routing2");
+    const adapterDeps = makeFakeAdapterDeps();
+    const net = await loginNetwork();
+    await withNetwork(async (url, init) => {
+      const target = String(url);
+      if (target.includes("/v1/models") || target.includes("/models")) {
+        return new Response(JSON.stringify({ data: [{ id: "m1" }] }),
+          { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return net(url, init);
+    }, async () => {
+      const call = await mount(credentials, { registerProvider: true }, adapterDeps);
+      const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+      check("O2 no llm service means registered=false but the poll survives",
+        snapshot.payload.ok === true && snapshot.payload.llm?.registerProvider === true &&
+        snapshot.payload.llm?.llmAvailable === false &&
+        snapshot.payload.llm?.providerRegistered === false, JSON.stringify(snapshot.payload.llm));
+      check("O2 the peer adapter is never built without an llm service",
+        adapterDeps.builds.length === 0, String(adapterDeps.builds.length));
+    });
+  } catch (error) { fail("O2: registration without llm service", error); }
 }
 
 // The Host routes are exercised against a stubbed console; nothing here may

@@ -132,6 +132,12 @@ function buildHome(fakePort) {
     `    tokenEndpoint: http://127.0.0.1:${fakePort}/oauth2/token`,
     `    jwksEndpoint: http://127.0.0.1:${fakePort}/.well-known/jwks.json`,
     `    redirectUri: http://127.0.0.1:${fakePort}`,
+    // Step three is opt-in, so the run has to opt in: with this on, the Host
+    // tries to register the SenseNova provider for real, and the peer
+    // packages (`@earendil-works/pi-ai`, `@deepseek-ai/dsh-llm*`) must resolve
+    // out of the Host's own runtime — a clean checkout has none. Leaving it
+    // off would test the degradation path and silently skip the feature.
+    "    registerProvider: true",
     ""
   ].join("\n"));
   return home;
@@ -149,8 +155,18 @@ async function startFake(port) {
 /** Boot the Host and resolve with its launch token once it prints one. */
 function startHost(home, port) {
   return new Promise((resolve, reject) => {
+    // The developer's own SenseNova environment is STRIPPED from the child.
+    // `SENSENOVA_API_KEY` in the launching shell reaches the Host as an
+    // environment credential, which the credentials service then treats as
+    // read-only ("supplied read-only by the launching environment") — so the
+    // run fetched the catalog before any key was entered, and the panel's own
+    // save was refused. Both are failures of the harness, not of the plugin,
+    // and both are invisible on a machine that happens to have no key set.
+    // Same three names the offline suites hide (see peer-roots.mjs).
+    const env = { ...process.env, DSH_HOME: home };
+    for (const key of ["SENSENOVA_API_KEY", "SENSENOVA_USERNAME", "SENSENOVA_PASSWORD"]) delete env[key];
     const child = spawn(DSH, ["--profile", "web", "--no-open", "--port", String(port)], {
-      env: { ...process.env, DSH_HOME: home },
+      env,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -387,6 +403,59 @@ try {
     check("a degraded catalog still reports no uncounted models",
       Array.isArray(res.body?.uncountedModels) && res.body?.uncountedModels.length === 0,
       JSON.stringify(res.body?.uncountedModels));
+  }
+
+  // === step three: a pasted key lights the catalog AND the provider =======
+  // Everything above ran with no key, which is the degradation path. Now the
+  // panel saves one through its own route, and the very next poll must fetch
+  // the catalog with it, persist it, and register the provider — no restart,
+  // no hand-written `llm-pi-ai` row.
+  {
+    const KEY = "sk-e2e-not-a-real-key";
+    const before = fake.log.catalog;
+    const saved = await call("/api/dsh-connect-sensenova-token-plan/api-key", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: KEY })
+    });
+    check("the key is accepted and reported as present",
+      saved.body?.ok === true && saved.body?.hasApiKey === true,
+      JSON.stringify(saved.body ?? {}).slice(0, 160));
+    // The credentials service is what makes the key survive a restart; a run
+    // that quietly fell back to process memory would pass `hasApiKey` and lose
+    // the key on the next boot.
+    check("the key landed in the credentials service, not process memory",
+      saved.body?.keySource === "credentials", String(saved.body?.keySource));
+    // The route answers with state, so the assertion is about the whole body:
+    // a key echoed anywhere in a response is the failure this guards.
+    check("no route echoes the key back", !saved.text.includes("sk-e2e"),
+      saved.text.slice(0, 160));
+
+    const res = await call("/api/dsh-connect-sensenova-token-plan/snapshot");
+    check("the key reached the fake's model endpoint", fake.log.catalog > before,
+      `catalog calls ${before} -> ${fake.log.catalog}`);
+    check("the catalog is available once a key is saved",
+      res.body?.catalogAvailable === true, String(res.body?.catalogAvailable));
+    check("the catalog lists every model the key can call",
+      JSON.stringify(res.body?.catalogModels) === JSON.stringify(["SenseNova-Lite", "SenseNova-Vision", "SenseNova-Draw"]),
+      JSON.stringify(res.body?.catalogModels));
+    // Only the input-modality model counts: the image-OUTPUT model must not
+    // be published as one that can take a picture.
+    check("the vision list is exactly the input-modality model",
+      JSON.stringify((res.body?.visionModels ?? []).map((entry) => entry.id)) === JSON.stringify(["SenseNova-Vision"]),
+      JSON.stringify(res.body?.visionModels));
+    check("no key is echoed in the snapshot either", !res.text.includes("sk-e2e"));
+
+    const llm = res.body?.llm ?? {};
+    check("the panel reports the opt-in switch as on", llm.registerProvider === true, String(llm.registerProvider));
+    check("the Host exposes an llm registration service", llm.llmAvailable === true,
+      JSON.stringify(llm).slice(0, 200));
+    check("the SenseNova provider is registered with the Host", llm.providerRegistered === true,
+      JSON.stringify(llm).slice(0, 300));
+    check("it registers under its own provider id", llm.providerId === "sensenova-token-plan", String(llm.providerId));
+    check("the offered models come from the catalog, vision included",
+      llm.modelCount === 3 && llm.visionCount === 1,
+      `modelCount=${String(llm.modelCount)} visionCount=${String(llm.visionCount)}`);
   }
 
   // === a wrong password is classified, and the panel explains itself =====

@@ -27,6 +27,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** The plugin root — the tests import `../index.js` from it. */
 const ROOT = join(HERE, "..");
 
+/** What a root must carry to be the Host runtime rather than a look-alike. */
+const PEER_MARKER = join("@deepseek-ai", "dsh-credentials-local");
+
 /**
  * Where the Host keeps its unpacked runtime, most specific first.
  *
@@ -52,11 +55,18 @@ function candidateRoots() {
 }
 
 /**
- * The first candidate root that actually ships `@deepseek-ai`.
+ * The first candidate root that actually ships the Host's DSH packages.
+ *
+ * The marker is the package the callers resolve BY PATH (`store.test.mjs`
+ * builds `<root>/@deepseek-ai/dsh-credentials-local/lib/index.js` from it), not
+ * merely the presence of an `@deepseek-ai` folder: a dev checkout that linked
+ * in a couple of the LLM peers gets an `@deepseek-ai` scope of its own, and
+ * that near-miss root would win the search while pointing at packages it does
+ * not have.
  * @returns {string|undefined} a `node_modules` root, or `undefined`.
  */
 export function findPeerRoot() {
-  return candidateRoots().find((root) => existsSync(join(root, "@deepseek-ai"))) ?? undefined;
+  return candidateRoots().find((root) => existsSync(join(root, PEER_MARKER))) ?? undefined;
 }
 
 /**

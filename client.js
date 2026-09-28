@@ -40,6 +40,8 @@ function clientFactory(require) {
   const SNAPSHOT_PATH = "/api/dsh-connect-sensenova-token-plan/snapshot";
   /** The account route: lets the panel configure itself, no `.env` editing. */
   const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
+  /** The inference API-key route: saves the `sk-` key the provider uses. */
+  const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
 
   /** Simplified Chinese dictionary (the key-set source of truth). */
   const zh = {
@@ -104,6 +106,26 @@ function clientFactory(require) {
     "trend.none": "该区间内没有消耗记录。",
     "auth.selfRenew": "令牌自动续期中",
     "auth.needsLogin": "需要重新登录",
+    "llm.title": "模型接入（API Key）",
+    "llm.placeholder": "粘贴 sk- 开头的 API Key",
+    "llm.save": "保存 API Key",
+    "llm.saving": "保存中…",
+    "llm.forget": "清除已保存的 API Key",
+    "llm.saved": "API Key 已保存在 DSH 凭据中；下次轮询自动拉取模型目录并注册。",
+    "llm.forgotten": "已清除面板保存的 API Key（环境变量 SENSENOVA_API_KEY 不受影响）。",
+    "llm.empty": "请输入 sk- 开头的 API Key",
+    "llm.footnote": "Key 只保存在 DSH 凭据中，不会写入插件目录或日志；请求时按次读取。",
+    "llm.ephemeral": "注意：当前 Host 没有凭据服务，Key 只保存在内存中，重启后失效。",
+    "llm.keyPresent": "已配置 API Key（来源：{source}）",
+    "llm.noKey": "尚未配置 API Key；保存后下次轮询自动拉取模型目录。",
+    "llm.src.credentials": "DSH 凭据",
+    "llm.src.env": "环境变量",
+    "llm.src.memory": "本机内存",
+    "llm.off": "直接注册未开启：未向 DSH 注册模型提供方（在配置中设 registerProvider: true 开启）。",
+    "llm.registered": "已向 DSH 注册提供方 {id}：共 {models} 个模型，其中 {vision} 个支持图片输入。",
+    "llm.noService": "开关已开启，但当前 Host 没有提供 LLM 注册服务。",
+    "llm.error": "提供方注册失败：{error}",
+    "llm.id": "提供方 ID：{id}",
     "note": "数据来自商汤控制台 API（pool-usage / credit-usage-trend），Host 侧缓存 {cache} 秒；控制台令牌约 3 小时过期，由 Host 用 refresh_token 静默续期。"
   };
 
@@ -170,6 +192,26 @@ function clientFactory(require) {
     "trend.none": "No consumption in this range.",
     "auth.selfRenew": "Token renews itself",
     "auth.needsLogin": "Sign-in required",
+    "llm.title": "Model access (API key)",
+    "llm.placeholder": "Paste your sk- API key",
+    "llm.save": "Save API key",
+    "llm.saving": "Saving…",
+    "llm.forget": "Forget the saved API key",
+    "llm.saved": "API key stored in the DSH credentials; the next poll fetches the catalog and registers.",
+    "llm.forgotten": "Panel-saved API key cleared (an SENSENOVA_API_KEY environment value is left untouched).",
+    "llm.empty": "Enter an API key starting with sk-",
+    "llm.footnote": "The key is kept only in the DSH credentials, never in this plugin's folder or logs; it is read per request.",
+    "llm.ephemeral": "Note: this Host has no credentials service, so the key lives in memory only and is lost on restart.",
+    "llm.keyPresent": "API key configured (source: {source})",
+    "llm.noKey": "No API key yet; once saved, the next poll fetches the model catalog automatically.",
+    "llm.src.credentials": "DSH credentials",
+    "llm.src.env": "environment",
+    "llm.src.memory": "memory",
+    "llm.off": "Direct registration is off: no provider is registered with DSH (set registerProvider: true in the config to enable).",
+    "llm.registered": "Provider {id} registered with DSH: {models} model(s), {vision} accepting image input.",
+    "llm.noService": "Enabled, but this Host exposes no LLM registration service.",
+    "llm.error": "Provider registration failed: {error}",
+    "llm.id": "Provider id: {id}",
     "note": "Data from the SenseNova console API (pool-usage / credit-usage-trend), cached {cache}s on the Host; the console token lasts ~3h and the Host renews it silently from a refresh token."
   };
 
@@ -864,6 +906,175 @@ function clientFactory(require) {
       );
     }
 
+    /**
+     * The secret-free registration status, step three.
+     *
+     * Hook-free on purpose: like the pool cards, it is exercised by the Node
+     * render suite, so a reworded or dropped status line fails a check. It
+     * renders ONLY from the snapshot's `llm` block, which never carries the
+     * key itself — booleans, a source tag, counts, and an optional error.
+     */
+    function ProviderStatus({ llm, tt }) {
+      if (!llm || typeof llm !== "object") return null;
+      const rows = [];
+      // Where the key came from. `memory` and `env` are both real answers;
+      // an unknown source degrades to the raw tag rather than a blank line.
+      const sourceText = llm.hasApiKey === true
+        ? format(tt("llm.keyPresent"), { source: tt(`llm.src.${String(llm.keySource ?? "")}`) || String(llm.keySource ?? "") })
+        : tt("llm.noKey");
+      rows.push(h("div", { style: { ...S.muted, fontSize: 12 } }, sourceText));
+      if (llm.ephemeral === true) {
+        rows.push(h("div", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } }, tt("llm.ephemeral")));
+      }
+      // The registration line is the one the section title promises.
+      if (llm.registerProvider === true && llm.providerRegistered === true) {
+        rows.push(h("div", { style: { fontSize: 12, color: "var(--dsw-alias-state-success-primary)" } },
+          format(tt("llm.registered"), {
+            id: String(llm.providerId ?? ""),
+            models: count(llm.modelCount),
+            vision: count(llm.visionCount)
+          })));
+      } else if (llm.registerProvider === true && llm.llmAvailable !== true) {
+        rows.push(h("div", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } }, tt("llm.noService")));
+      } else if (llm.registerProvider === true && typeof llm.providerError === "string" && llm.providerError !== "") {
+        rows.push(h("div", { style: S.formError }, format(tt("llm.error"), { error: llm.providerError })));
+      } else {
+        rows.push(h("div", { style: S.formNote }, tt("llm.off")));
+      }
+      if (typeof llm.providerId === "string" && llm.providerId !== "") {
+        rows.push(h("div", { style: { ...S.muted, fontSize: 11, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" } },
+          format(tt("llm.id"), { id: llm.providerId })));
+      }
+      return h("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 } }, ...rows);
+    }
+
+    /**
+     * The inference API-key editor (`sk-…`).
+     *
+     * Same security shape as `AccountForm`: show/hide, save/forget, busy and
+     * outcome notes, and the value leaves component state the moment it is
+     * saved. It is hook-based, so like AccountForm the render suite does not
+     * mount it; the secret-free half it displays IS covered, via
+     * `ProviderStatus`. The key is NEVER populated from the snapshot — the
+     * Host only reports whether one exists.
+     */
+    function ApiKeyForm({ llm, onDone, tt }) {
+      const [apiKey, setApiKey] = useState("");
+      const [showKey, setShowKey] = useState(false);
+      const [busy, setBusy] = useState(false);
+      const [formError, setFormError] = useState(null);
+      const [saved, setSaved] = useState(false);
+      const [forgotten, setForgotten] = useState(false);
+
+      const post = useCallback(async (payload) => {
+        const response = await fetch(API_KEY_PATH, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          cache: "no-store",
+          body: JSON.stringify(payload)
+        });
+        return response.json().catch(() => null);
+      }, []);
+
+      const submit = useCallback(async (event) => {
+        event?.preventDefault?.();
+        // A whitespace check, not a prefix check: the platform owns the key
+        // format, and rejecting a shape it later changes would lock users out.
+        if (apiKey.trim() === "") {
+          setFormError(tt("llm.empty"));
+          return;
+        }
+        setBusy(true);
+        setFormError(null);
+        try {
+          const body = await post({ apiKey });
+          if (body && body.ok === true) {
+            setApiKey("");
+            setSaved(true);
+            setForgotten(false);
+            onDone?.();
+            return;
+          }
+          setFormError(body?.error ?? tt("auth.network"));
+        } catch {
+          setFormError(tt("auth.network"));
+        } finally {
+          setBusy(false);
+        }
+      }, [apiKey, post, onDone, tt]);
+
+      const forget = useCallback(async () => {
+        setBusy(true);
+        setFormError(null);
+        try {
+          const body = await post({ forget: true });
+          if (body?.ok !== true) {
+            setFormError(body?.error ?? tt("auth.network"));
+            return;
+          }
+          setForgotten(true);
+          setSaved(false);
+          setApiKey("");
+          onDone?.();
+        } catch {
+          setFormError(tt("auth.network"));
+        } finally {
+          setBusy(false);
+        }
+      }, [post, onDone, tt]);
+
+      // Only a REFERENCE the panel stored can be forgotten: an environment
+      // value has no panel-saved copy to clear, so the button would mislead.
+      const canForget = llm?.hasApiKey === true && llm?.keySource === "credentials";
+      return h(
+        "form",
+        { onSubmit: submit },
+        h(ProviderStatus, { llm, tt }),
+        h(
+          "label",
+          { style: S.field },
+          h("span", { style: S.fieldLabel }, tt("llm.title")),
+          h(
+            "div",
+            { style: { display: "flex", gap: 6, alignItems: "center" } },
+            h("input", {
+              style: { ...S.input, flex: 1 },
+              type: showKey ? "text" : "password",
+              value: apiKey,
+              autoComplete: "off",
+              placeholder: tt("llm.placeholder"),
+              disabled: busy,
+              onChange: (event) => setApiKey(event.target.value)
+            }),
+            h(
+              "button",
+              { type: "button", style: { ...S.button, flex: "none" }, disabled: busy, onClick: () => setShowKey((shown) => !shown) },
+              showKey ? tt("auth.hide") : tt("auth.show")
+            )
+          )
+        ),
+        h(
+          "div",
+          { style: { display: "flex", gap: 8, alignItems: "center", marginTop: 4 } },
+          h(
+            "button",
+            { type: "submit", style: { ...S.primary, ...(busy ? S.primaryBusy : {}) }, disabled: busy },
+            busy ? tt("llm.saving") : tt("llm.save")
+          ),
+          canForget
+            ? h("button", { type: "button", style: S.button, disabled: busy, onClick: forget }, tt("llm.forget"))
+            : null
+        ),
+        forgotten
+          ? h("p", { style: { ...S.formNote, color: "var(--dsh-alias-state-success-primary)" } }, tt("llm.forgotten"))
+          : saved
+            ? h("p", { style: { ...S.formNote, color: "var(--dsh-alias-state-success-primary)" } }, tt("llm.saved"))
+            : null,
+        formError ? h("p", { style: S.formError }, formError) : null,
+        h("p", { style: S.formNote }, tt("llm.footnote"))
+      );
+    }
+
     /** The `main`-slot page. Mounted only while this panel is selected. */
     function PanelPage({ onClose, tt, localeSubscribe }) {
       const [data, setData] = useState(null);
@@ -874,7 +1085,7 @@ function clientFactory(require) {
       // everything — while the account editor starts collapsed: it is a
       // maintenance action, one click away. Remounting on a page switch
       // restores these defaults.
-      const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false });
+      const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false, llm: false });
 
       // The Host half registers the dictionaries, but a runtime language switch
       // only reaches this page through the locale face's subscribe: without it a
@@ -1006,6 +1217,16 @@ function clientFactory(require) {
               SectionCard,
               { title: format(tt("section.trend"), { hours: trend?.hours ?? 24 }), open: openSections.trend, onToggle: () => toggleSection("trend"), tt },
               h(TrendTable, { trend, tt })
+            ),
+            // Step three: save the inference `sk-` key here (DSH credentials
+            // reference, env fallback) and see the direct provider
+            // registration status. Collapsed by default — it is setup, like
+            // the account editor; shown whenever a snapshot exists, since the
+            // key is independent of the console login.
+            h(
+              SectionCard,
+              { title: tt("llm.title"), open: openSections.llm, onToggle: () => toggleSection("llm"), tt },
+              h(ApiKeyForm, { llm: data?.llm ?? null, onDone: () => void load(), tt, bare: true })
             ),
             // The cache age is quoted from the snapshot, not written down here:
             // a note that says 60 while the Host caches for 300 is a lie the
@@ -1147,7 +1368,7 @@ function clientFactory(require) {
       tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
       styles: S,
       helpers: Object.freeze({ clock, clockLong, count, format }),
-      components: Object.freeze({ QuotaCard, PoolCard, TrendTable, SectionCard, AccountForm, PanelPage })
+      components: Object.freeze({ QuotaCard, PoolCard, TrendTable, SectionCard, AccountForm, ApiKeyForm, ProviderStatus, PanelPage })
     });
 
     return { inject, apply, panel };

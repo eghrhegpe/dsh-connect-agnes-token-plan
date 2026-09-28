@@ -88,7 +88,7 @@ npm test                    # 全量离线十套件 + 末尾 e2e-gate（探到 d
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md` |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（15 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（17 条现象→根因→修法） |
 | 提交约定、`upstream/` 红线 | `docs/CONTRIBUTING.md` |
 
 ## 已知的真实坑（改前先看这里有没有）

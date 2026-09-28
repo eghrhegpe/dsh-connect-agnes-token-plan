@@ -2,6 +2,20 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.3.0] — 2026-09-28
+
+第三步「一条龙」：本插件可**直接注册 SenseNova LLM provider**，不再需要手写 `llm-pi-ai` patch 行（opt-in，默认关闭）。
+
+- **面板新增「模型接入（API Key）」区**：粘贴 `sk-` Key 即保存为 DSH 凭据服务引用 `SENSENOVA_API_KEY`（与手写 provider 读取同一引用名），支持显示/隐藏、保存、清除；环境变量 `SENSENOVA_API_KEY` 仍作兜底，清除面板引用不会动环境变量；任何接口响应只回「有无/来源」去密状态，不回显 Key。
+- **新增配置 `registerProvider`（默认 `false`）**：开启后 Host 以 provider id `sensenova-token-plan` 直连 `apiBase`（默认 `https://token.sensenova.cn/v1`）注册 OpenAI 兼容适配器（`ctx.llm.registerAdapter` + `registerConfigurableProviders`），模型列表由 `/v1/models` catalog 自动构建并广播刷新；vision 模型自动带图片输入，无需手填 `imageModelIds`。
+- **catalog 与模型勾选清单存插件私有状态文件** `$DSH_HOME/state/<name>/catalog.json`（原子写、损坏即忽略），不写 dsh 配置；重启后、首次轮询前即凭缓存完成注册。
+- **快照新增 `llm` 块**：`hasApiKey` / `keySource` / `ephemeral` / `registerProvider` / `llmAvailable` / `providerRegistered` / `providerId` / `modelCount` / `visionCount`（成功响应顶层键 13 → 14）。
+- **新增路由** `GET/POST /api/<name>/api-key`（同源围栏 + 4 KB body 上限，与账号路由一致）。
+- 无 `llm` 服务或 peer 加载失败时面板与额度轮询照常工作，provider 静默缺席并在快照里带进去密错误原因。
+- **peer 解析**：`@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm` / `@deepseek-ai/dsh-llm-pi-ai` 进 `peerDependencies`。它们由 Host 发行，npm 装进 profile 的插件能顺着 `profiles/node_modules` 解析到；**开发期 symlink/junction 进 profile 的检出解析不到**（Node 会把链接解成 realpath），表现为面板一直说「provider 缺席」而离线套件全绿——修法与现象见 PITFALLS §16。
+- e2e 现在会真开 `registerProvider` 并断言注册成功（含目录 / vision / 去密状态），并像离线套件一样从子进程环境里剥掉 `SENSENOVA_*`（PITFALLS §17）。
+- Host 侧改动需**完全退出 DSH（含托盘）后重启**生效。
+
 ## [0.2.0] — 2026-09-28
 
 文档与合规加固（无对外行为变化，纯质量与一致性工作）：

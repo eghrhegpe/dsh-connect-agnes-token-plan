@@ -37,7 +37,9 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
   "files": [                            // 发到 registry 时只带这些；必须覆盖 import 图，
                                         // 由 test/package.test.mjs 钉住（panel-*.js 是测试基建，不进包）
     "index.js", "codes.js", "client.js", "console-client.js", "host-config.js",
-    "parsers.js", "throttle-store.js", "trace.js", "util.js",
+    "parsers.js", "throttle-store.js", "catalog-store.js", "api-key-store.js",
+    "llm-models.js", "llm-adapter.js",
+    "trace.js", "util.js",
     "sensenova-auth.js", "sensenova-crypto.js", "token-store.js",
     "cordis.patch.yml", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"
   ],
@@ -61,6 +63,9 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
   "peerDependencies": {                 // 运行时由 Host 提供，不随包安装
     "@deepseek-ai/dsh": ">=0.1.7-rc.2",
     "@deepseek-ai/dsh-credentials": ">=0.1.7-rc.2",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@deepseek-ai/dsh-llm": ">=0.1.5 <0.2",
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.5 <0.2",
     "react": "^18.2.0"
   },
   "engines": { "node": ">=22" }
@@ -71,7 +76,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 
 - **`dsh.bundle.patch`** 指向 `cordis.patch.yml`——这是插件声明「我要在 Host 里插入哪一行、带哪些配置」的地方。
 - **`dsh.client`** 声明 Client 半边跑在 `web` 平台、立即注入，并依赖三套 Host 提供的客户端模块（locale / renderer / layout）。
-- **`peerDependencies`** 是 DSH 运行时（`@deepseek-ai/dsh`、`@deepseek-ai/dsh-credentials`、`react`）——**由 Host 在运行时提供**，不在公共 registry 上。这与 `dsh-connect-qoder` 的处境完全一致：它的 `.npmrc` 里有 `legacy-peer-deps=true` 正是因为 peer 装不到。本插件同理，不要试图 `npm install` 这些 peer。
+- **`peerDependencies`** 是 DSH 运行时（`@deepseek-ai/dsh`、`@deepseek-ai/dsh-credentials`、`react`，以及第三步注册 provider 用的 `@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm` / `@deepseek-ai/dsh-llm-pi-ai`）——**由 Host 在运行时提供**，不在公共 registry 上。这与 `dsh-connect-qoder` 的处境完全一致：它的 `.npmrc` 里有 `legacy-peer-deps=true` 正是因为 peer 装不到。本插件同理，不要试图 `npm install` 这些 peer；但**它们必须能从插件文件所在目录解析到**（Node 的裸模块解析只向上找 `node_modules`）：npm 装进 profile 的插件天然满足，开发期 symlink/junction 进 profile 的检出不满足——见 [PITFALLS.md](./PITFALLS.md) §16。
 - **`exports`** 把 Host/Client 各半边与工具模块都暴露出来，`index.js` 的 `apply/name/inject` 是 Host 入口约定。
 
 ---
@@ -130,8 +135,8 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 
 ## 7. 测试与构建（本插件）
 
-- 本插件测试**无需 `npm install`**：网络层打桩，密码用临时密钥加密，不碰真实账号；peer 依赖由 `test/peer-roots.mjs` 在 DSH 运行时就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到会列全部查过的位置，而非静默跳过。
-- 跑 `npm test`（十个离线套件：`auth` / `store` / `routes` / `panel` / `render` / `parsers` / `config` / `package` / `docs` / `wiring`），末尾接 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。
+- 本插件测试**无需 `npm install`**：网络层打桩，密码用临时密钥加密，不碰真实账号；peer 依赖由 `test/peer-roots.mjs` 在 DSH 运行时就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到会列全部查过的位置，而非静默跳过。这只是让**测试**拿得到 peer；插件运行期自己 `import()` 的解析链是另一回事，见 [PITFALLS.md](./PITFALLS.md) §16。
+- 跑 `npm test`（十一个离线套件：`auth` / `store` / `routes` / `panel` / `render` / `parsers` / `provider` / `config` / `package` / `docs` / `wiring`），末尾接 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。
 - 本插件 **Client 半边无构建步骤**：`client.js` 直接随 bundle 注入，没有 `src/` → 产物的分离（这点与 `dsh-connect-qoder` 不同，后者有 `src/client/` 经 `tsdown` 重建 `lib/client.js`）。
 - 所有离线测试均已通过；各套件用例数会随并行会话变化，以 `npm test` 实际输出为准，不在此处保留快照（详见 [TESTING.md](./TESTING.md)）。
 

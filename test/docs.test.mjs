@@ -153,11 +153,11 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
       bad(`API.md 快照示例不是合法 JSON：${e.message}`);
     }
     if (parsed) {
-      // 契约：快照成功响应的 13 个顶层键（含条件性 visionModels）
-      const canonical = ["auth", "cacheSeconds", "catalogAvailable", "catalogModels", "consoleBase", "now", "ok", "pollSeconds", "pools", "shapeWarnings", "trend", "uncountedModels", "visionModels"].sort().join(",");
+      // 契约：快照成功响应的 14 个顶层键（含条件性 visionModels）
+      const canonical = ["auth", "cacheSeconds", "catalogAvailable", "catalogModels", "consoleBase", "llm", "now", "ok", "pollSeconds", "pools", "shapeWarnings", "trend", "uncountedModels", "visionModels"].sort().join(",");
       const docKeys = Object.keys(parsed).sort().join(",");
       if (docKeys !== canonical) bad(`API.md 快照示例顶层键与契约不符：\n  文档：${docKeys}\n  契约：${canonical}`);
-      else note("API.md 快照示例顶层键与契约一致（13 键）");
+      else note("API.md 快照示例顶层键与契约一致（14 键）");
       const indexSrc = readFileSync(join(ROOT, "index.js"), "utf8");
       const missing = canonical.split(",").filter((k) => !new RegExp(`\\b${k}\\b`).test(indexSrc));
       if (missing.length) bad(`契约键在 index.js 中未出现：${missing.join(", ")}`);

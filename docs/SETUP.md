@@ -76,6 +76,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 | `loginTimeoutMs` | `20000` | 登录流程单次请求超时；`requestTimeoutMs` 是它的旧名，仍然认 |
 | `consoleTimeoutMs` | `15000` | 单次控制台请求超时（`pool-usage` / `models`） |
 | `writeImageModelIds` | `false` | 视觉第二步（§5.1）：**opt-in**，是否把识别出的可看图模型清单写进本插件自己的 DSH settings row（`imageModelIds` / `visionModels` 两个字段），供后续 LLM connect 插件读取。默认关，纯读信息层 |
+| `registerProvider` | `false` | 第三步（§5.2）：**opt-in**，是否由本插件直接向 DSH 注册 OpenAI 兼容 LLM provider（id `sensenova-token-plan`，直连 `apiBase`）。开启后在面板「模型接入」保存 `sk-` Key 即可，catalog 轮询自动建/刷新模型列表，vision 模型自动带图片输入；catalog 与允许清单只存插件私有状态文件。默认关——注册模型源是 Host 级变更 |
 
 端点类字段仅在企业镜像 / 预发环境指向别的主机时才需要动；全部不配即等于平台默认值。任意端点覆盖若不是合法的 http(s) 绝对地址，插件在**挂载时**就报 `config_error`（面板顶部显示），而不是等到第一次轮询才变成莫名其妙的网络错误。
 
@@ -119,5 +120,5 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 | 面板 `console_error` | 控制台没应答 | 通常是下一轮轮询自愈；持续出现再查网络与控制台状态 |
 | 快照接口没有 `auth` 字段 | 跑的还是旧代码 | 完全退出 DSH（含托盘）再启动（见 §4） |
 | 面板提示需要重新登录 | refresh_token 被吊销且环境已无密码 | 面板表单填一次账号密码即可 |
-| 面板「可看图」一行缺失，但 `/v1/models` 有模型 | 没有 API key，模型目录没拉（`catalogAvailable: false`），视觉清单随之不显示 | 在 DSH 凭据服务里配好 `SENSENOVA_API_KEY`（用户级 env 变量层），重启后下一轮 poll 自动亮起来 |
+| 面板「可看图」一行缺失，但 `/v1/models` 有模型 | 没有 API key，模型目录没拉（`catalogAvailable: false`），视觉清单随之不显示 | 在面板「模型接入（API Key）」区粘贴 `sk-` Key 保存（写入 DSH 凭据服务引用），或在用户级 env 变量层配 `SENSENOVA_API_KEY`；下一轮 poll 自动亮起来，无需重启 |
 | 「可看图」清单为空但 catalog 有模型 | 平台当前没有一个模型声明 `input_modalities` 含 `image`（或平台该字段缺失） | 对照 `catalogModels` 里各模型的 `input_modalities` 实际值；商汤 2026-09 起每个条目都带此字段，空清单应是真的没有可看图模型 |

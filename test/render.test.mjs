@@ -14,6 +14,7 @@
  * is the tree React would receive.
  */
 import { render, styles as S, texts, findElement, findAll } from "../panel-render.js";
+import { surface } from "../client-surface.js";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -224,6 +225,77 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const closedChev = findElement(closedTree, (props) => typeof props.viewBox === "string");
   check("the chevron points down when the section is closed",
     closedChev?.props.style?.transform === undefined, String(closedChev?.props.style?.transform));
+}
+
+// === G3. the step-three provider status is secret-free and stateful ======
+// ProviderStatus is the hook-free half of the API-key section: it must say
+// where the key came from WITHOUT carrying the key, and distinguish the four
+// registration states (off / registered / no llm service / failed). These
+// render with the REAL zh dictionary: the identity `tt` returns the key
+// itself, which carries no `{placeholder}` to expand, so composition (the
+// counts, the id, the source) could not be checked through it.
+{
+  const zh = surface.dictionaries.zh;
+  const ttZh = (key) => zh[key] ?? key;
+
+  check("no llm block renders nothing",
+    rendered(render.ProviderStatus, { llm: null, tt }).length === 0
+      && rendered(render.ProviderStatus, { llm: "x", tt }).length === 0);
+
+  const off = rendered(render.ProviderStatus, {
+    llm: { hasApiKey: false, keySource: null, ephemeral: false, registerProvider: false,
+      llmAvailable: false, providerRegistered: false, providerId: "sensenova-token-plan" },
+    tt: ttZh
+  });
+  check("no key asks for one", off.some((line) => line.includes(zh["llm.noKey"])), off.join("\n"));
+  check("the opt-in being off is stated",
+    off.some((line) => line.includes("registerProvider")), off.join("\n"));
+  check("the provider id is shown",
+    off.some((line) => line.includes("sensenova-token-plan")), off.join("\n"));
+
+  const registered = rendered(render.ProviderStatus, {
+    llm: { hasApiKey: true, keySource: "credentials", ephemeral: false, registerProvider: true,
+      llmAvailable: true, providerRegistered: true, providerId: "sensenova-token-plan",
+      modelCount: 3, visionCount: 1,
+      // A defensive field the Host never sends: it must never reach the screen.
+      value: "sk-secret-value" },
+    tt: ttZh
+  });
+  check("a stored key reports the credentials source",
+    registered.some((line) => line.includes(zh["llm.src.credentials"])), registered.join("\n"));
+  check("the registered line carries both counts and the id",
+    registered.some((line) => line.includes("3") && line.includes("1")
+      && line.includes("sensenova-token-plan")), registered.join("\n"));
+  check("the key value itself never renders",
+    !registered.some((line) => line.includes("sk-secret-value")), registered.join("\n"));
+  check("ephemeral is quiet when a credentials service exists",
+    !registered.some((line) => line.includes(zh["llm.ephemeral"])));
+
+  const fromEnv = rendered(render.ProviderStatus, {
+    llm: { hasApiKey: true, keySource: "env", ephemeral: true, registerProvider: true,
+      llmAvailable: true, providerRegistered: true, providerId: "p", modelCount: 0, visionCount: 0 },
+    tt: ttZh
+  });
+  check("an environment key reports the environment source",
+    fromEnv.some((line) => line.includes(zh["llm.src.env"])), fromEnv.join("\n"));
+  check("an ephemeral host says so",
+    fromEnv.some((line) => line.includes(zh["llm.ephemeral"])), fromEnv.join("\n"));
+
+  const noService = rendered(render.ProviderStatus, {
+    llm: { hasApiKey: true, keySource: "credentials", registerProvider: true,
+      llmAvailable: false, providerRegistered: false, providerId: "p" },
+    tt: ttZh
+  });
+  check("enabled without an llm service says so",
+    noService.some((line) => line.includes(zh["llm.noService"])), noService.join("\n"));
+
+  const failed = rendered(render.ProviderStatus, {
+    llm: { hasApiKey: true, keySource: "credentials", registerProvider: true,
+      llmAvailable: true, providerRegistered: false, providerId: "p", providerError: "DUPLICATE_ADAPTER" },
+    tt: ttZh
+  });
+  check("a failed registration shows the error line",
+    failed.some((line) => line.includes("DUPLICATE_ADAPTER")), failed.join("\n"));
 }
 
 // === H. the rendering came from the shipped client ========================

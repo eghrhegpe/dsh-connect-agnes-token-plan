@@ -6,7 +6,7 @@
 
 ## 1. 本插件路由（Host 半边注册）
 
-两条路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号。请求体上限 **4 KB**。
+三条路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号或 Key。请求体上限 **4 KB**。
 
 ### `GET /api/dsh-connect-sensenova-token-plan/snapshot`
 面板轮询的聚合结果。返回体（HTTP 恒为 200，成败靠 body 区分）：
@@ -30,6 +30,14 @@
   "pools": { "plan": {...}, "pools": [/* 每池 5h/7d 窗口、返赠、callableModels / lockedModels */] },
   "trend": { "hours": 24, "models": [/* 每模型消耗 */] },
   "uncountedModels": [/* 在模型目录但不在任何池中的模型 */],
+  "llm": {
+    // 推理 Key 状态（永远不回显 Key 本身）
+    "hasApiKey": true, "keySource": "credentials", "ephemeral": false,
+    // 直接注册开关 / Host llm 服务 / 当前是否已注册
+    "registerProvider": false, "llmAvailable": false,
+    "providerRegistered": false, "providerId": "sensenova-token-plan",
+    "modelCount": 2, "visionCount": 1
+  },
   "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
 }
 ```
@@ -48,6 +56,17 @@
 - 清除账号：`{ "forget": true }` —— 仅删账号引用，保留仍有效的令牌。
 
 非法 body（非对象、JSON 数组、超 4 KB）返回 400；跨域 POST 返回 403 且不写入任何账号。
+
+### `GET /api/dsh-connect-sensenova-token-plan/api-key`
+返回推理 Key 的**去密状态**（无 Key 值本身）：`hasApiKey` / `keySource`（`credentials` 凭据服务引用、`env` 环境变量、`memory` 无凭据服务时的进程内存、或 `null`）/ `ephemeral`。
+
+### `POST /api/dsh-connect-sensenova-token-plan/api-key`
+两种用途，靠 body 区分：
+
+- 保存 Key：`{ "apiKey": "sk-..." }` —— 以 `SENSENOVA_API_KEY` 引用写入 DSH 凭据服务（与手写 `llm-pi-ai` 行读取的是同一个引用名）；进程环境变量仍是兜底来源。下次轮询用新 Key 拉取模型目录并（开关开启时）重建已注册的 provider。
+- 清除 Key：`{ "forget": true }` —— 仅删面板保存的引用并清空私有 catalog 缓存；环境变量 `SENSENOVA_API_KEY` **不**受影响，已注册 provider 的模型列表被清空。
+
+响应同样只含去密状态；非法 body 返回 400，跨域 POST 返回 403。任何响应都不会回显 Key 明文。
 
 ---
 

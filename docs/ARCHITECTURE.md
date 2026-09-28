@@ -159,6 +159,50 @@ trae 源码注释「Provider API 不暴露模态元数据，image 输入靠显�
 `input_modalities`（见上），第二步只是把这份现成信息按 DSH 的
 settings 写路径交出去，不做识别逻辑。
 
+### 5.2 第三步：本插件直接注册 LLM provider（2026-09，opt-in）
+
+第二步把信息「写给别的 connect 插件读」；第三步更进一步——开关
+`registerProvider: true` 后，**本插件自己**调用 `ctx.llm.registerAdapter`
+注册一个直连 `apiBase`（默认 `https://token.sensenova.cn/v1`）的
+OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
+
+关键事实与守口：
+
+- **provider id 用 `sensenova-token-plan`，不能用裸 `sensenova`**：宿主
+  desktop profile 里可能已存在手写 `llm-pi-ai` 的 `sensenova` 行，重名
+  注册会被 `registerAdapter` 以 DUPLICATE_ADAPTER 拒绝。同时注册
+  `registerConfigurableProviders`（`settingsNs` 为本插件自己的 row，
+  `declared:false`），让模型设置页出现该 provider 的配置入口。
+- **Key 仍是同一个引用**：面板「模型接入」区把 `sk-` Key 以
+  `SENSENOVA_API_KEY` 引用存进 DSH 凭据服务（`api-key-store.js`），
+  `process.env` 兜底；与手写行读取的引用名相同，一份值两边都亮。
+  Key 在适配器里是**每次请求现取**（`resolveApiKey`），轮换 Key 无需
+  重新注册；任何快照/路由响应只回布尔状态与来源标签，永不回显明文。
+- **模型清单来自 catalog，vision 自动识别**：`/v1/models` 的完整 entry
+  经 `llm-models.js`（**无 peer 依赖**，离线可测）映射成 pi-ai descriptor：
+  vision 判定复用 §5.1 同一份 `identifyVisionModel`，vision 模型自动带
+  `input:["text","image"]`。两个承重字段：`compat.supportsDeveloperRole:
+  false`（不设会自动探测成 true，商汤端点持续 403）；**不声明 maxTokens
+  值**（声明了会变成输出上限、截断长回复，只钉字段名 `max_tokens`）。
+- **catalog/勾选清单是插件私有状态，不进 dsh 配置**：
+  `catalog-store.js` 写 `$DSH_HOME/state/<name>/catalog.json`
+  （version 载荷、temp+rename 原子写、0600/0700、损坏即忽略），
+  存 catalog entries 与 `enabledModelIds` 允许清单（**空数组=不过滤**，
+  全新安装默认提供全部模型）。重启后、首次轮询前就靠这份缓存先注册。
+- **刷新=重建+重注册+广播**：`PiAiAdapter` 内部按 profiles 快照记忆化，
+  所以 catalog/允许清单变化时整体重建 adapter、替换注册并
+  `ctx.emit("llm/adapters-updated")`；注册失败回滚旧 pair，不拖垮正在
+  服务的模型。快照用「id+vision 位+允许清单」签名去抖，catalog 一小时
+  缓存、面板 30 秒轮询也不会反复重注册。
+- **peer 依赖懒加载**：`llm-adapter.js` import Host 发行的
+  `@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm-pi-ai` /
+  `@deepseek-ai/dsh-llm`，干净检出解析不到，所以 index.js 只在开关开启
+  且 `ctx.get("llm")` 存在时动态 `import("./llm-adapter.js")`；无 llm
+  服务、peer 加载失败都降级为「面板照常用、provider 缺席」，并把
+  去密错误带进快照 `llm.providerError`。图片两 hook
+  （`resolveAttachments` / `resolveImageAccess`）必须接，否则图片消息
+  直接 UNSUPPORTED_CONTENT。
+
 ---
 
 ## 6. 与上游 Python 工具的差异（给移植 / 对照用）

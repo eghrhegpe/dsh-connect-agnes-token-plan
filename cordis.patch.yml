@@ -71,3 +71,15 @@
         writeImageModelIds: false
         imageModelIds: []
         visionModels: []
+        # ------------------------------------------------------------------
+        # Step three ("one-stop service"): register the SenseNova LLM
+        # provider DIRECTLY, with no hand-written llm-pi-ai row. When true
+        # the Host offers an OpenAI-compatible provider
+        # (`sensenova-token-plan`, base apiBase above): the panel's API-key
+        # field stores the `sk-` key in the DSH credentials (the process
+        # environment still works as a fallback), the catalog poll builds
+        # the model list, and vision models accept image input
+        # automatically. The cached catalog and the model allow-list live
+        # in this plugin's own state file, never on this row. Off by
+        # default - registering a model source is a Host-wide change.
+        registerProvider: false

@@ -76,6 +76,39 @@ function makeCredentials() {
   };
 }
 
+/** A fake llm registration service recording the provider pair lifecycle. */
+function makeLlm() {
+  const calls = { adapter: 0, directory: 0, released: 0 };
+  return {
+    calls,
+    registerAdapter(ids, adapter) {
+      calls.adapter += 1;
+      calls.lastIds = ids;
+      calls.lastAdapter = adapter;
+      return () => { calls.released += 1; };
+    },
+    registerConfigurableProviders(rows) {
+      calls.directory += 1;
+      calls.lastRows = rows;
+      return () => { calls.released += 1; };
+    }
+  };
+}
+
+/** The peer adapter seam replacement: no Host peers are needed in wiring. */
+function adapterDeps() {
+  const builds = [];
+  return {
+    builds,
+    loadAdapterModule: async () => ({
+      createSensenovaAdapter(options) {
+        builds.push(options);
+        return { providerIds: ["sensenova-token-plan"], adapter: { fake: true } };
+      }
+    })
+  };
+}
+
 /** A minimal Host request, as Cordis would hand one to a handler. */
 function request(extra = {}) {
   return { method: "GET", headers: { host: "127.0.0.1:19387", ...extra } };
@@ -92,9 +125,10 @@ function response() {
 }
 
 /** Boot a container with the given services and load the plugin into it. */
-async function bootPlugin({ withCredentials = true, config = {} } = {}) {
+async function bootPlugin({ withCredentials = true, withLlm = false, config = {}, de } = {}) {
   const webServer = makeWebServer();
   const credentials = withCredentials ? makeCredentials() : undefined;
+  const llm = withLlm ? makeLlm() : undefined;
   const ctx = new Context();
   // Services are published with `ctx.provide`, the way a Host publishes its
   // own. Assigning `ctx.webServer` from a plugin's apply would be too late:
@@ -103,14 +137,19 @@ async function bootPlugin({ withCredentials = true, config = {} } = {}) {
   // activate — exactly the wiring bug this file exists to catch.
   ctx.provide("webServer", webServer);
   if (credentials !== undefined) ctx.provide("credentials", credentials);
+  // `llm` is consumed optionally through `ctx.get` (this plugin injects only
+  // webServer), the same optional seam the settings/attachments services use.
+  if (llm !== undefined) ctx.provide("llm", llm);
   const host = await import(`../index.js?wiring=${Math.random()}`);
   // The Loader hands Cordis the plugin object; the module's named exports are
   // that object, so pass exactly them. `ctx.plugin` returns the fiber, and
   // disposing that fiber is how a plugin is stopped — the teardown path the
-  // route's `ctx.effect` return value hangs off.
-  const plugin = { name: host.name, inject: host.inject, apply: host.apply };
+  // route's `ctx.effect` return value hangs off. The third apply argument is
+  // test-only seam wiring (the peer adapter module); the real Loader passes
+  // nothing there.
+  const plugin = { name: host.name, inject: host.inject, apply: (fiberCtx, row) => host.apply(fiberCtx, row, de) };
   const fiber = await ctx.plugin(plugin, config);
-  return { ctx, webServer, credentials, host, plugin, fiber, stop: () => fiber?.dispose?.() };
+  return { ctx, webServer, credentials, llm, host, plugin, fiber, stop: () => fiber?.dispose?.() };
 }
 
 // === A. a bad endpoint override is refused, not silently applied ========
@@ -160,14 +199,15 @@ async function bootPlugin({ withCredentials = true, config = {} } = {}) {
   await stop();
 }
 
-// === B. the plugin activates and registers both routes ====================
+// === B. the plugin activates and registers all three routes ===============
 {
   const { webServer, host, stop } = await bootPlugin();
   check("the plugin declares the services it needs", Array.isArray(host.inject) && host.inject.includes("webServer"),
     JSON.stringify(host.inject));
-  check("both routes are registered on mount",
+  check("the snapshot/account/api-key routes are registered on mount",
     webServer.registered.has("/api/dsh-connect-sensenova-token-plan/snapshot")
-    && webServer.registered.has("/api/dsh-connect-sensenova-token-plan/account"),
+    && webServer.registered.has("/api/dsh-connect-sensenova-token-plan/account")
+    && webServer.registered.has("/api/dsh-connect-sensenova-token-plan/api-key"),
     [...webServer.registered.keys()].join(", "));
   // The registered values must be callable handlers, not specs: the real
   // webServer invokes what it was given, and the panel depends on it.
@@ -175,6 +215,8 @@ async function bootPlugin({ withCredentials = true, config = {} } = {}) {
     typeof webServer.registered.get("/api/dsh-connect-sensenova-token-plan/snapshot") === "function");
   check("the account route is a function",
     typeof webServer.registered.get("/api/dsh-connect-sensenova-token-plan/account") === "function");
+  check("the api-key route is a function",
+    typeof webServer.registered.get("/api/dsh-connect-sensenova-token-plan/api-key") === "function");
   await stop();
 }
 
@@ -220,7 +262,7 @@ async function bootPlugin({ withCredentials = true, config = {} } = {}) {
 // in the real Host means a stale panel still polling a route nobody owns.
 {
   const { webServer, stop } = await bootPlugin();
-  check("routes are present while mounted", webServer.registered.size === 2, String(webServer.registered.size));
+  check("routes are present while mounted", webServer.registered.size === 3, String(webServer.registered.size));
   await stop();
   check("unmounting withdraws the routes", webServer.registered.size === 0,
     [...webServer.registered.keys()].join(", "));
@@ -240,6 +282,62 @@ async function bootPlugin({ withCredentials = true, config = {} } = {}) {
   check("it admits the account is ephemeral", res.payload?.auth?.ephemeral === true,
     String(res.payload?.auth?.ephemeral));
   await stop();
+}
+
+// === F. the direct provider registers through the real llm service =======
+// With `registerProvider: true` the mount seed registers the provider even
+// before a console login or a first poll (its model list may start empty).
+// The peer-dependent factory is injected via apply's third arg; what is
+// asserted here is the Cordis-level wiring: optional `ctx.get("llm")`, the
+// register pair, and its release on dispose.
+{
+  const de = adapterDeps();
+  const { webServer, llm, stop } = await bootPlugin({
+    withLlm: true,
+    config: { registerProvider: true },
+    de
+  });
+  // Let the mount seed's async publish settle.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check("the adapter pair was registered with the llm service",
+    llm.calls.adapter === 1 && llm.calls.directory === 1,
+    JSON.stringify({ adapter: llm.calls.adapter, directory: llm.calls.directory }));
+  check("the adapter is owned by the non-colliding provider id",
+    Array.isArray(llm.calls.lastIds) && llm.calls.lastIds[0] === "sensenova-token-plan",
+    JSON.stringify(llm.calls.lastIds));
+  check("the directory row names this plugin's settings namespace",
+    llm.calls.lastRows?.[0]?.settingsNs === "dsh-connect-sensenova-token-plan" &&
+    llm.calls.lastRows[0]?.declared === false,
+    JSON.stringify(llm.calls.lastRows));
+  check("the adapter was built for apiBase with the key resolver seam",
+    de.builds.length === 1 && typeof de.builds[0].resolveApiKey === "function" &&
+    de.builds[0].baseUrl === "https://token.sensenova.cn/v1",
+    JSON.stringify({ builds: de.builds.length, baseUrl: de.builds[0]?.baseUrl }));
+  // The API-key route is served by the same container while registered.
+  const keyRes = response();
+  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/api-key")(request(), keyRes);
+  check("the api-key route answers inside the container",
+    keyRes.statusCode === 200 && keyRes.payload?.ok === true && keyRes.payload?.hasApiKey === false,
+    JSON.stringify(keyRes.payload));
+
+  const releasedBefore = llm.calls.released;
+  await stop();
+  check("disposing the fiber released the registered pair",
+    llm.calls.released >= releasedBefore + 2, String(llm.calls.released));
+  check("disposing withdrew the routes too", webServer.registered.size === 0,
+    [...webServer.registered.keys()].join(", "));
+}
+
+// === F2. the opt-in off registers NOTHING, even with an llm service =======
+{
+  const de = adapterDeps();
+  const { llm, stop } = await bootPlugin({ withLlm: true, config: {}, de });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check("with registerProvider off no pair is registered",
+    llm.calls.adapter === 0 && llm.calls.directory === 0 && de.builds.length === 0,
+    JSON.stringify({ adapter: llm.calls.adapter, builds: de.builds.length }));
+  await stop();
+  check("off leaves nothing to release", llm.calls.released === 0, String(llm.calls.released));
 }
 
 // === G. the wiring test itself stayed offline ===========================

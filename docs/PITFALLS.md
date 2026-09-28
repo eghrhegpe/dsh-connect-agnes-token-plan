@@ -125,3 +125,38 @@
 - **现象**：潜在——诊断文件里出现明文密码或 token。
 - **根因**：每次登录都写 trace 便于「浏览器能用、面板不能」的对照排查，但若不过滤就泄密。
 - **修法**：`sanitizeUrl`/`sanitizeBody` 把 `password`/`access_token`/`refresh_token`/`code`/`code_verifier`/`cookie` 等一律 `[REDACTED]`，trace 才落盘；文件权限 `0o600`，仅留最近 20 个。
+
+---
+
+## 16. 插件目录解析不到 Host 的 peer 依赖，provider 静默缺席
+
+- **现象**：`registerProvider: true` 之后面板一直显示 provider 未注册，快照 `llm.providerError` 里是
+  `Cannot find package '@earendil-works/pi-ai' imported from …/plugins/dsh-connect-sensenova-token-plan/llm-adapter.js`；
+  而离线套件（连 `npm test` 全量）**全绿**，因为离线套件通过 `peer-roots.mjs` 从 Host 运行时就地解析 peer，
+  走的不是插件自己的解析链。
+- **根因**：`llm-adapter.js` 要 import Host 发行的三个 peer（`@earendil-works/pi-ai`、
+  `@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-llm-pi-ai`），而 Node 的裸模块解析是从**该文件所在目录**逐级向上找
+  `node_modules`。npm 装进 profile 的插件（`profiles/web/node_modules/<name>` 是**真实目录**）会向上走到
+  `profiles/node_modules`，那里有 Host 的 peer；开发期的 `~/.dsh/plugins/<name>` 是**符号链接/junction** 进
+  profile 的，Node 默认把链接解成 realpath，于是解析链从插件目录向上只剩 `~/.dsh/plugins`、`~/.dsh`、`~`，
+  一路都没有这些包。
+- **修法**：三个 peer 进 `peerDependencies`（npm 安装时由 profile 侧提供）；开发检出要么用 plugin manager
+  以真实目录安装，要么把这三个包链接进插件自己的 `node_modules`（与 `dsh-connect-qoder` 的开发检出做法一致，
+  `test/peer-roots.mjs` 头部也记了这条 workaround）。失败时 Host 日志会同时打出 `ERR_MODULE_NOT_FOUND` 与这句
+  提示——面板只报「provider 缺席」，日志才说得清是哪一层没解析到。e2e 现在开着 `registerProvider` 真跑一遍注册，
+  这条漏洞不会再以「离线全绿」的形式溜过去。
+
+---
+
+## 17. e2e 继承了开发机的 `SENSENOVA_API_KEY`，测的不是干净安装
+
+- **现象**：本机（shell 里设了 `SENSENOVA_API_KEY`）跑 e2e，「没有 Key 时目录不可用」这类断言失败；
+  面板保存 Key 的请求返回 `ok:false`，错误是
+  `credentials-local: "SENSENOVA_API_KEY" is supplied read-only by the launching environment`。
+- **根因**：e2e 用 `{...process.env}` 拉起 Host，开发机环境里的 Key 就成了子进程的环境凭据；凭据服务把
+  「来自启动环境」的值视为**只读**，于是插件既提前拿到了 Key（目录不再降级），又写不进新值。
+  干净机器上这两条路径都看不见——测试因此只在作者机器上红，属于典型的「只是通常离线」。
+- **修法**：`startHost()` 在 spawn 前删掉 `SENSENOVA_API_KEY`/`SENSENOVA_USERNAME`/`SENSENOVA_PASSWORD`
+  （与离线套件的 `isolateHostEnv` 同一组名字），隔离从「另一个 `$DSH_HOME`」补齐到「另一份环境」。
+  注意这也是**真实产品行为**的体现：用户的 Key 若来自启动环境，面板保存会被凭据服务拒绝，面板会照实显示该原因，
+  此时清掉环境变量或改用它处提供的值即可——插件不会偷偷绕过只读引用。
