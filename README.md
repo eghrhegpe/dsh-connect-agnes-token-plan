@@ -40,15 +40,15 @@ Host 通过只读路由 `GET /api/dsh-connect-sensenova-token-plan/snapshot` 提
 
 ## 安装
 
-**当前只允许挂在 `web` profile；`desktop` profile 禁止接入**——历史事故教训换来的强制约束（桌面端爆炸半径、三重隔离与恢复方法见 [docs/SETUP.md](docs/SETUP.md) §2）。
-
-包已发布 npm，普通用户无需 clone：在 Web 侧边栏「插件」页输入包名，或由带 `plugin_manager` 的会话执行：
+包已发布 npm（`dsh-connect-sensenova-token-plan@0.3.3`）。在 **Web 侧边栏「插件」页**搜索包名安装，或：
 
 ```powershell
-plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-plan" }
+dsh plugin --profile web add dsh-connect-sensenova-token-plan
 ```
 
-开发期从本地检出安装（target 填检出目录绝对路径），以及 git/tarball、镜像源同步等细节见 [docs/SETUP.md](docs/SETUP.md) §2。装完须完全退出 DSH（含托盘）再启动。
+装完须**完全退出 DSH（含托盘）再启动**——Host 半边只在启动时加载一次。开发期从本地检出安装（target 填检出目录绝对路径），以及 git/tarball、镜像源同步等细节见 [docs/SETUP.md](docs/SETUP.md) §2。
+
+> ⚠️ **当前只允许挂在 `web` profile；`desktop` profile 禁止接入**——历史事故教训换来的强制约束（2026-09-27 曾作为桌面必需启动项，因写入宿主不认识的凭据记录把桌面端炸到启动失败；且 client 半边声明 `platform: "web"`，桌面端不是技术目标）。爆炸半径、三重隔离与恢复方法见 [docs/SETUP.md](docs/SETUP.md) §2。
 
 ## 配置
 
