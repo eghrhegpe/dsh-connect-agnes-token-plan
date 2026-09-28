@@ -8,7 +8,7 @@
 
 ## 1. 双仓库关系：`dsh-connect-sensenova-token-plan` 与 `upstream/`
 
-本仓库根目录下有一个 **被 `.gitignore` 忽略的 `upstream/`** 目录，它是从 `~/.dsh/fork/sensenova-usage-dashboard` 移入的**上游仓库**，自带独立的 `.git` 与 GitHub remote（`shaobingtongzhi/sensenova-usage-dashboard`）。
+本仓库根目录下有一个 **被 `.gitignore` 忽略的 `upstream/`** 目录，它是从 `~/.dsh/fork/sensenova-usage-dashboard` 移入的**上游仓库**，自带独立的 `.git` 与 GitHub remote（[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)）。
 
 | 维度 | `dsh-connect-sensenova-token-plan`（本仓库） | `upstream/`（被忽略，独立仓库） |
 |---|---|---|

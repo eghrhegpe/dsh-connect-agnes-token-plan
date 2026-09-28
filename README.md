@@ -105,7 +105,7 @@ dsh-connect-sensenova-token-plan/
                         #    GitHub remote，仅本地容纳、不进本仓库历史、构建期与运行期均不依赖
 ```
 
-> `upstream/` 是从 `~/.dsh/fork/sensenova-usage-dashboard` 移入的参考实现（多账号 JWT 登录 + 桌面窗口 + 打包），与插件的登录封包、接口字段一致，可作为对照；但它不是本插件的依赖，改动它请在其独立仓库内进行。
+> `upstream/` 是从 `~/.dsh/fork/sensenova-usage-dashboard` 移入的参考实现（[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)，多账号 JWT 登录 + 桌面窗口 + 打包），与插件的登录封包、接口字段一致，可作为对照；但它不是本插件的依赖，改动它请在其独立仓库内进行。
 
 ## 诚实声明
 

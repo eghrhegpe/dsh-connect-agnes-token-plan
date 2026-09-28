@@ -34,7 +34,7 @@ Host 半边（`index.js` / `host-config.js` / `codes.js` / `token-store.js` / `t
 ## 4. 红线：什么绝不进版本库
 
 - **凭据**：`.env`、`.env.*`、`*.env` 已被忽略；账号密码、access/refresh token 只经 DSH 凭据服务，不写文件、不写日志。
-- **`upstream/`**：已被 `.gitignore` 忽略。它是独立 git 仓库（自带 `.git` 与 GitHub remote），容纳进本仓库只为本地对照，**不要 `git add upstream/`**，也不要把它的 `accounts.json` 等带进来。
+- **`upstream/`**：已被 `.gitignore` 忽略。它是独立 git 仓库（[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)，自带 `.git` 与 GitHub remote），容纳进本仓库只为本地对照，**不要 `git add upstream/`**，也不要把它的 `accounts.json` 等带进来。
 - **运行时产物**：`*.log`、`logs/`、`tmp/`、`node_modules/`、`dist/`、`build/` 已忽略。
 - **DSH 内部抽取物**：本仓库曾误把 `_asar_extract/`（Host 打包产物）提交进历史，应将其从跟踪中移除（见下方 §6），且不再 add。
 

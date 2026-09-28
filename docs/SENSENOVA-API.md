@@ -110,7 +110,7 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 
 ## 6. 上游 Python 工具（`upstream/`）简介
 
-`upstream/` 是从 `~/.dsh/fork/sensenova-usage-dashboard` 移入、被 `.gitignore` 忽略的**独立 git 仓库**（自带 GitHub remote，不进本仓库历史）。它是本插件登录/用量逻辑的**原始参考实现**，专注桌面端：
+`upstream/` 是从 `~/.dsh/fork/sensenova-usage-dashboard` 移入、被 `.gitignore` 忽略的**独立 git 仓库**（线上：[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)；自带 GitHub remote，不进本仓库历史）。它是本插件登录/用量逻辑的**原始参考实现**，专注桌面端：
 
 - `dashboard.py`：pywebview 原生窗口 + 内置 HTTP 服务，每 5 分钟刷新，窗口内可配账号。
 - `auth_login.py`：OAuth2 授权码 + PKCE + 密码 JWE 加密；JWT 过期后**用明文账号密码重登**。
