@@ -1,0 +1,36 @@
+# dsh-connect-sensenova-token-plan — the bundle's own patch layer.
+#
+# Reads the SenseNova Token Plan quota through the console API and shows it in
+# a sidebar panel. Everything below is plain configuration: edit it here (or
+# override the same id in the profile's cordis.patch.yml) and reinstall/reload.
+#
+# The console token is NOT configured here. Open the panel and sign in once:
+# the Host logs in, keeps the account in the DSH credentials, and renews the
+# token on its own from then on. See README.md.
+- insert:
+    - id: dsh-connect-sensenova-token-plan
+      name: dsh-connect-sensenova-token-plan
+      config:
+        # Console origin. Override if you use a mirror or proxy.
+        consoleBase: https://platform.sensenova.cn
+        # How many hours of per-model credit consumption to show (max 168 = 7d).
+        trendHours: 24
+        # How long the Host caches each console response, in seconds.
+        cacheSeconds: 60
+        # Renew the console token this many seconds before it actually expires,
+        # so a poll never races the expiry boundary. 120 = two minutes.
+        tokenSkewSeconds: 120
+        # The rest of the login flow's endpoints. Everything below is optional:
+        # a key left commented keeps the platform default. Only touch these for
+        # an enterprise mirror or a staging tenant. Any endpoint that is not an
+        # absolute http(s) URL fails the mount with code "config_error" instead
+        # of surfacing later as a confusing network failure.
+        # iamBase: https://iam.sensecoreapi.cn
+        # tokenEndpoint: https://signin.sensecore.cn/oauth2/token
+        # jwksEndpoint: https://signin.sensecore.cn/.well-known/jwks.json
+        # redirectUri: https://platform.sensenova.cn
+        # clientId: nova
+        # scope: openid offline offline_access
+        # encKeyId: public:hydra.openid.id-token
+        # maxHops: 6
+        # requestTimeoutMs: 20000

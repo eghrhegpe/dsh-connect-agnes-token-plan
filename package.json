@@ -1,0 +1,68 @@
+{
+  "name": "dsh-connect-sensenova-token-plan",
+  "displayName": "DSH Connect SenseNova Token Plan",
+  "version": "0.2.0",
+  "private": true,
+  "description": "SenseNova Token Plan credit panel for the Harness Web UI: per-pool quota windows and per-model consumption from the console API, with an in-panel account setup and a self-renewing console token.",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "sensenova",
+    "token-plan",
+    "credits",
+    "quota"
+  ],
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./sensenova-auth": "./sensenova-auth.js",
+    "./token-store": "./token-store.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "codes.js",
+    "client.js",
+    "console-client.js",
+    "host-config.js",
+    "parsers.js",
+    "throttle-store.js",
+    "trace.js",
+    "util.js",
+    "sensenova-auth.js",
+    "sensenova-crypto.js",
+    "token-store.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test/auth.test.mjs && node test/store.test.mjs && node test/routes.test.mjs && node test/panel.test.mjs && node test/render.test.mjs && node test/config.test.mjs && node test/package.test.mjs && node test/wiring.test.mjs",
+    "test:live": "node test/live-jwks.test.mjs",
+    "test:e2e": "node test/e2e.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.1.7-rc.2",
+    "@deepseek-ai/dsh-credentials": ">=0.1.7-rc.2",
+    "react": "^18.2.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

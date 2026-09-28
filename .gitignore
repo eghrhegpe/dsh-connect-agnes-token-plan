@@ -1,0 +1,27 @@
+# 凭据与本机状态：绝不进版本库
+.env
+.env.*
+*.env
+# 运行时产物
+*.log
+logs/
+tmp/
+
+# 依赖与构建（link 安装下通常没有实体目录，保险起见）
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# 编辑器与系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# 上游仓库容器：里面每个上游各占一个「用各自仓库原名」的子目录
+# （如 upstream/sensenova-usage-dashboard/），各自带独立 .git 与 remote。
+# 仅本地容纳、绝不进本仓库历史；保持各嵌套 .git 完好即可独立提交/推送。
+# 以后要塞别的上游，直接在 upstream/ 下并排加同名目录即可，无需改此规则。
+/upstream/

@@ -1,0 +1,206 @@
+/**
+ * The panel's own decisions, run against the code the browser actually loads.
+ *
+ * There is no mirror here. `panel-decision.js` lifts the decision out of
+ * client.js itself, so these checks fail when the PANEL's behaviour changes —
+ * not when a hand-written copy of it changes. The cases that matter most are
+ * the throttle fields, which the old mirror did not model at all: the
+ * greying-out added to stop a bad password becoming a lockout was, as a
+ * consequence, entirely uncovered.
+ */
+import { readFile } from "node:fs/promises";
+import { clientCodeLiterals, decidePanelView, dictionaries, interpretSnapshot, RENDER } from "../panel-decision.js";
+import { CODE } from "../codes.js";
+
+const results = [];
+function check(name, condition, detail = "") {
+  results.push({ name, pass: Boolean(condition), detail });
+}
+function fail(name, error) {
+  results.push({ name, pass: false, detail: String(error?.message ?? error) });
+}
+
+/**
+ * Drive a raw Host response through the panel's own pipeline.
+ *
+ * This is the point of the module: the bytes below are what the Host actually
+ * sends, and they go through the panel's REAL reading and REAL decision.
+ * @param {unknown} body - the parsed snapshot response.
+ * @returns {object} the view model.
+ */
+function view(body) {
+  const read = interpretSnapshot(body);
+  return decidePanelView(read.data, read.error);
+}
+
+const healthy = {
+  ok: true,
+  pools: { pools: [{ id: "pool-1", name: "通用池" }] },
+  trend: { models: [] },
+  auth: { configured: true, hasAccount: true, hasRefreshToken: true, needsAccount: false, ephemeral: false, retryAfterMs: null }
+};
+
+// === A. a working panel renders the pools ================================
+{
+  const result = view(healthy);
+  check("a working panel renders the pools", result.render === RENDER.PANELS, result.render);
+  check("a working panel is not asked for setup", result.needsSetup === false);
+  check("the account editor is offered", result.canManageAccount === true);
+  check("a healthy panel is not waiting", result.coolingMs === null, String(result.coolingMs));
+  check("a healthy panel asks for nothing", result.needsUserAction === false);
+}
+
+// === B. THE REPORTED BUG: a Host response with no `auth` field ===========
+// A Host whose response carried no `auth` left the panel with `auth === null`,
+// and the form was then unreachable. This is the legacy shape: `ok:false` and
+// nothing else. The missing field must not read as "everything is fine".
+{
+  const result = view({ ok: false, error: "no console account is configured", code: "not_configured" });
+  check("a legacy payload without auth reaches the form", result.render === RENDER.FORM, result.render);
+  check("the missing field reads as not needing setup", result.needsSetup === true);
+  check("the reason still names the missing account", result.guidanceKey === "panel.jwtMissing",
+    String(result.guidanceKey));
+}
+
+// === C. a config error must NOT hide behind the form ====================
+{
+  const result = view({ ok: false, error: "bad endpoint override", code: "config_error" });
+  check("a config error shows text, not the form", result.render === RENDER.TEXT, result.render);
+  check("a config error still explains itself", result.guidanceKey === "panel.configError",
+    String(result.guidanceKey));
+}
+
+// === D. a transport error and a malformed body are not success ===========
+{
+  const transport = decidePanelView(null, "network down");
+  check("a transport error reaches the form", transport.render === RENDER.FORM, transport.render);
+  check("a transport error carries no auth", transport.auth === null);
+  // `ok` missing entirely: the Host never sends this, and it must not read as
+  // a working panel.
+  const malformed = view({ pools: {} });
+  check("a body with no `ok` is not a working panel", malformed.render !== RENDER.PANELS, malformed.render);
+  check("a body with no `ok` reaches the form", malformed.render === RENDER.FORM, malformed.render);
+}
+
+// === E. THE THROTTLE: a lockout greys the form, with the platform's number =
+{
+  const locked = {
+    ok: false,
+    error: "login failed: The account has been locked",
+    code: "account_locked",
+    auth: { configured: false, hasAccount: true, retryAfterMs: 8 * 60_000, needsUserAction: false }
+  };
+  const result = view(locked);
+  check("a served wait reaches the panel", result.coolingMs === 8 * 60_000, String(result.coolingMs));
+  check("a lockout does not ask for a corrected password", result.needsUserAction === false);
+  check("a locked account reaches the form", result.render === RENDER.FORM, result.render);
+  // The button is greyed while cooling, and the message states the platform's
+  // own number so the reason it is disabled is never a mystery.
+  const minutes = Math.max(1, Math.ceil(result.coolingMs / 60_000));
+  check("a cooling panel shows the platform's own minutes", minutes === 8, String(minutes));
+}
+
+// === F. THE THROTTLE: a wrong password is parked, not counted down =======
+// A countdown here would be a lie: when it reached zero no retry would happen,
+// because waiting cannot make a wrong password right. The button must stay
+// usable, because retyping IS the fix.
+{
+  const parked = {
+    ok: false,
+    error: "login failed: invalid account or password",
+    code: "login_rejected",
+    auth: { configured: false, hasAccount: true, retryAfterMs: null, needsUserAction: true }
+  };
+  const result = view(parked);
+  check("a parked refusal shows no countdown", result.coolingMs === null, String(result.coolingMs));
+  check("a parked refusal asks the user to act", result.needsUserAction === true);
+  check("a parked refusal leaves the submit button usable", result.coolingMs === null);
+  check("a wrong password still reaches the form", result.render === RENDER.FORM, result.render);
+}
+
+// === F2. a console failure must NOT hide behind the login form ===========
+// The old test read "any failure without data reaches the form", which made
+// an unreachable console look like a sign-in problem: the user was asked for a
+// password for an outage, and the reason was never on screen.
+{
+  const down = {
+    ok: false,
+    error: "console returned HTTP 502",
+    code: "console_error",
+    auth: { configured: true, hasAccount: true, hasRefreshToken: true, needsAccount: false, retryAfterMs: null }
+  };
+  const result = view(down);
+  check("a console failure shows text, not the form", result.render === RENDER.TEXT, result.render);
+  check("a console failure is not asked for setup", result.needsSetup === false);
+  check("a console failure still says what happened",
+    result.failure?.message === "console returned HTTP 502", String(result.failure?.message));
+  // A locked account is the opposite case: the account IS the thing to fix.
+  const locked = view({
+    ok: false, error: "login failed: locked", code: "account_locked",
+    auth: { configured: false, hasAccount: true, needsAccount: false, retryAfterMs: 8 * 60_000 }
+  });
+  check("a lockout still reaches the form", locked.render === RENDER.FORM, locked.render);
+}
+
+// === F2b. the panel only branches on codes the plugin declares ===========
+// client.js is a browser bundle and cannot import codes.js, so it spells the
+// codes out. It cannot share the taxonomy, but it must not invent one: a code
+// the Host never sends, or a typo in one, is a branch that never fires.
+{
+  const declared = new Set(Object.values(CODE));
+  const unknown = clientCodeLiterals.filter((code) => !declared.has(code));
+  check("the panel's codes were read from the shipped client", clientCodeLiterals.length >= 6,
+    clientCodeLiterals.join(", "));
+  check("every code the panel branches on is declared", unknown.length === 0, unknown.join(", "));
+  check("the panel can tell a console failure from an auth failure",
+    clientCodeLiterals.includes(CODE.CONSOLE_ERROR) && clientCodeLiterals.includes(CODE.AUTH_ERROR),
+    clientCodeLiterals.join(", "));
+}
+
+// === F3. the two dictionaries carry the same keys ========================
+// A key added to one language only is invisible in one and renders as a raw
+// key in the other — which is how `panel.shapeDrift` shipped with a Chinese
+// dictionary that could not display it.
+{
+  const zhKeys = Object.keys(dictionaries.zh).sort();
+  const enKeys = Object.keys(dictionaries.en).sort();
+  check("the dictionaries were read from the shipped client", zhKeys.length > 20 && enKeys.length > 20,
+    `zh=${zhKeys.length} en=${enKeys.length}`);
+  const onlyZh = zhKeys.filter((key) => !enKeys.includes(key));
+  const onlyEn = enKeys.filter((key) => !zhKeys.includes(key));
+  check("no key exists only in Chinese", onlyZh.length === 0, onlyZh.join(", "));
+  check("no key exists only in English", onlyEn.length === 0, onlyEn.join(", "));
+}
+
+// === F4. the panel's rhythm comes from the Host, not from a literal ======
+// The bundle used to hold "poll every 30 s" and "cached 60s" as numbers while
+// the Host held the real ones. Those are the kind of pair that drifts the first
+// time either side is tuned, so the bundle is checked for literals rather than
+// for behaviour it cannot exercise here.
+{
+  const source = await readFile(new URL("../client.js", import.meta.url), "utf8");
+  check("the poll timer takes a stated cadence, not a literal",
+    !/setInterval\(\s*\w+\s*,\s*\d/.test(source),
+    (source.match(/setInterval\([^)]*\)/g) ?? []).join(" | "));
+  check("the cache note quotes the snapshot's own number",
+    /cache:\s*data\?\.cacheSeconds/.test(source),
+    (source.match(/cache:[^}]*/g) ?? []).slice(0, 3).join(" | "));
+}
+
+// === G. the extraction is not silently testing stale code ===============
+// Reaching here at all means both markers were found in the shipped client.
+{
+  const result = view(healthy);
+  check("the decision was read from the shipped client", typeof result === "object" && result !== null);
+  check("the reader was read from the shipped client", typeof interpretSnapshot === "function");
+  check("a successful body is read as data", interpretSnapshot(healthy).data === healthy);
+  check("a failed body is read as an error", interpretSnapshot({ ok: false, code: "x" }).data === null);
+}
+
+console.log(JSON.stringify(results, null, 2));
+const failedChecks = results.filter((r) => !r.pass);
+if (failedChecks.length > 0) {
+  console.error(`\n${failedChecks.length}/${results.length} check(s) FAILED`);
+  process.exit(1);
+}
+console.log(`\nall ${results.length} checks passed`);
