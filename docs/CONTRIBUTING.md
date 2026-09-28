@@ -76,3 +76,42 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
   凭据服务里的 key 与 env 里的 key 都能被读到。仍不对称的部分：API key 无写路径（不通过本插件修改），
   所以不给 `token-store.js` 加 `modifyRecord`；`fetchModelCatalog` 只接字符串参数，不关心供方是谁。
   读 key 必须每次轮询时调用（凭据服务可能晚于插件挂载注册），不能在 `apply` 开头缓存。
+
+---
+
+## 8. 投稿 awesome-dsh-plugin 列表（插件市场收录）
+
+投稿指南（唯一权威，改规则以它为准）：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md>
+
+**不要看错仓库**：投稿是向 `awesome-dsh-plugin/awesome-dsh-plugin` 提 PR，加且仅加一个文件
+`data/plugins/eghrhegpe__dsh-connect-sensenova-token-plan.yml`；不要手工编辑对方仓库生成出来的
+README，也不要把条目文件建在本仓库。一个 PR 最多 3 条。
+
+本插件的拟稿（描述只能陈述功能、不带营销词，每句都会被对照代码核对）：
+
+```yaml
+url: https://github.com/eghrhegpe/dsh-connect-sensenova-token-plan
+name: eghrhegpe/dsh-connect-sensenova-token-plan
+category: usage
+description:
+  en: 'SenseNova Token Plan credit panel in the Harness Web sidebar: per-pool quota windows, grant balance and per-model consumption from the SenseNova console API, with in-panel login and automatic token renewal.'
+  zh: '在 Harness Web 侧边栏显示商汤 SenseNova 控制台的 Token Plan 积分用量：各积分池额度窗口、返赠余额与每模型消耗，支持面板内登录与令牌自动续期。'
+```
+
+含 `: ` 的描述必须加引号，否则 YAML 解析失败；`en` 必填且以句号结尾，`zh` 可选。
+
+投稿前的硬门槛（CI 自动检查 + 维护者人工读码）：
+
+- `package.json` 已声明 `dsh.bundle` 且根目录有 `cordis.patch.yml`——已满足（只声明 `dsh.client` 会被拒）；
+- 官方 `@deepseek-ai/*` 包走 `peerDependencies`——已满足；
+- GitHub 仓库需打 `dsh-plugin` topic——已满足（2026-09-28 补上）；
+- 仓库创建满 24 小时（CI 按 GitHub `created_at` 自动卡）；本仓 2026-09-28T05:03:11Z 建仓；
+- 真实可用代码、非占位——已满足；仓库需公开且处于活跃维护。
+
+已发布 npm 包 `dsh-connect-sensenova-token-plan`（0.2.0，2026-09-28；`repository` 指回本仓，列表会
+自动按下载量关联，yml 里无需任何 npm 字段）。注意本机默认 registry 是 npmmirror 镜像，登录与发布都
+必须显式带 `--registry=https://registry.npmjs.org`；发新版前先在 package.json 升版本号（已发布版本
+不可覆盖）。
+
+其余可选增强：根目录放 `screenshots.json` 声明 1–8 张截图；或在 GitHub Release 挂版本无关文件名的
+`.tgz`（yml 的 `tarball:` 字段）。本仓可从源码安装，tarball 不需要。

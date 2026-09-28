@@ -14,14 +14,24 @@
 
 ## 2. 安装
 
-由带 `plugin_manager` 的会话执行，或在插件管理器页面操作：
+**当前只允许挂在 `web` profile；`desktop` profile 禁止接入**（理由见本节后文「环境隔离」）。
+
+由带 `plugin_manager` 的会话（Creator 模式）执行，或在 **Web 侧边栏「插件」页**粘贴同一 target；较新版本 CLI 为 `dsh plugin --profile web add <target>`。target 三种形态：
+
+| target 形态 | 值 | 适用场景 |
+|---|---|---|
+| npm 包名（推荐） | `dsh-connect-sensenova-token-plan`（可钉版本，如 `dsh-connect-sensenova-token-plan@0.2.0`） | 普通用户，无需 clone |
+| git 地址 | `https://github.com/eghrhegpe/dsh-connect-sensenova-token-plan` | 不经 registry 直接装 |
+| 本地路径 | 本检出目录的绝对路径（如 `~\.dsh\plugins\dsh-connect-sensenova-token-plan`） | 开发调试 |
 
 ```powershell
-# target 填本检出的绝对路径（一般在 `~\.dsh\plugins\` 下）
-plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-sensenova-token-plan" }
+plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-plan" }
 ```
 
-安装后，Harness Web UI 侧边栏出现「积分面板」入口；首次打开会提示连接商汤控制台。
+- npm 形态装的是预构建 tarball：本包无安装脚本、无打包依赖（DSH 运行时走 peer，由 Host 提供），不需要 `allowBuilds` 构建授权；
+- 安装器依次询问 profile 配置的 registry 与备用源（默认含 `registry.npmmirror.com`）；刚发布的新版本在镜像源同步可能有几分钟延迟，官方源 `registry.npmjs.org` 立即可用；
+- 安装后，Harness Web UI 侧边栏出现「积分面板」入口；首次打开会提示连接商汤控制台；
+- **装完必须完全退出 DSH（含托盘）再启动**——Host 半边只在启动时加载一次；只改 `client.js` 时浏览器刷新即可。
 
 ### 环境隔离（web 优先，桌面端后置）——强制约束
 

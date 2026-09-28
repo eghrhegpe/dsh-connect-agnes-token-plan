@@ -2,7 +2,6 @@
   "name": "dsh-connect-sensenova-token-plan",
   "displayName": "DSH Connect SenseNova Token Plan",
   "version": "0.2.0",
-  "private": true,
   "description": "SenseNova Token Plan credit panel for the Harness Web UI: per-pool quota windows and per-model consumption from the console API, with an in-panel account setup and a self-renewing console token.",
   "keywords": [
     "dsh-plugin",
@@ -65,6 +64,10 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eghrhegpe/dsh-connect-sensenova-token-plan.git"
   },
   "license": "MIT"
 }

@@ -100,13 +100,13 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 
 ## 4. 安装与重启（和 `dsh-connect-qoder` 同一套）
 
+已发布 npm，普通用户直接按包名安装（无需本地检出）：
+
 ```powershell
-# 由带 plugin_manager 的会话执行，或插件管理器页面操作
-# target 填本检出的绝对路径（一般在 `~\.dsh\plugins\` 下）
-plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-sensenova-token-plan" }
+plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-plan" }
 ```
 
-也可以 `dsh plugin --profile web add <本仓库路径>`（本地开发模式）。
+本地开发时装本检出：`dsh plugin --profile web add <本仓库绝对路径>`，或 `plugin_manager` 的 target 填同一路径。target 三种形态（npm 包名 / git 地址 / 本地路径）与镜像源同步注意事项见 [SETUP.md](./SETUP.md) §2。
 
 **安装后必须重启 DSH 进程**——bundle 的 patch 在启动时读取，Host 半边（`index.js` 等）只在启动时加载一次（见 [PITFALLS.md](./PITFALLS.md) 第 8 条）。只改 `client.js`（Client 半边）时浏览器刷新即可。
 
