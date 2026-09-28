@@ -14,9 +14,7 @@
 
 ## 2. 安装
 
-**当前只允许挂在 `web` profile；`desktop` profile 禁止接入**（理由见本节后文「环境隔离」）。
-
-由带 `plugin_manager` 的会话（Creator 模式）执行，或在 **Web 侧边栏「插件」页**粘贴同一 target；较新版本 CLI 为 `dsh plugin --profile web add <target>`。target 三种形态：
+**Web 与桌面端通用**。由带 `plugin_manager` 的会话（Creator 模式）执行，或在 **Web 侧边栏「插件」页**粘贴同一 target；较新版本 CLI 为 `dsh plugin --profile <profile> add <target>`（`web` / `desktop` 皆可）。target 三种形态：
 
 | target 形态 | 值 | 适用场景 |
 |---|---|---|
@@ -33,22 +31,9 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 - 安装后，Harness Web UI 侧边栏出现「积分面板」入口；首次打开会提示连接商汤控制台；
 - **装完必须完全退出 DSH（含托盘）再启动**——Host 半边只在启动时加载一次；只改 `client.js` 时浏览器刷新即可。
 
-### 环境隔离（web 优先，桌面端后置）——强制约束
+### 环境隔离（历史注记）
 
-**本插件当前只允许挂在 `web` profile；`desktop` profile 禁止接入**，直到插件在 web 端
-稳定运行一个观察期（含一次完整的登录/续期/限流周期）再考虑下发桌面端。理由是教训换来的：
-
-- 桌面端把本插件列为**必需启动项**（`dsh.profile.bundles`），插件任何激活失败都会拖垮
-  整个桌面端——2026-09-27 本插件往共享凭据库写入宿主不认识的 `kind: throttle` 记录，
-  直接把桌面端炸到 startup failed，就是这条链路的实录；
-- web 端与桌面端**共享同一份** `~/.dsh/.credentials.yaml`，但桌面端崩溃的爆炸半径
-  （九个插件全部卡死）远大于 web 端；
-- 开发期底层协议改动（如登录 JWE 封装重做）必须先在爆炸半径小的环境验证。
-
-当前桌面端已做三重隔离（恢复方法见宿主机器 `~/.dsh/profiles/desktop/cordis.patch.yml`
-内的 tombstone 注释——该路径在宿主 profile 目录，**不在本仓库**）：`dsh.profile.bundles`
-已移除、`link:` 依赖已移除、`node_modules` 符号链接已删除、patch 层留有
-`disabled: true` 的墓碑行。
+2026-09-27 本插件曾作为**桌面端必需启动项**（`dsh.profile.bundles`），因往共享凭据库写入宿主不认识的 `kind: throttle` 记录，把桌面端直接炸到 startup failed（爆炸半径是整机插件全卡死）。该问题已修复——节流迁到插件自己的状态文件 `throttle-store.js`（原子写、0600），凭据服务只认 `grant`/`api-key` 两种 kind（见 [PITFALLS.md](./PITFALLS.md) §6）。**2026-09-29 双端实测：web 与桌面端均可正常挂载运行，不再有任何 profile 限制。**
 
 ---
 
