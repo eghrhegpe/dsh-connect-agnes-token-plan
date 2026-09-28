@@ -165,8 +165,17 @@ function clientFactory(require) {
 
   /** Theme-token-only styles; a renamed token degrades looks, never rendering. */
     const S = {
-      page: { padding: "24px 32px 56px", maxWidth: 1040, margin: "0 auto", color: "var(--dsw-alias-label-primary)", fontSize: 14, lineHeight: "22px" },
-      header: { display: "flex", alignItems: "center", gap: 12, marginBottom: 18 },
+      // The shell's center column is `display:flex; flex-direction:column;
+      // overflow:hidden` — it never scrolls itself; every main-slot panel owns
+      // its own scroll body. This root fills the column and clips; the pinned
+      // header stays flex-none and `scroll` (flex:1, min-height:0) takes the
+      // overflow. Without this chain the page grows past the column and the
+      // shell silently truncates everything below the fold.
+      page: { flex: "1 1 auto", height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", color: "var(--dsw-alias-label-primary)", fontSize: 14, lineHeight: "22px" },
+      headerBar: { flex: "none", background: "var(--dsw-alias-bg-base)", position: "relative", zIndex: 1 },
+      header: { display: "flex", alignItems: "center", gap: 12, maxWidth: 1040, margin: "0 auto", padding: "16px 32px 12px" },
+      scroll: { flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" },
+      content: { padding: "6px 32px 56px", maxWidth: 1040, margin: "0 auto" },
       title: { margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "28px" },
       updated: { color: "var(--dsw-alias-label-secondary)", fontSize: 12 },
       spacer: { flex: 1 },
@@ -839,22 +848,32 @@ function clientFactory(require) {
       return h(
         "div",
         { style: S.page, "data-dsh-plugin": "dsh-connect-sensenova-token-plan" },
+        // The bar is pinned (flex:none); everything below scrolls inside
+        // `S.scroll` instead of being clipped by the shell's center column.
         h(
           "div",
-          { style: S.header },
-          h("h1", { style: S.title }, tt("panel.title")),
-          h("span", { style: S.updated }, data ? format(tt("panel.updated"), { time: clock(updatedAt / 1000) }) : ""),
-          authChip,
-          h("span", { style: S.spacer }),
-          // With data on screen a failure is a stale-data warning, so it rides
-          // in the header; without data the body already explains it.
-          failure && data
-            ? h("span", { style: S.error, title: failure.message }, format(tt("panel.error"), { error: failure.message }))
-            : null,
-          h("button", { type: "button", style: S.button, onClick: () => void load() }, tt("panel.refresh")),
-          h("button", { type: "button", style: S.button, onClick: () => onClose?.() }, tt("panel.back"))
+          { style: S.headerBar },
+          h(
+            "div",
+            { style: S.header },
+            h("h1", { style: S.title }, tt("panel.title")),
+            h("span", { style: S.updated }, data ? format(tt("panel.updated"), { time: clock(updatedAt / 1000) }) : ""),
+            authChip,
+            h("span", { style: S.spacer }),
+            // With data on screen a failure is a stale-data warning, so it rides
+            // in the header; without data the body already explains it.
+            failure && data
+              ? h("span", { style: S.error, title: failure.message }, format(tt("panel.error"), { error: failure.message }))
+              : null,
+            h("button", { type: "button", style: S.button, onClick: () => void load() }, tt("panel.refresh")),
+            h("button", { type: "button", style: S.button, onClick: () => onClose?.() }, tt("panel.back"))
+          )
         ),
-        body
+        h(
+          "div",
+          { style: S.scroll },
+          h("div", { style: S.content }, body)
+        )
       );
     }
 
