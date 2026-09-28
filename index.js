@@ -216,6 +216,11 @@ function apply(ctx, config = {}) {
       void writeLoginTrace(hops, error === null ? "ok" : str(error?.code, CODE.AUTH_ERROR));
     }
   });
+  // Vision step two (ARCHITECTURE.md §5.1): the settings-row writer the
+  // snapshot route calls after it has computed the vision list. Filled in
+  // by the `ctx.inject(["settings"], ...)` block below; until then it is a
+  // no-op, so a Host without a settings service still answers polls.
+  const visionPublish = { current: null };
 
   const offRoute = ctx.webServer.register({
     kind: "exact",
@@ -308,6 +313,12 @@ function apply(ctx, config = {}) {
               .map((entry) => identifyVisionModel(entry))
               .filter((entry) => entry.vision)
           : undefined;
+        // Step two: publish the list to this row's own settings namespace so a
+        // later LLM connect plugin can read it. Opt-in, idempotent, and
+        // fire-and-forget — a refused write never fails the poll.
+        if (visionModels !== undefined) {
+          void visionPublish.current?.(visionModels, visionModels.map((entry) => entry.id)).catch(() => {});
+        }
         writeJson(response, 200, {
           ok: true,
           now: Date.now(),
@@ -435,6 +446,55 @@ function apply(ctx, config = {}) {
       }
     }
   }, `${name}: routes`);
+
+  // ------------------------------------------------------------------
+  // Vision step two (ARCHITECTURE.md §5.1): publish which of this key's
+  // models take image input into THIS row's own settings namespace, for
+  // a later LLM connect plugin (dsh-provider-sensenova, etc.) to read.
+  //
+  // The write goes to this plugin's settings row ONLY - never another
+  // provider's `imageModelIds` - so a miscalculated model list can only
+  // affect the panel, not DSH's model routing. It is opt-in
+  // (`writeImageModelIds`), off by default, and idempotent: a no-change
+  // pass costs one revision read and no write.
+  //
+  // `visionPublish.current` (set here) is what the snapshot route calls
+  // after each catalog poll; a Host without a settings service leaves it
+  // null and the publish simply never runs.
+  // ------------------------------------------------------------------
+  ctx.inject(["settings"], (sctx) => {
+    const settingsService = sctx.settings;
+    const descriptorOf = () => {
+      try {
+        const view = settingsService.describe({ redactSecrets: true });
+        const rows = Array.isArray(view) ? view : view?.entries ?? [];
+        return rows.find((candidate) => candidate?.ns === name) ?? null;
+      } catch {
+        return null;
+      }
+    };
+    let publishing = false;
+    let lastPublishedIds = settings.imageModelIds.slice();
+    visionPublish.current = async (visionEntries, ids) => {
+      if (settings.writeImageModelIds !== true) return;
+      if (publishing) return;
+      if (JSON.stringify(lastPublishedIds) === JSON.stringify(ids)) return;
+      const descriptor = descriptorOf();
+      if (descriptor === null) return;
+      publishing = true;
+      try {
+        await settingsService.update(name, {
+          imageModelIds: ids,
+          visionModels: visionEntries
+        }, descriptor.revision);
+        lastPublishedIds = ids.slice();
+      } catch (error) {
+        ctx.logger?.warn?.(`${name}: vision publish refused: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        publishing = false;
+      }
+    };
+  });
 }
 
 export { apply, inject, name, resolveSettings, resolveAuthOverrides, CONFIG_DEFAULTS, hostName, isAdmitted };

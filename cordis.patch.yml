@@ -53,3 +53,21 @@
         # only it is set; the console calls use consoleTimeoutMs above.
         # loginTimeoutMs: 20000
         # requestTimeoutMs: 20000
+        # ------------------------------------------------------------------
+        # Vision step two: publish which of this key's models accept image
+        # input into this row's OWN settings namespace, for a later LLM
+        # connect plugin (dsh-provider-sensenova, etc.) to read. It writes
+        # only its own row - never another provider's imageModelIds - so a
+        # miscalculated model list can only affect the panel, not DSH's
+        # model routing.
+        #
+        # `writeImageModelIds: true`  -> the Host syncs visionModels into
+        #   `imageModelIds` on this row's settings on every catalog poll
+        #   (opt-in, off by default; the panel's read-only info layer is the
+        #   safe shape).
+        # `imageModelIds: []`         -> the last written model-id list.
+        # `visionModels: []`          -> the last full vision identification
+        #   (ids + source markers), kept for a reader that wants the detail.
+        writeImageModelIds: false
+        imageModelIds: []
+        visionModels: []

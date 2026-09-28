@@ -56,8 +56,19 @@ export const CONFIG_DEFAULTS = Object.freeze({
     loginTimeoutMs: 0,
     requestTimeoutMs: 0
   },
-  /** Host names the Host answers as, by default. The operator's list is added. */
-  admittedHosts: ["localhost", "127.0.0.1", "[::1]", "::1"]
+  /**
+   * Vision step two: whether the Host syncs the identified vision-capable
+   * model ids into THIS row's own settings namespace (`imageModelIds`,
+   * `visionModels`) on every catalog poll, for a later LLM connect plugin to
+   * read. Off by default - the read-only info layer is the safe shape. The
+   * writes go to this plugin's OWN settings row only, never another
+   * provider's, so a miscalculated list cannot reach DSH's model routing.
+   */
+  writeImageModelIds: false,
+  /** The last published image-model id list (the reader's primary field). */
+  imageModelIds: [],
+  /** The last full vision identification (id + source marker per model). */
+  visionModels: []
 });
 
 /**
@@ -98,7 +109,18 @@ export function resolveSettings(config) {
         tokenSkewSeconds: Math.max(0, Math.floor(num(source.tokenSkewSeconds, CONFIG_DEFAULTS.tokenSkewSeconds))),
         // Console login-flow overrides, handed to `createAuth` verbatim: it owns
         // the platform defaults, so only what the operator actually set travels.
-        auth: resolveAuthOverrides(source, consoleBase)
+        auth: resolveAuthOverrides(source, consoleBase),
+        // Vision step two: the opt-in and the last published lists. The
+        // lists are read back from the row so a restart does not lose the
+        // answer the Host last computed (a reader that arrives before the
+        // first catalog poll still sees the previous catalog's set).
+        writeImageModelIds: source.writeImageModelIds === true,
+        imageModelIds: Array.isArray(source.imageModelIds)
+          ? source.imageModelIds.filter((id) => typeof id === "string")
+          : CONFIG_DEFAULTS.imageModelIds,
+        visionModels: Array.isArray(source.visionModels)
+          ? source.visionModels.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+          : CONFIG_DEFAULTS.visionModels
       },
       configError: null
     };
