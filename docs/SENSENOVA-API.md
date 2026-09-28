@@ -6,6 +6,25 @@
 
 ---
 
+## 0. 官方参考原文（一手信源，逐字）
+
+> 以下为商汤官方接口文档的**逐字原文**，按原文件名归档于 `sensenova-api-reference/` 目录。本插件**不转述、不删改**这些文件——它们是 `codes.js` / `parsePools` 判据的对照依据。下文各节的「以实测为准」结论是我们的注释层，若与官方原文冲突，以本插件实测为准（详见 [PITFALLS.md](./PITFALLS.md) §20、§21），请勿用原文覆盖实测注释。
+
+| 文件 | 内容 |
+|---|---|
+| [1、快速开始.md](./sensenova-api-reference/1、快速开始.md) | 快速开始 |
+| [2、SenseNova 6.8 Flash Lite.md](./sensenova-api-reference/2、SenseNova 6.8 Flash Lite.md) | SenseNova 6.8 Flash Lite |
+| [3、SenseNova U1.5 Lite.md](./sensenova-api-reference/3、SenseNova U1.5 Lite.md) | SenseNova U1.5 Lite |
+| [4、SenseNova U1.5 Fast.md](./sensenova-api-reference/4、SenseNova U1.5 Fast.md) | SenseNova U1.5 Fast |
+| [5、DeepSeek V4 Flash.md](./sensenova-api-reference/5、DeepSeek V4 Flash.md) | DeepSeek V4 Flash |
+| [6、DeepSeek V4.1 Flash.md](./sensenova-api-reference/6、DeepSeek V4.1 Flash.md) | DeepSeek V4.1 Flash |
+| [7、GLM-5.2.md](./sensenova-api-reference/7、GLM-5.2.md) | GLM-5.2 |
+| [11、模型列表.md](./sensenova-api-reference/11、模型列表.md) | 模型列表 |
+| [12、基础对话与流式输出.md](./sensenova-api-reference/12、基础对话与流式输出.md) | 基础对话与流式输出 |
+| [13、思考模式与可用参数.md](./sensenova-api-reference/13、思考模式与可用参数.md) | 思考模式与可用参数 |
+| [14、错误码.md](./sensenova-api-reference/14、错误码.md) | 错误码 |
+| [15、接入方式.md](./sensenova-api-reference/15、接入方式.md) | 接入方式 |
+
 ## 1. 认证接口（拿到控制台 JWT）
 
 控制台 JWT 约 **180 分钟**（`10800` 秒）有效。登录是标准 **OIDC 授权码流 + PKCE(S256)**，完整链路在 `sensenova-auth.js`：
