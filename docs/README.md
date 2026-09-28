@@ -17,6 +17,7 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [SENSENOVA-API.md](./SENSENOVA-API.md) | 商汤接口全集（认证/OIDC、密码 JWE、用量接口、错误码、上游简介） | 改登录/用量、对照 upstream、排接口字段 |
 | [PITFALLS.md](./PITFALLS.md) | 15 条真实踩坑（现象→根因→修法） | 改代码前避坑、理解防御性代码的来由 |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | 提交约定、红线（凭据/`upstream/` 不进库）、仓库整洁 | 准备提交、清理历史误跟踪 |
+| [CHANGELOG.md](../CHANGELOG.md) | 公开行为变化的版本记录（非 git log 替代） | 看「这个版本改了什么」 |
 
 ## 文档边界（不在此目录写的内容）
 

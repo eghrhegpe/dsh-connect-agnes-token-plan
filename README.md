@@ -73,6 +73,7 @@ npm run test:live  # 额外验一次平台真实 JWKS（显式联网，默认不
 - [docs/SENSENOVA-API.md](docs/SENSENOVA-API.md) — 商汤接口全集（认证/OIDC、密码 JWE、用量接口、错误码）
 - [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑经历（现象→根因→修法，15 条）
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — 提交约定、红线、仓库整洁
+- [CHANGELOG.md](CHANGELOG.md) — 公开行为变化的版本记录（非 git log 替代）
 
 AI 协作会话请先读根目录 [AGENTS.md](AGENTS.md)（验证怎么跑、红线、文档地图）。
 
