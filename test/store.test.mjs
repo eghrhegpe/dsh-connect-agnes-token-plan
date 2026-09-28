@@ -912,6 +912,25 @@ async function withNetwork(stub, body) {
   rmSync(dir, { recursive: true, force: true });
 }
 
+// --- 18. the plugin's credentialKey shim equals the real peer function ----
+// `index.js` hand-rolls credentialKey so it runs without the peer package; this
+// is the machine where that peer DOES resolve, so compare them directly. The
+// literal shape is pinned on every machine by config.test.mjs; here the peer's
+// own output is the reference. If the service ever changes its address format,
+// this goes red instead of the panel quietly losing its stored grant.
+{
+  const { credentialKey: shim } = await import("../index.js");
+  for (const [scope, id] of [
+    ["dsh-connect-sensenova-token-plan", "sensenova-console"],
+    ["dsh-connect-sensenova-token-plan", THROTTLE_ID],
+    ["dsh-llm-rate-panel", "sensenova-console"]
+  ]) {
+    check(`the shim matches the peer credentialKey for ${scope}/${id}`,
+      shim(scope, id) === credentialKey(scope, id),
+      `shim="${shim(scope, id)}" peer="${credentialKey(scope, id)}"`);
+  }
+}
+
 // The store is exercised against stubbed platform responses; nothing here may
 // reach the real one. See the same guard in test/auth.test.mjs.
 const unstubbed = releaseNetworkGuard();

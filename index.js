@@ -44,13 +44,16 @@ import { str } from "./util.js";
  * The service exports `credentialKey` for this, but a plugin that imports it
  * statically cannot be exercised without that peer package present — which is
  * what kept the test suite from running on a clean checkout. The Host's
- * credentials service treats the plain `"scope/id"` string identically, and
- * the store's own checks pin the shape down against the real implementation.
+ * credentials service treats the plain `"scope/id"` string identically. Exported
+ * so `test/config.test.mjs` can pin its LITERAL shape on every machine (a clean
+ * checkout included), and `test/store.test.mjs` can assert it EQUALS the real
+ * peer function where that peer resolves — together they close the gap the old
+ * comment claimed was already closed but never actually tested.
  * @param {string} scope - the plugin's namespace.
  * @param {string} id - the record's name.
  * @returns {string} the record key.
  */
-const credentialKey = (scope, id) => `${scope}/${id}`;
+export const credentialKey = (scope, id) => `${scope}/${id}`;
 
 /** The one read-only route the Client panel polls. */
 const SNAPSHOT_PATH = `/api/${name}/snapshot`;

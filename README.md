@@ -198,7 +198,7 @@ dsh-connect-sensenova-token-plan/
 - 面板显示的是**控制台自己的口径**，与网页控制台一致；`GET /v1/models` 只区分权限，不计费也不占推理额度；
 - 续期在令牌过期前 `tokenSkewSeconds` 触发；若 refresh_token 被吊销且环境里已无密码，面板会明确提示需要重新登录，而不是静默显示旧数据；
 - 凭据（密码、access/refresh token）只经 DSH 凭据服务保存，本插件不写任何明文凭据文件或调试日志；
-- `credentialKey` / `credentialRef` 是**照抄** `@deepseek-ai/dsh-credentials` 格式的（`index.js`、`token-store.js` 各一处），为的是让测试不解析 peer 就能跑。这是笔债：**升级该 peer 包时必须复查这两处**，否则格式一变就会在运行时才炸。
+- `credentialKey` 是**照抄** `@deepseek-ai/dsh-credentials` 格式的（`index.js` 一处），为的是让测试不解析 peer 就能跑。这笔债现在有自动护栏兜着，不再只靠"升级时记得手工复查"：`config.test.mjs` 在**任何机器**（含干净检出）钉死它的字面形状 `"scope/id"`，`store.test.mjs` 在 peer 可解析的机器上再断言它与**真实实现逐值相等**。格式一变——无论是插件这侧手抖还是 peer 包升级改了分隔符——都会红，而不是等到运行时面板读不到自己的 grant。`credentialRef` 仍只在 token-store 迁移路径里按原样使用，无副本。
 
 ## 文件
 

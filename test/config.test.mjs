@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides } from "../index.js";
+import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey } from "../index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const patch = readFileSync(join(here, "..", "cordis.patch.yml"), "utf8");
@@ -73,7 +73,29 @@ check("patch trendHours matches code default", Number(activeValue("trendHours"))
 check("patch cacheSeconds matches code default", Number(activeValue("cacheSeconds")) === CONFIG_DEFAULTS.cacheSeconds, activeValue("cacheSeconds"));
 check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSkewSeconds")) === CONFIG_DEFAULTS.tokenSkewSeconds, activeValue("tokenSkewSeconds"));
 
-// --- 3. the auth overrides resolve to the keys the code and patch share ---
+// --- 3. the credentialKey shim is pinned to its literal shape --------------
+// `index.js` hand-rolls `credentialKey` so the plugin runs without the peer
+// package, but that duplicate can drift from the real service silently: if the
+// format ever changes (a different separator, escaping), the panel would write
+// its grant to one address and read it from another — a lost account with every
+// test still green. This pins the EXACT shape on any machine, clean checkout
+// included; store.test.mjs adds the cross-check against the real peer function
+// where that peer resolves. Together they replace the old comment's untested
+// claim ("the store's checks pin the shape") with an assertion.
+{
+  check("credentialKey joins scope and id with a single slash",
+    credentialKey("scope", "id") === "scope/id", credentialKey("scope", "id"));
+  // The two addresses this plugin actually stores under — a rename of either the
+  // scope or the id is a breaking change to stored grants, so the exact strings
+  // are worth a line here even though they are assembled elsewhere.
+  check("credentialKey builds the record address the plugin reads back",
+    credentialKey("dsh-connect-sensenova-token-plan", "sensenova-console") ===
+      "dsh-connect-sensenova-token-plan/sensenova-console");
+  check("credentialKey does not trim or transform its parts",
+    credentialKey("a b", "c/d") === "a b/c/d", credentialKey("a b", "c/d"));
+}
+
+// --- 4. the auth overrides resolve to the keys the code and patch share ---
 {
   const auth = resolveAuthOverrides(
     { consoleBase: CONFIG_DEFAULTS.consoleBase, iamBase: "https://iam.example", tokenEndpoint: "https://tok.example" },
