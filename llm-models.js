@@ -67,14 +67,17 @@ export const FALLBACK_CONTEXT_WINDOW = 128_000;
 /**
  * Read a positive context window off the catalog entry's known spellings.
  *
- * SenseNova's `/v1/models` entries are kept whole by `console-client.js`, so a
- * field the platform adds later needs no parser change here — only its name has
- * to be added to this list.
+ * `context_length` is the field the platform actually emits (verified against
+ * the live catalog, 2026-09); the other spellings are kept as fallbacks in
+ * case the platform ever reverts to a different name. SenseNova's `/v1/models`
+ * entries are kept whole by `console-client.js`, so a field the platform adds
+ * later needs no parser change here — only its name has to be added to this
+ * list.
  * @param {object} entry - one normalized catalog entry.
  * @returns {number} the declared window, or the fallback.
  */
 export function contextWindowOf(entry) {
-  for (const key of ["context_window", "contextWindow", "max_context_tokens"]) {
+  for (const key of ["context_length", "context_window", "contextWindow", "max_context_tokens"]) {
     const value = Math.floor(num(entry?.[key], 0));
     if (value > 0) return value;
   }

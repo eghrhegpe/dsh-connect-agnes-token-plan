@@ -105,6 +105,10 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     check("context_window wins", contextWindowOf({ context_window: 32000 }) === 32000);
     check("contextWindow wins", contextWindowOf({ contextWindow: 65536 }) === 65536);
     check("max_context_tokens wins", contextWindowOf({ max_context_tokens: 8192 }) === 8192);
+    check("context_length wins (the real /v1/models field, 2026-09)",
+      contextWindowOf({ context_length: 262144 }) === 262144);
+    check("context_length beats the legacy spellings when both present",
+      contextWindowOf({ context_length: 262144, context_window: 32000 }) === 262144);
     check("a fractional value floors", contextWindowOf({ context_window: 100.9 }) === 100);
     check("zero falls back", contextWindowOf({ context_window: 0 }) === FALLBACK_CONTEXT_WINDOW);
     check("negative falls back", contextWindowOf({ context_window: -5 }) === FALLBACK_CONTEXT_WINDOW);
