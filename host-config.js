@@ -56,6 +56,8 @@ export const CONFIG_DEFAULTS = Object.freeze({
     loginTimeoutMs: 0,
     requestTimeoutMs: 0
   },
+  /** Host names the Host answers as, by default. The operator's list is added. */
+  admittedHosts: ["localhost", "127.0.0.1", "[::1]", "::1"],
   /**
    * Vision step two: whether the Host syncs the identified vision-capable
    * model ids into THIS row's own settings namespace (`imageModelIds`,

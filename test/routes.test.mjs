@@ -662,6 +662,48 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("K: one response per request", error));
 }
 
+// === M. vision step two: the settings-row publish does not leak into the
+// poll or crash a Host without a settings service =========================
+// `visionPublish.current` is wired from `ctx.get("settings")` in apply(). The
+// fake ctx in this suite has no settings service, so the publish stays null
+// and a poll with a catalog must still succeed — the write is an enhancement
+// that degrades to "the info layer only", never a dependency of the response.
+{
+  const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
+  // Give the credentials service the API key ref so the catalog is computed.
+  credentials.refs.set("SENSENOVA_API_KEY", "sk-test-key-for-routing-only");
+  // Build on top of a real login stub so the token flow works; extend it
+  // with the /v1/models answer.
+  const net = await loginNetwork();
+  const extendedStub = async (url, init) => {
+    const target = String(url);
+    if (target.includes("/v1/models") || target.includes("/models")) {
+      return new Response(JSON.stringify({
+        data: [
+          { id: "sensenova-6.8-flash-lite", input_modalities: ["text", "image"] },
+          { id: "sensenova-u1.5-lite", input_modalities: ["text"], output_modalities: ["image"] }
+        ]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return net(url, init);
+  };
+  await withNetwork(extendedStub, async () => {
+    const call = await mount(credentials, { writeImageModelIds: true });
+    const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+    // The poll still answers even though no settings service is present.
+    check("a poll with writeImageModelIds still succeeds", snapshot.statusCode === 200,
+      String(snapshot.statusCode));
+    check("the poll reports ok", snapshot.payload.ok === true,
+      JSON.stringify(snapshot.payload).slice(0, 120));
+    // The vision identification reached the snapshot as before.
+    check("the snapshot still carries visionModels",
+      Array.isArray(snapshot.payload.visionModels) &&
+      snapshot.payload.visionModels.length === 1 &&
+      snapshot.payload.visionModels[0].id === "sensenova-6.8-flash-lite",
+      JSON.stringify(snapshot.payload.visionModels));
+  }).catch((error) => fail("M: vision publish without settings service", error));
+}
+
 // The Host routes are exercised against a stubbed console; nothing here may
 // reach the real one. See the same guard in test/auth.test.mjs.
 const unstubbed = releaseNetworkGuard();

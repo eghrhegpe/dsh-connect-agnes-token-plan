@@ -458,43 +458,46 @@ function apply(ctx, config = {}) {
   // (`writeImageModelIds`), off by default, and idempotent: a no-change
   // pass costs one revision read and no write.
   //
-  // `visionPublish.current` (set here) is what the snapshot route calls
-  // after each catalog poll; a Host without a settings service leaves it
-  // null and the publish simply never runs.
+  // `visionPublish.current` is filled in here from `ctx.get("settings")`
+  // (the resolver-not-snapshot pattern: the service may register after
+  // this plugin mounts); a Host without one leaves it null and the
+  // publish simply never runs.
   // ------------------------------------------------------------------
-  ctx.inject(["settings"], (sctx) => {
-    const settingsService = sctx.settings;
-    const descriptorOf = () => {
-      try {
-        const view = settingsService.describe({ redactSecrets: true });
-        const rows = Array.isArray(view) ? view : view?.entries ?? [];
-        return rows.find((candidate) => candidate?.ns === name) ?? null;
-      } catch {
-        return null;
-      }
-    };
-    let publishing = false;
-    let lastPublishedIds = settings.imageModelIds.slice();
-    visionPublish.current = async (visionEntries, ids) => {
-      if (settings.writeImageModelIds !== true) return;
-      if (publishing) return;
-      if (JSON.stringify(lastPublishedIds) === JSON.stringify(ids)) return;
-      const descriptor = descriptorOf();
-      if (descriptor === null) return;
-      publishing = true;
-      try {
-        await settingsService.update(name, {
-          imageModelIds: ids,
-          visionModels: visionEntries
-        }, descriptor.revision);
-        lastPublishedIds = ids.slice();
-      } catch (error) {
-        ctx.logger?.warn?.(`${name}: vision publish refused: ${error instanceof Error ? error.message : String(error)}`);
-      } finally {
-        publishing = false;
-      }
-    };
-  });
+  {
+    const settingsService = ctx.get("settings") ?? null;
+    if (settingsService !== null && typeof settingsService.update === "function") {
+      const descriptorOf = () => {
+        try {
+          const view = settingsService.describe?.({ redactSecrets: true });
+          const rows = Array.isArray(view) ? view : view?.entries ?? [];
+          return rows.find((candidate) => candidate?.ns === name) ?? null;
+        } catch {
+          return null;
+        }
+      };
+      let publishing = false;
+      let lastPublishedIds = settings.imageModelIds.slice();
+      visionPublish.current = async (visionEntries, ids) => {
+        if (settings.writeImageModelIds !== true) return;
+        if (publishing) return;
+        if (JSON.stringify(lastPublishedIds) === JSON.stringify(ids)) return;
+        const descriptor = descriptorOf();
+        if (descriptor === null) return;
+        publishing = true;
+        try {
+          await settingsService.update(name, {
+            imageModelIds: ids,
+            visionModels: visionEntries
+          }, descriptor.revision);
+          lastPublishedIds = ids.slice();
+        } catch (error) {
+          ctx.logger?.warn?.(`${name}: vision publish refused: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          publishing = false;
+        }
+      };
+    }
+  }
 }
 
 export { apply, inject, name, resolveSettings, resolveAuthOverrides, CONFIG_DEFAULTS, hostName, isAdmitted };

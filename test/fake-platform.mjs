@@ -230,7 +230,17 @@ const server = createServer(async (req, res) => {
     return json(res, 200, TREND_BODY);
   }
   if (path.includes("model")) {
-    return json(res, 200, { models: [{ id: "SenseNova-Lite", name: "SenseNova-Lite" }] });
+    // One text-only, one vision-capable, and one image-output-only model,
+    // so the catalog exercise distinguishes input-modality from
+    // output-modality (step-two publish must not treat an out model as a
+    // vision model).
+    return json(res, 200, {
+      models: [
+        { id: "SenseNova-Lite", name: "SenseNova-Lite", input_modalities: ["text"] },
+        { id: "SenseNova-Vision", name: "SenseNova-Vision", input_modalities: ["text", "image"], output_modalities: ["text"] },
+        { id: "SenseNova-Draw", name: "SenseNova-Draw", input_modalities: ["text"], output_modalities: ["image"] }
+      ]
+    });
   }
   return json(res, 404, { error: `no fake route for ${path}` });
 });

@@ -365,6 +365,30 @@ try {
       res.body?.consoleBase === `http://127.0.0.1:${FAKE_PORT}`, String(res.body?.consoleBase));
   }
 
+  // === the vision step-two read side: catalog + visionModels in the
+  // snapshot ==============================================================
+  // The fake catalog carries one text-only, one vision-capable
+  // (input_modalities ["text","image"]) and one image-output-only
+  // (input ["text"], output ["image"]) model. The snapshot must list only
+  // the vision-capable one — an output-only model is NOT a vision model, and
+  // that distinction is what step two publishes to the settings row.
+  // The e2e home has no SENSENOVA_API_KEY, so the catalog is unavailable
+  // here (the model list degrades rather than fabricating): assert that
+  // degraded shape holds AND that visionModels stays ABSENT (not an empty
+  // list) when the key is missing — the panel must not claim "no vision
+  // models" when it never asked the platform.
+  {
+    const res = await call("/api/dsh-connect-sensenova-token-plan/snapshot");
+    check("without an API key the catalog is unavailable",
+      res.body?.catalogAvailable === false, String(res.body?.catalogAvailable));
+    check("no catalog means visionModels is absent, not an empty claim",
+      res.body?.visionModels === undefined,
+      JSON.stringify(res.body?.visionModels ?? null));
+    check("a degraded catalog still reports no uncounted models",
+      Array.isArray(res.body?.uncountedModels) && res.body?.uncountedModels.length === 0,
+      JSON.stringify(res.body?.uncountedModels));
+  }
+
   // === a wrong password is classified, and the panel explains itself =====
   {
     const res = await call("/api/dsh-connect-sensenova-token-plan/account", {
