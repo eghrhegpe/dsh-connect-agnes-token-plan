@@ -13,13 +13,28 @@
       config:
         # Console origin. Override if you use a mirror or proxy.
         consoleBase: https://platform.sensenova.cn
+        # The OpenAI-compatible API base, used only for the optional model
+        # catalog (which models a pool can call). Leave it alone unless the
+        # platform moves the endpoint.
+        apiBase: https://token.sensenova.cn/v1
         # How many hours of per-model credit consumption to show (max 168 = 7d).
         trendHours: 24
         # How long the Host caches each console response, in seconds.
         cacheSeconds: 60
+        # How often the panel asks the Host again, in seconds. The Host states
+        # this to the bundle on every snapshot, so the two cannot disagree about
+        # how fresh the screen is.
+        pollSeconds: 30
+        # Deadline for one console call, in milliseconds. The login flow has its
+        # own (loginTimeoutMs, below) because it walks several IAM hops.
+        consoleTimeoutMs: 15000
         # Renew the console token this many seconds before it actually expires,
         # so a poll never races the expiry boundary. 120 = two minutes.
         tokenSkewSeconds: 120
+        # Extra host names this Host answers as, beyond the loopback defaults
+        # (localhost / 127.0.0.1 / ::1). ADDED to them, never substituted — see
+        # docs/SETUP.md. Uncomment and list to serve the panel from another name.
+        # allowedHosts: []
         # The rest of the login flow's endpoints. Everything below is optional:
         # a key left commented keeps the platform default. Only touch these for
         # an enterprise mirror or a staging tenant. Any endpoint that is not an
@@ -33,4 +48,8 @@
         # scope: openid offline offline_access
         # encKeyId: public:hydra.openid.id-token
         # maxHops: 6
+        # Overall deadline for one sign-in attempt (the multi-hop OIDC walk), in
+        # ms. requestTimeoutMs below is its older spelling and still wins when
+        # only it is set; the console calls use consoleTimeoutMs above.
+        # loginTimeoutMs: 20000
         # requestTimeoutMs: 20000

@@ -12,6 +12,7 @@
  * the form was then unreachable.
  */
 import { loadPeer, installNetworkGuard, isolateHostEnv, isolateStateDir } from "./peer-roots.mjs";
+import { createFileThrottleStore } from "../throttle-store.js";
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
@@ -413,6 +414,13 @@ async function withNetwork(stub, body) {
     const stillLoopback = await widened(SNAPSHOT_PATH, makeRequest());
     check("widening the list does not evict the loopback",
       stillLoopback.statusCode === 200, String(stillLoopback.statusCode));
+
+    // Bare IPv6: the whitelist carries "::1" alongside "[::1]", and both
+    // spellings must reach it. hostName() used to return "" for "::1" (the
+    // first split segment of "::1"), which made the bare entry unreachable —
+    // a host the operator named but no request could ever match.
+    const bare = await call(SNAPSHOT_PATH, makeRequest({ host: "::1" }));
+    check("a bare \"::1\" host is admitted", bare.statusCode === 200, String(bare.statusCode));
   }).catch((error) => fail("D2: DNS rebinding", error));
 }
 
@@ -548,6 +556,83 @@ async function withNetwork(stub, body) {
   check("the account is gone", response.payload.hasAccount === false);
   check("the grant survives", response.payload.hasRefreshToken === true);
   check("the panel is not asked for setup", response.payload.needsAccount === false);
+}
+
+// === L2. the snapshot's contract fields are present and correct ===========
+// Four fields ride on every successful snapshot and the panel branches on each:
+// `shapeWarnings` (PITFALLS §12 — a renamed console field must read as drift,
+// not "no usage"), `catalogAvailable` / `uncountedModels` (the optional model
+// catalog), and `traceFile` (the sanitized login trace a failed sign-in leaves
+// behind). None had a direct assertion before, so a rename or a dropped field
+// stayed invisible until it reached a user. This drives them through the real
+// route with the network stubbed.
+{
+  // A drifted pool body: the parsers still return what they understood, but
+  // `plan` and `pools` are gone from the top level.
+  const DRIFT_POOL_BODY = { result: { data: [] }, series_x: [] };
+  // A token unique to this block. index.js is a module singleton across mounts,
+  // so `invalidate()` records refused tokens process-wide; reusing a JWT an
+  // earlier section had its console reject would make getToken throw "not being
+  // retried" here for a reason unrelated to the fields under test.
+  const l2Token = jwtExpiring(120) + "-l2";
+  // The throttle file is shared across mounts too (same isolated DSH_HOME), and
+  // an earlier section parks a credential refusal that never expires on its own.
+  // Clear it so these contract-field checks start from a clean slate rather than
+  // inheriting another test's parked refusal.
+  await createFileThrottleStore().clear();
+  const driftStub = async (url) => {
+    const target = String(url);
+    if (target.includes("pool-usage")) {
+      return new Response(JSON.stringify(DRIFT_POOL_BODY), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (target.includes("credit-usage-trend")) {
+      return new Response(JSON.stringify(TREND_BODY), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response("{}", { status: 404 });
+  };
+  await withNetwork(driftStub, async () => {
+    const call = await mount(makeCredentials(storedGrant(l2Token, "r", 7200)));
+    const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+    check("a drifted poll still succeeds", snapshot.payload.ok === true, JSON.stringify(snapshot.payload).slice(0, 120));
+    check("shapeWarnings is an array", Array.isArray(snapshot.payload.shapeWarnings),
+      JSON.stringify(snapshot.payload.shapeWarnings));
+    const warnKeys = snapshot.payload.shapeWarnings.map((w) => `${w.api}:${w.missing}`).sort();
+    check("the missing pool keys are reported as drift",
+      warnKeys.includes("pool-usage:plan") && warnKeys.includes("pool-usage:pools"), JSON.stringify(warnKeys));
+    check("a well-shaped trend adds no warning",
+      !warnKeys.some((k) => k.startsWith("credit-usage-trend")), JSON.stringify(warnKeys));
+    check("the panel surfaces the drift rather than reading empty",
+      panelDecision(snapshot.payload).renders === "pools");
+  }).catch((error) => fail("L2: shapeWarnings", error));
+
+  // The healthy path: no drift, and no API key means the catalog degrades to
+  // `catalogAvailable:false` with an empty uncounted list (never undefined).
+  await withNetwork(consoleStub(), async () => {
+    const call = await mount(makeCredentials(storedGrant(l2Token, "r", 7200)));
+    const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+    check("a clean poll reports no drift",
+      Array.isArray(snapshot.payload.shapeWarnings) && snapshot.payload.shapeWarnings.length === 0,
+      JSON.stringify(snapshot.payload.shapeWarnings));
+    check("without an API key the catalog is unavailable", snapshot.payload.catalogAvailable === false,
+      String(snapshot.payload.catalogAvailable));
+    check("uncountedModels is an empty array when there is no catalog",
+      Array.isArray(snapshot.payload.uncountedModels) && snapshot.payload.uncountedModels.length === 0,
+      JSON.stringify(snapshot.payload.uncountedModels));
+  }).catch((error) => fail("L2: clean + no-catalog", error));
+
+  // traceFile: a rejected password must leave the caller a pointer to the
+  // sanitized trace. DSH_HOME is already isolated by isolateStateDir(), so this
+  // writes into a scratch dir, never the real Home.
+  const rejectCredentials = makeCredentials(null);
+  const rejectNet = await loginNetwork({ loginOk: false });
+  await withNetwork(rejectNet, async () => {
+    const call = await mount(rejectCredentials);
+    const response = await call(ACCOUNT_PATH, makePost({ username: "u", password: "wrong" }));
+    check("a rejected sign-in fails cleanly", response.payload.ok === false);
+    check("the failure carries a traceFile pointer",
+      typeof response.payload.traceFile === "string" && response.payload.traceFile.length > 0,
+      String(response.payload.traceFile));
+  }).catch((error) => fail("L2: traceFile", error));
 }
 
 // === K. one response per request ========================================

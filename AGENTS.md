@@ -15,10 +15,13 @@ Host（Node/cordis）走完整 OIDC+PKCE 登录并自续期；Client（React bun
 ```bash
 node test/auth.test.mjs     # 登录/PKCE/JWE/节流分类
 node test/panel.test.mjs    # 面板决策、中英字典一致性
-node test/e2e.mjs           # 端到端：拉起真 Host + 假平台，约 10 秒
-npm test                    # 全量（含下述三个 peer 套件）
+node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch、shape 漂移、trend 求和
+node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
+npm test                    # 全量离线九套件 + 末尾 e2e-gate（探到 dsh CLI 才实跑 e2e，否则 SKIP）
 ```
 
+- **e2e 已在 `npm test` 门禁里**（经 `test/e2e-gate.mjs`），但只在这台机器装了 dsh CLI 时才真跑；
+  CI 里它是独立 best-effort job。手工排查用 `node test/e2e.mjs` 单跑即可。
 - **e2e 只跑一次**。它要启动真实 Host 进程；需要看两段输出就跑一次落盘再读文件，
   不要把同一条命令串两遍。
 - **peer 套件红 ≠ 回归**。`store/routes/wiring.test.mjs` 依赖

@@ -44,18 +44,23 @@ function check(name, condition, detail = "") {
 }
 
 // --- 2. the patch documents every user-facing key the code reads ----------
-// Active keys always carry a value; the auth overrides are commented by design.
-const USER_FACING = [
-  "consoleBase", "trendHours", "cacheSeconds", "tokenSkewSeconds",
-  "iamBase", "tokenEndpoint", "jwksEndpoint", "redirectUri",
-  "clientId", "scope", "encKeyId", "maxHops", "requestTimeoutMs"
-];
-for (const key of USER_FACING) {
+// The list is DERIVED from CONFIG_DEFAULTS, not hand-written. It used to be a
+// literal array that quietly omitted half the keys (apiBase, pollSeconds,
+// consoleTimeoutMs, allowedHosts, loginTimeoutMs), so "a code-side addition
+// cannot go undocumented" was only true for whoever remembered to edit this
+// file too. Now every top-level default and every auth override must appear in
+// the patch — active or commented — or the check fails on its own.
+const ACTIVE_KEYS = Object.keys(CONFIG_DEFAULTS).filter((key) => key !== "auth" && key !== "admittedHosts");
+const AUTH_KEYS = Object.keys(CONFIG_DEFAULTS.auth);
+for (const key of [...ACTIVE_KEYS, ...AUTH_KEYS]) {
   // Matches `key:` (active) or `# key:` / `#key:` (commented) — either way the
   // patch acknowledges the key, so a code-side addition cannot go undocumented.
   const mentioned = new RegExp(`(^|\\s)#?\\s*${key}\\s*:`, "m").test(patch);
   check(`cordis.patch.yml documents ${key}`, mentioned, mentioned ? "" : "key absent from patch");
 }
+// admittedHosts is spelled `allowedHosts` in the patch (the operator's name for
+// it), so derive-and-check would miss it; assert that alias is documented too.
+check("cordis.patch.yml documents allowedHosts", /(^|\s)#?\s*allowedHosts\s*:/m.test(patch), "alias absent from patch");
 
 // The active keys must carry the SAME default the code ships, or the panel's
 // "defaults" and the bundle's "defaults" disagree.

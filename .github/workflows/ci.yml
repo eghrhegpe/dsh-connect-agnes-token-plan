@@ -1,0 +1,72 @@
+name: CI
+
+# Two tiers, on purpose.
+#
+#   offline — the nine peer-free / stubbed-network suites. These are the real
+#             gate: they run on a clean checkout with no DSH install and no
+#             network (test/peer-roots.mjs installs a sentinel that fails any
+#             request escaping a stub), so a red here is always a regression.
+#   e2e     — boots a REAL `dsh web` process against a fake platform. It proves
+#             the loader, routes, and trust fence assemble correctly — the class
+#             of bug the offline suites cannot see. But it needs the dsh CLI and
+#             a host that can bind loopback ports, which a generic runner may not
+#             provide, so it is best-effort: it reports its result without
+#             turning the build red when the environment cannot support it.
+#
+# The e2e suite also runs inside `npm test` locally via test/e2e-gate.mjs, which
+# SKIPs cleanly when the CLI is absent; this workflow keeps a separate, explicit
+# signal for it rather than hiding it behind a green offline run.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline:
+    name: Offline suites (hard gate)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      # No dependencies to install: the plugin has only peerDependencies (react,
+      # @deepseek-ai/dsh*), which the offline suites resolve from the Host
+      # runtime or stub outright. A bare `node test/*.mjs` is the whole contract.
+      - name: Run the offline suites
+        run: |
+          set -e
+          node test/auth.test.mjs
+          node test/store.test.mjs
+          node test/routes.test.mjs
+          node test/panel.test.mjs
+          node test/render.test.mjs
+          node test/parsers.test.mjs
+          node test/config.test.mjs
+          node test/package.test.mjs
+          node test/wiring.test.mjs
+
+  e2e:
+    name: End-to-end (best effort)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # The e2e harness spawns `dsh web`; without the CLI the gate prints SKIP
+      # and exits 0. Install it if a registry source is configured, otherwise
+      # let the gate skip — the offline job above is the actual gate.
+      - name: Provide the dsh CLI (if available)
+        run: npm install -g @deepseek-ai/dsh || echo "dsh CLI not installable here; e2e will SKIP"
+      - name: Run the end-to-end suite
+        env:
+          PANEL_DIR: ${{ github.workspace }}
+        run: node test/e2e.mjs

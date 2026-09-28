@@ -52,11 +52,12 @@ Host 通过只读路由 `GET /api/dsh-connect-sensenova-token-plan/snapshot` 提
 ## 测试
 
 ```powershell
-npm test         # 八个测试文件依次跑，全部离线
+npm test         # 九个离线测试文件依次跑，末尾再跑端到端（无 dsh CLI 时自动 SKIP）
+npm run test:e2e # 只跑端到端：拉起真 Host + 假平台（需 dsh CLI 在 PATH）
 npm run test:live  # 额外验一次平台真实 JWKS（显式联网，默认不跑）
 ```
 
-`npm test` **完全离线**，并且这一点是被断言的而非声称的：`test/peer-roots.mjs` 装了一个网络哨兵，任何逃出打桩的请求都会让测试失败并报出 URL。八个测试文件各自负责一层：
+`npm test` 的**前九个文件完全离线**，并且这一点是被断言的而非声称的：`test/peer-roots.mjs` 装了一个网络哨兵，任何逃出打桩的请求都会让测试失败并报出 URL。第九个之后是 `test/e2e-gate.mjs`——它探测到 `dsh` CLI 就实跑端到端、跑不过就是红，探不到就打一行醒目的 SKIP 并退出 0（没装 CLI 不是回归）。九个离线文件各自负责一层：
 
 | 文件 | 覆盖 |
 | --- | --- |
@@ -66,7 +67,8 @@ npm run test:live  # 额外验一次平台真实 JWKS（显式联网，默认不
 | `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误 |
 | `test/panel.test.mjs` | **面板自己的代码**（把 `client.js` 作为模块加载后直接调用，不是抄一份、也不抠源码，见 `client-surface.js`）、**中英文字典键集一致**、控制台故障不走登录表单 |
 | `test/render.test.mjs` | **面板渲染出的数字**（同样走 `client-surface.js` 物化的真组件，见 `panel-render.js`）：`used/limit` 写反、剩余量丢失、进度条色阶、除零都会红 |
-| `test/config.test.mjs` | `CONFIG_DEFAULTS` 与 `cordis.patch.yml` 不静默漂移 |
+| `test/parsers.test.mjs` | **控制台响应解析层**（纯函数，无网络）：字符串数值/epoch 归一（§11）、`reset_at="0"` 不得读成 1970、`checkShape` 双向漂移检测（§12 的 `shapeWarnings` 来源）、trend 对 points **求和**而非取首个 |
+| `test/config.test.mjs` | `CONFIG_DEFAULTS` 与 `cordis.patch.yml` 不静默漂移；user-facing 键清单**从 `CONFIG_DEFAULTS` 派生**，新加默认值忘了写进 patch 会直接红 |
 | `test/package.test.mjs` | **`files` 清单覆盖 import 图**：从 `main`/`exports` 走静态 import 闭包，可达文件不在 `files` 里就红（曾漏 5 个模块，打包即崩）；顺带钉住"上了 `files` 却无人引用"的死重 |
 
 几件值得知道的事：
@@ -75,6 +77,7 @@ npm run test:live  # 额外验一次平台真实 JWKS（显式联网，默认不
 - **`test:live` 是唯一允许联网的检查**，只拉公开 JWKS，不带凭据、不发登录请求。默认跑它意味着「测试会因与插件无关的外部原因失败」，也模糊了那条最重要的界线：验证不该默认等于对真实服务发请求。
 - **一个请求只答一次，而且这件事是被断言的。** 保存账号的成功路径曾经写过两次响应（`try` 里的 `writeJson` 没有 `return`，流程漏到第二次）：真实 `ServerResponse` 会在第二次 `writeHead` 抛 `ERR_HTTP_HEADERS_SENT`，而用户看不到——第一个响应已经到浏览器了。测试里的假 `response` 当时接受两次写入，所以它一直是绿的；现在它会数。
 - **本机的 `SENSENOVA_*` 环境变量被测试隔离。** `index.js` 在挂载时从 `process.env` 读 API key，一台真配了它的机器会走进套件从未打桩的分支（真去拉模型目录，并把一个非控制台 token 混进断言）。只在一台干净机器上绿、在作者机器上红的套件不叫离线，叫「通常离线」。`test/peer-roots.mjs` 的 `isolateHostEnv()` 负责这件事。
+- **端到端也在 `npm test` 门禁里，但会优雅跳过。** 唯一能证明装配正确的那条路（真 `dsh web` + 假平台）历史上被排除在默认跑之外——而「嵌套 `auth:` 块被静默忽略、面板拿出厂默认值打到**真平台**锁号」这类最危险的 bug 恰恰只有端到端抓得到。现在 `npm test` 末尾接 `test/e2e-gate.mjs`：装了 dsh CLI 就实跑、失败即红；没装就打一行醒目 SKIP 并退出 0（缺 CLI 不是回归）。它同时有独立的 `.github/workflows/ci.yml`：离线九套件是硬门禁，端到端是 best-effort。
 - **凭据文件的写入是被真实解析器把关的。** 本插件曾写过一条 `kind: "throttle"` 记录到 `~/.dsh/.credentials.yaml`——凭据服务只认 `kind: "grant"`，解析报错后 required 的 `credentials` 插件无法激活，**桌面端和 web 端整体起不来**（2026-09-27 事故）。根修后，节流记录改用 `kind: "grant"` + payload 内 `marker` 区分；`store.test.mjs` 会把本插件实际写出的记录喂给真实的 `parseCredentialsDocument`，任何非法形状在提交前就会红。若再遇到 Host 拒绝启动并报 `unknown kind`：删掉 `.credentials.yaml` 里 `records:` 下本插件命名空间（`dsh-connect-sensenova-token-plan/...`）的异常记录即可，其余记录不受影响。
 
 测试无需 `npm install`：`@deepseek-ai/dsh-credentials` / `@deepseek-ai/cordis` 是 Host 里的 peer 依赖，由 `test/peer-roots.mjs` 在 DSH 运行时里就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到时会列出所有查过的位置，而不是静默跳过。

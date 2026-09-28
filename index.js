@@ -144,10 +144,6 @@ function apply(ctx, config = {}) {
   // A malformed row is reported through the snapshot rather than thrown out of
   // `apply`, which would take the whole plugin down at mount.
   const { settings, configError: rowError } = resolveSettings(config);
-  // Hand the endpoint overrides to the auth module once, at mount: after this
-  // every console call, token renewal, and password seal uses the configured
-  // hosts. A malformed override must fail loudly here rather than become a
-  // baffling network error on the first poll.
   let configError = rowError;
   // Build the auth instance once, at mount: after this every console call,
   // token renewal, and password seal uses the configured hosts. A malformed

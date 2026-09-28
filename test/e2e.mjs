@@ -22,8 +22,10 @@
  * outright (see resolveAuthOverrides), and this harness asserts the redirect
  * actually took effect before it lets a sign-in happen.
  *
- * Run it with `npm run test:e2e`. It is NOT part of `npm test`: it boots a
- * server, so it is slower and needs the dsh CLI on PATH.
+ * Run it directly with `npm run test:e2e`, or through `npm test`: the default
+ * gate ends in `test/e2e-gate.mjs`, which runs this file when the dsh CLI is on
+ * PATH and prints a loud SKIP (exit 0) when it is not. It boots a server, so it
+ * is slower than the offline suites and needs the CLI present to actually run.
  */
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
