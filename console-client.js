@@ -10,7 +10,7 @@
  */
 
 import { CODE } from "./codes.js";
-import { str, obj, pluginError } from "./util.js";
+import { str, obj } from "./util.js";
 
 /**
  * One cached console response: the body plus the epoch millis it was fetched.

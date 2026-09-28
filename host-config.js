@@ -203,7 +203,18 @@ export function resolveAllowedHosts(source) {
  */
 export function hostName(host) {
   // "[::1]:8080" keeps its brackets; "localhost:8080" loses its port.
-  return host.startsWith("[") && host.includes("]") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0];
+  if (host.startsWith("[") && host.includes("]")) {
+    return host.slice(0, host.indexOf("]") + 1);
+  }
+  // A bare IPv6 literal carries more than one colon ("::1", "::1:3080"):
+  // splitting on the first colon hands back "" for both, which was how the
+  // whitelist entry "::1" ended up dead — no Host spelling could ever match
+  // it. A colon count above 1 means the value IS the name (the "port" form
+  // only exists with brackets), so return it untouched: a host the operator
+  // did not name then is refused, which is the safe direction.
+  const colons = host.split(":").length - 1;
+  if (colons > 1) return host;
+  return host.split(":")[0];
 }
 
 /**
