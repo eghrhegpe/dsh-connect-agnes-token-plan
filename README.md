@@ -121,3 +121,7 @@ dsh-connect-sensenova-token-plan/
 | `/api/dsh-connect-sensenova-token-plan/account` | GET / POST | 账号状态（不含密码）/ 保存账号 / `{forget:true}` 清除 |
 
 两条路由都经过双层信任围栏（Host 本机白名单挡 DNS rebinding + Origin 与 Host 一致挡跨站伪造），请求体上限 4 KB；返回结构与细节见 [docs/API.md](docs/API.md) §1。
+
+## 许可证
+
+MIT License（Copyright (c) 2026 eghrhegpe），全文见 [LICENSE](LICENSE)；第三方依赖与合规说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

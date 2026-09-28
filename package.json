@@ -35,7 +35,9 @@
     "sensenova-crypto.js",
     "token-store.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "test": "node test/auth.test.mjs && node test/store.test.mjs && node test/routes.test.mjs && node test/panel.test.mjs && node test/render.test.mjs && node test/parsers.test.mjs && node test/config.test.mjs && node test/package.test.mjs && node test/docs.test.mjs && node test/wiring.test.mjs && node test/e2e-gate.mjs",

@@ -39,7 +39,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
     "index.js", "codes.js", "client.js", "console-client.js", "host-config.js",
     "parsers.js", "throttle-store.js", "trace.js", "util.js",
     "sensenova-auth.js", "sensenova-crypto.js", "token-store.js",
-    "cordis.patch.yml", "README.md"
+    "cordis.patch.yml", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "test": "node test/auth.test.mjs && ... && node test/wiring.test.mjs",
