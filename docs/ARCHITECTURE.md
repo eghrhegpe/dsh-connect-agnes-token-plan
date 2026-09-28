@@ -40,7 +40,7 @@
 - `token-store.js`：凭据服务里的令牌与账号存取、按期续期、401 拒绝记忆。
 - `sensenova-auth.js`：OIDC 授权码流登录 + `refresh_token` 静默续期。
 - `client.js`：侧边栏图标 + `main` 面板页 + 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
-- `panel-decision.js`：从 `client.js` **真实源码**中抠出面板「显示什么」的决策块并在 Node 里求值（不是手写副本），用于测试。
+- `panel-decision.js`：把 `client.js` **作为模块加载**（经 `client-surface.js` 的捕获型 `__ModuleLoader__` + 记录型 React 替身），取工厂物化出的 `panel` 测试面（决策、字典、错误码表）在 Node 里直接调用——不是手写副本、也不抠源码字符串，用于测试。
 
 ---
 
@@ -61,7 +61,7 @@ GET /api/dsh-connect-sensenova-token-plan/snapshot   ← Host 半边
 client.js: interpretSnapshot(body) → {data, error}
    │  error 携带 auth 块（含 needsAccount / retryAfterMs / needsUserAction）
    ▼
-决策块（panel-decision.js 抠出的同一段）决定渲染：
+决策块（panel-decision.js 从同一模块取的 viewOf）决定渲染：
    - 有数据 → 积分池 / 每模型消耗
    - 需配置账号 → AccountForm（用户自己填一次）
    - config_error / console_error → 纯文本提示（登录解不了的问题：

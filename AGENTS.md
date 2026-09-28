@@ -34,8 +34,10 @@ npm test                    # 全量（含下述三个 peer 套件）
    内做值级脱敏（`code`/`code_verifier`/token/cookie），新增输出点必须过同一套
    `sanitize*`。
 2. **credentials 记录只能是 `kind: "grant"`**。发明私有 kind 会让凭据文件对
-   整个 Host 不可解析，而该服务是 required —— **Host 直接起不来**。私有状态用
-   marker 字段区分（见 `THROTTLE_MARKER`）。
+   整个 Host 不可解析，而该服务是 required —— **Host 直接起不来**。私有状态
+   **不进凭据服务**（节流等已迁到插件状态文件 `throttle-store.js`）；历史上寄
+   存在凭据记录里的节流仅按 marker（`THROTTLE_MARKER`）做一次性迁移读取，别把
+   它变回常驻地址。
 3. **auth overrides 是 patch 行的顶层键**（`iamBase`、`tokenEndpoint`…），
    不是嵌套 `auth:` 块。嵌套会被静默忽略，面板拿着出厂默认值打到**真平台**——
    这条已经锁过一次号。`resolveAuthOverrides` 对嵌套块直接抛错，别放宽它。

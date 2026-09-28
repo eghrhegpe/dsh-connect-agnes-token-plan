@@ -26,7 +26,7 @@
 
 - 改动登录 / 续期 / 节流 / 路由 / 面板决策后，跑 `npm test`。
 - 新增登录分支（新的拒绝类型、新的窗口读取）必须补 `auth.test.mjs` 或 `store.test.mjs`。
-- 面板渲染决策改动后，`panel.test.mjs` 应同步（它通过 `panel-decision.js` 直接读 `client.js`，不需手写副本）。
+- 面板渲染决策改动后，`panel.test.mjs` 应同步（它通过 `client-surface.js` 把 `client.js` 作为模块加载、直接调用工厂物化出的 `panel` 测试面，不需手写副本，也没有字符串锚点）。若 `client.js` 的工厂不再导出 `panel` 测试面或改动了结构，`client-surface.js` 会**直接抛错**——更新它，别退回抠源码。
 - 网络层一律打桩，密码用临时密钥，**绝不发往商汤**，也不依赖真实账号。
 
 ---

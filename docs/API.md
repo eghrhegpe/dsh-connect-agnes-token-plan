@@ -50,7 +50,7 @@
 |---|---|---|---|
 | `https://platform.sensenova.cn/lite/console/v1/tokenplan/pool-usage` | GET | 各积分池 5h / 7d 窗口、返赠余额与到期 | `Bearer <JWT>` |
 | `credit-usage-trend`（同前缀） | GET | 近 N 小时每模型积分消耗 | `Bearer <JWT>` |
-| `GET https://token.sensenova.cn/v1/models` | GET | 套餐覆盖模型里本 Key 真正能调哪些（只读、不计费、不占推理额度） | `Bearer <JWT>` |
+| `GET https://token.sensenova.cn/v1/models` | GET | 套餐覆盖模型里本 Key 真正能调哪些（只读、不计费、不占推理额度） | `Bearer <SENSENOVA_API_KEY>` |
 
 池返回结构含 `name`、`model_ids`、`window_5h` / `window_7d`（各带 `limit` / `used` / `remaining` / `reset_at`）、`grant_balance`、`nearest_grant_expiry`、`pool_type`（default / dedicated）。额度数值完全来自控制台 API，插件不做任何推算。
 

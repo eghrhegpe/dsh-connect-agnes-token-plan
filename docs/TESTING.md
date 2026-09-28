@@ -33,16 +33,18 @@ npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可
 
 ---
 
-## 3. `panel-decision.js` 为何特殊
+## 3. `panel-decision.js` / `client-surface.js` 为何特殊
 
-面板的渲染决策（`needsSetup` / `render` / `coolingMs` / `needsUserAction` …）原本是用手写副本（`panelDecision`）测的，副本会漂移。现改为 `panel-decision.js` 从 `client.js` 的 `const failure = ...` 到 `: tt(guidanceKey);` 这一**真实源码块**里抠出来，在 Node 里用 `new Function` 求值。若 `client.js` 的决策结构变了，抠取标记找不到会**直接抛错**，而非静默测旧逻辑。
+面板的渲染决策与渲染组件**不是手写副本、也不再是从源码抠字符串**：`client-surface.js` 把 `client.js` **作为模块加载**（装一个捕获型 `window.__ModuleLoader__`，给工厂喂一个记录型 React 替身），拿到工厂物化出的 `panel` 测试面（`interpretSnapshot` / `viewOf` / 字典 / 错误码表 / 样式令牌 / 组件），`panel-decision.js` 与 `panel-render.js` 再从这个真实对象上取用。若 `client.js` 的结构变了，检查跟着变——测的始终是浏览器真正跑的那段代码。
+
+> 机制有两代：早期一版是手写 `panelDecision` 副本（会漂移，且漏了节流字段）；再一版是从 `client.js` 源码用平衡括号抠函数体、`new Function` 求值（锚点绑死源码排版）。现版把 `client.js` 物化成模块后两者都取代了。
 
 ---
 
 ## 4. 已知缺口
 
-> 本文曾记载「`wiring.test.mjs` 缺失、`panel.test.mjs` 有失败用例」。两条都已不成立：`wiring.test.mjs` 现在 24 项全过，`panel.test.mjs` 33 项全过。后来记载的「同源校验挡不住 DNS rebinding」「密码会被静默 trim」也已收口：前者由 `isAdmitted` 的 Host 白名单（`index.js`，`routes.test.mjs` D2 守住「Origin 与 Host 一致的陷阱」），后者由 `token-store.js` 的 `verbatim()`（密码按原样存取，store.test.mjs 断言 kept verbatim）。「渲染层没有被测到」同样不再成立：`test/render.test.mjs` 通过 `panel-render.js` 抠取真实渲染组件检查上屏数字，`used/limit` 写反的演练实测 5 项变红。文档比代码先过期也是一类缺陷，所以这里只保留仍然真实的缺口：
+> 本文曾记载「`wiring.test.mjs` 缺失、`panel.test.mjs` 有失败用例」。两条都已不成立：`wiring.test.mjs` 现在 24 项全过，`panel.test.mjs` 41 项全过。后来记载的「同源校验挡不住 DNS rebinding」「密码会被静默 trim」也已收口：前者由 `isAdmitted` 的 Host 白名单（`index.js`，`routes.test.mjs` D2 守住「Origin 与 Host 一致的陷阱」），后者由 `token-store.js` 的 `verbatim()`（密码按原样存取，store.test.mjs 断言 kept verbatim）。「渲染层没有被测到」同样不再成立：`test/render.test.mjs` 通过 `panel-render.js` 检查上屏数字，`used/limit` 写反的演练实测 5 项变红。文档比代码先过期也是一类缺陷，所以这里只保留仍然真实的缺口：
 
-- **`AccountForm` 的渲染没有被测到。** 它建立在 `useState`/`useEffect` 之上，抠取求值需要伪造 React hook 契约——测的会是那个假件。宁可留着缺口也不假装覆盖；表单的行为部分由 `store`/`routes` 套件在 Host 侧守住。
+- **`AccountForm` 的渲染没有被测到。** 它建立在 `useState`/`useEffect` 之上，React 替身只会无脑返回初值——测的会是那个假件。宁可留着缺口也不假装覆盖；表单的行为部分由 `store`/`routes` 套件在 Host 侧守住。
 - **路由测试用的是假 `response`，不是真实的 `http.ServerResponse`。** 它会计数写入次数（这是抓住「保存账号答了两次」的原因），但不会复现真实对象的 `ERR_HTTP_HEADERS_SENT`、`setHeader` 顺序与流语义。
-- **`test/e2e.mjs` 不在 `npm test` 里。** 它需要运行中的 Host 与真实账号，因此只能手工跑；没有离线替代。
+- **`test/e2e.mjs` 不在 `npm test` 里。** 它拉起**真 Host 进程**（`dsh web`）+ 一个 127.0.0.1 上的**假商汤平台**（`test/fake-platform.mjs`，自带独立 `$DSH_HOME`、零真实凭据、全部端点重定向到本机），因此离线可跑、只比单元套件慢，需手工跑（`npm run test:e2e`）；断言登录/池用量/节流分类等端到端行为，并校验假平台真的收到了流量。

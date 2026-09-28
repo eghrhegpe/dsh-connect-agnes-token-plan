@@ -64,14 +64,14 @@ npm run test:live  # 额外验一次平台真实 JWKS（显式联网，默认不
 | `test/store.test.mjs` | 令牌续期、刷新令牌轮换、锁定与退避、跨进程节流、账号生命周期，**以及用真实凭据服务解析器校验本插件写入的每条记录**；节流落到插件自己的文件，跨进程与迁移各有用例 |
 | `test/routes.test.mjs` | Host 路由函数体：令牌生命周期、账号写入、越权与跨源拒绝 |
 | `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误 |
-| `test/panel.test.mjs` | **面板自己的代码**（从 `client.js` 源码里抽出来执行，不是抄一份）、**中英文字典键集一致**、控制台故障不走登录表单 |
-| `test/render.test.mjs` | **面板渲染出的数字**（同样抠真源码求值，见 `panel-render.js`）：`used/limit` 写反、剩余量丢失、进度条色阶、除零都会红 |
+| `test/panel.test.mjs` | **面板自己的代码**（把 `client.js` 作为模块加载后直接调用，不是抄一份、也不抠源码，见 `client-surface.js`）、**中英文字典键集一致**、控制台故障不走登录表单 |
+| `test/render.test.mjs` | **面板渲染出的数字**（同样走 `client-surface.js` 物化的真组件，见 `panel-render.js`）：`used/limit` 写反、剩余量丢失、进度条色阶、除零都会红 |
 | `test/config.test.mjs` | `CONFIG_DEFAULTS` 与 `cordis.patch.yml` 不静默漂移 |
 | `test/package.test.mjs` | **`files` 清单覆盖 import 图**：从 `main`/`exports` 走静态 import 闭包，可达文件不在 `files` 里就红（曾漏 5 个模块，打包即崩）；顺带钉住"上了 `files` 却无人引用"的死重 |
 
 几件值得知道的事：
 
-- **面板逻辑没有镜像。** 旧版测试里有个手抄的 `panelDecision`，注释自己写着 "mirrored from PanelPage"——抄本和原件必然漂移，事实上它完全不知道节流字段，所以为修锁号加的置灰逻辑一行都没被测到。现在 `panel-decision.js` / `panel-render.js` 直接从 `client.js` 源码里把判定与渲染组件抽出来跑：改坏面板，测试立刻红。
+- **面板逻辑没有镜像。** 旧版测试里有个手抄的 `panelDecision`，注释自己写着 "mirrored from PanelPage"——抄本和原件必然漂移，事实上它完全不知道节流字段，所以为修锁号加的置灰逻辑一行都没被测到。第二版改从 `client.js` 源码里抠判定与渲染组件——又绑死在源码排版上。现在 `client-surface.js` 直接把 `client.js` **作为模块加载**（捕获型 `__ModuleLoader__` + 记录型 React 替身），`panel-decision.js` / `panel-render.js` 调用工厂物化出的 `panel` 测试面：改坏面板，测试立刻红，且不依赖任何字符串锚点。
 - **`test:live` 是唯一允许联网的检查**，只拉公开 JWKS，不带凭据、不发登录请求。默认跑它意味着「测试会因与插件无关的外部原因失败」，也模糊了那条最重要的界线：验证不该默认等于对真实服务发请求。
 - **一个请求只答一次，而且这件事是被断言的。** 保存账号的成功路径曾经写过两次响应（`try` 里的 `writeJson` 没有 `return`，流程漏到第二次）：真实 `ServerResponse` 会在第二次 `writeHead` 抛 `ERR_HTTP_HEADERS_SENT`，而用户看不到——第一个响应已经到浏览器了。测试里的假 `response` 当时接受两次写入，所以它一直是绿的；现在它会数。
 - **本机的 `SENSENOVA_*` 环境变量被测试隔离。** `index.js` 在挂载时从 `process.env` 读 API key，一台真配了它的机器会走进套件从未打桩的分支（真去拉模型目录，并把一个非控制台 token 混进断言）。只在一台干净机器上绿、在作者机器上红的套件不叫离线，叫「通常离线」。`test/peer-roots.mjs` 的 `isolateHostEnv()` 负责这件事。
@@ -176,9 +176,10 @@ dsh-connect-sensenova-token-plan/
 ├── token-store.js      # Host：凭据存取、续期、401 拒绝记忆
 ├── throttle-store.js   # Host：登录节流状态（插件自己的文件，不进凭据服务）
 ├── sensenova-auth.js   # Host：OIDC 授权码流 + refresh_token 续期
-├── client.js           # Client：侧边栏 + 面板页 + 账号表单（interpretSnapshot / 决策块）
-├── panel-decision.js   # 从 client.js 抠出决策块在 Node 里求值（测试用）
-├── panel-render.js     # 从 client.js 抠出渲染组件在 Node 里求值（测试用）
+├── client.js           # Client：侧边栏 + 面板页 + 账号表单（工厂即模块，自带 panel 测试面）
+├── client-surface.js   # 测试基建：把 client.js 作为模块加载、物化 panel 测试面
+├── panel-decision.js   # 测试基建：从 panel 测试面取决策/字典/错误码表（Node 可直接 import）
+├── panel-render.js     # 测试基建：从 panel 测试面取渲染组件与样式令牌（Node 可直接 import）
 ├── cordis.patch.yml    # 配置面（含全部配置字段）
 ├── package.json        # bundle 清单 + npm test 脚本
 ├── test/               # 离线检查（auth/store/routes/panel/render/config/wiring + live）
