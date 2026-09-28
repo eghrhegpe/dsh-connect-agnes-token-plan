@@ -63,3 +63,11 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
 ```
 
 > 此项属仓库整理，按需进行；与本插件功能无关。
+
+---
+
+## 7. 已知取舍（挂起，按需收）
+
+- **`SENSENOVA_API_KEY` 走 `process.env` 不走凭据服务**（详见 [OPEN-ISSUES.md §SENSENOVA_API_KEY](./OPEN-ISSUES.md#sensenova_api_key-走-processenv-不走凭据服务)）。
+  挂载时从 `process.env` 读一次，空则 `catalog` 整块不查、`catalogAvailable: false`。
+  收口时需把 `index.js` 的 `apiKey` 改成「凭据服务优先、env 兜底」并同步两份 docs 与测试。
