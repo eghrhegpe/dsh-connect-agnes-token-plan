@@ -256,19 +256,21 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   const { webServer, host, stop } = await bootPlugin();
   check("the plugin declares the services it needs", Array.isArray(host.inject) && host.inject.includes("webServer"),
     JSON.stringify(host.inject));
-  check("the snapshot/account/api-key routes are registered on mount",
-    webServer.registered.has("/api/dsh-connect-sensenova-token-plan/snapshot")
-    && webServer.registered.has("/api/dsh-connect-sensenova-token-plan/account")
-    && webServer.registered.has("/api/dsh-connect-sensenova-token-plan/api-key"),
+  const routes = [
+    "/api/dsh-connect-sensenova-token-plan/snapshot",
+    "/api/dsh-connect-sensenova-token-plan/account",
+    "/api/dsh-connect-sensenova-token-plan/api-key",
+    "/api/dsh-connect-sensenova-token-plan/provider",
+    "/api/dsh-connect-sensenova-token-plan/models"
+  ];
+  check("all five routes are registered on mount",
+    routes.every((path) => webServer.registered.has(path)),
     [...webServer.registered.keys()].join(", "));
   // The registered values must be callable handlers, not specs: the real
   // webServer invokes what it was given, and the panel depends on it.
-  check("the snapshot route is a function",
-    typeof webServer.registered.get("/api/dsh-connect-sensenova-token-plan/snapshot") === "function");
-  check("the account route is a function",
-    typeof webServer.registered.get("/api/dsh-connect-sensenova-token-plan/account") === "function");
-  check("the api-key route is a function",
-    typeof webServer.registered.get("/api/dsh-connect-sensenova-token-plan/api-key") === "function");
+  check("every route is a function",
+    routes.every((path) => typeof webServer.registered.get(path) === "function"),
+    routes.map((path) => typeof webServer.registered.get(path)).join(", "));
   await stop();
 }
 
@@ -314,7 +316,8 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // in the real Host means a stale panel still polling a route nobody owns.
 {
   const { webServer, stop } = await bootPlugin();
-  check("routes are present while mounted", webServer.registered.size === 4, String(webServer.registered.size));
+  check("all five routes are present while mounted", webServer.registered.size === 5,
+    [...webServer.registered.keys()].join(", "));
   await stop();
   check("unmounting withdraws the routes", webServer.registered.size === 0,
     [...webServer.registered.keys()].join(", "));
@@ -440,6 +443,47 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   await stop();
   check("disposing released the surviving pair",
     llm.calls.released === 4, JSON.stringify({ released: llm.calls.released }));
+}
+
+// === F4. the roster route answers through the real container seam =========
+// Group B proves the route is REGISTERED and F3 proves publishing serialises;
+// neither proves that the thing the panel reaches is the handler it expects.
+// Drive one real request through the container's handler and check the effect
+// reached the llm service.
+{
+  const de = adapterDeps();
+  const { webServer, llm, stop } = await bootPlugin({
+    withLlm: true,
+    config: { registerProvider: true },
+    de
+  });
+  await settle();
+  // The switch lives in the shared state dir, so set it the way a panel would
+  // rather than assuming the order of the other groups.
+  const switchRes = response();
+  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/provider")(
+    postRequest({ enabled: true }), switchRes);
+  check("the provider switch answers through the container",
+    switchRes.statusCode === 200 && switchRes.payload?.ok === true,
+    JSON.stringify(switchRes.payload));
+
+  const res = response();
+  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/models")(
+    postRequest({ enabledModelIds: ["__hide_all__"] }), res);
+  check("a roster save answers through the container",
+    res.statusCode === 200 && res.payload?.ok === true &&
+      JSON.stringify(res.payload?.enabledModelIds) === JSON.stringify(["__hide_all__"]),
+    JSON.stringify(res.payload));
+  const last = de.builds.at(-1);
+  check("the roster save republished through the real llm service",
+    last !== undefined
+      && JSON.stringify(last.enabledIds) === JSON.stringify(["__hide_all__"])
+      && llm.calls.adapter === de.builds.length,
+    JSON.stringify({ builds: de.builds.length, last, calls: llm.calls }));
+
+  await stop();
+  check("disposing released every registration pair",
+    llm.calls.released === llm.calls.adapter + llm.calls.directory, JSON.stringify(llm.calls));
 }
 
 // === G. the wiring test itself stayed offline ===========================

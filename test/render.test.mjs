@@ -298,6 +298,82 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     failed.some((line) => line.includes("DUPLICATE_ADAPTER")), failed.join("\n"));
 }
 
+// === G4. the model roster: which rows exist, and which are ticked ==========
+// The picker's rows are the single source of truth for "what could this key be
+// pushed": a curated id that no longer exists must never become a checkbox, and
+// each checkbox state must be exactly what the Host's allow-list says. The row
+// is hook-free, so the render suite drives the real one.
+{
+  const zh = surface.dictionaries.zh;
+  const ttZh = (key) => zh[key] ?? key;
+  const roster = [
+    { id: "nova-flash-lite", name: "Nova Flash Lite", vision: false },
+    { id: "nova-vl", name: "Nova VL", vision: true },
+    { id: "nova-pro", name: "Nova Pro", vision: false }
+  ];
+  const treeOfRoster = (enabledIds, extra = {}) =>
+    treeOf(render.ModelRoster, { models: roster, enabledIds, tt: ttZh, ...extra });
+  const boxes = (tree) => findAll(tree, (props) => props.type === "checkbox").map((el) => el.props);
+
+  const allOn = treeOfRoster([]);
+  const allOnTexts = texts(allOn);
+  check("every catalogue entry becomes one tickable row", boxes(allOn).length === 3,
+    `found ${boxes(allOn).length} checkboxes`);
+  check("row order follows the catalogue, not the allow-list",
+    (() => {
+      const flat = texts(allOn).join(" ");
+      const a = flat.indexOf("Nova Flash Lite");
+      const b = flat.indexOf("Nova VL");
+      const c = flat.indexOf("Nova Pro");
+      return a !== -1 && b !== -1 && c !== -1 && a < b && b < c;
+    })(), texts(allOn).join("\n"));
+  check("an empty allow-list ticks every model",
+    JSON.stringify(boxes(allOn).map((props) => props.checked)) === JSON.stringify([true, true, true]),
+    JSON.stringify(boxes(allOn).map((props) => props.checked)));
+
+  const partial = treeOfRoster(["nova-pro", "nova-vl"]);
+  check("a curated allow-list ticks exactly those models, in row order",
+    JSON.stringify(boxes(partial).map((props) => props.checked)) === JSON.stringify([false, true, true]),
+    JSON.stringify(boxes(partial).map((props) => props.checked)));
+
+  const none = treeOfRoster([surface.helpers.HIDE_ALL_MODELS]);
+  check("the hide-all sentinel unticks every model",
+    JSON.stringify(boxes(none).map((props) => props.checked)) === JSON.stringify([false, false, false]),
+    JSON.stringify(boxes(none).map((props) => props.checked)));
+
+  const visionLines = texts(allOn).filter((line) => line === zh["llm.rosterVision"]);
+  const textLines = texts(allOn).filter((line) => line === zh["llm.rosterText"]);
+  check("one vision model earns one vision badge", visionLines.length === 1, String(visionLines.length));
+  check("the two text-only models earn text-only badges", textLines.length === 2, String(textLines.length));
+  check("an unticked row keeps its modality badge",
+    texts(none).filter((line) => line === zh["llm.rosterVision"]).length === 1);
+
+  const busy = treeOfRoster(["nova-vl"], { busy: true });
+  check("a save in flight disables every checkbox",
+    boxes(busy).every((props) => props.disabled === true),
+    JSON.stringify(boxes(busy).map((props) => props.disabled)));
+  check("an idle roster leaves the checkboxes live",
+    boxes(allOn).every((props) => props.disabled !== true));
+
+  check("a checkbox announces the model name to assistive tech",
+    JSON.stringify(boxes(allOn).map((props) => props["aria-label"])) === JSON.stringify(["Nova Flash Lite", "Nova VL", "Nova Pro"]),
+    JSON.stringify(boxes(allOn).map((props) => props["aria-label"])));
+
+  check("a missing display name falls back to the id",
+    texts(treeOf(render.ModelRoster, { models: [{ id: "nova-bare" }], enabledIds: [], tt })).includes("nova-bare"),
+    texts(treeOf(render.ModelRoster, { models: [{ id: "nova-bare" }], enabledIds: [], tt })).join("\n"));
+
+  check("a curated id that is no longer in the catalogue draws no row",
+    boxes(treeOf(render.ModelRoster, { models: roster, enabledIds: ["ghost-model"], tt })).length === 3,
+    String(boxes(treeOf(render.ModelRoster, { models: roster, enabledIds: ["ghost-model"], tt })).length));
+
+  check("an empty catalogue draws no rows at all",
+    boxes(treeOf(render.ModelRoster, { models: [], enabledIds: [], tt })).length === 0);
+
+  check("a junk models value reads as an empty catalogue",
+    boxes(treeOf(render.ModelRoster, { models: "nope", enabledIds: [], tt })).length === 0);
+}
+
 // === H. the rendering came from the shipped client ========================
 // Reaching here means every extraction marker was found. These checks pin the
 // lifted pieces themselves, so a refactor that silently empties one of them

@@ -44,6 +44,8 @@ function clientFactory(require) {
   const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
   /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
   const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
+  /** The model-roster route: which of this key's models get pushed to DSH. */
+  const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
 
   /** Simplified Chinese dictionary (the key-set source of truth). */
   const zh = {
@@ -131,6 +133,22 @@ function clientFactory(require) {
     "llm.switch": "向 DSH 注册 SenseNova 提供方（立即生效，无需重启）",
     "llm.switchBusy": "切换中…",
     "llm.switchError": "切换失败：{error}",
+    "llm.roster": "推送到 DSH 的模型",
+    "llm.rosterHint": "勾选后保存：未勾选的模型不会出现在 DSH 模型列表里。目录里后来新增的模型默认也不推送，需要手动勾选。",
+    "llm.rosterEmpty": "当前 Key 还没有可推送的模型——先保存一次 API Key。",
+    "llm.rosterSearchPlaceholder": "搜索模型名或 ID",
+    "llm.rosterCount": "已勾选 {selected} / 共 {total}",
+    "llm.rosterAll": "全部勾选",
+    "llm.rosterNone": "全部取消",
+    "llm.rosterSave": "保存",
+    "llm.rosterSaving": "保存中…",
+    "llm.rosterDiscard": "撤销",
+    "llm.rosterSaved": "已保存，模型列表已更新。",
+    "llm.rosterUnsaved": "有未保存的改动",
+    "llm.rosterError": "保存失败：{error}",
+    "llm.rosterNoMatch": "没有匹配的模型。",
+    "llm.rosterVision": "可看图",
+    "llm.rosterText": "纯文本",
     "note": "数据来自商汤控制台 API（pool-usage / credit-usage-trend），Host 侧缓存 {cache} 秒；控制台令牌约 3 小时过期，由 Host 用 refresh_token 静默续期。"
   };
 
@@ -220,6 +238,22 @@ function clientFactory(require) {
     "llm.switch": "Register SenseNova with DSH (takes effect immediately, no restart)",
     "llm.switchBusy": "Switching…",
     "llm.switchError": "Switch failed: {error}",
+    "llm.roster": "Models pushed to DSH",
+    "llm.rosterHint": "Tick the ones to push and save: unticked models do not appear in DSH's model list. Models the catalogue gains later are not pushed by default, tick them in by hand.",
+    "llm.rosterEmpty": "This key has no models to push yet - save an API key first.",
+    "llm.rosterSearchPlaceholder": "Search a model name or id",
+    "llm.rosterCount": "{selected} ticked / {total} total",
+    "llm.rosterAll": "Tick all",
+    "llm.rosterNone": "Untick all",
+    "llm.rosterSave": "Save",
+    "llm.rosterSaving": "Saving…",
+    "llm.rosterDiscard": "Discard",
+    "llm.rosterSaved": "Saved - the model list has been updated.",
+    "llm.rosterUnsaved": "Unsaved changes",
+    "llm.rosterError": "Save failed: {error}",
+    "llm.rosterNoMatch": "No model matches.",
+    "llm.rosterVision": "vision",
+    "llm.rosterText": "text only",
     "note": "Data from the SenseNova console API (pool-usage / credit-usage-trend), cached {cache}s on the Host; the console token lasts ~3h and the Host renews it silently from a refresh token."
   };
 
@@ -328,7 +362,20 @@ function clientFactory(require) {
       primaryHover: { background: "var(--dsw-alias-button-primary-hover)" },
       primaryBusy: { opacity: 0.6, cursor: "default" },
       formError: { color: "var(--dsw-alias-state-error-primary)", fontSize: 12, margin: "10px 0 0" },
-      formNote: { color: "var(--dsw-alias-label-secondary)", fontSize: 12, margin: "10px 0 0" }
+      formNote: { color: "var(--dsw-alias-label-secondary)", fontSize: 12, margin: "10px 0 0" },
+      // The model picker: a search box and a all/none row over one row per
+      // model, each row a checkbox, the name, and a modality badge. Rows sit
+      // in their own card so the list can grow past a screen without pushing
+      // the rest of the panel out of view.
+      rosterTools: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 },
+      rosterCount: { fontSize: 12, color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums", marginLeft: "auto" },
+      modelList: { display: "flex", flexDirection: "column", gap: 6, margin: 0, padding: 0, listStyle: "none" },
+      modelRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)" },
+      modelRowOff: { opacity: 0.55 },
+      modelCheck: { flex: "none", width: 15, height: 15, cursor: "pointer", accentColor: "var(--dsw-alias-brand-primary)", margin: 0 },
+      modelName: { flex: "1 1 auto", minWidth: 0, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+      modelBadge: { flex: "none", fontSize: 11, padding: "1px 7px", borderRadius: 999, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-secondary)" },
+      rosterFoot: { display: "flex", gap: 8, alignItems: "center", marginTop: 10 }
     };
 
     /** `HH:MM` for one epoch second. */
@@ -361,6 +408,77 @@ function clientFactory(require) {
         text = text.split(`{${key}}`).join(String(value));
       }
       return text;
+    }
+
+    /**
+     * The allow-list spelling for "nothing is offered".
+     *
+     * An empty list already means "no filter", so "the filter matched
+     * nothing" needs its own spelling: one entry naming an id no real model
+     * can carry. The Host carries the SAME literal (`llm-models.js`
+     * `HIDE_ALL_MODELS`) — the browser bundle cannot import that module, so
+     * `test/provider.test.mjs` compares the two and a rename on either side
+     * goes red instead of silently un-curating every model.
+     */
+    const HIDE_ALL_MODELS = "__hide_all__";
+
+    /** The model ids a roster advertises, junk entries dropped. */
+    function rosterIds(roster) {
+      return (Array.isArray(roster) ? roster : []).filter((model) => typeof model === "string" && model !== "");
+    }
+
+    /**
+     * Whether one model id is offered by an allow-list.
+     *
+     * Mirrors the Host's `filterByEnabled`: an empty list offers everything,
+     * a non-empty one is a strict allow-list, and `HIDE_ALL_MODELS` alone
+     * offers nothing.
+     * @param {string[]} enabledIds - the allow-list.
+     * @param {string} id - the model id to ask about.
+     * @returns {boolean}
+     */
+    function modelIsOn(enabledIds, id) {
+      const list = Array.isArray(enabledIds) ? enabledIds : [];
+      return list.length === 0 ? true : list.includes(id);
+    }
+
+    /**
+     * The allow-list that offers exactly the ids in `on`.
+     *
+     * Every mutation funnels through here, so the two extreme spellings are
+     * emitted consistently: an empty list (nothing curated, every model
+     * offered) and `HIDE_ALL_MODELS` alone (nothing offered). No caller can
+     * post a list the Host would read differently than the picker shows.
+     * @param {Set<string>} on - the ids that should be offered.
+     * @param {string[]} roster - the whole roster, the ordering reference.
+     * @returns {string[]} the allow-list to post.
+     */
+    function allowListFor(on, roster) {
+      const all = rosterIds(roster);
+      const kept = all.filter((model) => on.has(model));
+      if (kept.length === 0) return [HIDE_ALL_MODELS];
+      if (kept.length === all.length) return [];
+      return kept;
+    }
+
+    /**
+     * The next allow-list after ticking or unticking one model.
+     *
+     * The result is computed against the WHOLE roster, not the current
+     * list: the saved value is a complete allow-list rather than a diff, so
+     * a curated catalogue stays curated when the catalogue later grows —
+     * new models start unticked instead of slipping into DSH on their own.
+     */
+    function toggleModelIn(enabledIds, roster, id) {
+      const on = new Set(rosterIds(roster).filter((model) => modelIsOn(enabledIds, model)));
+      if (on.has(id)) on.delete(id);
+      else on.add(id);
+      return allowListFor(on, roster);
+    }
+
+    /** The allow-list for a bulk "tick all" / "untick all". */
+    function setAllModelsIn(roster, allOn) {
+      return allowListFor(new Set(allOn ? rosterIds(roster) : []), roster);
     }
 
     /** The sidebar row glyph: the shell owns the button, this draws the coin. */
@@ -1003,6 +1121,206 @@ function clientFactory(require) {
     }
 
     /**
+     * The model picker's row list - hook-free, so the Node render suite
+     * drives the very rows the browser draws.
+     *
+     * Each row is a checkbox, the model name, and a modality badge. The rows
+     * come only from the Host's roster, so a curated id that no longer exists
+     * can never become a checkbox: curation is a filter over the catalogue,
+     * never a catalogue of its own.
+     * @param {object} props
+     * @param {{id: string, name: string, vision: boolean}[]} props.models
+     * @param {string[]} props.enabledIds - the allow-list; empty = every row on.
+     * @param {boolean} props.busy - while saving, the checkboxes are inert.
+     * @param {(key: string) => string} props.tt
+     */
+    function ModelRoster({ models, enabledIds, busy, tt }) {
+      const list = Array.isArray(models) ? models : [];
+      return h(
+        "ul",
+        { style: S.modelList, role: "list" },
+        list.map((model) => {
+          const id = String(model?.id ?? "");
+          const label = String(model?.name ?? id);
+          const on = modelIsOn(enabledIds, id);
+          return h(
+            "li",
+            { key: id, style: { ...S.modelRow, ...(on ? {} : S.modelRowOff) } },
+            h(
+              "label",
+              {
+                style: {
+                  display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto",
+                  minWidth: 0, cursor: busy ? "default" : "pointer"
+                }
+              },
+              h("input", {
+                type: "checkbox",
+                checked: on,
+                disabled: busy === true,
+                style: S.modelCheck,
+                "aria-label": label
+              }),
+              h("span", { style: S.modelName, title: id }, label)
+            ),
+            h("span", { style: S.modelBadge, title: id }, model?.vision === true ? tt("llm.rosterVision") : tt("llm.rosterText"))
+          );
+        })
+      );
+    }
+
+    /**
+     * The curated model allow-list: which of this key's models get pushed to
+     * DSH's model list.
+     *
+     * Hook-based like `ApiKeyForm`, so the render suite exercises the secret-
+     * free half it draws - `ModelRoster` and the counts - instead of this
+     * state machine. The edit is local until saved: the picker holds a draft
+     * of the allow-list, the "unsaved" state is DERIVED by comparing it with
+     * the Host's current value, and the "saved" state is the same comparison
+     * after a poll echoes the write. Both therefore cannot lie: a save that
+     * never reached the Host keeps showing the edits, and an edit that ends
+     * up identical to the Host's value shows neither button.
+     */
+    function ModelPicker({ llm, onDone, tt }) {
+      const models = Array.isArray(llm?.models) ? llm.models : [];
+      const hostIds = Array.isArray(llm?.enabledModelIds) ? llm.enabledModelIds : [];
+      const [ids, setIds] = useState(() => hostIds.slice());
+      const [busy, setBusy] = useState(false);
+      const [query, setQuery] = useState("");
+      const [savedKey, setSavedKey] = useState(null);
+      const [notice, setNotice] = useState(null);
+
+      const hostKey = JSON.stringify(hostIds);
+      const dirty = JSON.stringify(ids) !== hostKey;
+      const justSaved = savedKey !== null && savedKey === hostKey;
+
+      // Follow the Host while the picker is untouched, so a catalogue refresh
+      // reaches the list and a save from another client clears the draft.
+      // `dirty` in the guard keeps an edit in flight from being clobbered.
+      useEffect(() => {
+        if (dirty === false) setIds(hostIds);
+        setSavedKey(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [hostKey]);
+
+      const save = useCallback(async () => {
+        if (busy) return;
+        setBusy(true);
+        setNotice(null);
+        const posted = JSON.stringify(ids);
+        try {
+          const response = await fetch(MODELS_PATH, {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            cache: "no-store",
+            body: JSON.stringify({ enabledModelIds: ids })
+          });
+          const payload = await response.json().catch(() => null);
+          if (payload?.ok !== true) {
+            throw new Error(typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`);
+          }
+          // Matches hostKey as soon as the poll after onDone() echoes it.
+          setSavedKey(posted);
+          onDone?.();
+        } catch (error) {
+          setNotice(format(tt("llm.rosterError"), { error: error instanceof Error ? error.message : String(error) }));
+        } finally {
+          setBusy(false);
+        }
+      }, [busy, ids, onDone, tt]);
+
+      const needle = query.trim().toLowerCase();
+      const visible = models.filter((model) => {
+        if (needle === "") return true;
+        return String(model?.id ?? "").toLowerCase().includes(needle)
+          || String(model?.name ?? "").toLowerCase().includes(needle);
+      });
+      const tickedCount = visible.filter((model) => modelIsOn(ids, String(model?.id ?? ""))).length;
+
+      /** Apply "tick all" / "untick all" to the VISIBLE rows only. */
+      const bulk = useCallback((allOn) => {
+        const targets = new Set(visible.map((model) => String(model?.id ?? "")));
+        const on = new Set(rosterIds(models).filter((model) => modelIsOn(ids, model)));
+        for (const id of targets) {
+          if (allOn) on.add(id);
+          else on.delete(id);
+        }
+        setIds(allowListFor(on, models));
+        setNotice(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [JSON.stringify(visible.map((model) => model?.id)), JSON.stringify(models), JSON.stringify(ids)]);
+
+      return h(
+        "div",
+        { style: { marginBottom: 14 } },
+        h("p", { style: { ...S.muted, fontSize: 12, margin: "0 0 10px" } }, tt("llm.rosterHint")),
+        models.length === 0
+          ? h("p", { style: S.empty }, tt("llm.rosterEmpty"))
+          : h(
+              "div",
+              null,
+              h(
+                "div",
+                { style: S.rosterTools },
+                h("input", {
+                  type: "search",
+                  style: { ...S.input, flex: "1 1 200px", width: "auto" },
+                  value: query,
+                  placeholder: tt("llm.rosterSearchPlaceholder"),
+                  disabled: busy,
+                  onChange: (event) => setQuery(event.target.value)
+                }),
+                h("button", {
+                  type: "button",
+                  style: S.button,
+                  disabled: busy === true || visible.length === 0,
+                  onClick: () => bulk(true)
+                }, tt("llm.rosterAll")),
+                h("button", {
+                  type: "button",
+                  style: S.button,
+                  disabled: busy === true || visible.length === 0,
+                  onClick: () => bulk(false)
+                }, tt("llm.rosterNone")),
+                h("span", {
+                  style: S.rosterCount,
+                  title: tt("llm.rosterCount")
+                }, format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length }))
+              ),
+              visible.length === 0
+                ? h("p", { style: S.empty }, tt("llm.rosterNoMatch"))
+                : h(ModelRoster, { models: visible, enabledIds: ids, busy, tt }),
+              dirty
+                ? h(
+                    "div",
+                    { style: S.rosterFoot },
+                    h("button", {
+                      type: "button",
+                      style: S.primary,
+                      disabled: busy === true,
+                      onClick: () => void save()
+                    }, busy ? tt("llm.rosterSaving") : tt("llm.rosterSave")),
+                    h("button", {
+                      type: "button",
+                      style: S.button,
+                      disabled: busy === true,
+                      onClick: () => {
+                        setIds(hostIds);
+                        setNotice(null);
+                      }
+                    }, tt("llm.rosterDiscard")),
+                    h("span", { style: { ...S.muted, fontSize: 12 } }, tt("llm.rosterUnsaved"))
+                  )
+                : justSaved
+                  ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" } }, tt("llm.rosterSaved"))
+                  : null,
+              notice !== null ? h("p", { style: S.formError }, notice) : null
+            )
+      );
+    }
+
+    /**
      * The inference API-key editor (`sk-…`).
      *
      * Same security shape as `AccountForm`: show/hide, save/forget, busy and
@@ -1085,6 +1403,7 @@ function clientFactory(require) {
         { onSubmit: submit },
         h(ProviderStatus, { llm, tt }),
         h(ProviderSwitch, { llm, onDone, tt }),
+        h(ModelPicker, { llm, onDone, tt }),
         h(
           "label",
           { style: S.field },
@@ -1422,8 +1741,30 @@ function clientFactory(require) {
       dictionaries: Object.freeze({ zh, en }),
       tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
       styles: S,
-      helpers: Object.freeze({ clock, clockLong, count, format }),
-      components: Object.freeze({ QuotaCard, PoolCard, TrendTable, SectionCard, AccountForm, ApiKeyForm, ProviderStatus, ProviderSwitch, PanelPage })
+      helpers: Object.freeze({
+        clock,
+        clockLong,
+        count,
+        format,
+        HIDE_ALL_MODELS,
+        modelIsOn,
+        allowListFor,
+        toggleModelIn,
+        setAllModelsIn
+      }),
+      components: Object.freeze({
+        QuotaCard,
+        PoolCard,
+        TrendTable,
+        SectionCard,
+        AccountForm,
+        ApiKeyForm,
+        ProviderStatus,
+        ProviderSwitch,
+        ModelRoster,
+        ModelPicker,
+        PanelPage
+      })
     });
 
     return { inject, apply, panel };

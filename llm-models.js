@@ -139,6 +139,74 @@ export function filterByEnabled(entries, enabledIds) {
 }
 
 /**
+ * The id that stands for "nothing is offered".
+ *
+ * An empty allow-list already means "no filter", so there has to be a second
+ * spelling for "the filter matched nothing": a string that can never be a real
+ * model id, kept as the list's only entry. `filterByEnabled` then filters by
+ * an id that matches nothing, which is the offer the user asked for. A bare
+ * `[]` cannot mean both "all models" and "no models" at once.
+ *
+ * The panel carries the SAME literal (`client.js` `HIDE_ALL_MODELS`) because
+ * the browser bundle cannot import this module; `test/provider.test.mjs` pins
+ * the two together so a rename on either side goes red.
+ */
+export const HIDE_ALL_MODELS = "__hide_all__";
+
+/**
+ * Whether one model id would be offered for a given allow-list.
+ *
+ * Mirrors {@link filterByEnabled}: an empty list offers everything, a
+ * non-empty list is a strict allow-list, and the {@link HIDE_ALL_MODELS}
+ * sentinel offers nothing.
+ * @param {string[]} [enabledIds] - the allow-list.
+ * @param {string} id - the model id to ask about.
+ * @returns {boolean}
+ */
+export function isModelEnabled(enabledIds, id) {
+  const list = Array.isArray(enabledIds) ? enabledIds : [];
+  if (list.length === 0) return true;
+  return list.includes(str(id, ""));
+}
+
+/**
+ * The panel-facing roster: one row per addressable catalog entry.
+ *
+ * Deliberately a projection, not the raw entries: the snapshot carries no
+ * more than the picker needs (id, a display name, and the same vision
+ * verdict the descriptors use), so a catalogue field the platform adds later
+ * cannot leak into the panel for no reason.
+ *
+ * Deduping keeps the LAST occurrence at its first-seen position, exactly like
+ * {@link buildDescriptors} and `catalog-store.normalizeEntries`: a fresher
+ * read of the same id wins. If this diverged, the roster and the registered
+ * offer would disagree about which models exist, and a ticked model could
+ * become an unregistered one.
+ * @param {object[]} entries - the normalized catalog entries.
+ * @returns {{id: string, name: string, vision: boolean}[]}
+ */
+export function rosterOf(entries) {
+  const position = new Map();
+  const out = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const id = str(entry?.id, "");
+    if (id === "") continue;
+    const row = {
+      id,
+      name: str(entry?.name, id),
+      vision: identifyVisionModel(entry).vision === true
+    };
+    if (position.has(id)) {
+      out[position.get(id)] = row;
+    } else {
+      position.set(id, out.length);
+      out.push(row);
+    }
+  }
+  return out;
+}
+
+/**
  * Build the whole descriptor list for one catalog.
  *
  * Entries without an id are dropped (they could not be addressed on the wire)

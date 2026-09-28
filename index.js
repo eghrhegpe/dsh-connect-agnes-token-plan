@@ -24,10 +24,10 @@
 import { createAuth } from "./sensenova-auth.js";
 import { createTokenStore } from "./token-store.js";
 import { createFileThrottleStore } from "./throttle-store.js";
-import { createFileCatalogStore } from "./catalog-store.js";
+import { createFileCatalogStore, normalizeEnabledIds } from "./catalog-store.js";
 import { createFileProviderStore } from "./provider-store.js";
 import { createApiKeyStore } from "./api-key-store.js";
-import { summarizeCatalog, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
+import { summarizeCatalog, filterByEnabled, rosterOf, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
 import { CODE, isAuthFailure } from "./codes.js";
 import {
   resolveSettings,
@@ -90,8 +90,21 @@ const API_KEY_PATH = `/api/${name}/api-key`;
  * body ceiling as the account/api-key routes. See docs/PROVIDER-HOT-RELOAD.md.
  */
 const PROVIDER_PATH = `/api/${name}/provider`;
+/**
+ * The model-roster route: which of this key's models the registered provider
+ * actually offers (docs/API.md). It writes the curated allow-list into the
+ * private catalog state file and republishes immediately — no restart. Same
+ * trust fence and body ceiling as the account/api-key routes.
+ */
+const MODELS_PATH = `/api/${name}/models`;
 /** Ceiling on a submitted account, so a hostile page cannot stream a body. */
 const MAX_ACCOUNT_BODY_BYTES = 4096;
+/**
+ * Ceiling on the curated allow-list. The state file is small by design and a
+ * catalogue this large would not fit any SenseNova plan; anything beyond is a
+ * posting accident, not a curation.
+ */
+const MAX_ENABLED_MODEL_IDS = 500;
 /** Family default response headers for a JSON route. */
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -666,10 +679,12 @@ function apply(ctx, config = {}, deps = {}) {
           // The effective switch: a panel-saved value beats the patch default.
           // Both are reported so the panel can say which side is in charge.
           const panelSwitch = await providerStore.enabled().catch(() => null);
+          // The curated allow-list is read on every poll, not only when a fresh
+          // catalogue arrived: a /models save must reach the picker even on a
+          // poll that serves a cached catalogue.
+          const enabledIds = await catalogStore.listEnabledIds().catch(() => providerState.enabledIds);
           let offered = providerState.entries;
-          let enabledIds = providerState.enabledIds;
           if (Array.isArray(catalog)) {
-            enabledIds = await catalogStore.listEnabledIds().catch(() => providerState.enabledIds);
             const signature = catalogSignature(catalog, enabledIds);
             if (signature !== providerState.signature) {
               providerState.signature = signature;
@@ -678,7 +693,12 @@ function apply(ctx, config = {}, deps = {}) {
             }
             offered = catalog;
           }
-          const summary = summarizeCatalog(offered);
+          // The counts describe the OFFER, not the catalogue: the adapter is
+          // built from the allow-list-filtered entries, so a panel line that
+          // quoted the raw count would claim to have registered models that
+          // were ticked off. `models` below stays the whole roster — the
+          // picker needs to see what it can still offer.
+          const summary = summarizeCatalog(filterByEnabled(offered, enabledIds));
           // Secret-free by construction: the store reports booleans/source
           // only, never the key value.
           llmStatus = {
@@ -690,6 +710,11 @@ function apply(ctx, config = {}, deps = {}) {
             providerId: LLM_PROVIDER_ID,
             modelCount: summary.modelCount,
             visionCount: summary.visionCount,
+            // The picker's data: the whole roster this catalogue can offer,
+            // plus the curated allow-list it currently applies. An empty
+            // allow-list means "no filter" — every row is offered.
+            models: rosterOf(offered),
+            enabledModelIds: enabledIds,
             ...(providerState.error !== null ? { providerError: providerState.error } : {})
           };
         }
@@ -942,6 +967,68 @@ function apply(ctx, config = {}, deps = {}) {
     }
   });
 
+  const offModels = ctx.webServer.register({
+    kind: "exact",
+    path: MODELS_PATH,
+    handler: async (request, response) => {
+      // Same fence as the other routes: a foreign page must not be able to
+      // decide which models this Host offers.
+      if (!isAdmitted(request, settings.allowedHosts)) {
+        writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+        return;
+      }
+      const method = request.method === undefined ? "POST" : request.method;
+      if (method !== "POST") {
+        writeJson(response, 405, { ok: false, error: "method not allowed" });
+        return;
+      }
+      const body = await readJsonBody(request);
+      if (!body.ok) {
+        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
+        return;
+      }
+      // An absent field is refused rather than read as "all models": writing
+      // that would silently widen the offer to every model in the catalogue.
+      if (!Array.isArray(body.value.enabledModelIds)) {
+        writeJson(response, 400, { ok: false, error: "expected { enabledModelIds: string[] }" },
+          { "cache-control": "no-store" });
+        return;
+      }
+      const ids = normalizeEnabledIds(body.value.enabledModelIds);
+      if (ids.length > MAX_ENABLED_MODEL_IDS) {
+        writeJson(response, 400,
+          { ok: false, error: `enabledModelIds is too long (max ${MAX_ENABLED_MODEL_IDS})` },
+          { "cache-control": "no-store" });
+        return;
+      }
+      const answer = async (extra = {}) => {
+        writeJson(response, 200, {
+          ok: true,
+          enabledModelIds: await catalogStore.listEnabledIds().catch(() => providerState.enabledIds),
+          registerProvider:
+            ((await providerStore.enabled().catch(() => null)) ?? settings.registerProvider) === true,
+          providerRegistered: providerState.registered,
+          ...(providerState.error !== null ? { providerError: providerState.error } : {}),
+          ...extra
+        }, { "cache-control": "no-store" });
+      };
+      try {
+        await catalogStore.setEnabledIds(ids);
+        // The next poll must not re-publish the same offer: adopt the signature
+        // of what was just offered, or every poll would churn the registration.
+        providerState.signature = catalogSignature(providerState.entries, ids);
+        // Publish immediately with the CURRENT catalogue: the offer must not
+        // wait for the next poll. A failed publish rolls back to the previous
+        // pair inside publishProvider and surfaces its reason.
+        await publishProvider(providerState.entries, ids);
+      } catch (error) {
+        await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      await answer();
+    }
+  });
+
   ctx.effect(() => () => {
     // Before anything else: a publish still in flight (the mount seed's, or a
     // poll's) must not register into a Host that is letting this plugin go.
@@ -949,7 +1036,7 @@ function apply(ctx, config = {}, deps = {}) {
     // Stop offering the provider first, so a request cannot be routed to an
     // adapter whose Host services are already half gone.
     releaseProvider();
-    for (const off of [offRoute, offAccount, offApiKey, offProvider]) {
+    for (const off of [offRoute, offAccount, offApiKey, offProvider, offModels]) {
       try {
         off();
       } catch {

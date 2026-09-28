@@ -49,7 +49,7 @@ npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可
 
 > 本文曾记载「`wiring.test.mjs` 缺失、`panel.test.mjs` 有失败用例」。两条都已不成立：`wiring.test.mjs` 现在 24 项全过，`panel.test.mjs` 41 项全过。后来记载的「同源校验挡不住 DNS rebinding」「密码会被静默 trim」也已收口：前者由 `isAdmitted` 的 Host 白名单（`index.js`，`routes.test.mjs` D2 守住「Origin 与 Host 一致的陷阱」），后者由 `token-store.js` 的 `verbatim()`（密码按原样存取，store.test.mjs 断言 kept verbatim）。「渲染层没有被测到」同样不再成立：`test/render.test.mjs` 通过 `panel-render.js` 检查上屏数字，`used/limit` 写反的演练实测 5 项变红。文档比代码先过期也是一类缺陷，所以这里只保留仍然真实的缺口：
 
-- **`AccountForm` 的渲染没有被测到。** 它建立在 `useState`/`useEffect` 之上，React 替身只会无脑返回初值——测的会是那个假件。宁可留着缺口也不假装覆盖；表单的行为部分由 `store`/`routes` 套件在 Host 侧守住。
+- **`AccountForm` 的渲染没有被测到。** 它建立在 `useState`/`useEffect` 之上，React 替身只会无脑返回初值——测的会是那个假件。宁可留着缺口也不假装覆盖；表单的行为部分由 `store`/`routes` 套件在 Host 侧守住。`ModelPicker` 同属这类 hook 组件，草稿/保存态也未被渲染层覆盖；它的**可测部分**已被拆出来守住：勾选行的 `ModelRoster`（不依赖 hook）由 `test/render.test.mjs` G4 组覆盖，而「勾选 → 允许清单」的推导（含空清单折叠与 `__hide_all__` 哨兵）由 `test/provider.test.mjs` 5.6c 组以面板与 Host 两侧逐值相等钉死。
 - **`test:live` 是唯一允许联网的检查**（只拉公开 JWKS，不带凭据、不发登录请求）。默认不跑它，避免「测试会因与插件无关的外部原因失败」，也守住那条界线：验证不该默认等于对真实服务发请求。
 - **本机的 `SENSENOVA_*` 环境变量被测试隔离。** `index.js` 在挂载时从 `process.env` 读 API key，一台真配了它的机器会走进套件从未打桩的分支（真去拉模型目录，并把一个非控制台 token 混进断言）。只在一台干净机器上绿、在作者机器上红的套件不叫离线，叫「通常离线」——`test/peer-roots.mjs` 的 `isolateHostEnv()` 负责这件事。
 - **`credentialKey` 形状有双保险。** 它是 `index.js` 一处照抄 `@deepseek-ai/dsh-credentials` 格式（`"scope/id"`）的 shim，为让测试不解析 peer 就能跑。`config.test.mjs` 在**任何机器**（含干净检出）钉死其字面形状，`store.test.mjs` 在 peer 可解析的机器上再断言与真实实现**逐值相等**——格式一变，无论是插件这侧手抖还是 peer 包升级改了分隔符，都会红，而不是等到运行时面板读不到自己的 grant。

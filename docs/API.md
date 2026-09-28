@@ -6,7 +6,7 @@
 
 ## 1. 本插件路由（Host 半边注册）
 
-三条路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号或 Key。请求体上限 **4 KB**。
+五条路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号或 Key。请求体上限 **4 KB**。
 
 ### `GET /api/dsh-connect-sensenova-token-plan/snapshot`
 面板轮询的聚合结果。返回体（HTTP 恒为 200，成败靠 body 区分）：
@@ -36,7 +36,12 @@
     // 直接注册开关 / Host llm 服务 / 当前是否已注册
     "registerProvider": false, "llmAvailable": false,
     "providerRegistered": false, "providerId": "sensenova-token-plan",
-    "modelCount": 2, "visionCount": 1
+    // 实际注册了多少个（已按下面的允许清单过滤），以及其中多少个可看图
+    "modelCount": 2, "visionCount": 1,
+    // 模型选择器数据：整份可选目录（不受过滤影响）与当前生效的允许清单。
+    // 空清单 = 不过滤 = 全部推送；["__hide_all__"] = 一个都不推送。
+    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false }],
+    "enabledModelIds": []
   },
   "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
 }
@@ -73,6 +78,17 @@
 
 ### `POST /api/dsh-connect-sensenova-token-plan/provider`
 `{ "enabled": true|false }` —— 把开关写入插件私有状态文件并在**同一请求内**重新发布 provider（立即生效，无需重启）。优先级：面板保存的值 > `cordis.patch.yml` 的 `registerProvider`。非布尔 `enabled` 返回 400；跨域返回 403。
+
+### `POST /api/dsh-connect-sensenova-token-plan/models`
+`{ "enabledModelIds": ["model-a", ...] }` —— 替换本 Key 的**模型允许清单**：勾选后保存到私有 catalog 状态文件，并在**同一请求内**重新发布 provider（面板不需要等下一次轮询）。
+
+清单语义与 `filterByEnabled` 一致：
+
+- **空数组 `[]`** = 不过滤，目录里的模型全部推送；
+- **非空数组** = 严格允许清单，只推送列出的模型；
+- **`["__hide_all__"]`** = 一个都不推送（临时全部收起用的哨兵；空数组已表示「未筛选」，需要一个不同的写法表达「筛选后一个都不剩」）。
+
+返回 `{ ok, enabledModelIds, registerProvider, providerRegistered, providerError? }`，不含模型明文号与 Key。缺字段 / 非数组 / 超过 500 项返回 400 且不写入任何值；跨域返回 403。清单只影响**推送给 DSH 的选择器**，`snapshot` 里的 `catalogModels` / `llm.models` 仍是整份目录，面板据此展示可勾选项。
 
 ---
 

@@ -37,6 +37,7 @@ const SNAPSHOT_PATH = "/api/dsh-connect-sensenova-token-plan/snapshot";
 const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
 const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
 const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
+const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
 const RECORD_KEY = credentialKey("dsh-connect-sensenova-token-plan", "sensenova-console");
 
 const POOL_BODY = {
@@ -1003,6 +1004,182 @@ async function withNetwork(stub, body) {
     check("P7 an unrelated body is refused",
       other.statusCode === 400 && other.payload.ok === false, JSON.stringify(other.payload));
   } catch (error) { fail("P: the provider switch route", error); }
+}
+
+// === Q. the model roster route: which of this key's models get offered =====
+// The third way the picker writes: POST /models replaces the curated
+// allow-list and republishes immediately. Three properties matter and none of
+// them is covered by the other groups: the fence (a foreign page must not
+// choose this Host's model list), the immediate publish (the offer must not
+// wait for the next poll), and the signature handoff (the poll after a save
+// must not churn the registration).
+{
+  const makeFakeLlm = () => {
+    const calls = { adapter: [], directory: [], releases: 0, events: [] };
+    return {
+      calls,
+      registerAdapter(ids, adapter) { calls.adapter.push({ ids, adapter }); return () => { calls.releases += 1; }; },
+      registerConfigurableProviders(rows) { calls.directory.push(rows); return () => { calls.releases += 1; }; }
+    };
+  };
+  const makeFakeAdapterDeps = () => {
+    const builds = [];
+    return {
+      builds,
+      loadAdapterModule: async () => ({
+        createSensenovaAdapter(options) {
+          builds.push(options);
+          return { providerIds: ["sensenova-token-plan"], adapter: { fake: true } };
+        }
+      })
+    };
+  };
+
+  // Q1. the fence and the method gate, before any body is trusted.
+  try {
+    const call = await mount(makeCredentials(null), { registerProvider: true });
+    const foreign = await call(MODELS_PATH, makePost({ enabledModelIds: [] }, { origin: "https://evil.test" }));
+    check("Q1 a cross-origin save is refused",
+      foreign.statusCode === 403 && foreign.payload.ok === false, JSON.stringify(foreign.payload));
+    const get = await call(MODELS_PATH, makeRequest());
+    check("Q1 GET is not an allowed method here",
+      get.statusCode === 405 && get.payload.ok === false, JSON.stringify(get.payload));
+  } catch (error) { fail("Q1: the roster route fence", error); }
+
+  // Q2-Q7. with a real session, a catalog, and an llm service.
+  try {
+    const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
+    credentials.refs.set("SENSENOVA_API_KEY", "sk-roster");
+    const llm = makeFakeLlm();
+    const adapterDeps = makeFakeAdapterDeps();
+    const net = await loginNetwork();
+    await withNetwork(async (url, init) => {
+      const target = String(url);
+      if (target.includes("/v1/models") || target.includes("/models")) {
+        return new Response(JSON.stringify({
+          data: [
+            { id: "SenseNova-Lite", input_modalities: ["text"] },
+            { id: "SenseNova-Vision", input_modalities: ["text", "image"] },
+            { id: "SenseNova-Pro", input_modalities: ["text"] }
+          ]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return net(url, init);
+    }, async () => {
+      const call = await mount(credentials, { registerProvider: true }, {
+        llm, ...adapterDeps, emit: () => {}
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The state file is shared across the whole suite, so the panel switch
+      // may still be off from group P: turn it on the way a panel would.
+      const enableSwitch = await call(PROVIDER_PATH, makePost({ enabled: true }));
+      check("Q2 the panel switch can be turned on in the same session",
+        enableSwitch.statusCode === 200 && enableSwitch.payload.ok === true &&
+          enableSwitch.payload.registerProvider === true, JSON.stringify(enableSwitch.payload));
+
+      // Q2. The picker's own read: the snapshot hands the roster to it.
+      const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+      check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
+        JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([
+          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false },
+          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true },
+          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false }
+        ]), JSON.stringify(snapshot.payload.llm?.models));
+      check("Q2 an uncurated install reports an empty allow-list",
+        JSON.stringify(snapshot.payload.llm?.enabledModelIds) === JSON.stringify([]),
+        JSON.stringify(snapshot.payload.llm?.enabledModelIds));
+      check("Q2 an empty allow-list still offers every model",
+        snapshot.payload.llm?.modelCount === 3 && snapshot.payload.llm?.visionCount === 1,
+        JSON.stringify({ m: snapshot.payload.llm?.modelCount, v: snapshot.payload.llm?.visionCount }));
+
+      // Q3. Save a curation: it publishes immediately, with the new list.
+      const buildCount = adapterDeps.builds.length;
+      const save = await call(MODELS_PATH, makePost({ enabledModelIds: ["SenseNova-Vision"] }));
+      check("Q3 a save reports the saved allow-list",
+        save.statusCode === 200 && save.payload.ok === true &&
+          JSON.stringify(save.payload.enabledModelIds) === JSON.stringify(["SenseNova-Vision"]),
+        JSON.stringify(save.payload));
+      check("Q3 the offer was republished on the request that carried the save",
+        adapterDeps.builds.length === buildCount + 1 &&
+          JSON.stringify(adapterDeps.builds.at(-1).enabledIds) === JSON.stringify(["SenseNova-Vision"]),
+        JSON.stringify({ builds: adapterDeps.builds.length, ids: adapterDeps.builds.at(-1)?.enabledIds }));
+
+      // Q4. The poll after the save sees the curation without a fresh catalog.
+      const poll = await call(SNAPSHOT_PATH, makeRequest());
+      check("Q4 the poll reports the curation",
+        JSON.stringify(poll.payload.llm?.enabledModelIds) === JSON.stringify(["SenseNova-Vision"]),
+        JSON.stringify(poll.payload.llm?.enabledModelIds));
+      check("Q4 the offer is narrowed to the ticked model",
+        poll.payload.llm?.modelCount === 1 && poll.payload.llm?.visionCount === 1,
+        JSON.stringify({ m: poll.payload.llm?.modelCount, v: poll.payload.llm?.visionCount }));
+      check("Q4 the poll still shows the WHOLE roster",
+        JSON.stringify(poll.payload.llm?.models.map((model) => model.id)) ===
+          JSON.stringify(["SenseNova-Lite", "SenseNova-Vision", "SenseNova-Pro"]),
+        JSON.stringify(poll.payload.llm?.models));
+
+      // Q5. The signature handoff: a poll that brings the same catalogue and
+      // the same allow-list must not rebuild the provider.
+      const settled = adapterDeps.builds.length;
+      await call(SNAPSHOT_PATH, makeRequest());
+      await call(SNAPSHOT_PATH, makeRequest());
+      check("Q5 a save does not turn every later poll into a republish",
+        adapterDeps.builds.length === settled,
+        `${settled} -> ${adapterDeps.builds.length}`);
+
+      // Q6. The sentinel: "temporarily push no models at all" must be
+      // expressible, which an empty list cannot mean.
+      const hide = await call(MODELS_PATH, makePost({ enabledModelIds: ["__hide_all__"] }));
+      check("Q6 the hide-all sentinel is accepted and reported",
+        hide.payload.ok === true && JSON.stringify(hide.payload.enabledModelIds) === JSON.stringify(["__hide_all__"]),
+        JSON.stringify(hide.payload));
+      check("Q6 the offer collapses to nothing",
+        JSON.stringify(adapterDeps.builds.at(-1).enabledIds) === JSON.stringify(["__hide_all__"]),
+        JSON.stringify(adapterDeps.builds.at(-1)?.enabledIds));
+      const hidden = await call(SNAPSHOT_PATH, makeRequest());
+      check("Q6 the snapshot counts zero registered models",
+        hidden.payload.llm?.modelCount === 0 && hidden.payload.llm?.visionCount === 0,
+        JSON.stringify({ m: hidden.payload.llm?.modelCount, v: hidden.payload.llm?.visionCount }));
+      check("Q6 the roster itself is still complete",
+        hidden.payload.llm?.models.length === 3, String(hidden.payload.llm?.models?.length));
+
+      // Q7. Junk bodies are refused before anything is written.
+      const missing = await call(MODELS_PATH, makePost({}));
+      check("Q7 a missing field is refused, not read as 'all models'",
+        missing.statusCode === 400 && missing.payload.ok === false, JSON.stringify(missing.payload));
+      const wrong = await call(MODELS_PATH, makePost({ enabledModelIds: "SenseNova-Lite" }));
+      check("Q7 a non-array field is refused",
+        wrong.statusCode === 400 && wrong.payload.ok === false, JSON.stringify(wrong.payload));
+      const junk = await call(MODELS_PATH, makePost({ enabledModelIds: "not json" }));
+      check("Q7 an unreadable body is refused",
+        junk.statusCode === 400 && junk.payload.ok === false, JSON.stringify(junk.payload));
+      const tooLong = await call(MODELS_PATH,
+        makePost({ enabledModelIds: Array.from({ length: 501 }, (_, index) => `m${index}`) }));
+      check("Q7 an oversized allow-list is refused",
+        tooLong.statusCode === 400 && JSON.stringify(tooLong.payload).includes("too long"),
+        JSON.stringify(tooLong.payload));
+      check("Q7 nothing was written by the refused bodies",
+        JSON.stringify(adapterDeps.builds.at(-1).enabledIds) === JSON.stringify(["__hide_all__"]),
+        JSON.stringify(adapterDeps.builds.at(-1)?.enabledIds));
+
+      // Q8. Curation survives a remount (the same state file as the switch).
+      const call2 = await mount(makeCredentials(storedGrant(jwtExpiring(120), "r", 7200)),
+        { registerProvider: true }, { llm: makeFakeLlm(), ...makeFakeAdapterDeps(), emit: () => {} });
+      const persisted = await call2(SNAPSHOT_PATH, makeRequest());
+      check("Q8 the curation outlives one Host process",
+        JSON.stringify(persisted.payload.llm?.enabledModelIds) === JSON.stringify(["__hide_all__"]),
+        JSON.stringify(persisted.payload.llm?.enabledModelIds));
+
+      // Q9. Forgetting the key also forgets the curation: a new key starts
+      // uncurated, not under a filter the previous key's owner set.
+      await call(MODELS_PATH, makePost({ enabledModelIds: ["SenseNova-Lite"] }));
+      await call(API_KEY_PATH, makePost({ forget: true }));
+      const after = await call(SNAPSHOT_PATH, makeRequest());
+      check("Q9 forgetting the key clears the curation with it",
+        JSON.stringify(after.payload.llm?.enabledModelIds) === JSON.stringify([]),
+        JSON.stringify(after.payload.llm?.enabledModelIds));
+    });
+  } catch (error) { fail("Q: the model roster route", error); }
 }
 
 // The Host routes are exercised against a stubbed console; nothing here may

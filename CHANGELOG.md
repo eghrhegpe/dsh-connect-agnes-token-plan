@@ -2,6 +2,19 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.3.2] — 2026-09-29
+
+面板新增「模型允许清单」：可以**勾选具体哪些模型推送进 DSH 的模型列表**，不再只能全推或全不推。
+
+- **面板新增模型选择器**（「模型接入（API Key）」区）：列出本 Key 目录下每个模型（带名称与可看图标记），逐条勾选；支持搜索过滤、可见项全选/全取消、实时计数，编辑先落草稿，点保存才写入。
+- **新增路由** `POST /api/<name>/models`（同源围栏 + body 上限 + 500 项上限，与账号/api-key/provider 路由同一信任形状）：`POST { enabledModelIds: string[] }` 替换允许清单，**同一请求内**重新发布 provider，面板不用等下一次轮询。设计理由见 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md) §6。
+- **清单语义**：`[]` = 不过滤，全部推送；非空 = 严格允许清单，只推列出的模型；`["__hide_all__"]` = 一个都不推送（表达「临时全部收起」，空数组已表示「未筛选」，需要独立写法）。
+- **快照 `llm` 块新增两个字段**：`models`（整份可选目录：`id` / `name` / `vision`，**不受**过滤影响，面板据此画可勾选项）、`enabledModelIds`（当前生效的允许清单）。
+- **`modelCount` / `visionCount` 改为按清单过滤后计数**——它们描述的是「实际注册了多少」，而不是目录有多大。0.3.1 及以前清单恒为空，数值不变。
+- 清单存在与 catalog 同一份私有状态文件 `state/<name>/catalog.json` 的 `enabledModelIds` 字段（版本与原子写纪律不变），重启即恢复。
+- `POST /api/<name>/api-key` 的 `forget` 语义不变，但它会连带清掉勾选记录：换一个 Key 就是一份新的、未勾选的目录。
+- 补记：`package.json` 的 `version` 在 0.3.1 时漏改（一直是 0.3.0），本次一并补齐到 0.3.2。
+
 ## [0.3.1] — 2026-09-28
 
 提供方注册开关热生效（[docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)）：

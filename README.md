@@ -30,7 +30,7 @@ Host 通过只读路由 `GET /api/dsh-connect-sensenova-token-plan/snapshot` 提
 
 ## 可选：面板里直接接入 LLM provider
 
-不想手写 `llm-pi-ai` 配置行时，在本插件 row 上把 `registerProvider` 设为 `true`（字段见 [docs/SETUP.md](docs/SETUP.md) §3），再在面板「模型接入（API Key）」区粘贴 `sk-` Key 保存：Host 即以 `sensenova-token-plan` 之名直连 `token.sensenova.cn/v1` 注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入。Key 只进 DSH 凭据（`SENSENOVA_API_KEY` 环境变量仍兜底）、面板永不回显；catalog 缓存只写插件私有状态文件。开关默认关闭，改动后须重启 Host，设计守口见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5.2。
+不想手写 `llm-pi-ai` 配置行时，在本插件 row 上把 `registerProvider` 设为 `true`（字段见 [docs/SETUP.md](docs/SETUP.md) §3），再在面板「模型接入（API Key）」区粘贴 `sk-` Key 保存：Host 即以 `sensenova-token-plan` 之名直连 `token.sensenova.cn/v1` 注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入；同区还能勾选**具体要推送哪些模型**（默认全部推送，也能临时一个都不推）。Key 只进 DSH 凭据（`SENSENOVA_API_KEY` 环境变量仍兜底）、面板永不回显；catalog 与勾选记录只写插件私有状态文件。开关与勾选都在面板热生效、无需重启 Host，设计守口见 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
 
 ## 改代码后必须重启 Host
 
@@ -52,9 +52,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 
 ## 配置
 
-配置面就是本目录的 `cordis.patch.yml`；全部字段、默认值与「非法端点地址挂载即报 `config_error`」的语义见 [docs/SETUP.md](docs/SETUP.md) §3。
-
-额度数值完全来自控制台 API，插件不做任何推算；控制台返回结构与预期不符时快照带 `shapeWarnings`，面板会明说，而不是永远显示「暂无数据」。
+配置面就是本目录的 `cordis.patch.yml`；全部字段、默认值与「非法端点地址挂载即报 `config_error`」的语义见 [docs/SETUP.md](docs/SETUP.md) §3。额度数值完全来自控制台 API，插件不做任何推算；控制台返回结构与预期不符时快照带 `shapeWarnings`，面板会明说，而不是永远显示「暂无数据」。
 
 ## 测试
 
@@ -131,8 +129,10 @@ dsh-connect-sensenova-token-plan/
 | `/api/dsh-connect-sensenova-token-plan/snapshot` | GET | 面板轮询的聚合结果 |
 | `/api/dsh-connect-sensenova-token-plan/account` | GET / POST | 账号状态（不含密码）/ 保存账号 / `{forget:true}` 清除 |
 | `/api/dsh-connect-sensenova-token-plan/api-key` | GET / POST | 推理 Key 去密状态 / 保存 `sk-` Key / `{forget:true}` 清除（永不回显明文） |
+| `/api/dsh-connect-sensenova-token-plan/provider` | GET / POST | 注册开关生效值与来源 / `{enabled:boolean}` 立即重新发布 |
+| `/api/dsh-connect-sensenova-token-plan/models` | POST | `{enabledModelIds:string[]}` 选择要推送哪些模型，立即重新发布 |
 
-三条路由都经过双层信任围栏（Host 本机白名单挡 DNS rebinding + Origin 与 Host 一致挡跨站伪造），请求体上限 4 KB；返回结构与细节见 [docs/API.md](docs/API.md) §1。
+五条路由都经过双层信任围栏（Host 本机白名单挡 DNS rebinding + Origin 与 Host 一致挡跨站伪造），请求体上限 4 KB；返回结构与细节见 [docs/API.md](docs/API.md) §1。
 
 ## 许可证
 

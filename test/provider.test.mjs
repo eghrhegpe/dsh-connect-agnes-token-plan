@@ -25,10 +25,14 @@ import {
   toPiDescriptor,
   buildDescriptors,
   filterByEnabled,
+  isModelEnabled,
+  rosterOf,
+  HIDE_ALL_MODELS,
   summarizeCatalog
 } from "../llm-models.js";
 import {
   CATALOG_VERSION,
+  normalizeEnabledIds,
   normalizeEntries,
   createFileCatalogStore,
   createMemoryCatalogStore
@@ -36,6 +40,7 @@ import {
 import { createApiKeyStore, API_KEY_REF } from "../api-key-store.js";
 import { PROVIDER_VERSION, createFileProviderStore } from "../provider-store.js";
 import { redactSecrets } from "../util.js";
+import { surface as clientSurface } from "../client-surface.js";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -190,6 +195,142 @@ const BASE_URL = "https://token.sensenova.cn/v1";
       built.map((d) => d.id).join(",") === "a,c", built.map((d) => d.id).join(","));
   } catch (error) {
     fail("filterByEnabled allow-list semantics", error);
+  }
+}
+
+// --- 5.6 the "hide everything" sentinel and the panel roster projection -----
+// An empty allow-list already means "no filter", so "the user unticked every
+// model" needs a second spelling. HIDE_ALL_MODELS is that spelling: it is not a
+// model, so it matches nothing and offers nothing — while staying distinct
+// from "nothing curated yet". Without it the picker could not express
+// "temporarily push no models" at all.
+{
+  try {
+    const entries = [
+      { id: "a", name: "Model A" },
+      { id: "b", name: "Model B", input_modalities: ["text", "image"] },
+      { id: "c", name: "Model C" }
+    ];
+    // The sentinel must be a string no real id can be.
+    check("the sentinel is a non-empty string", typeof HIDE_ALL_MODELS === "string" && HIDE_ALL_MODELS !== "", String(HIDE_ALL_MODELS));
+    check("a sentinel-only allow-list offers nothing",
+      filterByEnabled(entries, [HIDE_ALL_MODELS]).length === 0);
+    check("the sentinel filters a mixed list down to nothing",
+      filterByEnabled(entries, [HIDE_ALL_MODELS, "a"]).map((e) => e.id).join(",") === "a");
+    check("an empty list still means 'no filter' (not 'nothing')",
+      filterByEnabled(entries, []).length === 3);
+    // The predicate agrees with filterByEnabled for all three states.
+    check("isModelEnabled: empty list offers everything",
+      isModelEnabled([], "a") === true && isModelEnabled(undefined, "a") === true);
+    check("isModelEnabled: a non-empty list is strict",
+      isModelEnabled(["a"], "a") === true && isModelEnabled(["a"], "b") === false);
+    check("isModelEnabled: the sentinel offers nothing",
+      isModelEnabled([HIDE_ALL_MODELS], "a") === false);
+    check("isModelEnabled: a junk list reads as no filter",
+      isModelEnabled("a", "b") === true);
+    // The store keeps the sentinel: curation survives a persist round trip.
+    check("normalizeEnabledIds keeps the sentinel",
+      JSON.stringify(normalizeEnabledIds([HIDE_ALL_MODELS, "a"])) === JSON.stringify([HIDE_ALL_MODELS, "a"]));
+    check("normalizeEnabledIds still drops junk",
+      JSON.stringify(normalizeEnabledIds([HIDE_ALL_MODELS, "", null, "a", "a"])) === JSON.stringify([HIDE_ALL_MODELS, "a"]));
+    check("normalizeEnabledIds on a non-array reads as no filter",
+      JSON.stringify(normalizeEnabledIds("nope")) === JSON.stringify([]));
+  } catch (error) {
+    fail("the hide-all sentinel", error);
+  }
+}
+
+// --- 5.6b rosterOf: what the panel shows as tickable rows -------------------
+// rosterOf is the only thing standing between the raw catalogue and the
+// checkboxes: it must project just id/name/vision, drop junk, dedupe by id, and
+// reach the SAME vision verdict the registered descriptors use — otherwise the
+// panel would advertise a model the provider never registered.
+{
+  try {
+    const roster = rosterOf([
+      { id: "a", name: "Model A" },
+      { id: "b", name: "Model B", input_modalities: ["text", "image"], opaque_field: "must not leak" },
+      { name: "no id" },
+      { id: "a", name: "Model A prime" },
+      null,
+      { id: "c" }
+    ]);
+    check("rosterOf drops id-less entries and junk",
+      roster.map((r) => r.id).join(",") === "a,b,c", roster.map((r) => r.id).join(","));
+    check("rosterOf keeps only id, name and vision",
+      JSON.stringify(Object.keys(roster[0]).sort()) === JSON.stringify(["id", "name", "vision"]));
+    check("a missing name falls back to the id", roster[2].name === "c");
+    check("rosterOf dedupes the same way buildDescriptors does (last wins)",
+      roster[0].name === "Model A prime", roster[0].name);
+    check("rosterOf reaches the same vision verdict as the descriptors",
+      JSON.stringify(roster.map((r) => r.vision)) === JSON.stringify([false, true, false]) &&
+      JSON.stringify(rosterOf([{ id: "plain" }]).map((r) => r.vision)) === JSON.stringify([false]));
+    check("rosterOf on a non-array returns nothing", rosterOf(undefined).length === 0);
+    // Cross-checked against the Host's own descriptor builder: the ids the
+    // panel can tick must be the ids the provider would register.
+    const described = buildDescriptors([
+      { id: "a" }, { id: "b", input_modalities: ["text", "image"] }
+    ], { baseUrl: BASE_URL });
+    check("rosterOf and buildDescriptors agree on which ids exist",
+      JSON.stringify(rosterOf([{ id: "a" }, { id: "b" }]).map((r) => r.id)) ===
+        JSON.stringify(described.map((d) => d.id)));
+  } catch (error) {
+    fail("rosterOf projection", error);
+  }
+}
+
+// --- 5.6c the browser bundle must carry the same sentinel -------------------
+// client.js cannot import this module (the browser loader only resolves
+// packages), so the literal is spelled twice. If the two diverge, the Host
+// would apply a filter the panel believes is "everything on" — silently
+// un-curating the whole catalogue. Materializing the shipped bundle is what
+// catches that.
+{
+  try {
+    check("client and host spell the same hide-all sentinel",
+      clientSurface.helpers.HIDE_ALL_MODELS === HIDE_ALL_MODELS,
+      `${clientSurface.helpers.HIDE_ALL_MODELS} !== ${HIDE_ALL_MODELS}`);
+    // The picker's own predicate must agree with the Host's filter.
+    const entries = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    for (const allow of [[], ["a", "c"], [HIDE_ALL_MODELS]]) {
+      const hostIds = filterByEnabled(entries, allow).map((e) => e.id);
+      const panelIds = entries.map((e) => e.id).filter((id) => clientSurface.helpers.modelIsOn(allow, id));
+      check(`client modelIsOn agrees with filterByEnabled for ${JSON.stringify(allow)}`,
+        JSON.stringify(panelIds) === JSON.stringify(hostIds),
+        `${JSON.stringify(panelIds)} vs ${JSON.stringify(hostIds)}`);
+    }
+    // Ticking one model off must produce a complete allow-list, not a diff.
+    check("toggleModelIn: unticking one leaves the rest on",
+      JSON.stringify(clientSurface.helpers.toggleModelIn([], ["a", "b", "c"], "b")) === JSON.stringify(["a", "c"]));
+    check("toggleModelIn: unticking the last one collapses to the sentinel",
+      JSON.stringify(clientSurface.helpers.toggleModelIn(["a"], ["a"], "a")) === JSON.stringify([HIDE_ALL_MODELS]));
+    check("toggleModelIn: ticking back on drops the sentinel",
+      JSON.stringify(clientSurface.helpers.toggleModelIn([HIDE_ALL_MODELS], ["a", "b"], "b")) === JSON.stringify(["b"]));
+    check("toggleModelIn: ticking everything back on collapses to an empty list",
+      JSON.stringify(clientSurface.helpers.toggleModelIn(["b"], ["a", "b"], "a")) === JSON.stringify([]));
+    check("toggleModelIn: ordering follows the roster, not the old list",
+      JSON.stringify(clientSurface.helpers.toggleModelIn(["c", "a"], ["a", "c", "b", "d"], "b")) === JSON.stringify(["a", "c", "b"]));
+    check("toggleModelIn: ticking the last unticked model collapses to the empty spelling",
+      JSON.stringify(clientSurface.helpers.toggleModelIn(["c", "a"], ["a", "c", "b"], "b")) === JSON.stringify([]));
+    // Bulk operations share the same extreme spellings.
+    check("setAllModelsIn: tick all is the empty-list spelling",
+      JSON.stringify(clientSurface.helpers.setAllModelsIn(["a", "b"], true)) === JSON.stringify([]));
+    check("setAllModelsIn: untick all is the sentinel spelling",
+      JSON.stringify(clientSurface.helpers.setAllModelsIn(["a", "b"], false)) === JSON.stringify([HIDE_ALL_MODELS]));
+    // allowListFor is the funnel: every spelling it emits is one the Host reads
+    // the way the picker shows it.
+    check("allowListFor: a partial set is emitted in roster order",
+      JSON.stringify(clientSurface.helpers.allowListFor(new Set(["c", "a"]), ["a", "c", "b"])) === JSON.stringify(["a", "c"]));
+    check("allowListFor: an unknown id can never enter the list",
+      JSON.stringify(clientSurface.helpers.allowListFor(new Set(["zzz"]), ["a", "b"])) === JSON.stringify([HIDE_ALL_MODELS]));
+    check("allowListFor: a junk roster reads as no models",
+      JSON.stringify(clientSurface.helpers.allowListFor(new Set(["a"]), undefined)) === JSON.stringify([HIDE_ALL_MODELS]));
+    // And the emitted list really offers what it was asked to offer.
+    const emitted = clientSurface.helpers.allowListFor(new Set(["a", "c"]), ["a", "c", "b"]);
+    check("an emitted allow-list offers exactly the requested ids",
+      JSON.stringify(filterByEnabled(entries, emitted).map((e) => e.id)) === JSON.stringify(["a", "c"]));
+  } catch (error) {
+    fail("client/host curation parity", error);
   }
 }
 
