@@ -170,7 +170,7 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 - `choices[0].message`：`role`、`content`；思考开时**字段按模型家族分家**——flash-lite 吐 `reasoning`，deepseek/glm/kimi 家族吐 `reasoning_content`（官方 DeepSeek/GLM 文档确认，实测键集一致，见 §7.5）；调工具时有 `tool_calls[]`（`id`/`type`/`function{name,arguments}`）。
 - `usage`：`prompt_tokens`/`completion_tokens`/`total_tokens`，`completion_tokens_details.reasoning_tokens`、`prompt_tokens_details.cached_tokens`。
 
-**思考模式的真实代价**（2026-09-29 实测，同一极小 prompt）：默认（high）1044ms / prompt 88 tokens、`reasoning` 78 字、`reasoning_tokens` 43；`none` 361ms / prompt 62 tokens——默认思考每请求**多烧约 26 个 prompt token、慢约 2.9 倍**。本插件 descriptor 的 `reasoning:false` 表示思考内容大概率不会透出到会话，但每请求仍按默认 high 计费，见 [PITFALLS.md](./PITFALLS.md) §20。
+**思考模式的真实代价**（2026-09-29 实测，同一极小 prompt）：默认（high）1044ms / prompt 88 tokens、`reasoning` 78 字、`reasoning_tokens` 43；`none` 361ms / prompt 62 tokens——默认思考每请求**多烧约 26 个 prompt token、慢约 2.9 倍**。本插件 descriptor 已设 `reasoning:true` + `thinkingLevelMap`（profile 默认 `high`），DSH 思考强度选择器照常工作：思考透出由 pi-ai 读 `reasoning`/`reasoning_content` 两种拼写完成（见 [PITFALLS.md](./PITFALLS.md) §21），不再有"思考被吞"问题。
 
 ### 7.4 图像输入（实测）
 

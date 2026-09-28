@@ -23,6 +23,7 @@ import {
   FALLBACK_CONTEXT_WINDOW,
   contextWindowOf,
   isChatModel,
+  thinkingLevelMapFor,
   toPiDescriptor,
   buildDescriptors,
   filterByEnabled,
@@ -65,7 +66,26 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     check("descriptor is tagged with the provider", descriptor.provider === LLM_PROVIDER_ID);
     check("base URL points at the direct endpoint", descriptor.baseUrl === BASE_URL);
     check("a model with no modality field is text-only", JSON.stringify(descriptor.input) === JSON.stringify(["text"]));
-    check("not advertised as a reasoning model", descriptor.reasoning === false);
+    // Every SenseNova chat model reasons by default (supported_features
+    // ["reasoning"], thinking on at high, 2026-09-29): the descriptor must
+    // advertise it so DSH offers the 思考强度 selector and pi-ai reads the
+    // thinking back (both `reasoning` and `reasoning_content` spellings).
+    check("advertised as a reasoning model", descriptor.reasoning === true);
+    check("the thinking map pins picker levels to wire spellings",
+      JSON.stringify(descriptor.thinkingLevelMap) === JSON.stringify({
+        off: "none", minimal: null, low: "low", medium: "medium",
+        high: "high", xhigh: "xhigh", max: null
+      }), JSON.stringify(descriptor.thinkingLevelMap));
+    check("off is the platform's none, not the OpenAI off (which 400s)",
+      thinkingLevelMapFor({ id: "any" }).off === "none");
+    check("minimal is not offered (unverified on this gateway)",
+      thinkingLevelMapFor({ id: "any" }).minimal === null);
+    check("xhigh is offered (accepted on every chat model)",
+      thinkingLevelMapFor({ id: "any" }).xhigh === "xhigh");
+    check("max is rejected off by default (400 on flash-lite / v4-flash)",
+      thinkingLevelMapFor({ id: "sensenova-6.8-flash-lite" }).max === null);
+    check("glm-5.2 alone offers max (probed 200)",
+      thinkingLevelMapFor({ id: "glm-5.2" }).max === "max");
     check("cost is zeroed on all four fields", JSON.stringify(descriptor.cost) === JSON.stringify(NO_COST) &&
       descriptor.cost.input === 0 && descriptor.cost.output === 0 &&
       descriptor.cost.cacheRead === 0 && descriptor.cost.cacheWrite === 0);

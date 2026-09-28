@@ -19,6 +19,16 @@
  * 2. No `maxTokens` VALUE is declared. A declared value becomes the output
  *    ceiling and pi-ai sends it as `max_tokens`, truncating long replies with
  *    `finish: max-tokens`. Only the field NAME (`max_tokens`) is pinned.
+ * 3. `reasoning: true` + a `thinkingLevelMap`. Every SenseNova chat model
+ *    advertises `supported_features: ["reasoning"]` and thinks by default
+ *    (verified 2026-09-29: default reasoning_effort high, thinking text
+ *    returned as `reasoning` on flash-lite and `reasoning_content` on
+ *    deepseek/glm/kimi — pi-ai reads both spellings). `reasoning: true` is
+ *    what makes DSH offer the 思考强度 selector and what makes pi-ai surface
+ *    the thinking. The map pins picker levels to platform-valid wire values:
+ *    `off: "none"` (the platform's off spelling — "off" itself 400s),
+ *    `minimal: null` (unverified on this gateway), and `max` only on glm-5.2
+ *    (probed 200; rejected 400 on flash-lite / deepseek-v4-flash).
  *
  * @module dsh-connect-sensenova-token-plan/llm-models
  */
@@ -105,6 +115,40 @@ export function isChatModel(entry) {
 }
 
 /**
+ * The picker's 思考强度 levels, pinned to platform-valid wire spellings.
+ *
+ * DSH's picker offers levels from `getSupportedThinkingLevels(model)`
+ * (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`), and pi-ai's
+ * openai-completions dispatch sends `reasoning_effort = map[level] ?? level`.
+ * SenseNova's OpenAI-compat gateway accepts `none`/`low`/`medium`/`high`/
+ * `xhigh` on every chat model, rejects `off` (the OpenAI spelling) and
+ * `minimal`, and rejects `max` everywhere except glm-5.2 (all probed
+ * 2026-09-29; the platform's own error lists `low, medium, high, xhigh,
+ * none`). So:
+ *
+ * - `off: "none"` — the picker's "关闭" must send `none`, not `off`;
+ * - `minimal: null` — not offered (unverified on this gateway);
+ * - `max` — `"max"` on glm-5.2 only, `null` elsewhere.
+ *
+ * A value of `null` means "the picker must not offer this level"; a string is
+ * the wire spelling the level dispatches to.
+ * @param {object} entry - one normalized catalog entry.
+ * @returns {object} the thinkingLevelMap.
+ */
+export function thinkingLevelMapFor(entry) {
+  const id = str(entry?.id, "");
+  return {
+    off: "none",
+    minimal: null,
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: "xhigh",
+    max: id === "glm-5.2" ? "max" : null
+  };
+}
+
+/**
  * Map one catalog entry onto the pi-ai model descriptor the adapter offers.
  *
  * Vision is the SAME identification the snapshot publishes
@@ -131,9 +175,11 @@ export function toPiDescriptor(entry, { providerId = LLM_PROVIDER_ID, baseUrl } 
     // Vision is automatic: the catalog's modality field decides, the user does
     // not configure it per model.
     input: vision ? ["text", "image"] : ["text"],
-    // SenseNova chat models served over this endpoint are not the "reasoning"
-    // shape pi-ai special-cases; leave the flag at its conservative default.
-    reasoning: false,
+    // Every SenseNova chat model thinks by default and advertises
+    // `supported_features: ["reasoning"]`; see the module header (decision 3)
+    // for why the flag is true and what the map pins.
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMapFor(entry),
     cost: { ...NO_COST },
     contextWindow: contextWindowOf(entry),
     // `supportsDeveloperRole: false` is load-bearing — see the module header.

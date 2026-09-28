@@ -127,6 +127,12 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
         retryPolicy: resolveRetryPolicy(undefined, `${name}.${LLM_PROVIDER_ID}.retryPolicy`),
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
+        // The picker's "Default" pins to high. SenseNova thinks by default
+        // (reasoning_effort default high), and the descriptor's thinkingLevelMap
+        // spells off as `none`, so an unselected effort must not reach pi-ai as
+        // "no effort" — that would dispatch `map.off` and silently turn thinking
+        // off. Pinning the profile default to high keeps the platform default.
+        reasoning: "high",
         ...REQUEST_IMAGE_BUDGETS,
         piProvider: provider
       }
