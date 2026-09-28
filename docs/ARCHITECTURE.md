@@ -85,7 +85,7 @@ client.js: interpretSnapshot(body) → {data, error}
 详见 [AUTH.md](./AUTH.md)。一句话版：
 
 1. 用户首次在面板填一次账号密码，密码用平台 JWKS 公钥封成 JWE（RSA-OAEP + A256GCM），明文不上网。
-2. 账号密码存入 DSH 凭据服务；之后**只靠 `refresh_token` 静默续期**，不再需要密码。
+2. 账号与 access/refresh token 存入 DSH 凭据服务（**密码不落盘**，仅登录瞬间内存使用；`SENSENOVA_PASSWORD` 环境变量是唯一持久来源）；之后**只靠 `refresh_token` 静默续期**，不再需要密码。
 3. 令牌约 180 分钟有效，提前 `tokenSkewSeconds`（默认 120s）触发续期；控制台返回 401 时也会换新并重试一次。
 
 ---

@@ -49,8 +49,9 @@ npm test                    # 全量离线十套件 + 末尾 e2e-gate（探到 d
 
 ## 红线（违反任一都会炸到用户机器）
 
-1. **凭据不入库**：账号密码只进 DSH 凭据服务（`~/.dsh/.credentials.yaml`，owner-only），
-   永不写入插件目录、永不进 git、永不进日志。登录 trace 已在 `sensenova-auth.js`
+1. **凭据不入库**：账号与 access/refresh token 只进 DSH 凭据服务（`~/.dsh/.credentials.yaml`，owner-only），
+   永不写入插件目录、永不进 git、永不进日志；**密码不落盘**——仅登录瞬间内存使用，`SENSENOVA_PASSWORD`
+   环境变量是它唯一的持久来源（显式 opt-in，勿把密码写回凭据服务）。登录 trace 已在 `sensenova-auth.js`
    内做值级脱敏（`code`/`code_verifier`/token/cookie），新增输出点必须过同一套
    `sanitize*`。
 2. **credentials 记录只能是 `kind: "grant"`**。发明私有 kind 会让凭据文件对

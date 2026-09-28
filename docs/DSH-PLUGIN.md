@@ -24,7 +24,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 ```jsonc
 {
   "name": "dsh-connect-sensenova-token-plan",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "main": "./index.js",                 // Host 半边入口
   "exports": {
     ".": "./index.js",
@@ -120,7 +120,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 
 - **插件不该做的事**：管理进程生命周期、持有全局状态、碰 Host 隐私数据。插件通过 `ctx`（cordis 容器）拿服务，如 `ctx.webServer`（注册路由）、`ctx.credentials`（凭据服务）、`ctx.slots`（注入 UI）、`ctx.locale`（字典）。
 - **本插件注册的路由**：`GET /api/dsh-connect-sensenova-token-plan/snapshot`（只读聚合）、`GET/POST /api/dsh-connect-sensenova-token-plan/account`（账号配置，同源校验 + body ≤ 4KB）。两条路由都过 `isAdmitted` 同源闸（见 [PITFALLS.md](./PITFALLS.md) 第 13 条）。
-- **凭据归 Host 的凭据服务**：账号密码 / access+refresh token 只经 `@deepseek-ai/dsh-credentials` 落 `~/.dsh/.credentials.yaml`，插件自己不写明文文件。没有凭据服务时退化为进程内存（`ephemeral`），重启需重登。
+- **凭据归 Host 的凭据服务**：账号与 access/refresh token 只经 `@deepseek-ai/dsh-credentials` 落 `~/.dsh/.credentials.yaml`；**密码不落盘**（仅登录瞬间内存使用，`SENSENOVA_PASSWORD` 环境变量是唯一持久来源）。插件自己不写明文文件。没有凭据服务时退化为进程内存（`ephemeral`），重启需重登。
 
 ---
 

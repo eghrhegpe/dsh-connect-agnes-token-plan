@@ -278,7 +278,7 @@ async function withNetwork(stub, body) {
   check("an unknown record version is ignored", caught?.code === "not_configured", caught?.code);
 }
 
-// --- 8. saveAccount stores both refs, then logs in ----------------------
+// --- 8. saveAccount stores the username only, then logs in --------------
 {
   const credentials = fakeCredentials(null);
   const stub = await makeTokenStub(accepted);
@@ -294,12 +294,17 @@ async function withNetwork(stub, body) {
     await store.saveAccount({ username: "  user@x  ", password: "  secret  " });
     check("the username is trimmed", credentials.refs.get("SENSENOVA_USERNAME") === "user@x",
       String(credentials.refs.get("SENSENOVA_USERNAME")));
-    // A password is a secret, not an identifier: it is stored and sent as
-    // typed. The panel shows it on request so a trailing space can be checked
-    // by eye, so what reaches IAM must be what was typed — trimming it behind
-    // the user's back makes that check a lie.
-    check("the password is kept verbatim", credentials.refs.get("SENSENOVA_PASSWORD") === "  secret  ",
+    // The password is NEVER persisted: only the username (an identifier) goes
+    // into the credentials service. The password itself must still reach IAM
+    // exactly as typed — the panel's "show" lets a trailing space be checked
+    // by eye, and trimming it behind the user's back would make that check a
+    // lie — but it rides this call in memory and is gone when it ends.
+    check("the password is NOT written to the credentials service",
+      credentials.refs.get("SENSENOVA_PASSWORD") === undefined,
       JSON.stringify(credentials.refs.get("SENSENOVA_PASSWORD")));
+    check("the username is the only ref stored",
+      [...credentials.refs.keys()].join(",") === "SENSENOVA_USERNAME",
+      [...credentials.refs.keys()].join(","));
     check("a login was attempted", stub.log.logins === 1, `logins=${stub.log.logins}`);
     // The password must reach IAM sealed, never in the clear. RFC 7516 §3:
     // the compact JWE is five segments (header.encryptedKey.iv.ciphertext.tag).
@@ -320,9 +325,10 @@ async function withNetwork(stub, body) {
 // The reported failure: repeated automatic attempts turned one bad password
 // into an 8-minute lockout. The store must honour the platform's own window.
 {
-  const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" }
-  });
+  // The account arrives through the ENVIRONMENT — the only durable password
+  // source; the store never reads a password from the credentials refs.
+  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" };
+  const credentials = fakeCredentials(null);
   // IAM answers with the exact envelope the platform sends for a lock.
   const locked = () => new Response(JSON.stringify({
     code: 9, message: "The account has been locked, please try again after 8 minutes",
@@ -334,7 +340,7 @@ async function withNetwork(stub, body) {
   }), { status: 400, headers: { "content-type": "application/json" } });
   const stub = await makeTokenStub(locked);
   await withNetwork(stub, async () => {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv });
     let first = null;
     try { await store.getToken(); } catch (error) { first = error; }
     check("a locked account is classified as such", first?.code === "account_locked", String(first?.code));
@@ -379,16 +385,15 @@ async function withNetwork(stub, body) {
 // case that used to produce a steady one-minute trickle of attempts for as
 // long as the panel stayed open.
 {
-  const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" }
-  });
+  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" };
+  const credentials = fakeCredentials(null);
   const vague = () => new Response(JSON.stringify({
     code: 3, message: "InvalidArgument",
     details: [{ reason: "invalidAccountOrPassword" }]
   }), { status: 400, headers: { "content-type": "application/json" } });
   const stub = await makeTokenStub(vague);
   await withNetwork(stub, async () => {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv });
     let first = null;
     try { await store.getToken(); } catch (error) { first = error; }
     check("a wrong password still reports itself", first?.code === "login_rejected", String(first?.code));
@@ -420,9 +425,8 @@ async function withNetwork(stub, body) {
 // nothing proved what happens after it expires. A backoff that re-probes on
 // every poll after expiry is the same bug wearing a delay.
 {
-  const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" }
-  });
+  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" };
+  const credentials = fakeCredentials(null);
   // A lock with no stated window, so the local backoff governs.
   const vagueLock = () => new Response(JSON.stringify({
     code: 9, message: "TooManyRequests",
@@ -433,7 +437,7 @@ async function withNetwork(stub, body) {
   // expiry, but a tiny fake epoch would make any JWT in play look unexpired.
   let clock = Date.now();
   await withNetwork(stub, async () => {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, now: () => clock });
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv, now: () => clock });
     try { await store.getToken(); } catch { /* expected */ }
     const afterFirst = stub.log.logins;
 
@@ -470,9 +474,8 @@ async function withNetwork(stub, body) {
 // The other gap: the old cap truncated a platform-stated window, so a
 // two-hour lock was re-probed after thirty minutes — while still locked.
 {
-  const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" }
-  });
+  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" };
+  const credentials = fakeCredentials(null);
   const twoHours = () => new Response(JSON.stringify({
     code: 9, message: "The account has been locked, please try again after 2 hours",
     details: [{ reason: "accountLocked" }]
@@ -481,7 +484,7 @@ async function withNetwork(stub, body) {
   let clock = Date.now();
   await withNetwork(stub, async () => {
     const store = createTokenStore({
-      credentials, credentialKey: credentialKeyFn, env: {},
+      credentials, credentialKey: credentialKeyFn, env: accountEnv,
       throttleStore: createMemoryThrottleStore(() => clock), now: () => clock
     });
     let first = null;
@@ -507,9 +510,8 @@ async function withNetwork(stub, body) {
 // second one knock straight through it — which is how a wait turns back into
 // a lockout.
 {
-  const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" }
-  });
+  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" };
+  const credentials = fakeCredentials(null);
   const locked = () => new Response(JSON.stringify({
     code: 9, message: "The account has been locked, please try again after 8 minutes",
     details: [{ reason: "accountLocked" }]
@@ -522,7 +524,7 @@ async function withNetwork(stub, body) {
   await withNetwork(stub, async () => {
     // Process A takes the refusal.
     const first = createTokenStore({
-      credentials, credentialKey: credentialKeyFn, env: {}, throttleStore: shared
+      credentials, credentialKey: credentialKeyFn, env: accountEnv, throttleStore: shared
     });
     try { await first.getToken(); } catch { /* expected */ }
     const afterA = stub.log.logins;
@@ -530,7 +532,7 @@ async function withNetwork(stub, body) {
 
     // Process B starts fresh, as it would after a Host restart.
     const second = createTokenStore({
-      credentials, credentialKey: credentialKeyFn, env: {}, throttleStore: shared
+      credentials, credentialKey: credentialKeyFn, env: accountEnv, throttleStore: shared
     });
     for (let i = 0; i < 3; i += 1) {
       try { await second.getToken(); } catch { /* expected */ }
@@ -579,9 +581,10 @@ async function withNetwork(stub, body) {
       refreshToken: "dead-refresh",
       expiresAt: Date.now() - 1000
     }
-  }, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" }
   });
+  // The account rides the ENVIRONMENT (the only durable password source):
+  // without an env password a dead refresh would simply reap the grant.
+  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" };
   const refused = () => new Response(JSON.stringify({ error: "invalid_grant" }),
     { status: 400, headers: { "content-type": "application/json" } });
   const stub = await makeTokenStub(refused);
@@ -595,7 +598,7 @@ async function withNetwork(stub, body) {
     if (String(url).includes("oauth2/token")) return refused();
     return stub(url);
   }, async () => {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, skewMs: 120_000, now: () => clock });
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv, skewMs: 120_000, now: () => clock });
     try { await store.getToken(); } catch { /* expected */ }
     const afterFirst = stub.log.logins;
     check("the fallback to the password path happened once", afterFirst === 1, `logins=${afterFirst}`);
@@ -683,7 +686,32 @@ async function withNetwork(stub, body) {
     try { await store.saveAccount({ username: "u", password: "bad" }); } catch (error) { code = error?.code; }
     check("a rejected password surfaces", code === "login_rejected", String(code));
     check("no grant exists after a rejected login", (await store.state()).hasRefreshToken === false);
+    // The remediation's sharpest claim: a rejected password must leave nothing
+    // at rest — only the username (an identifier) was persisted.
+    check("a rejected password leaves nothing secret at rest",
+      credentials.refs.get("SENSENOVA_PASSWORD") === undefined,
+      JSON.stringify(credentials.refs.get("SENSENOVA_PASSWORD")));
   }).catch((error) => fail("a rejected password leaves no grant", error));
+}
+
+// --- 10c. a password left by a previous version is swept, not kept --------
+// The remediation: earlier builds stored SENSENOVA_PASSWORD in the credentials
+// service, so a plaintext password sat at rest in `~/.dsh/.credentials.yaml`.
+// On first contact the store removes a legacy value; the environment remains
+// the only durable password source.
+{
+  const credentials = fakeCredentials(null, {
+    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "legacy-secret" }
+  });
+  const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
+  const state = await store.state();
+  check("a legacy stored password is swept on first contact",
+    credentials.refs.get("SENSENOVA_PASSWORD") === undefined,
+    JSON.stringify(credentials.refs.get("SENSENOVA_PASSWORD")));
+  check("the username survives the sweep", credentials.refs.get("SENSENOVA_USERNAME") === "u");
+  check("with no env password the store cannot auto-recover",
+    state.configured === false && state.hasAccount === true && state.needsAccount === true,
+    JSON.stringify(state));
 }
 
 // --- 10b. switching accounts replaces a STILL-FRESH grant ---------------
@@ -799,9 +827,10 @@ async function withNetwork(stub, body) {
 // two claims the move rests on: what we DO still write there parses, and what
 // we stopped writing there would not have.
 {
-  const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" }
-  });
+  // The account arrives through the ENVIRONMENT (the only durable password
+  // source), so the refusal actually happens and lands in the throttle.
+  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" };
+  const credentials = fakeCredentials(null);
   const locked = () => new Response(JSON.stringify({
     code: 9, message: "The account has been locked, please try again after 8 minutes",
     details: [{ reason: "accountLocked" }]
@@ -809,7 +838,7 @@ async function withNetwork(stub, body) {
   const stub = await makeTokenStub(locked);
   const own = createMemoryThrottleStore();
   await withNetwork(stub, async () => {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, throttleStore: own });
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv, throttleStore: own });
     try { await store.getToken(); } catch { /* the expected refusal */ }
 
     // The point of the move: a refusal is this plugin's business, and nothing
@@ -854,7 +883,7 @@ async function withNetwork(stub, body) {
     check("a private kind is still rejected by the parser (the original bug)",
       poisonRejected);
 
-    const second = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, throttleStore: own });
+    const second = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv, throttleStore: own });
     try { await second.getToken(); } catch { /* refused again, fast */ }
     check("a second store reads the persisted throttle instead of re-attempting",
       stub.log.logins === 1, `logins=${stub.log.logins}`);

@@ -10,17 +10,19 @@
 用户填账号密码 ──► Host 走 OIDC 授权码流（PKCE）
                          │
                          ├─ 密码用平台 JWKS 公钥封成 JWE（RSA-OAEP + A256GCM），明文不上网
+                         ├─ 密码只在登录瞬间于内存中使用，用完即弃，不落盘
                          │
                          ▼
                    DSH 凭据服务（~/.dsh/.credentials.yaml，仅本账户可读）
                          存：账号 + access_token + refresh_token
                          │
                          ▼
-              此后只靠 refresh_token 静默续期，密码可从环境变量删除
+              此后只靠 refresh_token 静默续期；
+              想自动重登（refresh 失效时），把密码放进环境变量 SENSENOVA_PASSWORD
 ```
 
-- 也可以继续用环境变量 `SENSENOVA_USERNAME` / `SENSENOVA_PASSWORD`（旧配置照常有效），优先级**低于**面板里保存的账号。
-- 密码只发往本机 Host，再由它加密送往商汤。没有 `.env`、没有重启、没有明文凭据文件。
+- **密码不落盘**：`SENSENOVA_PASSWORD` 环境变量是它唯一的持久来源（显式 opt-in——放在环境里，refresh_token 失效后可自动重登，无需再输一次）。账号名以面板保存的为准，环境变量兜底。
+- 密码只发往本机 Host，再由它加密送往商汤；它不写入任何文件。没有 `.env`、没有重启、没有明文凭据文件。
 
 ---
 
@@ -48,7 +50,7 @@
 
 ## 4. 凭据存储
 
-账号、access/refresh token 只经 **DSH 凭据服务**写入 `~/.dsh/.credentials.yaml`，权限限制为仅本账户可读。本插件**不写任何明文凭据文件、也不写调试日志**。
+账号、access/refresh token 只经 **DSH 凭据服务**写入 `~/.dsh/.credentials.yaml`，权限限制为仅本账户可读。**密码不写入任何文件**：登录时经内存使用，用完即弃；`SENSENOVA_PASSWORD` 环境变量是它唯一的持久来源（显式 opt-in）。旧版本曾把密码存进凭据服务，本版在首次接触时自动清除该残留值。本插件**不写任何明文凭据文件、也不写调试日志**。
 
 没有凭据服务时（如某些 `dsh web` profile、或测试环境）：面板仍可打开，但账号只存**内存**（标记 `ephemeral`），重启后需重登——此时面板会明确提示，而不是假装已保存。
 

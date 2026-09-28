@@ -15,12 +15,12 @@ Host 通过只读路由 `GET /api/dsh-connect-sensenova-token-plan/snapshot` 提
 控制台 JWT 只有 **180 分钟**有效。打开积分面板，填一次账号和密码，点「登录」：
 
 1. Host 走**完整 OIDC 授权码流**登录（PKCE + 密码用平台 JWKS 公钥以 RSA-OAEP + A256GCM 加密成 JWE，明文不上网）；
-2. 账号与密码交给 **DSH 凭据服务**保存（`~/.dsh/.credentials.yaml`，仅本账户可读），`access_token` 与 `refresh_token` 一并落库；
+2. 账号、`access_token` 与 `refresh_token` 交给 **DSH 凭据服务**保存（`~/.dsh/.credentials.yaml`，仅本账户可读）；**密码不落盘**——只在登录瞬间于内存中使用，用完即弃；
 3. 此后**只靠 refresh_token 静默续期**，不再需要密码。令牌接近过期时自动换新，控制台返回 401 时也会换新并重试一次。
 
 没有 `.env`、没有重启、没有明文凭据文件。密码只发往本机 Host，再由它加密送往商汤。
 
-> 也可以继续用环境变量 `SENSENOVA_USERNAME` / `SENSENOVA_PASSWORD`（旧配置照常有效），优先级低于面板里保存的账号。
+> 密码的唯一持久来源是环境变量 `SENSENOVA_PASSWORD`（显式 opt-in：放在环境里，refresh_token 失效后可自动重登，无需再输一次）；账号名以面板保存的为准，环境变量兜底。
 
 **登录失败时怎么办**：表单下方会显示商汤返回的原因（通常是「账号或密码不正确」），其下以灰字附上平台原话——包括锁定策略（3 次错误锁 15 分钟，平台硬规则）。密码框旁的「显示」按钮让你核对实际提交的内容：浏览器对 `127.0.0.1` 的自动填充、输入法混入的全角字符、复制粘贴带的尾随空格，在点号遮罩下全都看不出来，而每次盲试都烧掉一次尝试机会。若 refresh_token 被吊销且密码已不在环境中，面板会重新显示表单，此时填一次即可。
 
@@ -120,7 +120,7 @@ dsh-connect-sensenova-token-plan/
 
 - 面板显示的是**控制台自己的口径**，与网页控制台一致；`GET /v1/models` 只区分权限，不计费也不占推理额度；
 - 续期在令牌过期前 `tokenSkewSeconds` 触发；若 refresh_token 被吊销且环境里已无密码，面板会明确提示需要重新登录，而不是静默显示旧数据；
-- 凭据（密码、access/refresh token）只经 DSH 凭据服务保存，本插件不写任何明文凭据文件或调试日志。
+- 凭据（账号、access/refresh token）只经 DSH 凭据服务保存，**密码不落盘**（仅登录瞬间内存使用，`SENSENOVA_PASSWORD` 环境变量是唯一持久来源）；本插件不写任何明文凭据文件或调试日志。
 
 ## 路由
 

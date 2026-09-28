@@ -79,15 +79,18 @@ const credentialRef = (name) => name;
 /**
  * Where the account lives.
  *
- * These are credential REFERENCES — environment-variable names, not values.
- * Storing the account this way (rather than as another record) is what lets
- * the panel accept a username and password typed into the panel, hand them to
- * `ctx.credentials`, and have the very next login find them: the service
- * re-resolves per operation, writes them owner-only into
- * `~/.dsh/.credentials.yaml`, and needs no restart.
+ * The USERNAME is a credential REFERENCE — an environment-variable name, not
+ * a value. Storing it this way (rather than as another record) is what lets
+ * the panel accept a username typed into the panel and have the very next
+ * state read find it: the service re-resolves per operation, writes it
+ * owner-only into `~/.dsh/.credentials.yaml`, and needs no restart.
  *
- * The variables are still honoured from the environment as a fallback, so an
- * existing `$DSH_HOME/.env` setup keeps working untouched.
+ * The PASSWORD is NEVER persisted by this store. It rides each sign-in call
+ * in memory and is gone when the attempt ends; `SENSENOVA_PASSWORD` in the
+ * environment is its only durable source, and that is an explicit opt-in for
+ * auto-recovery (a dead refresh token re-logs-in by itself only when it is
+ * set). A previous version did store the password in the credentials service;
+ * `readAccount` sweeps any such legacy value on first contact.
  */
 const USERNAME_REF = "SENSENOVA_USERNAME";
 const PASSWORD_REF = "SENSENOVA_PASSWORD";
@@ -477,27 +480,59 @@ export function createTokenStore({
     return store(result.accessToken, result.refreshToken, result.expiresIn, stored.accessToken);
   }
 
+  /** True once a legacy stored password has been swept from the credentials service. */
+  let passwordSwept = false;
+
   /**
-   * The account to log in with, preferring the credentials store over the
-   * environment so a value typed into the panel is found without a restart.
-   * @returns {Promise<{username: string, password: string, source: string}|undefined>}
+   * The account's identity: the stored username, with the environment as a
+   * fallback. Kept apart from the password because only the username is ever
+   * persisted — `state()` asks "is there an account to clear?" without
+   * requiring a password to be available.
+   * @returns {Promise<string>} the username, or `""` when none is known.
    */
-  async function readAccount() {
+  const readUsername = async () => {
     const fromStore = async (ref) => {
       // `resolve` is per-call by contract: a value written a moment ago is
       // visible to the next read, with no restart in between.
       const resolved = await backend().resolve(credentialRef(ref)).catch(() => undefined);
       return verbatim(resolved?.value, "");
     };
-    const username = str(await fromStore(USERNAME_REF), "") || str(env[USERNAME_REF], "");
-    const password = verbatim(await fromStore(PASSWORD_REF), "") || verbatim(env[PASSWORD_REF], "");
+    return str(await fromStore(USERNAME_REF), "") || str(env[USERNAME_REF], "");
+  };
+
+  /**
+   * The account to log in with: a stored (or environment) username and an
+   * ENVIRONMENT password.
+   *
+   * The password is never persisted. `SENSENOVA_PASSWORD` in the environment
+   * is its only durable source, and that is an explicit opt-in: without an env
+   * password the panel simply asks again when the refresh token dies.
+   * @returns {Promise<{username: string, password: string, source: string}|undefined>}
+   */
+  async function readAccount() {
+    const username = await readUsername();
+    // One-time sweep: a previous version stored the password in the
+    // credentials service. The new policy keeps no password at rest, so a
+    // legacy value is removed on first contact (the environment remains the
+    // opt-in path). Best-effort: a read-only service keeps the old value
+    // until the user re-saves, which still cannot leak it anywhere new.
+    if (!passwordSwept) {
+      passwordSwept = true;
+      await backend().unset(credentialRef(PASSWORD_REF)).catch(() => {});
+    }
+    const password = verbatim(env[PASSWORD_REF], "");
     if (username === "" || password.trim() === "") return undefined;
-    return { username, password, source: "credentials" };
+    return { username, password, source: "env" };
   }
 
   /**
-   * Log in with the stored account. The bootstrap that turns a typed-in
-   * username and password into a self-renewing grant.
+   * Log in with an account and return a self-renewing grant.
+   *
+   * The account is taken EXPLICITLY when the caller just typed it (the panel
+   * save path: the password lives in that call's closure and is never
+   * written anywhere), and read back from the environment otherwise (the
+   * auto-recovery path after a dead refresh token, opt-in via
+   * `SENSENOVA_PASSWORD`).
    *
    * The grant read BEFORE the sign-in is named as the one this login
    * supersedes. It has to be read first: the token pair only arrives after the
@@ -506,10 +541,12 @@ export function createTokenStore({
    * "signed in" while keeping serving the previous account. Naming the read
    * grant turns the write into the same compare-and-set a refresh uses: an
    * intentional switch wins, a login racing another process's rotation defers.
+   * @param {{username: string, password: string}} [explicit] - an account
+   *   supplied by the caller (never persisted); falls back to `readAccount`.
    * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
    */
-  async function loginFromAccount() {
-    const account = await readAccount();
+  async function loginFromAccount(explicit) {
+    const account = explicit ?? await readAccount();
     if (account === undefined) {
       throw pluginError(CODE.NOT_CONFIGURED, "no console account is configured");
     }
@@ -785,10 +822,11 @@ export function createTokenStore({
     /**
      * Store a console account, then log in with it.
      *
-     * This is what the panel's setup form calls. The account goes to
-     * `ctx.credentials` as a reference value — owner-only on disk, never in
-     * this plugin's own files — and the resulting grant is what keeps the
-     * panel alive afterwards.
+     * This is what the panel's setup form calls. Only the USERNAME goes to
+     * `ctx.credentials` (owner-only on disk, never in this plugin's own
+     * files); the password stays in this call's closure and is gone when the
+     * attempt ends. The resulting grant is what keeps the panel alive
+     * afterwards, so a rejected password leaves nothing secret at rest.
      * @param {{username: string, password: string}} account - the credentials.
      * @returns {Promise<void>}
      */
@@ -801,8 +839,11 @@ export function createTokenStore({
       // Persist first, then log in: if the write is rejected (a read-only
       // environment shadows the reference) the user is told before any login
       // attempt, instead of being left with a token that dies at restart.
+      // The password is deliberately NOT part of the write: `SENSENOVA_PASSWORD`
+      // in the environment is the only durable source (an explicit opt-in for
+      // auto-recovery after a dead refresh token), so no plaintext password
+      // ever sits in the credentials document.
       await backend().set(credentialRef(USERNAME_REF), username);
-      await backend().set(credentialRef(PASSWORD_REF), password);
       // The password may differ from the one that produced the current grant.
       cached = null;
       rejected.clear();
@@ -812,7 +853,10 @@ export function createTokenStore({
       // every automatic route into `acquire` is still blocked.
       await clearThrottle();
       try {
-        await loginFromAccount();
+        // The typed account is handed over directly: the password lives only
+        // in this closure, so the env-based `readAccount` must not be asked
+        // for it here.
+        await loginFromAccount({ username, password });
       } catch (error) {
         // A deliberate submit is the one path allowed to spend an attempt, but
         // a REFUSED one must still be recorded. This call's caller reads
@@ -847,6 +891,12 @@ export function createTokenStore({
     async state() {
       const stored = await readStored();
       const account = await readAccount();
+      // The stored USERNAME is the account's identity. The password is not
+      // persisted (the environment is its only durable source), so whether an
+      // account is present must not depend on a password being available —
+      // otherwise the panel's "clear the saved account" affordance would
+      // vanish the moment no env password exists.
+      const username = await readUsername();
       // Read the throttle here too, so a second Host process shows the same
       // countdown rather than inviting an attempt that would be refused.
       const held = throttle ?? await readThrottle();
@@ -854,7 +904,7 @@ export function createTokenStore({
         // "configured" means the panel can get a token: either it already has
         // one, or an account is stored to obtain the next one.
         configured: stored !== undefined || account !== undefined,
-        hasAccount: account !== undefined,
+        hasAccount: username !== "",
         hasRefreshToken: str(stored?.refreshToken, "") !== "",
         expiresAt: stored?.expiresAt ?? null,
         // Why the panel should ask for an account: nothing works yet.
