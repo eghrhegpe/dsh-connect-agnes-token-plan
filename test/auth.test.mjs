@@ -255,6 +255,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
   const { jwk } = await stubKey();
   const realFetch = globalThis.fetch;
   let authorizeUrl = "";
+  let issuedState = "";
   let tokenBody = "";
   globalThis.fetch = async (url, init = {}) => {
     const target = String(url);
@@ -264,13 +265,17 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
     }
     if (target.includes("/oauth2/auth")) {
       authorizeUrl = target;
+      issuedState = new URL(target).searchParams.get("state") ?? "";
       return new Response("", {
         status: 302,
         headers: { location: "https://platform.sensenova.cn/login?login_challenge=chal-1", "set-cookie": "a=b; Path=/" }
       });
     }
     if (target.includes("iam.sensecoreapi.cn")) {
-      return new Response(JSON.stringify({ redirect: "https://platform.sensenova.cn/?code=code-1&state=s" }),
+      // Echo the state the authorization request issued — a real platform
+      // round-trips it, and the flow now verifies the round-trip.
+      const echo = issuedState !== "" ? `&state=${encodeURIComponent(issuedState)}` : "";
+      return new Response(JSON.stringify({ redirect: `https://platform.sensenova.cn/?code=code-1${echo}` }),
         { status: 200, headers: { "content-type": "application/json" } });
     }
     if (target.includes("/oauth2/token")) {
@@ -485,6 +490,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
   const { jwk } = await stubKey();
   for (const [label, ok] of [["a success", true], ["a failure", false]]) {
     const realFetch = globalThis.fetch;
+    let issuedState = "";
     globalThis.fetch = async (url) => {
       const target = String(url);
       if (target.includes("jwks.json")) {
@@ -492,6 +498,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
           { status: 200, headers: { "content-type": "application/json" } });
       }
       if (target.includes("/oauth2/auth")) {
+        issuedState = new URL(target).searchParams.get("state") ?? "";
         return new Response("", {
           status: 302,
           headers: {
@@ -501,8 +508,9 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
         });
       }
       if (target.includes("iam.sensecoreapi.cn")) {
+        const echo = issuedState !== "" ? `&state=${encodeURIComponent(issuedState)}` : "";
         return ok
-          ? new Response(JSON.stringify({ redirect: "https://platform.sensenova.cn/cb?code=the-code" }),
+          ? new Response(JSON.stringify({ redirect: `https://platform.sensenova.cn/cb?code=the-code${echo}` }),
             { status: 200, headers: { "content-type": "application/json" } })
           : new Response(JSON.stringify({
               code: 3, message: "InvalidArgument",
@@ -626,6 +634,59 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
     fail("a plain-text body is scrubbed by value", error);
   } finally {
     globalThis.fetch = realFetch;
+  }
+}
+
+// --- 7d. the callback's state must round-trip the issued nonce -----------
+// PKCE binds the CODE to this process (the verifier); the state nonce is the
+// second half: a callback carrying a state we did not issue is a code from a
+// flow this process did not start — a replayed or injected redirect. Both
+// directions matter: an echo is accepted, a foreign state is refused, and the
+// refusal is a LOGIN_FLOW (the walk itself broke), not a credential refusal.
+{
+  const { jwk } = await stubKey();
+  for (const [label, echoState] of [["a round-tripped state is accepted", "true"], ["a foreign state is refused", "false"]]) {
+    const realFetch = globalThis.fetch;
+    let issued = "";
+    globalThis.fetch = async (url) => {
+      const target = String(url);
+      if (target.includes("jwks.json")) {
+        return new Response(JSON.stringify({ keys: [{ ...jwk, kid: "public:hydra.openid.id-token", use: "sig" }] }),
+          { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (target.includes("/oauth2/auth")) {
+        issued = new URL(target).searchParams.get("state") ?? "";
+        return new Response("", {
+          status: 302,
+          headers: { location: "https://platform.sensenova.cn/login?login_challenge=chal", "set-cookie": "a=b; Path=/" }
+        });
+      }
+      if (target.includes("iam.sensecoreapi.cn")) {
+        const state = echoState === "true" ? issued : "injected-by-stranger";
+        return new Response(JSON.stringify({
+          redirect: `https://platform.sensenova.cn/cb?code=the-code&state=${encodeURIComponent(state)}`
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (target.includes("oauth2/token")) {
+        return new Response(JSON.stringify({ access_token: "a", refresh_token: "r", expires_in: 10800 }),
+          { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
+    };
+    try {
+      const mod = await import(`../sensenova-auth.js?state-${echoState}=${Date.now()}-${Math.random()}`);
+      let granted = null;
+      let code = null;
+      try {
+        granted = await mod.createAuth().login({ username: "u", password: "p" });
+      } catch (error) { code = error?.code; }
+      check(label, echoState === "true" ? (granted !== null && code === null) : (granted === null && code === "login_flow"),
+        `granted=${String(granted?.accessToken)} code=${String(code)}`);
+    } catch (error) {
+      fail(label, error);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   }
 }
 

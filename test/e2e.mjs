@@ -305,6 +305,11 @@ try {
       });
     });
     check("the sign-in succeeded", res.body?.ok === true, JSON.stringify(res.body ?? {}).slice(0, 200));
+    // The state nonce the authorization request issued must have round-tripped
+    // through the callback — the fake now echoes it back and the flow verifies
+    // the round-trip, so a broken echo fails the sign-in itself.
+    check("the callback round-tripped the state nonce",
+      typeof fake.seen.state === "string" && fake.seen.state.length > 0, String(fake.seen.state));
     // Where the request actually went. The fake's own counter is the evidence,
     // and it is what an earlier version of this harness failed to check: a
     // nested `auth:` block was accepted by the loader, ignored by the plugin,

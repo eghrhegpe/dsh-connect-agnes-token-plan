@@ -29,8 +29,8 @@
 `GET /api/.../account`（POST 账号）触发完整授权码流：
 
 1. 生成 PKCE `code_verifier` / `code_challenge`（S256）。
-2. 跳转授权端点（`consoleBase` + `/oauth2/auth`，`client_id=nova`）。
-3. 跟随最多 `maxHops` 跳的重定向链到令牌端点。
+2. 跳转授权端点（`consoleBase` + `/oauth2/auth`，`client_id=nova`），同时携带一个随机 `state` nonce。
+3. 跟随最多 `maxHops` 跳的重定向链；回调 URL 里的 `state` 必须**原样带回**第 2 步发出的 nonce，否则按 `login_flow` 拒绝（防外部注入的重放回调）。PKCE 把 code 绑定到本进程（verifier），state 是这半个绑定的另一半。
 4. 令牌端点用 `scope=openid offline offline_access` 换取 `access_token` + `refresh_token`（`offline_access` 是拿到 refresh_token 的前提）。
 
 ---
@@ -72,7 +72,7 @@
 | **时间型**（锁定、频率限制、平台故障） | 带等待窗口，或无窗口 | 等待窗口结束前直接失败，不发请求。平台声明的窗口**照单全收，绝不截短**（声明 2 小时就等满 2 小时）；无窗口时本地指数退避 60s → 2m → 4m … 上限 30 分钟。窗口一到恰好探测一次。 |
 | **凭据型**（密码错误、需验证码） | `invalidAccountOrPassword` 等 | **完全不自动重试**——等待改变不了一个错密码。面板重新提示输入账号，只有用户主动提交才再试。 |
 
-节流状态写在独立凭据记录 `dsh-connect-sensenova-token-plan/sensenova-console-throttle` 里，因此**跨进程、跨重启**都生效：另一个 Host 进程（桌面版 / `dsh web` 用不同 profile，但可能共用同一凭据目录）不会在等待期内继续敲门。窗口读取同时支持中英文（「try again after 8 minutes」与「请 8 分钟后重试」）以及 `Retry-After` 头。
+节流状态写在**插件自己的状态文件**（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），因此**跨进程、跨重启**都生效：另一个 Host 进程（桌面版 / `dsh web` 用不同 profile，但可能共用同一 Home）不会在等待期内继续敲门。放在插件自己的文件里而不是凭据服务，是因为节流不是凭据，而凭据服务只认两种记录 kind——发明第三种会让整份凭据文件对 Host 不可解析（见 PITFALLS §6 与 `throttle-store.js` 头注）。旧版曾把节流伪装成 `grant` 记录（marker 字段 `THROTTLE_MARKER`）寄存在凭据服务里，该地址仅作**一次性迁移读取**，之后不再写入。窗口读取同时支持中英文（「try again after 8 minutes」与「请 8 分钟后重试」）以及 `Retry-After` 头。
 
 ---
 

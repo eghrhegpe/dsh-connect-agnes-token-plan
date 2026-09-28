@@ -170,6 +170,7 @@ async function loginNetwork({ loginOk = true } = {}) {
   );
   const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
   const log = { logins: 0, tokens: 0 };
+  let issuedState = "";
   const stub = async (url) => {
     const target = String(url);
     if (target.includes("jwks.json")) {
@@ -177,6 +178,7 @@ async function loginNetwork({ loginOk = true } = {}) {
         { status: 200, headers: { "content-type": "application/json" } });
     }
     if (target.includes("/oauth2/auth")) {
+      issuedState = new URL(target).searchParams.get("state") ?? "";
       return new Response("", {
         status: 302,
         headers: {
@@ -188,7 +190,9 @@ async function loginNetwork({ loginOk = true } = {}) {
     if (target.includes("iam.sensecoreapi.cn")) {
       log.logins += 1;
       return loginOk
-        ? new Response(JSON.stringify({ redirect: "https://platform.sensenova.cn/cb?code=the-code" }),
+        ? new Response(JSON.stringify({
+            redirect: `https://platform.sensenova.cn/cb?code=the-code${issuedState !== "" ? `&state=${encodeURIComponent(issuedState)}` : ""}`
+          }),
             { status: 200, headers: { "content-type": "application/json" } })
         // The real IAM envelope, not a guess: the cause lives in details[].
         : new Response(JSON.stringify({

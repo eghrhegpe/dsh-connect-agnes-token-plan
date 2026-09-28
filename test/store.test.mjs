@@ -90,6 +90,8 @@ function fakeCredentials(initial, opts = {}) {
 }
 
 /** A token-endpoint stub issuing a distinct pair per exchange. */
+/** The state the last authorization request issued, echoed into a success redirect. */
+let issuedState = "";
 async function makeTokenStub(onLogin) {
   const pair = await crypto.subtle.generateKey(
     { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-1" },
@@ -104,6 +106,7 @@ async function makeTokenStub(onLogin) {
         { status: 200, headers: { "content-type": "application/json" } });
     }
     if (target.includes("/oauth2/auth")) {
+      issuedState = new URL(target).searchParams.get("state") ?? "";
       return new Response("", {
         status: 302,
         headers: {
@@ -133,7 +136,9 @@ async function makeTokenStub(onLogin) {
   return stub;
 }
 
-const accepted = () => new Response(JSON.stringify({ redirect: "https://platform.sensenova.cn/cb?code=c" }), {
+const accepted = () => new Response(JSON.stringify({
+  redirect: `https://platform.sensenova.cn/cb?code=c${issuedState !== "" ? `&state=${encodeURIComponent(issuedState)}` : ""}`
+}), {
   status: 200, headers: { "content-type": "application/json" }
 });
 // The real IAM refusal envelope: the cause is in details[].reason, not the
@@ -354,8 +359,9 @@ async function withNetwork(stub, body) {
 
     // A deliberate resubmit is the user acting on the message, so it must be
     // allowed through rather than refused by this store's own timer.
-    const corrected = () => new Response(JSON.stringify({ redirect: "https://platform.sensenova.cn/cb?code=c" }),
-      { status: 200, headers: { "content-type": "application/json" } });
+    const corrected = () => new Response(JSON.stringify({
+      redirect: `https://platform.sensenova.cn/cb?code=c${issuedState !== "" ? `&state=${encodeURIComponent(issuedState)}` : ""}`
+    }), { status: 200, headers: { "content-type": "application/json" } });
     globalThis.fetch = await makeTokenStub(corrected);
     await store.saveAccount({ username: "u", password: "right-now" });
     check("a corrected resubmit is allowed inside the wait", (await store.state()).hasRefreshToken === true,

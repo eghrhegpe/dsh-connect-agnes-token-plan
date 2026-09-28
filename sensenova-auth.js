@@ -751,6 +751,15 @@ async function performLogin({ username, password }, options, trace, cfg) {
     trace.step("callback", { url: redirect, note: "walk ended without an authorization code" });
     throw fail(CODE.LOGIN_FLOW,"could not obtain an authorization code from the callback");
   }
+  // The state nonce round-trips: it protects the callback against a code from a
+  // flow this process did not start (a CSRF'd auth request whose response a
+  // stranger replays here). PKCE already binds the CODE to this process via the
+  // verifier; the state check is the second half of that binding.
+  const callbackState = paramOf(codeUrl, "state");
+  if (callbackState !== state) {
+    trace.step("callback-state", { url: codeUrl, note: `state mismatch (expected ${state.slice(0, 8)}…, got ${callbackState.slice(0, 8)}…)` });
+    throw fail(CODE.LOGIN_FLOW, "callback state did not match the issued nonce");
+  }
 
   // 4) Trade code + verifier for the token pair.
   const tokenResponse = await fetch(cfg.tokenEndpoint, {

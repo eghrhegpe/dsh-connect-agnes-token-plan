@@ -105,7 +105,7 @@ export async function openSealed(jwe) {
 }
 
 /** The last sealed password the fake received, decrypted. */
-export const seen = { password: null, username: null, codeChallenge: null, codeChallengeMethod: null };
+export const seen = { password: null, username: null, codeChallenge: null, codeChallengeMethod: null, state: null };
 
 /**
  * The PKCE floor from RFC 7636, enforced by every real OIDC server.
@@ -138,6 +138,9 @@ const server = createServer(async (req, res) => {
     // fake is not checking PKCE and cannot catch a malformed verifier.
     seen.codeChallenge = url.searchParams.get("code_challenge");
     seen.codeChallengeMethod = url.searchParams.get("code_challenge_method");
+    // Remember the state nonce: the callback must round-trip it, and the login
+    // flow now verifies that round-trip.
+    seen.state = url.searchParams.get("state");
     res.writeHead(302, {
       location: `http://127.0.0.1:${PORT}/login?login_challenge=chal-e2e`,
       "set-cookie": "oauth2_authentication_csrf=abc; Path=/"
@@ -168,10 +171,12 @@ const server = createServer(async (req, res) => {
         ]
       });
     }
-    return json(res, 200, { redirect: `http://127.0.0.1:${PORT}/cb?code=the-code` });
+    const stateQuery = seen.state !== null ? `&state=${encodeURIComponent(seen.state)}` : "";
+    return json(res, 200, { redirect: `http://127.0.0.1:${PORT}/cb?code=the-code${stateQuery}` });
   }
   if (path === "/cb") {
-    res.writeHead(302, { location: `http://127.0.0.1:${PORT}/done?code=the-code` });
+    const stateQuery = seen.state !== null ? `&state=${encodeURIComponent(seen.state)}` : "";
+    res.writeHead(302, { location: `http://127.0.0.1:${PORT}/done?code=the-code${stateQuery}` });
     return res.end();
   }
   if (path === "/done") {
