@@ -75,7 +75,7 @@ npm run test:live  # 额外验一次平台真实 JWKS（显式联网，默认不
 - [docs/API.md](docs/API.md) — 本地路由与控制台端点、快照返回结构
 - [docs/TESTING.md](docs/TESTING.md) — 离线测试体系、面板测试机制、已知缺口
 - [docs/SENSENOVA-API.md](docs/SENSENOVA-API.md) — 商汤接口全集（认证/OIDC、密码 JWE、用量接口、错误码）
-- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑经历（现象→根因→修法，19 条）
+- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑经历（现象→根因→修法，20 条）
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — 提交约定、红线、仓库整洁
 - [CHANGELOG.md](CHANGELOG.md) — 公开行为变化的版本记录（非 git log 替代）
 

@@ -165,6 +165,24 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   }
 }
 
+// 6) docs/ 顶层每个文件都必须被 docs/README.md 索引表引用（README.md 本身除外）
+// 防止「粘贴一段文档进来但谁都不引用」的孤儿文件：非 .md（如 .txt）与未被索引的 .md 都红。
+// 索引表里指向其它目录（如 ../CHANGELOG.md）的链接不属于 docs/，不算。
+{
+  const readme = readFileSync(join(ROOT, "docs", "README.md"), "utf8");
+  const linked = new Set(["README.md"]);
+  for (const m of readme.matchAll(/\]\(\.\/([^)]+\.md)\)/g)) linked.add(m[1]);
+  const docsDir = join(ROOT, "docs");
+  const orphans = readdirSync(docsDir)
+    .filter((name) => !statSync(join(docsDir, name)).isDirectory())
+    .filter((name) => !linked.has(name));
+  if (orphans.length) bad(`docs/ 顶层存在未被 docs/README.md 索引表引用的文件：${orphans.join(", ")}（孤儿文件，需入库或删除）`);
+  else {
+    const total = readdirSync(docsDir).filter((name) => !statSync(join(docsDir, name)).isDirectory()).length;
+    note(`docs/ 顶层 ${total} 个文件全部被索引表引用`);
+  }
+}
+
 // N) PITFALLS 的条目数：凡是写了「N 条」的地方，N 必须等于真实条目数
 // 这些数字散在三个文件里，已经各自漂移过一次（15 / 17 并存），而 PITFALLS
 // 是「改代码前先看」的第一站——一个过期数字会让读者以为自己看全了。

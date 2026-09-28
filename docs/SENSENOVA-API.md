@@ -118,3 +118,61 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 - 构建：`build_mac.sh`（macOS `.app`）、`SenseNova用量查询.spec`（PyInstaller 单文件 exe）。
 
 **与本插件差异（移植/对照用）：** 上游明文存密码、过期即重登、无节流分层；本插件零明文、refresh_token 静默续期、显式区分时间型/凭据型拒绝防锁号。接口字段与主流程两方一致，故 `upstream/` 可作为封包与字段语义的对照，但**不是本插件的依赖**，改动请在其独立仓库内进行（详见 [ARCHITECTURE.md](./ARCHITECTURE.md)）。
+
+---
+
+## 7. 推理接口（OpenAI 兼容 `chat/completions`）
+
+本插件第三步以 provider `sensenova-token-plan` 直连 `https://token.sensenova.cn/v1` 注册 OpenAI 兼容适配器（见 [ARCHITECTURE.md](./ARCHITECTURE.md) §5.2 与 [SETUP.md](./SETUP.md) §3 的 `registerProvider`）。本节记录 **2026-09-29 对该端点的实测契约**（key 取凭据服务 `SENSENOVA_API_KEY`，共 24 个真实请求）。
+
+> ⚠️ 官方「SenseNova 6.8 Flash Lite」接口文档与平台实际行为有**三处不符，以本节实测为准**：`thinking` 参数不存在（四种写法全部 400）；`reasoning_effort` 合法取值是 `low/medium/high/xhigh/none`（**无 `max`**）；目录声明的采样参数只有 `temperature`、`stop`。详见 [PITFALLS.md](./PITFALLS.md) §20。
+
+### 7.1 模型目录 `GET /v1/models`
+
+需 `Bearer <API Key>`，无鉴权实测返回 **401**。返回 `data[]`，`console-client.js` 把每条**整条原样保留**（`{ id, ...source }`），本插件已知字段：
+
+| 字段 | 实测示例（sensenova-6.8-flash-lite） | 插件用处 |
+|---|---|---|
+| `id` | `sensenova-6.8-flash-lite` | 模型 id |
+| `name` | 同 id | 展示名兜底 |
+| `input_modalities` | `["text","image"]` | 看图判定（`identifyVisionModel` 只看 input） |
+| `output_modalities` | `["text"]` | 出图模型（`sensenova-u1-fast`/`u1.5-lite`）是 `["image"]`，不算看图 |
+| `context_length` | `262144` | **上下文窗口——`contextWindowOf` 的命名字段** |
+| `max_output_length` | `65536` | 单次响应上限 |
+| `supported_features` | `["tools","json_mode","reasoning"]` | 全部模型都有此三特性 |
+| `supported_sampling_parameters` | `["temperature","stop"]` | 只有这两项 |
+| `pricing` | 全 `"0"` | 与插件 `NO_COST` 零值哨兵一致（额度池计费，无单 token 价） |
+| `quantization` | `"fp8"` | — |
+
+实测目录共 9 个模型：`deepseek-v4-flash`、`glm-5.2`、`sensenova-u1-fast`、`sensenova-6.8-flash-lite`、`sensenova-u1.5-lite`、`deepseek-v4-pro`、`kimi-k3`、`deepseek-flash`、`deepseek-v4.1-flash`。
+
+### 7.2 请求参数（实测）
+
+| 参数 | 实测 | 备注 |
+|---|---|---|
+| `model` | ✅ | 固定用目录 id |
+| `messages[].role` | ✅ `system`/`user`/`assistant`/`tool` | **没有 `developer`**——`role:"developer"` 实测 400，即 `supportsDeveloperRole:false` 的依据 |
+| `max_tokens` | ✅ | 上限即目录 `max_output_length` |
+| `stream` | ✅ | SSE；`delta` 含 `content`/`reasoning`/`role` |
+| `stream_options.include_usage` | ✅ | 流末块带完整 `usage` |
+| `reasoning_effort` | ✅ `low/medium/high/xhigh/none` | **默认 high**（思考开）；`none` 关思考（无 `reasoning` 字段、`reasoning_tokens=0`） |
+| `response_format:{"type":"json_object"}` | ✅ | 官方提示：与思考模式不建议同开 |
+| `tools` + `tool_choice:"auto"` | ✅ | `finish_reason:"tool_calls"`，`message.tool_calls` 正常返回 |
+| `temperature` / `stop` | ✅ | 目录声明仅此两项 |
+| `thinking` | ❌ **400** | **参数不存在**（`"enabled"`/`"disabled"`/`true`/`false` 全 400），官方文档有误 |
+| `reasoning_effort:"max"` | ❌ **400** | 官方文档写错；实际是 `xhigh`（平台报错原文：`should be one of: low, medium, high, xhigh, none`） |
+
+### 7.3 响应结构（实测）
+
+- 顶层：`id`、`created`、`model`、`object:"chat.completion"`、`request_id`。
+- `choices[0].finish_reason` ∈ `stop` / `length`（达 max_tokens 或上下文上限）/ `tool_calls` / `content_filter`。
+- `choices[0].message`：`role`、`content`；思考开时有 `reasoning`（思考正文）；调工具时有 `tool_calls[]`（`id`/`type`/`function{name,arguments}`）。
+- `usage`：`prompt_tokens`/`completion_tokens`/`total_tokens`，`completion_tokens_details.reasoning_tokens`、`prompt_tokens_details.cached_tokens`。
+
+**思考模式的真实代价**（2026-09-29 实测，同一极小 prompt）：默认（high）1044ms / prompt 88 tokens、`reasoning` 78 字、`reasoning_tokens` 43；`none` 361ms / prompt 62 tokens——默认思考每请求**多烧约 26 个 prompt token、慢约 2.9 倍**。本插件 descriptor 的 `reasoning:false` 表示思考内容大概率不会透出到会话，但每请求仍按默认 high 计费，见 [PITFALLS.md](./PITFALLS.md) §20。
+
+### 7.4 图像输入（实测）
+
+`content` 为内容块数组时支持 `image_url`：公网 URL 与 `data:image/*;base64,...` 均可，实测都能正确识别（gstatic 风景图答出「蓝色湖泊+山脉+小岛」、1×1 base64 图答「纯蓝色图片」）。
+
+**注意**：官方示例图 `https://www.sensenova.cn/marketing-home/showcase-hero.png` 实测直接请求 **400「inference request is invalid」且耗时约 91 秒**——该 URL 本机 HEAD 是 200 `image/png`，但体积 **4.28 MB**，是图太大、不是 URL 不可达。插件 `llm-adapter.js` 的 `requestImageMaxBytes: 1_048_576`（1 MB，dsh-llm 默认）比平台容忍度紧，超限图由插件本地处理，属正常保护。

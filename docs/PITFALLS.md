@@ -179,3 +179,15 @@
   （与离线套件的 `isolateHostEnv` 同一组名字），隔离从「另一个 `$DSH_HOME`」补齐到「另一份环境」。
   注意这也是**真实产品行为**的体现：用户的 Key 若来自启动环境，面板保存会被凭据服务拒绝，面板会照实显示该原因，
   此时清掉环境变量或改用它处提供的值即可——插件不会偷偷绕过只读引用。
+
+---
+
+## 20. 官方接口文档与平台行为不一致，照抄必 400
+
+- **现象**：把商汤官方「SenseNova 6.8 Flash Lite」接口文档里的参数照进代码：`thinking:"disabled"` 想关思考，结果每请求 400；`reasoning_effort:"max"` 想要最强推理，也 400。
+- **根因**：官方文档三处与平台实际不符（2026-09-29 对 `token.sensenova.cn/v1` 实测 24 个请求）：
+  `thinking` 参数**不存在**——`"enabled"`/`"disabled"`/`true`/`false` 四种写法全 400；
+  `reasoning_effort` 合法值是 `low/medium/high/xhigh/none`，**没有 `max`**——平台报错原文 `field ReasoningEffort invalid, should be one of: low, medium, high, xhigh, none`；
+  目录 `supported_sampling_parameters` 只声明 `["temperature","stop"]`，文档表格里列的 `top_p`/`frequency_penalty`/`presence_penalty`/`seed`/`n` 一个都不在声明里（送不送得动未验证，别假设支持）。
+  另外文档写 `max_tokens` 默认 65535，目录实际 `max_output_length` 是 65536；窗口字段是 `context_length` 不是 `context_window`（曾让 `contextWindowOf` 拿不到真实窗口、全体回退 128k，见 `llm-models.js` 与 `test/provider.test.mjs`）。
+- **修法**：与平台行为有关的契约一律以**实测**为准（见 [SENSENOVA-API.md](./SENSENOVA-API.md) §7），官方文档只当线索、不当依据。实测要点：默认即思考开（`message.reasoning` 有值、每请求多约 26 个 prompt token、慢约 2.9 倍）；`reasoning_effort:"none"` 关思考（`reasoning` 字段消失、`reasoning_tokens=0`）；`role:"developer"` 是 400（`supportsDeveloperRole:false` 的依据）；流式 `delta` 含 `content`/`reasoning`/`role`。
