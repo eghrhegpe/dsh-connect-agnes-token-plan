@@ -262,7 +262,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // in the real Host means a stale panel still polling a route nobody owns.
 {
   const { webServer, stop } = await bootPlugin();
-  check("routes are present while mounted", webServer.registered.size === 3, String(webServer.registered.size));
+  check("routes are present while mounted", webServer.registered.size === 4, String(webServer.registered.size));
   await stop();
   check("unmounting withdraws the routes", webServer.registered.size === 0,
     [...webServer.registered.keys()].join(", "));

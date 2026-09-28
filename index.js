@@ -25,6 +25,7 @@ import { createAuth } from "./sensenova-auth.js";
 import { createTokenStore } from "./token-store.js";
 import { createFileThrottleStore } from "./throttle-store.js";
 import { createFileCatalogStore } from "./catalog-store.js";
+import { createFileProviderStore } from "./provider-store.js";
 import { createApiKeyStore } from "./api-key-store.js";
 import { summarizeCatalog, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
 import { CODE, isAuthFailure } from "./codes.js";
@@ -81,6 +82,14 @@ const ACCOUNT_PATH = `/api/${name}/account`;
  * body ceiling as the account route.
  */
 const API_KEY_PATH = `/api/${name}/api-key`;
+/**
+ * The provider-registration switch route: the panel's live on/off for the
+ * directly-registered LLM provider. State lives in the plugin's own state
+ * file (`provider-store.js`), so flipping it takes effect on the request
+ * that carries it — no config edit, no Host restart. Same trust fence and
+ * body ceiling as the account/api-key routes. See docs/PROVIDER-HOT-RELOAD.md.
+ */
+const PROVIDER_PATH = `/api/${name}/provider`;
 /** Ceiling on a submitted account, so a hostile page cannot stream a body. */
 const MAX_ACCOUNT_BODY_BYTES = 4096;
 /** Family default response headers for a JSON route. */
@@ -227,6 +236,11 @@ function apply(ctx, config = {}, deps = {}) {
   // It lets the registered provider offer models before the first poll of a
   // restart, and survives with no console login at all.
   const catalogStore = createFileCatalogStore();
+  // The panel's live provider switch (docs/PROVIDER-HOT-RELOAD.md). A value
+  // saved from the panel overrides the patch's `registerProvider`; an untouched
+  // state file falls back to it, so configuration-driven deployments keep
+  // working unchanged.
+  const providerStore = createFileProviderStore();
 
   // The directly-registered provider's live registration state.
   // `llm` is an OPTIONAL service (this plugin injects only `webServer`), read
@@ -303,9 +317,12 @@ function apply(ctx, config = {}, deps = {}) {
     providerState.entries = Array.isArray(entries) ? entries : [];
     providerState.enabledIds = Array.isArray(enabledIds) ? enabledIds : [];
     // Opt-in: with the switch off there must be no registration left behind
-    // from a row that flipped it after mounting (the mount-time setting is
-    // re-read here on every poll from the same resolved settings object).
-    if (settings.registerProvider !== true) {
+    // from a row that flipped it after mounting. The EFFECTIVE switch is
+    // panel-first (`provider-store.js`), falling back to the patch value —
+    // re-read here on every publish, so a flip applies without a restart.
+    const panelSwitch = await providerStore.enabled().catch(() => null);
+    const registerWanted = panelSwitch ?? settings.registerProvider === true;
+    if (!registerWanted) {
       releaseProvider();
       providerState.registered = false;
       providerState.built = null;
@@ -571,6 +588,9 @@ function apply(ctx, config = {}, deps = {}) {
           const keyState = await apiKeyStore
             .state()
             .catch(() => ({ hasApiKey: false, keySource: null, ephemeral: false }));
+          // The effective switch: a panel-saved value beats the patch default.
+          // Both are reported so the panel can say which side is in charge.
+          const panelSwitch = await providerStore.enabled().catch(() => null);
           let offered = providerState.entries;
           let enabledIds = providerState.enabledIds;
           if (Array.isArray(catalog)) {
@@ -588,7 +608,8 @@ function apply(ctx, config = {}, deps = {}) {
           // only, never the key value.
           llmStatus = {
             ...keyState,
-            registerProvider: settings.registerProvider === true,
+            registerProvider: (panelSwitch ?? settings.registerProvider) === true,
+            registerSource: panelSwitch === null ? "config" : "panel",
             llmAvailable: providerState.llmAvailable,
             providerRegistered: providerState.registered,
             providerId: LLM_PROVIDER_ID,
@@ -785,11 +806,72 @@ function apply(ctx, config = {}, deps = {}) {
     }
   });
 
+  const offProvider = ctx.webServer.register({
+    kind: "exact",
+    path: PROVIDER_PATH,
+    handler: async (request, response) => {
+      // Same trust fence as the other three routes: a foreign page must not be
+      // able to flip model routing for the whole Host.
+      if (!isAdmitted(request, settings.allowedHosts)) {
+        writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+        return;
+      }
+      const method = request.method === undefined ? "GET" : request.method;
+      // Secret-free by construction: the effective switch, where it came from,
+      // and whether a provider is registered right now.
+      const answer = async (extra = {}) => {
+        const panelSwitch = await providerStore.enabled().catch(() => null);
+        writeJson(
+          response,
+          200,
+          {
+            ok: true,
+            registerProvider: (panelSwitch ?? settings.registerProvider) === true,
+            registerSource: panelSwitch === null ? "config" : "panel",
+            providerRegistered: providerState.registered,
+            ...(providerState.error !== null ? { providerError: providerState.error } : {}),
+            ...extra
+          },
+          { "cache-control": "no-store" }
+        );
+      };
+      if (method === "GET") {
+        await answer();
+        return;
+      }
+      if (method !== "POST") {
+        writeJson(response, 405, { ok: false, error: "method not allowed" });
+        return;
+      }
+      const body = await readJsonBody(request);
+      if (!body.ok) {
+        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
+        return;
+      }
+      if (typeof body.value.enabled !== "boolean") {
+        writeJson(response, 400, { ok: false, error: "expected { enabled: boolean }" }, { "cache-control": "no-store" });
+        return;
+      }
+      try {
+        await providerStore.save(body.value.enabled);
+        // Publish immediately with the CURRENT catalog: the switch decides
+        // whether the models are offered at all, not what they are. A failed
+        // publish rolls back to the previous pair inside publishProvider and
+        // surfaces its reason in providerState.error.
+        await publishProvider(providerState.entries, providerState.enabledIds);
+      } catch (error) {
+        await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      await answer();
+    }
+  });
+
   ctx.effect(() => () => {
     // Stop offering the provider first, so a request cannot be routed to an
     // adapter whose Host services are already half gone.
     releaseProvider();
-    for (const off of [offRoute, offAccount, offApiKey]) {
+    for (const off of [offRoute, offAccount, offApiKey, offProvider]) {
       try {
         off();
       } catch {

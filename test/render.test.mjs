@@ -249,7 +249,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   });
   check("no key asks for one", off.some((line) => line.includes(zh["llm.noKey"])), off.join("\n"));
   check("the opt-in being off is stated",
-    off.some((line) => line.includes("registerProvider")), off.join("\n"));
+    off.some((line) => line.includes("未向 DSH 注册") && line.includes("开关")), off.join("\n"));
   check("the provider id is shown",
     off.some((line) => line.includes("sensenova-token-plan")), off.join("\n"));
 

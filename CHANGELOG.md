@@ -2,6 +2,16 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.3.1] — 2026-09-28
+
+提供方注册开关热生效（[docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)）：
+
+- **面板新增真开关**：「模型接入（API Key）」区可直接勾选「向 DSH 注册 SenseNova 提供方」，保存到插件私有状态文件并在**同一请求内**重新发布 provider——立即生效，无需改配置、无需重启 Host。
+- **新增路由** `GET/POST /api/<name>/provider`（同源围栏 + body 上限，与账号/api-key 路由同一信任形状）：`POST { enabled: boolean }` 切换开关，GET 回显生效值、来源与注册状态。
+- **优先级**：面板保存过的值 > `cordis.patch.yml` 的 `registerProvider`（后者降级为部署默认）。未触碰面板的部署行为与 0.3.0 完全一致。
+- **快照 `llm` 块新增 `registerSource`**（`"panel"` / `"config"`）；`registerProvider` 改为回显生效值。
+- 开关状态存 `state/<name>/provider.json`（新模块 `provider-store.js`，版本化 + 原子写 + 损坏即读作未设置，与 `catalog-store`/`throttle-store` 同一完整性纪律）。
+
 ## [0.3.0] — 2026-09-28
 
 第三步「一条龙」：本插件可**直接注册 SenseNova LLM provider**，不再需要手写 `llm-pi-ai` patch 行（opt-in，默认关闭）。

@@ -68,6 +68,12 @@
 
 响应同样只含去密状态；非法 body 返回 400，跨域 POST 返回 403。任何响应都不会回显 Key 明文。
 
+### `GET /api/dsh-connect-sensenova-token-plan/provider`
+提供方注册开关的去密状态：`registerProvider`（**生效值**）、`registerSource`（`panel` 面板保存过 / `config` 沿用配置默认）、`providerRegistered`（当前是否真的注册着），注册失败时附 `providerError`。设计见 [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md)。
+
+### `POST /api/dsh-connect-sensenova-token-plan/provider`
+`{ "enabled": true|false }` —— 把开关写入插件私有状态文件并在**同一请求内**重新发布 provider（立即生效，无需重启）。优先级：面板保存的值 > `cordis.patch.yml` 的 `registerProvider`。非布尔 `enabled` 返回 400；跨域返回 403。
+
 ---
 
 ## 2. 商汤控制台接口（插件反向调用）

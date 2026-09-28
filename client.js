@@ -42,6 +42,8 @@ function clientFactory(require) {
   const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
   /** The inference API-key route: saves the `sk-` key the provider uses. */
   const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
+  /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
+  const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
 
   /** Simplified Chinese dictionary (the key-set source of truth). */
   const zh = {
@@ -121,11 +123,14 @@ function clientFactory(require) {
     "llm.src.credentials": "DSH 凭据",
     "llm.src.env": "环境变量",
     "llm.src.memory": "本机内存",
-    "llm.off": "未向 DSH 注册 SenseNova 提供方 —— 在配置里把 registerProvider 设为 true 并重启 Host 即可开启。",
+    "llm.off": "未向 DSH 注册 SenseNova 提供方——勾选下方开关即可开启（立即生效，无需重启）。",
     "llm.registered": "已向 DSH 注册提供方 {id}：共 {models} 个模型，其中 {vision} 个支持图片输入。",
     "llm.noService": "registerProvider 已开启，但当前 Host 没有提供 LLM 注册服务。",
     "llm.error": "提供方注册失败：{error}",
-    "llm.id": "提供方 ID：{id}（需先开启 registerProvider 才生效）",
+    "llm.id": "提供方 ID：{id}（勾选开关后生效）",
+    "llm.switch": "向 DSH 注册 SenseNova 提供方（立即生效，无需重启）",
+    "llm.switchBusy": "切换中…",
+    "llm.switchError": "切换失败：{error}",
     "note": "数据来自商汤控制台 API（pool-usage / credit-usage-trend），Host 侧缓存 {cache} 秒；控制台令牌约 3 小时过期，由 Host 用 refresh_token 静默续期。"
   };
 
@@ -207,11 +212,14 @@ function clientFactory(require) {
     "llm.src.credentials": "DSH credentials",
     "llm.src.env": "environment",
     "llm.src.memory": "memory",
-    "llm.off": "SenseNova is not registered with DSH — set registerProvider: true in the config and restart the Host to enable.",
+    "llm.off": "SenseNova is not registered with DSH — tick the switch below to enable (takes effect immediately, no restart).",
     "llm.registered": "Provider {id} registered with DSH: {models} model(s), {vision} accepting image input.",
     "llm.noService": "registerProvider is on, but this Host exposes no LLM registration service.",
     "llm.error": "Provider registration failed: {error}",
-    "llm.id": "Provider id: {id} (takes effect only after registerProvider is on)",
+    "llm.id": "Provider id: {id} (takes effect once the switch is ticked)",
+    "llm.switch": "Register SenseNova with DSH (takes effect immediately, no restart)",
+    "llm.switchBusy": "Switching…",
+    "llm.switchError": "Switch failed: {error}",
     "note": "Data from the SenseNova console API (pool-usage / credit-usage-trend), cached {cache}s on the Host; the console token lasts ~3h and the Host renews it silently from a refresh token."
   };
 
@@ -949,6 +957,52 @@ function clientFactory(require) {
     }
 
     /**
+     * The live provider-registration switch (docs/PROVIDER-HOT-RELOAD.md).
+     *
+     * Posts `{ enabled }` to the plugin's own `/provider` route; the Host
+     * persists the value in its state file and republishes the adapter pair
+     * on the same request, so the flip lands without a config edit or a
+     * restart. Hook-based like `ApiKeyForm`, so the render suite (which
+     * cannot mount hooks) exercises the secret-free status lines instead;
+     * the route itself is covered by `routes.test.mjs`. The state shown is
+     * the SNAPSHOT's effective value, never local optimism — the poll after
+     * `onDone` repaints whatever the Host actually reports.
+     */
+    function ProviderSwitch({ llm, onDone, tt }) {
+      const [busy, setBusy] = useState(false);
+      const [switchError, setSwitchError] = useState(null);
+      const enabled = llm?.registerProvider === true;
+      const toggle = useCallback(async () => {
+        setBusy(true);
+        setSwitchError(null);
+        try {
+          const response = await fetch(PROVIDER_PATH, {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            cache: "no-store",
+            body: JSON.stringify({ enabled: !enabled })
+          });
+          const payload = await response.json().catch(() => null);
+          if (payload?.ok !== true) {
+            throw new Error(typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`);
+          }
+          onDone?.();
+        } catch (error) {
+          setSwitchError(format(tt("llm.switchError"), { error: error instanceof Error ? error.message : String(error) }));
+        } finally {
+          setBusy(false);
+        }
+      }, [enabled, onDone, tt]);
+      return h(
+        "label",
+        { style: { display: "flex", gap: 8, alignItems: "center", margin: "0 0 12px", cursor: busy ? "wait" : "pointer" } },
+        h("input", { type: "checkbox", checked: enabled, disabled: busy, onChange: toggle }),
+        h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, busy ? tt("llm.switchBusy") : tt("llm.switch")),
+        switchError ? h("span", { style: S.formError }, switchError) : null
+      );
+    }
+
+    /**
      * The inference API-key editor (`sk-…`).
      *
      * Same security shape as `AccountForm`: show/hide, save/forget, busy and
@@ -1030,6 +1084,7 @@ function clientFactory(require) {
         "form",
         { onSubmit: submit },
         h(ProviderStatus, { llm, tt }),
+        h(ProviderSwitch, { llm, onDone, tt }),
         h(
           "label",
           { style: S.field },
@@ -1368,7 +1423,7 @@ function clientFactory(require) {
       tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
       styles: S,
       helpers: Object.freeze({ clock, clockLong, count, format }),
-      components: Object.freeze({ QuotaCard, PoolCard, TrendTable, SectionCard, AccountForm, ApiKeyForm, ProviderStatus, PanelPage })
+      components: Object.freeze({ QuotaCard, PoolCard, TrendTable, SectionCard, AccountForm, ApiKeyForm, ProviderStatus, ProviderSwitch, PanelPage })
     });
 
     return { inject, apply, panel };

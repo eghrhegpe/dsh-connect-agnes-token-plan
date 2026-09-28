@@ -29,6 +29,7 @@
     "parsers.js",
     "throttle-store.js",
     "catalog-store.js",
+    "provider-store.js",
     "api-key-store.js",
     "llm-models.js",
     "llm-adapter.js",

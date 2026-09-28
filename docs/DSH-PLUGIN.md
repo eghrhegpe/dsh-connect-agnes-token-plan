@@ -37,7 +37,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
   "files": [                            // 发到 registry 时只带这些；必须覆盖 import 图，
                                         // 由 test/package.test.mjs 钉住（panel-*.js 是测试基建，不进包）
     "index.js", "codes.js", "client.js", "console-client.js", "host-config.js",
-    "parsers.js", "throttle-store.js", "catalog-store.js", "api-key-store.js",
+    "parsers.js", "throttle-store.js", "catalog-store.js", "provider-store.js", "api-key-store.js",
     "llm-models.js", "llm-adapter.js",
     "trace.js", "util.js",
     "sensenova-auth.js", "sensenova-crypto.js", "token-store.js",

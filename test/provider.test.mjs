@@ -34,6 +34,7 @@ import {
   createMemoryCatalogStore
 } from "../catalog-store.js";
 import { createApiKeyStore, API_KEY_REF } from "../api-key-store.js";
+import { PROVIDER_VERSION, createFileProviderStore } from "../provider-store.js";
 import { redactSecrets } from "../util.js";
 
 const results = [];
@@ -300,7 +301,63 @@ const BASE_URL = "https://token.sensenova.cn/v1";
   }
 }
 
-// --- 10. api key store: env fallback with no service ------------------------
+// --- 10. provider switch store: the panel value beats the config default ---
+{
+  const restoreEnv = isolateHostEnv();
+  const restoreHome = isolateStateDir();
+  try {
+    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-sensenova-token-plan");
+    const file = join(dir, "provider.json");
+    const store = createFileProviderStore({ dir });
+
+    check("an untouched switch reads as unset",
+      (await store.enabled()) === null && (await store.isSet()) === false);
+
+    await store.save(true);
+    check("save(true) persists a boolean",
+      (await store.enabled()) === true && (await store.isSet()) === true);
+    const persisted = JSON.parse(readFileSync(file, "utf8"));
+    check("the payload carries the format version",
+      persisted.version === PROVIDER_VERSION && persisted.enabled === true);
+
+    const reopened = createFileProviderStore({ dir });
+    check("a fresh store reads the persisted switch", (await reopened.enabled()) === true);
+
+    await reopened.save(false);
+    check("save(false) flips the switch", (await reopened.enabled()) === false);
+
+    writeFileSync(file, "{ this is not json", "utf8");
+    const corrupted = createFileProviderStore({ dir });
+    check("a corrupted file reads as unset (never true by accident)",
+      (await corrupted.enabled()) === null);
+
+    writeFileSync(file, JSON.stringify({ version: 999, enabled: true }), "utf8");
+    const foreign = createFileProviderStore({ dir });
+    check("a foreign format version reads as unset", (await foreign.enabled()) === null);
+
+    writeFileSync(file, JSON.stringify({ version: PROVIDER_VERSION, enabled: "yes" }), "utf8");
+    const junk = createFileProviderStore({ dir });
+    check("a non-boolean enabled reads as unset", (await junk.enabled()) === null);
+
+    try {
+      await store.save("yes");
+      check("save refuses non-boolean input", false);
+    } catch {
+      check("save refuses non-boolean input", true);
+    }
+
+    await reopened.forget();
+    check("forget returns to the config default",
+      (await reopened.enabled()) === null && (await reopened.isSet()) === false);
+  } catch (error) {
+    fail("provider switch store", error);
+  } finally {
+    restoreHome();
+    restoreEnv();
+  }
+}
+
+// --- 11. api key store: env fallback with no service ------------------------
 {
   const restoreEnv = isolateHostEnv();
   try {

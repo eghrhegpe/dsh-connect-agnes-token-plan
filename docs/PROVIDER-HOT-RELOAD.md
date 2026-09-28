@@ -1,0 +1,54 @@
+# 提供方热开关（Provider Hot-Reload）
+
+本文记录「模型接入（API Key）」区的注册开关从**配置字段 + 重启**改为**面板开关 + 立即生效**的设计决策、调研依据与实现边界。0.3.1 引入。
+
+---
+
+## 1. 背景：原设计为什么被改
+
+0.3.0 把「注册 SenseNova LLM 提供方」做成 `cordis.patch.yml` 里的 opt-in 配置字段 `registerProvider`（默认 `false`）。理由当时是成立的——注册模型源是 Host 级变更，不该装个插件就默默改了全局行为。代价是文案必须解释「这不是面板开关，改配置、重启 Host 才生效」，用户实测读不懂（面板上「直接注册未开启」的措辞被误认为 UI 开关）。
+
+目标：把「是否注册」变成面板上一个**真的开关**，切换立即生效、无需重启，同时保留「默认关」的 opt-in 语义和已有的部署级配置。
+
+## 2. 同类插件的调研结论（2026-09-28，本机安装版本）
+
+四个参考对象**全部是单包**（adapter 与面板同包），「适配器独立化」在 DSH 生态的真实形态是**包内分层**，不是拆包：
+
+- **`@mars-sea/dsh-commandcode-provider`（desktop, 0.11.16）**：`CommandCodeAdapter` 是纯类，不 import 任何 DSH/cordis 类型，options、凭据解析、多账号轮换全是注入回调（lib/index.js:3016、8356-8374）。Config schema 全字段 volatile，设置页改动热生效。凭据一律走凭据服务 seam（`role("credential-ref")`），模型目录远端拉取 + 磁盘原子缓存 + Host 代理下发。
+- **`dsh-connect-trae`（web）**：provider **常驻注册** + 注册句柄保存，开关切换用 `AdapterRegistrationHandle.replace([])` 热撤路由，同一同步段内同时 replace adapter 与 directory（lib/index.js:4333-4342），立即生效、无需重启。依赖 0.1.7 的 volatile 字段活引用（`{get(): T}`），为解包踩了一整套坑（`unwrapVolatile`、写后回读校验、schemastery ≥3.18.3，见其 CHANGELOG 141-146 段）。
+- **`dsh-connect-workbuddy`（web, 2.1.0）**：同样是「常驻注册 + `replace()` 换空列表」（lib/index.js:1326-1335）；adapter 与目录注册**原子成对**（try/finally 回滚，lib/index.js:1390-1412）；`settingsNs` 必须从 `ctx.fiber.entry.options.id` 推导。没有「是否注册 provider」的总开关——provider 常驻，只有 per-region 开关。
+- **`@eghrhegpe/dsh-connect-qoder`（desktop, 0.3.2）**：**条件注册 + 事务式重发布**——按「已成功启动的区域」动态重建 adapter 并整体重新注册，失败回滚到上一个注册对（lib/index.js:720-775）；区域开关存在**插件自有偏好状态**（preferences.js），不在 cordis 配置里；「无 peer 依赖纯函数模块层」与「宿主接线层」分离（README.md:254-256）。
+
+对本仓库最直接的两条启示：其一，`index.js` 的 `publishProvider()` 已经是 qoder 式「事务发布 + 失败回滚」，且每次轮询都重读开关——**热生效的执行机制本来就在**，缺的只是「面板 → 开关状态 → 立即触发发布」这最后一公里。其二，纯模块层（`llm-models.js` / `llm-adapter.js` / `catalog-store.js` / `api-key-store.js`）与 qoder 的分层同构，「适配器独立化」的地基已就位。
+
+## 3. 设计决策：不走 volatile 路线，走自有状态 + 自有路由
+
+trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema 的 volatile 字段、面板经宿主 settings 写入）能做，但代价是：锁定宿主 ≥0.1.7-rc.1 与 schemastery ≥3.18.3、全链路活引用解包、写后回读校验——trae 用一整轮回归测试才踩平。
+
+本插件选择更贴合自身架构的路径，与 qoder 的偏好存储同构：
+
+1. **开关状态存插件私有状态文件** `state/<name>/provider.json`（新模块 `provider-store.js`，完整性纪律与 `catalog-store.js`/`throttle-store.js` 一致：版本化、临时文件 + 原子改名、损坏即读作未设置）。
+2. **优先级**：面板保存过的值 > `cordis.patch.yml` 的 `registerProvider`（后者降级为「出厂默认」）。从未动过面板开关的部署，行为与 0.3.0 完全一致。
+3. **面板开关 → `POST /api/<name>/provider`**（同源围栏 + body 上限，与账号/api-key 路由同一信任形状）→ 存状态 → **立即** `publishProvider(当前目录, 当前允许清单)` → 返回去密状态。不用等下一个轮询周期。
+4. 快照 `llm.registerProvider` 回显**生效值**（不再是 patch 直读），新增 `registerSource`（`"panel"` / `"config"`）说明当前值来自哪一侧。
+
+不选 volatile 的另一条理由：volatile 是「配置文档可写」机制，而「是否向 Host 注册一个模型源」是运维意图而非配置项——把它放进 patch 层正是 0.3.0 文案混乱的根源。状态文件让它归位为「插件自己的运行时状态」。
+
+## 4. 改动清单（0.3.1）
+
+| 文件 | 改动 |
+|---|---|
+| `provider-store.js`（新增） | 开关状态文件读写；无 peer 依赖，干净检出可测 |
+| `index.js` | 生效值解析（面板 > 配置）、新路由 `GET/POST /api/<name>/provider`、快照 `llm` 块回显生效值与来源、dispose 清理 |
+| `client.js` | `ProviderStatus` 区新增开关控件（POST 后刷新快照）；中英文字典同步 |
+| `package.json` / `docs/DSH-PLUGIN.md` | `files` 增补 `provider-store.js`，教学快照同步 |
+| `test/provider.test.mjs` | `provider-store` 纯逻辑用例（归一、读写、版本拒绝、损坏忽略、forget） |
+| `test/routes.test.mjs` | 新路由用例（GET/POST、立即发布、403/405/400、回退配置默认） |
+
+语义保持不变的红线：**默认关**（`registerProvider: false` 的部署在未触碰面板时零行为变化）；**凭据不入库**纪律不动（开关不是凭据）；`registerProvider` 仍是合法配置字段，注释指向本文。
+
+## 5. 已知边界
+
+- 开关只控制「是否注册」，不控制「哪些模型」——允许清单仍在目录轮询与 `catalog-store` 里。
+- 两个 Host 进程共享同一状态目录时，后写者胜（与节流/目录文件一致的语义）。
+- `POST /provider` 触发的发布失败会回滚到上一个注册对并带错误原因返回，面板显示 `llm.providerError`；不拖垮已在服务的模型。

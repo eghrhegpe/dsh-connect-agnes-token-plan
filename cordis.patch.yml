@@ -82,4 +82,7 @@
         # automatically. The cached catalog and the model allow-list live
         # in this plugin's own state file, never on this row. Off by
         # default - registering a model source is a Host-wide change.
+        # This value is now the DEPLOYMENT DEFAULT only: the panel's
+        #「模型接入」switch (POST /api/<name>/provider) overrides it live,
+        # with no restart. See docs/PROVIDER-HOT-RELOAD.md.
         registerProvider: false

@@ -36,6 +36,7 @@ function fail(name, error) {
 const SNAPSHOT_PATH = "/api/dsh-connect-sensenova-token-plan/snapshot";
 const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
 const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
+const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
 const RECORD_KEY = credentialKey("dsh-connect-sensenova-token-plan", "sensenova-console");
 
 const POOL_BODY = {
@@ -952,6 +953,56 @@ async function withNetwork(stub, body) {
         adapterDeps.builds.length === 0, String(adapterDeps.builds.length));
     });
   } catch (error) { fail("O2: registration without llm service", error); }
+}
+
+// === P. the provider switch route: the panel value beats the config default
+// (docs/PROVIDER-HOT-RELOAD.md). The switch persists in the plugin state file
+// and a POST republishes immediately — no llm service here, so publishing
+// degrades to llmAvailable=false while the SAVED value still reports.
+{
+  try {
+    const credentials = makeCredentials(null);
+    const call = await mount(credentials);
+
+    const initial = await call(PROVIDER_PATH, makeRequest());
+    check("P1 GET reports the config default with source config",
+      initial.payload.ok === true && initial.payload.registerProvider === false &&
+      initial.payload.registerSource === "config", JSON.stringify(initial.payload));
+
+    const bad = await call(PROVIDER_PATH, makePost({ enabled: "yes" }));
+    check("P2 a non-boolean enabled is refused",
+      bad.statusCode === 400 && bad.payload.ok === false, JSON.stringify(bad.payload));
+
+    const on = await call(PROVIDER_PATH, makePost({ enabled: true }));
+    check("P3 POST saves the panel value and reports it as source panel",
+      on.payload.ok === true && on.payload.registerProvider === true &&
+      on.payload.registerSource === "panel", JSON.stringify(on.payload));
+
+    // A second mount (fresh plugin instance, same state file) must read the
+    // persisted switch — the value outlives one Host process.
+    const call2 = await mount(makeCredentials(null));
+    const again = await call2(PROVIDER_PATH, makeRequest());
+    check("P4 the panel value survives a remount",
+      again.payload.registerProvider === true && again.payload.registerSource === "panel",
+      JSON.stringify(again.payload));
+
+    const off = await call2(PROVIDER_PATH, makePost({ enabled: false }));
+    check("P5 switching off reports the off state with source panel",
+      off.payload.ok === true && off.payload.registerProvider === false &&
+      off.payload.registerSource === "panel", JSON.stringify(off.payload));
+
+    // The GET after the flip is the same effective-value logic the snapshot's
+    // `llm` block uses (this mount has no console account, so a snapshot here
+    // would not carry an llm block at all — see group E).
+    const offGet = await call2(PROVIDER_PATH, makeRequest());
+    check("P6 GET after the flip reports the saved value",
+      offGet.payload.registerProvider === false && offGet.payload.registerSource === "panel",
+      JSON.stringify(offGet.payload));
+
+    const other = await call2(PROVIDER_PATH, makePost({ forget: true }));
+    check("P7 an unrelated body is refused",
+      other.statusCode === 400 && other.payload.ok === false, JSON.stringify(other.payload));
+  } catch (error) { fail("P: the provider switch route", error); }
 }
 
 // The Host routes are exercised against a stubbed console; nothing here may
