@@ -8,7 +8,8 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 
 | 文档 | 内容 | 何时查 |
 |---|---|---|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 双仓库关系（`dsh-connect-sensenova-token-plan` 与 `upstream/`）、Host/Client 分流、数据流、生态定位与大统一路线（§5，同类插件核实见 §5.3）、与上游 Python 工具差异 | 理解结构、接手、做架构决策、定吸收边界 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 双仓库关系（`dsh-connect-sensenova-token-plan` 与 `upstream/`）、Host/Client 分流、数据流、生态定位与大统一路线（§5，同类插件核实见 §5.3、出图对接点源码对照见 §5.4）、与上游 Python 工具差异 | 理解结构、接手、做架构决策、定吸收边界 |
+| [ROADMAP.md](./ROADMAP.md) | 战略执行路线图（2026-09-29 起）：429 全局自愈、§5「多 Key 池」纠偏、文档精炼、明确不做的边界 | 定吸收顺序 / 优先级、拍板侵入性、防范围漂移 |
 | [DSH-PLUGIN.md](./DSH-PLUGIN.md) | DSH 插件机制总览（bundle 结构、Loader 条目、cordis.patch.yml、安装重启、peer 依赖、与兄弟插件关系） | 理解「这是一个 DSH 插件」、对照 dsh-connect-qoder 范本 |
 | [SETUP.md](./SETUP.md) | 安装、配置字段表、改动后必须重启 Host、首次使用、常见信号处置 | 装环境、改配置、排「跑的是旧代码」、查面板报错信号 |
 | [AUTH.md](./AUTH.md) | OIDC+PKCE、密码 JWE 加密、凭据存储、静默续期、防锁号节流 | 改登录/续期、排查登录失败 |

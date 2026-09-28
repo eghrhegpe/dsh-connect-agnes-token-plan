@@ -94,7 +94,7 @@ client.js: interpretSnapshot(body) → {data, error}
 
 **决议（2026-09-29）**：插件定位从「只做信息、不做执行、n 个插件分层分散行动」
 改为**大统一**：额度/登录/模型清单（现状）+ 视觉信息下发（§5.1）+ LLM provider
-注册（§5.2）+ 出图路由对接 + 429 自愈与多 Key 池，逐块吸收进本插件，
+注册（§5.2）+ 出图路由对接 + 429 自愈（退避/分诊），逐块吸收进本插件，
 不再依赖多个插件各自为战。可行性依据是 §5.3 的生态核实：同类插件已把
 其中几块能力做成了单包现实。
 
@@ -116,8 +116,8 @@ client.js: interpretSnapshot(body) → {data, error}
 |---|---|---|
 | 额度 / 登录 / 模型清单 | **本插件** | 维持现状，继续是地基 |
 | 「哪些模型能看图」的识别与信息下发 | **本插件（见 §5.1）** | 维持现状（两步走已落地） |
-| 真把图喂给模型（视觉/绘图路由） | `dsh-media-skills` / `dsh-draw-router`（社区） | **拟吸收**：出图路由对接，参考 §5.3 `dsh-draw-router`（`sensenova-u1-fast` 出图） |
-| 429 自愈网关（多 Key 池化、AIMD 限速） | `st-rotator`（独立 Python 进程） | **拟吸收**：429 自愈 + 多 Key 池进插件，§5.3 `dsh-retry-boost` 是同类先例 |
+| 真把图喂给模型（视觉/绘图路由） | `dsh-media-skills` / `dsh-draw-router`（社区） | **拟吸收**：出图路由对接，参考 §5.3 `dsh-draw-router`，对接点源码对照见 §5.4 |
+| 429 自愈（退避+分诊） | `st-rotator`（独立 Python 进程） | **拟吸收**：吸收其两条纪律（先分诊「限频 vs 配额」、降速退避），**不做多 Key 池**（同账号共享额度池，轮换无效）；路线图见 [ROADMAP.md](./ROADMAP.md) |
 
 本插件仍是机器里**唯一既知道本 Key 实际能调哪些模型、又常驻 DSH 里**的组件——
 大统一之后它从「只下发信息」升级为「信息 + 执行」，但每一块执行都挂在上面的
@@ -231,6 +231,36 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 | `dsh-draw-router` | 绘图路由，含 `sensenova-u1-fast` 出图 | 出图路由的对接参考（`sensenova-u1-fast` 即 catalog 里 output 为 `["image"]` 的出图模型，§5.1 已识别）；参考件放 `upstream/dsh-draw-router/` 作对照 |
 | `mmx-quota-tool` | 聚合面板基准：实时积分面板、跨 provider 汇总、用量告警 | 面板 UX 基准（实时性、告警形态）向它对齐；跨 provider 聚合本身**不**吸收 |
 | `dsh-provider-quota` / `dsh-musage` | 品类对照：泛化的「provider 额度面板」 | 定位边界样本：本插件不泛化成通用额度面板，只深耕商汤 |
+
+### 5.4 出图对接点：dsh-draw-router 源码级对照（2026-09-29）
+
+对象：`upstream/dsh-draw-router/repo/lib/index.js`（495 行，v0.1.1）。
+结论先行：**判定我们已有且更准、出图执行只有约 80 行、中间不存在需要
+谈判的协议**——大统一走吸收（下述接法 B），接法 A 仅在想保留
+draw-router 的多源能力时才有意义。
+
+| 维度 | dsh-draw-router（现状） | 本插件（现状） |
+|---|---|---|
+| 出图模型识别 | 名字正则 `DRAW_MODEL_PATTERNS`（line 25-34：`/image/i`、`/u1-fast/i`、`/wan/i`、`/flux/i`…命中才认），探测自己另调一次 `GET /v1/models` | `output_modalities` 含 `"image"` 的结构化判定（`llm-models.js` line 101-114，2026-09 已核真实响应），catalog 每小时已有 |
+| 识别质量 | 实锤会漏：商汤两把出图模型 `u1-fast` / `u1.5-lite`（§5.1）里，`u1-fast` 命中 `/u1-fast/i`，**`u1.5-lite` 一条正则都不命中**——装它配商汤源，`draw_image` 默认永远挑不到 u1.5-lite | 两把都识别 |
+| 出图执行 | `buildEndpoint` 拼 `{base}/v1/images/generations`（line 72-79）→ `POST {model, prompt, n, response_format}` → 取 `data[0].url / b64_json`（line 209-261），约 80 行 | 无（待吸收的全部增量） |
+| 凭据 | 明文写进插件目录 `draw-config.json`（line 140-151） | DSH 凭据服务，不落盘 |
+
+对接的两种接法：
+
+- **接法 A（喂信息，零改对方）**：快照/设置行加一份 `imageGenModels`
+  （与 `visionModels` 同姿势，同一份 catalog 换个判定方向），预填
+  draw-router 的 `manualModels`——它每个 source 本来就支持 `addModel`
+  （line 470-477），`drawModels()` 会合并 `detected + manual`
+  （line 180-186），我们的清单进去后正则漏识别的问题直接消失。
+- **接法 B（吸收，大统一路线，推荐）**：Key（凭据服务 `SENSENOVA_API_KEY`）、
+  apiBase、catalog、轮询基建本插件全有，吸收的增量只是上面那 80 行执行 +
+  用自己的结构化判定替掉正则。它 495 行里其余约 400 行（多源管理、
+  DashScope 异步任务、Agnes/StepFun 特判）按 §5 不变量 3
+  **不吸收**——那是「跨 provider 通用绘图」的边界外。
+
+顺手可借的小件：probe 失败 30 秒 cooldown（line 196）；
+lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115）。
 
 ---
 
