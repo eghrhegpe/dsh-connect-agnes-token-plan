@@ -40,14 +40,14 @@ Host 通过只读路由 `GET /api/dsh-connect-sensenova-token-plan/snapshot` 提
 
 ## 安装
 
-包已发布 npm（`dsh-connect-sensenova-token-plan@0.3.3`），**Web 与桌面端通用**。在 DSH「插件」页搜索包名安装，或：
+1. DSH「插件」页搜索 `dsh-connect-sensenova-token-plan` 安装，或：
 
-```powershell
-dsh plugin --profile web add dsh-connect-sensenova-token-plan       # web 端
-dsh plugin --profile desktop add dsh-connect-sensenova-token-plan  # 桌面端
-```
+   ```powershell
+   dsh plugin --profile web add dsh-connect-sensenova-token-plan       # Web 端
+   dsh plugin --profile desktop add dsh-connect-sensenova-token-plan  # 桌面端
+   ```
 
-装完须**完全退出 DSH（含托盘）再启动**——Host 半边只在启动时加载一次。开发期从本地检出安装、git/tarball 与镜像源细节见 [docs/SETUP.md](docs/SETUP.md) §2。
+2. **完全退出 DSH（含托盘）再启动**。开发期本地检出、git/tarball 与镜像源细节见 [docs/SETUP.md](docs/SETUP.md) §2。
 
 ## 配置
 
