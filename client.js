@@ -88,6 +88,7 @@ function clientFactory(require) {
     "pool.dedicated": "专属池",
     "pool.default": "通用池",
     "pool.callable": "可调用",
+    "pool.details": "模型与返赠详情",
     "pool.locked": "需开通 +{count} 个",
     "pool.lockedTitle": "套餐覆盖但当前 Key 无权限",
     "pool.uncounted": "不计入积分池：{models}",
@@ -149,6 +150,7 @@ function clientFactory(require) {
     "pool.dedicated": "dedicated",
     "pool.default": "default",
     "pool.callable": "Callable",
+    "pool.details": "Models & grant details",
     "pool.locked": "+{count} need activation",
     "pool.lockedTitle": "In the plan but this key has no permission",
     "pool.uncounted": "Not billed to credit pools: {models}",
@@ -181,19 +183,46 @@ function clientFactory(require) {
       spacer: { flex: 1 },
       button: { height: 30, padding: "0 12px", borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-primary)", fontSize: 13, cursor: "pointer" },
       sectionTitle: { margin: "22px 0 10px", fontSize: 13, fontWeight: 600, color: "var(--dsw-alias-label-secondary)" },
-      card: { background: "var(--dsw-alias-bg-layer-1)", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, padding: 16, marginBottom: 12 },
-      poolHead: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
+      // Pool cards live in the responsive `poolsGrid` (gap owns the spacing),
+      // so the card itself carries no bottom margin.
+      card: { background: "var(--dsw-alias-bg-layer-1)", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, padding: 16 },
+      // Responsive deck of pool cards: each column is at least 320px and the
+      // row reflows on narrow panels instead of overflowing.
+      poolsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 12, alignItems: "start" },
+      cardHead: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
       poolName: { fontSize: 15, fontWeight: 600 },
       chip: { display: "inline-flex", alignItems: "center", height: 22, padding: "0 8px", borderRadius: 999, fontSize: 12, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-secondary)" },
-      windowRow: { marginTop: 12 },
-      windowLabel: { display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--dsw-alias-label-secondary)", marginBottom: 6 },
-      bar: { height: 6, borderRadius: 3, background: "var(--dsw-alias-bg-layer-2)", overflow: "hidden" },
+      // The grant balance is money the user can still spend, so it earns a
+      // chip in the card head; its expiry detail rides in the folded section.
+      grantChip: { display: "inline-flex", alignItems: "center", height: 22, padding: "0 8px", borderRadius: 999, fontSize: 12, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-primary)", fontVariantNumeric: "tabular-nums" },
+      // The two quota windows sit side by side as twin sub-cards, stacking
+      // when the card gets narrower than ~2*170px (170 leaves room for the
+      // longest "used x / limit" caption beside the headline figures).
+      quotas: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))", gap: 10, marginTop: 14 },
+      quota: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, padding: "12px 14px", borderRadius: 10, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)" },
+      quotaTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
+      quotaLabel: { fontSize: 12, fontWeight: 500, color: "var(--dsw-alias-label-secondary)" },
+      quotaReset: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
+      quotaFigures: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 },
+      // Remaining credits are the headline number — that is what the reader
+      // opens the panel for. Tabular figures keep it still while polling.
+      quotaRemaining: { fontSize: 24, lineHeight: "28px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
+      quotaRemainLabel: { fontSize: 11, marginTop: 1, color: "var(--dsw-alias-label-secondary)" },
+      quotaPct: { fontSize: 15, lineHeight: "20px", fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums" },
+      // used/limit is a single quiet caption under the bar (its own full row,
+      // so the figures row never wraps on a narrow twin card).
+      quotaUsed: { fontSize: 11, lineHeight: "15px", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums" },
+      bar: { height: 6, borderRadius: 3, background: "var(--dsw-alias-bg-layer-1)", overflow: "hidden" },
       barFill: { height: "100%", borderRadius: 3, background: "var(--dsw-alias-brand-primary)" },
       barFillWarn: { background: "var(--dsw-alias-state-warn-primary)" },
       barFillError: { background: "var(--dsw-alias-state-error-primary)" },
-      windowMeta: { display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--dsw-alias-label-secondary)", marginTop: 4 },
-      grant: { marginTop: 10, fontSize: 12, color: "var(--dsw-alias-label-secondary)" },
-      models: { marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 },
+      // Secondary bookkeeping (grant expiry, model coverage) folds away so a
+      // card's open state is just its name, the twin quotas, and nothing else.
+      details: { marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)" },
+      detailsSummary: { fontSize: 12, color: "var(--dsw-alias-label-secondary)", cursor: "pointer", userSelect: "none" },
+      detailsBody: { display: "flex", flexDirection: "column", gap: 10, marginTop: 10 },
+      grant: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" },
+      models: { display: "flex", flexWrap: "wrap", gap: 6 },
       modelTag: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 11, padding: "2px 6px", borderRadius: 6, background: "var(--dsw-alias-bg-layer-2)", border: "1px solid var(--dsw-alias-border-l1)" },
       table: { width: "100%", borderCollapse: "collapse" },
       th: { textAlign: "left", fontSize: 12, color: "var(--dsw-alias-label-secondary)", fontWeight: 500, padding: "6px 8px", borderBottom: "1px solid var(--dsw-alias-border-l1)" },
@@ -277,67 +306,114 @@ function clientFactory(require) {
       );
     }
 
-    /** One quota window row: label, progress bar, used/limit, reset time. */
-    function WindowRow({ label, window, tt }) {
+    /**
+     * One quota window as a compact sub-card: the REMAINING balance is the
+     * headline number (the panel is opened to see how much is left), the
+     * percentage sits beside it in a usage tone, and used/limit is a single
+     * quiet caption under the bar.
+     */
+    function QuotaCard({ label, window, tt }) {
       const { limit, used, remaining, resetAt } = window;
       const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
       const tone = pct >= 90 ? S.barFillError : pct >= 70 ? S.barFillWarn : S.barFill;
+      const pctColor = pct >= 90
+        ? "var(--dsw-alias-state-error-primary)"
+        : pct >= 70
+          ? "var(--dsw-alias-state-warn-primary)"
+          : "var(--dsw-alias-label-secondary)";
       return h(
         "div",
-        { style: S.windowRow },
+        { style: S.quota },
         h(
           "div",
-          { style: S.windowLabel },
-          h("span", null, label),
-          h("span", null, resetAt ? format(tt("pool.reset"), { time: clock(resetAt) }) : "")
+          { style: S.quotaTop },
+          h("span", { style: S.quotaLabel }, label),
+          h("span", { style: S.quotaReset }, resetAt ? format(tt("pool.reset"), { time: clock(resetAt) }) : "")
         ),
         h(
           "div",
-          { style: S.bar, role: "progressbar", "aria-valuenow": Math.round(pct), "aria-valuemin": 0, "aria-valuemax": 100 },
+          { style: S.quotaFigures },
+          h(
+            "div",
+            { style: { minWidth: 0 } },
+            h("div", { style: S.quotaRemaining }, count(remaining)),
+            h("div", { style: S.quotaRemainLabel }, tt("pool.remaining"))
+          ),
+          // The right column mirrors the left: percentage over the quiet
+          // used/limit caption. `minWidth:0` lets it shrink instead of
+          // pushing the headline number off the card when columns get tight.
+          h(
+            "div",
+            { style: { minWidth: 0, textAlign: "right" } },
+            h("div", { style: { ...S.quotaPct, color: pctColor } }, `${pct.toFixed(1)}%`),
+            h("div", { style: S.quotaUsed }, `${tt("pool.used")} ${count(used)} / ${count(limit)}`)
+          )
+        ),
+        h(
+          "div",
+          { style: S.bar, role: "progressbar", "aria-label": `${label} ${pct.toFixed(1)}%`, "aria-valuenow": Math.round(pct), "aria-valuemin": 0, "aria-valuemax": 100 },
           h("div", { style: { ...tone, width: `${pct}%` } })
-        ),
-        h(
-          "div",
-          { style: S.windowMeta },
-          h("span", null, `${tt("pool.used")} ${count(used)}`),
-          h("span", null, `${tt("pool.remaining")} ${count(remaining)}`),
-          h("span", null, `${pct.toFixed(1)}%`)
         )
       );
     }
 
-    /** One pool card: name, two quota windows, grant balance, model list. */
+    /**
+     * One pool card. The open state is intentionally tiny: name, type chip,
+     * spendable grant balance, and the twin quota sub-cards. Everything
+     * explanatory (grant expiry, the model coverage lists) folds into one
+     * `<details>` row so the deck stays scannable on wide screens.
+     */
     function PoolCard({ pool, tt }) {
       const callable = pool.callableModels || pool.modelIds || [];
       const locked = pool.lockedModels || [];
+      const hasDetails = pool.nearestGrantExpiry || callable.length > 0 || locked.length > 0;
       return h(
         "div",
         { style: S.card },
         h(
           "div",
-          { style: S.poolHead },
+          { style: S.cardHead },
           h("span", { style: S.poolName }, pool.name),
-          h("span", { style: S.chip }, pool.poolType === "dedicated" ? tt("pool.dedicated") : tt("pool.default"))
+          h("span", { style: S.chip }, pool.poolType === "dedicated" ? tt("pool.dedicated") : tt("pool.default")),
+          h("span", { style: S.spacer }),
+          // Spendable grant money belongs up with the headline, not buried.
+          pool.grantBalance > 0
+            ? h("span", { style: S.grantChip, title: tt("pool.grant") }, format(tt("pool.grant"), { balance: count(pool.grantBalance) }))
+            : null
         ),
-        h(WindowRow, { label: tt("pool.window5h"), window: pool.window5h, tt }),
-        h(WindowRow, { label: tt("pool.window7d"), window: pool.window7d, tt }),
-        pool.grantBalance > 0
-          ? h("div", { style: S.grant }, format(tt("pool.grant"), { balance: count(pool.grantBalance) }))
-          : null,
-        pool.nearestGrantExpiry
-          ? h("div", { style: S.grant }, format(tt("pool.grantExpiry"), { time: clockLong(pool.nearestGrantExpiry), balance: count(pool.nearestGrantExpiringBalance) }))
-          : null,
         h(
           "div",
-          { style: S.models },
-          h("span", { style: { ...S.muted, fontSize: 12 } }, `${tt("pool.callable")}:`),
-          callable.map((model) => h("span", { key: model, style: S.modelTag }, model))
+          { style: S.quotas },
+          h(QuotaCard, { label: tt("pool.window5h"), window: pool.window5h, tt }),
+          h(QuotaCard, { label: tt("pool.window7d"), window: pool.window7d, tt })
         ),
-        locked.length > 0
+        hasDetails
           ? h(
-              "div",
-              { style: { ...S.models, ...S.muted }, title: locked.join(", ") },
-              h("span", { style: { fontSize: 12 } }, format(tt("pool.locked"), { count: locked.length }))
+              "details",
+              { style: S.details },
+              h("summary", { style: S.detailsSummary }, tt("pool.details")),
+              h(
+                "div",
+                { style: S.detailsBody },
+                pool.nearestGrantExpiry
+                  ? h("div", { style: S.grant }, format(tt("pool.grantExpiry"), { time: clockLong(pool.nearestGrantExpiry), balance: count(pool.nearestGrantExpiringBalance) }))
+                  : null,
+                callable.length > 0
+                  ? h(
+                      "div",
+                      { style: S.models },
+                      h("span", { style: { ...S.muted, fontSize: 12, marginRight: 2 } }, `${tt("pool.callable")}:`),
+                      callable.map((model) => h("span", { key: model, style: S.modelTag }, model))
+                    )
+                  : null,
+                locked.length > 0
+                  ? h(
+                      "div",
+                      { style: { ...S.models, ...S.muted }, title: locked.join(", ") },
+                      h("span", { style: { fontSize: 12, marginRight: 2 } }, format(tt("pool.locked"), { count: locked.length }))
+                    )
+                  : null
+              )
             )
           : null
       );
@@ -818,7 +894,11 @@ function clientFactory(require) {
             pools && pools.plan.name
               ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 10 } }, pools.plan.name)
               : null,
-            (pools?.pools || []).map((pool) => h(PoolCard, { key: pool.id, pool, tt })),
+            h(
+              "div",
+              { style: S.poolsGrid },
+              (pools?.pools || []).map((pool) => h(PoolCard, { key: pool.id, pool, tt }))
+            ),
             data.uncountedModels && data.uncountedModels.length > 0
               ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
                   format(tt("pool.uncounted"), { models: data.uncountedModels.join(" · ") }))
@@ -969,7 +1049,7 @@ function clientFactory(require) {
       tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
       styles: S,
       helpers: Object.freeze({ clock, clockLong, count, format }),
-      components: Object.freeze({ WindowRow, PoolCard, TrendTable, AccountForm, PanelPage })
+      components: Object.freeze({ QuotaCard, PoolCard, TrendTable, AccountForm, PanelPage })
     });
 
     return { inject, apply, panel };

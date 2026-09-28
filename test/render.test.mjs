@@ -32,19 +32,21 @@ const rendered = (component, props) => texts(treeOf(component, props));
 /** The panel's progress-bar element, wherever it sits in the tree. */
 const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== undefined);
 
-// === A. the window row's arithmetic is the one the reader can verify ======
+// === A. the quota card's arithmetic is the one the reader can verify ======
 // 12345 of 60000 is 20.575%. Any swap of used/limit/remaining turns these
 // figures into different numbers, so this block is the anti-mirror for the
 // exact bug the decision tests could not see.
 {
-  const tree = treeOf(render.WindowRow, {
+  const tree = treeOf(render.QuotaCard, {
     label: "pool.window5h",
     window: { limit: 60000, used: 12345, remaining: 47655, resetAt: 1800000000 },
     tt
   });
   const meta = texts(tree).join("\n");
-  check("the used figure is the USED count", meta.includes("pool.used 12,345"), meta);
-  check("the remaining figure is the REMAINING count", meta.includes("pool.remaining 47,655"), meta);
+  check("the used figure is the USED count against the limit",
+    meta.includes("pool.used 12,345 / 60,000"), meta);
+  check("the headline figure is the REMAINING count, labelled as such",
+    meta.includes("47,655") && meta.includes("pool.remaining"), meta);
   check("the percentage is used over limit", meta.includes("20.6%"), meta);
 
   const fill = bar(tree);
@@ -58,7 +60,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 
 // === B. a window without a reset time stays quiet about resets ============
 {
-  const out = rendered(render.WindowRow, {
+  const out = rendered(render.QuotaCard, {
     label: "pool.window7d",
     window: { limit: 60000, used: 1, remaining: 59999, resetAt: null },
     tt
@@ -71,7 +73,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 // a colour would pass a tone swap. The values come from the lifted S instead.
 {
   const fillFor = (used) => {
-    const fill = bar(treeOf(render.WindowRow, {
+    const fill = bar(treeOf(render.QuotaCard, {
       label: "l", window: { limit: 60000, used, remaining: 60000 - used, resetAt: null }, tt
     }));
     return findElement(fill, (p) => typeof p.style?.width === "string")?.props.style;
@@ -86,7 +88,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 
 // === D. an empty limit is 0%, never NaN ===================================
 {
-  const tree = treeOf(render.WindowRow, {
+  const tree = treeOf(render.QuotaCard, {
     label: "l", window: { limit: 0, used: 0, remaining: 0, resetAt: null }, tt
   });
   check("a zero limit renders as 0.0%", texts(tree).includes("0.0%"), texts(tree).join("\n"));
@@ -131,11 +133,12 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("a default pool is labelled as such", out.includes("pool.default"), out.join("\n"));
   check("both quota windows are present",
     out.includes("pool.window5h") && out.includes("pool.window7d"), out.join("\n"));
-  check("every callable model is listed",
+  check("the fold carries the details summary", out.includes("pool.details"), out.join("\n"));
+  check("every callable model is listed (inside the fold)",
     out.includes("Model-A") && out.includes("Model-B"), out.join("\n"));
   check("locked models are summarised, not listed", out.includes("pool.locked") && !out.includes("Model-C"),
     out.join("\n"));
-  check("no grant line when the balance is zero", !out.includes("pool.grant"), out.join("\n"));
+  check("no grant text when the balance is zero", !out.includes("pool.grant"), out.join("\n"));
 
   const dedicated = rendered(render.PoolCard, { pool: { ...pool, poolType: "dedicated" }, tt });
   check("a dedicated pool is labelled as such", dedicated.includes("pool.dedicated"), dedicated.join("\n"));
@@ -160,7 +163,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the style tokens were lifted from the client", S.card?.borderRadius === 12 && S.bar?.height === 6,
     JSON.stringify(S.card ?? {}));
   check("the number formatter was lifted", render.PoolCard instanceof Function && render.TrendTable instanceof Function
-    && render.WindowRow instanceof Function);
+    && render.QuotaCard instanceof Function);
   check("count renders its input unchanged for small numbers",
     rendered(render.TrendTable, { trend: { models: [{ model: "m", credits: 12.345 }] }, tt }).includes("12.35"),
     "count(12.345) should round to 2 places");

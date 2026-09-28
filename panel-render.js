@@ -7,7 +7,7 @@
  * remaining figure, still passed every check — the decision tests assert
  * which view renders, not what that view says.
  *
- * The three components (`WindowRow`, `PoolCard`, `TrendTable`) are hook-free
+ * The three components (`QuotaCard`, `PoolCard`, `TrendTable`) are hook-free
  * plain functions, so they run unchanged in Node once the shipped bundle is
  * materialized by `client-surface.js`: they come pre-wired to the recording
  * `h`, with every closure dependency (`S`, `count`, `clock`, `clockLong`,
@@ -32,7 +32,7 @@ export const styles = surface.styles;
  * same components serve any dictionary — the tests pass an identity `tt` and
  * assert on dictionary KEYS, which is what decides the text, not the text
  * behind it.
- * @type {{WindowRow: Function, PoolCard: Function, TrendTable: Function}}
+ * @type {{QuotaCard: Function, PoolCard: Function, TrendTable: Function}}
  */
 export const render = surface.components;
 
