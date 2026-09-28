@@ -177,17 +177,25 @@ plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-s
 dsh-connect-sensenova-token-plan/
 ├── index.js            # Host：快照路由 + 账号路由（启动加载一次，改完须重启 Host）
 ├── codes.js            # 错误码唯一声明处：auth 产出、store 分类、Host 归类共一份
+├── host-config.js      # 配置解析：CONFIG_DEFAULTS 与 auth overrides 的 resolveAuthOverrides
 ├── token-store.js      # Host：凭据存取、续期、401 拒绝记忆
 ├── throttle-store.js   # Host：登录节流状态（插件自己的文件，不进凭据服务）
 ├── sensenova-auth.js   # Host：OIDC 授权码流 + refresh_token 续期
+├── sensenova-crypto.js # 密码 JWE 封包（平台 JWKS 公钥 RSA-OAEP + A256GCM）
+├── console-client.js   # 控制台 API 客户端（pool-usage / credit-usage-trend / models）
+├── parsers.js          # 响应解析层：字符串数值/epoch 归一、checkShape 漂移检测、trend 求和
+├── trace.js            # 登录 trace 落盘（成功/失败，值级脱敏）
+├── util.js             # 共享工具函数
 ├── client.js           # Client：侧边栏 + 面板页 + 账号表单（工厂即模块，自带 panel 测试面）
 ├── client-surface.js   # 测试基建：把 client.js 作为模块加载、物化 panel 测试面
 ├── panel-decision.js   # 测试基建：从 panel 测试面取决策/字典/错误码表（Node 可直接 import）
 ├── panel-render.js     # 测试基建：从 panel 测试面取渲染组件与样式令牌（Node 可直接 import）
+├── AGENTS.md           # AI 协作会话纪律：验证、红线、文档地图
 ├── cordis.patch.yml    # 配置面（含全部配置字段）
 ├── package.json        # bundle 清单 + npm test 脚本
-├── test/               # 离线检查（auth/store/routes/panel/render/config/wiring + live）
+├── test/               # 离线检查（auth/store/routes/panel/render/parsers/config/package/wiring + e2e-gate）+ 单独跑（e2e/live）+ 基建（peer-roots/fake-platform）
 ├── docs/               # 文档体系（见上）
+├── .github/            # CI workflow（离线九套件硬门禁 + 端到端 best-effort）
 └── upstream/           # ⚠️ 被 .gitignore 忽略：上游 Python 桌面工具，自带独立 .git 与
                         #    GitHub remote，仅本地容纳、不进本仓库历史、构建期与运行期均不依赖
 ```
@@ -207,12 +215,23 @@ dsh-connect-sensenova-token-plan/
 |---|---|
 | `package.json` | bundle 清单 + `dsh.client`（web 平台、locale/renderer/layout 注入顺序） |
 | `cordis.patch.yml` | 插入 `dsh-connect-sensenova-token-plan` 行并携带全部配置 |
-| `index.js` | Host：调用控制台 API 的 `/api` 快照路由（401 自动续期重试）+ 账号配置路由 |
+| `index.js` | Host：`/api` 快照路由（401 自动续期重试）+ 账号配置路由；协调器角色 |
+| `host-config.js` | Host：配置契约（`CONFIG_DEFAULTS`、`resolveSettings`、`resolveAuthOverrides`、`isAdmitted`、`hostName`） |
 | `codes.js` | 错误码与平台原因码的唯一声明处（新增一个平台原因只需改这里） |
 | `token-store.js` | Host：凭据服务里的令牌与账号存取、按期续期、401 拒绝记忆 |
+| `throttle-store.js` | Host：登录节流状态（插件自己的状态文件，跨进程跨重启生效） |
 | `sensenova-auth.js` | Host：OIDC 授权码流登录 + `refresh_token` 静默续期 |
-| `client.js` | Client：侧边栏图标 + `main` 面板页 + 账号表单（React，纯主题令牌样式） |
-| `test/*.test.mjs` | 离线检查（`npm test`），网络层打桩，不碰真实账号 |
+| `sensenova-crypto.js` | Host：密码 JWE 封包、PKCE 派生、JWT 解析、JWKS 缓存 |
+| `console-client.js` | Host：控制台与模型目录请求（带缓存 + single-flight） |
+| `parsers.js` | Host：响应解析（数值归一、形状漂移检测、视觉模型识别） |
+| `trace.js` | Host：登录 trace 落盘（值级脱敏） |
+| `util.js` | 共享工具函数（类型安全读取器） |
+| `client.js` | Client：侧边栏图标 + 面板页 + 账号表单（React，纯主题令牌样式） |
+| `client-surface.js` | 测试基建：把 `client.js` 作为模块加载、物化 panel 测试面 |
+| `panel-decision.js` | 测试基建：从 panel 测试面取决策/字典/错误码表 |
+| `panel-render.js` | 测试基建：从 panel 测试面取渲染组件与样式令牌 |
+| `AGENTS.md` | AI 协作会话纪律 |
+| `test/` | 九个离线套件 + e2e-gate（`npm test`）；基建：`peer-roots.mjs` / `fake-platform.mjs` |
 
 ## 路由
 

@@ -32,15 +32,22 @@
 
 | 半边 | 文件 | 加载时机 | 改动后如何生效 |
 |---|---|---|---|
-| **Host（服务端）** | `index.js`、`token-store.js`、`sensenova-auth.js` | 启动时加载一次 | **必须完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
-| **Client（前端）** | `client.js`、`panel-decision.js` | 浏览器侧，随页面加载 | 浏览器刷新页面即可 |
+| **Host（服务端）** | `index.js`、`host-config.js`、`codes.js`、`token-store.js`、`throttle-store.js`、`sensenova-auth.js`、`sensenova-crypto.js`、`console-client.js`、`parsers.js`、`trace.js`、`util.js` | 启动时加载一次 | **必须完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
+| **Client（前端）** | `client.js` | 浏览器侧，随页面加载 | 浏览器刷新页面即可 |
 
 - `index.js`：注册只读路由 `/api/dsh-connect-sensenova-token-plan/snapshot`（聚合控制台数据，401 自动续期重试一次）+ 账号配置路由。
+- `host-config.js`：配置契约——`CONFIG_DEFAULTS`、`resolveSettings` / `resolveAuthOverrides`（含嵌套 `auth:` 块拒绝）、`isAdmitted` 同源闸、`hostName` 解析。
 - `codes.js`：全部错误码与 IAM 平台原因码的唯一声明处。`sensenova-auth.js` 产出、`token-store.js` 判定是否 parked、`index.js` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
 - `token-store.js`：凭据服务里的令牌与账号存取、按期续期、401 拒绝记忆。
+- `throttle-store.js`：登录节流状态，写在插件自己的状态文件（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），跨进程跨重启生效。
 - `sensenova-auth.js`：OIDC 授权码流登录 + `refresh_token` 静默续期。
+- `sensenova-crypto.js`：密码 JWE 封包（RSA-OAEP(SHA-1) + A256GCM）、PKCE 派生、JWT 解析、JWKS 缓存（由调用方持有、非模块级单例）。
+- `console-client.js`：控制台与模型目录的网络请求，带短生命周期缓存与 single-flight（并发轮询只发一次请求）。
+- `parsers.js`：响应解析层——字符串数值 / epoch 归一、`checkShape` 漂移检测、`parseTrend` 对 points 求和、`identifyVisionModel` 视觉模型识别。
+- `trace.js`：登录 trace 落盘（成功/失败，值级脱敏，仅留最近 20 个，权限 0600）。
+- `util.js`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
 - `client.js`：侧边栏图标 + `main` 面板页 + 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
-- `panel-decision.js`：把 `client.js` **作为模块加载**（经 `client-surface.js` 的捕获型 `__ModuleLoader__` + 记录型 React 替身），取工厂物化出的 `panel` 测试面（决策、字典、错误码表）在 Node 里直接调用——不是手写副本、也不抠源码字符串，用于测试。
+- 测试基建：`client-surface.js` / `panel-decision.js` / `panel-render.js` —— 把 `client.js` 作为模块加载后物化 `panel` 测试面，供 `panel.test.mjs` / `render.test.mjs` 直接调用。不进运行时、不进 `files` 打包清单。
 
 ---
 

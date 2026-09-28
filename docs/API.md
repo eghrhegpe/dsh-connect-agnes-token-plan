@@ -14,16 +14,23 @@
 ```jsonc
 {
   "ok": true,
-  "pools": { "plan": {...}, "pools": [ /* 每池 5h/7d 窗口、返赠、模型清单 */ ] },
-  "trend": { "hours": 24, "models": [ /* 每模型消耗 */ ] },
-  "uncountedModels": [ "..." ],
-  "shapeWarnings": [ /* 控制台返回结构与预期不符时非空 */ ],
+  "now": 1790529234603,
+  "consoleBase": "https://platform.sensenova.cn",
+  "cacheSeconds": 60,
+  "pollSeconds": 30,
   "auth": {
     "configured": true, "hasAccount": true, "hasRefreshToken": true,
     "needsAccount": false, "ephemeral": false,
     "retryAfterMs": null, "needsUserAction": false,
     "expiresAt": 1790529234603, "error": null
-  }
+  },
+  "catalogAvailable": true,
+  "catalogModels": ["sensenova-6.8-flash-lite", "..."],
+  "visionModels": [/* 可看图模型（仅 catalogAvailable 时返回，否则省略） */],
+  "pools": { "plan": {...}, "pools": [/* 每池 5h/7d 窗口、返赠、callableModels / lockedModels */] },
+  "trend": { "hours": 24, "models": [/* 每模型消耗 */] },
+  "uncountedModels": [/* 在模型目录但不在任何池中的模型 */],
+  "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
 }
 ```
 

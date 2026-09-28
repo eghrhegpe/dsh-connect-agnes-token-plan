@@ -18,7 +18,7 @@
 
 ## 2. 改动 Host 半边必须重启
 
-`index.js` / `token-store.js` / `sensenova-auth.js` 在 Host 启动时加载一次，**改完须完全退出 DSH（含托盘）再启动**。只改 `client.js` 时浏览器刷新即可。提交前用 [SETUP.md](./SETUP.md) §4 的自查确认跑的是新代码。
+Host 半边（`index.js` / `host-config.js` / `codes.js` / `token-store.js` / `throttle-store.js` / `sensenova-auth.js` / `sensenova-crypto.js` / `console-client.js` / `parsers.js` / `trace.js` / `util.js`）在 Host 启动时加载一次，**改完须完全退出 DSH（含托盘）再启动**。只改 `client.js` 时浏览器刷新即可。提交前用 [SETUP.md](./SETUP.md) §4 的自查确认跑的是新代码。
 
 ---
 
@@ -45,8 +45,10 @@
 逻辑改动若影响以下内容，同步更新 `docs/`：
 
 - 路由 / 配置字段变化 → `API.md` / `SETUP.md`
-- 登录 / 续期 / 节流变化 → `AUTH.md`
-- 结构或双仓库关系变化 → `ARCHITECTURE.md`
+- 登录 / 续期 / 节流变化 → `AUTH.md` / `SENSENOVA-API.md`
+- 结构或双仓库关系变化 → `ARCHITECTURE.md` / `DSH-PLUGIN.md`
+- 测试套件或流程变化 → `TESTING.md`
+- 新踩坑或修法 → `PITFALLS.md`
 
 根 `README.md` 保持为索引与快速上手，细节下沉到 `docs/`。
 
@@ -66,19 +68,11 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
 
 ---
 
-## 7. 已知取舍（挂起，按需收）
+## 7. 已知取舍
 
-- **`SENSENOVA_API_KEY` 走 `process.env` 不走凭据服务**
-  `index.js` 挂载时从 `process.env` 读一次，空则 `catalog` 整块不查、`catalogAvailable: false`；
-  `peer-roots.mjs` 的 `isolateHostEnv()` 把这支隔离在测试外。与账号/密码腿（走 `ctx.credentials.modifyRecord`、
-  kind=grant、跨重启、跨进程）不对称：API key 明文 Bearer 上 `GET /v1/models`，但持久化与跨进程行为全缺。
-  收口面（估时 40 分钟，改 `index.js` + 两份 docs + 一个测试文件）：
-  1. `index.js`：`apiKey` 改成 `await readApiKey()`，优先 `ctx.credentials.resolve("SENSENOVA_API_KEY")`，
-     fallback 到 `process.env`；snapshot 路由里 `catalog` 的 fetch 等 key 读到再发，`apiKey === ""` 判断保留。
-  2. `docs/API.md` / `docs/SETUP.md`：把「env 变量」口径改成「凭据服务优先、env 兜底」。
-  3. 测试补「凭据里有 key、env 没 key」与「两个都有、凭据赢」两条用例；
-     `peer-roots.mjs` 的 `isolateHostEnv` 注释更新为「API key 现优先走凭据服务，env 只是兜底」。
-  不动的部分：不给 `token-store.js` 加 API key 的 `modifyRecord`（无写路径需求）；
-  不改 `console-client.js` 的 `fetchModelCatalog`（只接字符串参数，谁供都不关心）。
-  风险：凭据服务可能晚于插件挂载注册（账号腿即如此），`readApiKey()` 必须每次读、不能在 `apply` 开头缓存；
-  `resolve` 返回 `{ value, source }`，要解包成字符串。
+- **API key 的持久化与跨进程**
+  `index.js` 的 `resolveApiKey()` 已优先走 `ctx.credentials.resolve("SENSENOVA_API_KEY")`、回退 `process.env`，
+  与账号/密码腿（走 `ctx.credentials.modifyRecord`、kind=grant、跨重启、跨进程）的不对称已收口——
+  凭据服务里的 key 与 env 里的 key 都能被读到。仍不对称的部分：API key 无写路径（不通过本插件修改），
+  所以不给 `token-store.js` 加 `modifyRecord`；`fetchModelCatalog` 只接字符串参数，不关心供方是谁。
+  读 key 必须每次轮询时调用（凭据服务可能晚于插件挂载注册），不能在 `apply` 开头缓存。

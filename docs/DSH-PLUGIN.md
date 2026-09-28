@@ -129,9 +129,9 @@ plugin_manager { action: "install_bundle", target: "<插件目录>\dsh-connect-s
 ## 7. 测试与构建（本插件）
 
 - 本插件测试**无需 `npm install`**：网络层打桩，密码用临时密钥加密，不碰真实账号；peer 依赖由 `test/peer-roots.mjs` 在 DSH 运行时就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到会列全部查过的位置，而非静默跳过。
-- 跑 `npm test`（auth / store / routes / panel / wiring）。`test:live` 需联网验证 JWKS。
+- 跑 `npm test`（九个离线套件：`auth` / `store` / `routes` / `panel` / `render` / `parsers` / `config` / `package` / `wiring`），末尾接 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。
 - 本插件 **Client 半边无构建步骤**：`client.js` 直接随 bundle 注入，没有 `src/` → 产物的分离（这点与 `dsh-connect-qoder` 不同，后者有 `src/client/` 经 `tsdown` 重建 `lib/client.js`）。
-- 已知缺口：`package.json` 的 `test` 脚本引用了 `wiring.test.mjs`（尚缺），且 `panel.test.mjs` 有失败用例——详见 [TESTING.md](./TESTING.md)，属实现工作，不在此文档范围。
+- 所有离线测试均已通过（当前快照：auth 38 / store 24 / routes 16 / panel 41 / render 16 / parsers 21 / config 22 / package 9 / wiring 24，共 211 项）。测试数会随并行会话变化，详见 [TESTING.md](./TESTING.md)。
 
 ---
 
