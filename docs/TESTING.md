@@ -28,7 +28,7 @@ npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可
 | `test/parsers.test.mjs` | **控制台响应解析层**（纯函数、无网络）：字符串数值与 epoch 归一（§11）、`reset_at="0"` 不得读成 1970、`checkShape` 双向漂移检测（§12 `shapeWarnings` 的来源）、trend 对 points **求和**而非取首个 |
 | `test/config.test.mjs` | **配置单一事实源钉子**：`CONFIG_DEFAULTS` 与 `cordis.patch.yml` 不得静默漂移；不依赖 peer，干净检出即可跑 |
 | `test/package.test.mjs` | **打包清单钉子**：从 `main`/`exports` 走静态 import 闭包，可达模块必须在 `files` 里（曾漏 5 个 → tarball 加载即崩）；反向钉住"`files` 里却无人引用"的死重；不依赖 peer，干净检出即可跑 |
-| `test/docs.test.mjs` | **文档一致性钉子**：内部链接全部可解析、同一张表格不出现在 ≥2 个文件（防多源事实）、根 `README.md` 行数上限、`DSH-PLUGIN.md` 教学快照与 `package.json` 同步；不依赖 peer，干净检出即可跑 |
+| `test/docs.test.mjs` | **文档一致性钉子**：内部链接全部可解析、同一张表格不出现在 ≥2 个文件（防多源事实）、根 `README.md` 行数上限、`DSH-PLUGIN.md` 教学快照与 `package.json` 同步、**`API.md` 快照示例与契约键集一致**；不依赖 peer，干净检出即可跑 |
 | `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误 |
 | `test/live-jwks.test.mjs` | （仅 `test:live`）真实拉取 JWKS 文档，确认封包公钥可达 |
 

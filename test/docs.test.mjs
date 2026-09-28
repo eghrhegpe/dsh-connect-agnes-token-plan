@@ -114,6 +114,57 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   }
 }
 
+// 5) API.md 快照示例 JSONC ↔ 声明契约
+// 契约键集是 API.md 与 index.js 之外的第三个事实源：示例手滑打错字段、或文档了代码里
+// 不存在的键，都会红。示例是带省略号与注释的 JSONC，先剥注释（保字符串内 // 不动）再解析。
+{
+  const apiDoc = readFileSync(join(ROOT, "docs", "API.md"), "utf8");
+  const block = apiDoc.match(/```jsonc\n([\s\S]*?)```/);
+  if (!block) bad("docs/API.md 找不到 jsonc 快照示例块");
+  else {
+    const stripJsonc = (src) => {
+      let out = "";
+      let i = 0;
+      let inStr = false;
+      while (i < src.length) {
+        const c = src[i];
+        if (inStr) {
+          out += c;
+          if (c === "\\") { out += src[i + 1] ?? ""; i += 2; continue; }
+          if (c === '"') inStr = false;
+          i++;
+          continue;
+        }
+        if (c === '"') { inStr = true; out += c; i++; continue; }
+        if (c === "/" && src[i + 1] === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
+        if (c === "/" && src[i + 1] === "*") { i += 2; while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++; i += 2; continue; }
+        out += c;
+        i++;
+      }
+      return out;
+    };
+    const cleaned = stripJsonc(block[1])
+      .replace(/\s*\.\.\.\s*/g, "") // 占位省略号：{...}->{}、["..."]->[""]
+      .replace(/,\s*([}\]])/g, "$1"); // 尾随逗号容错
+    let parsed = null;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      bad(`API.md 快照示例不是合法 JSON：${e.message}`);
+    }
+    if (parsed) {
+      // 契约：快照成功响应的 13 个顶层键（含条件性 visionModels）
+      const canonical = ["auth", "cacheSeconds", "catalogAvailable", "catalogModels", "consoleBase", "now", "ok", "pollSeconds", "pools", "shapeWarnings", "trend", "uncountedModels", "visionModels"].sort().join(",");
+      const docKeys = Object.keys(parsed).sort().join(",");
+      if (docKeys !== canonical) bad(`API.md 快照示例顶层键与契约不符：\n  文档：${docKeys}\n  契约：${canonical}`);
+      else note("API.md 快照示例顶层键与契约一致（13 键）");
+      const indexSrc = readFileSync(join(ROOT, "index.js"), "utf8");
+      const missing = canonical.split(",").filter((k) => !new RegExp(`\\b${k}\\b`).test(indexSrc));
+      if (missing.length) bad(`契约键在 index.js 中未出现：${missing.join(", ")}`);
+    }
+  }
+}
+
 if (fails.length) {
   console.error(`\n❌ docs.test.mjs 失败 ${fails.length} 项：`);
   for (const f of fails) console.error(`  - ${f}`);
