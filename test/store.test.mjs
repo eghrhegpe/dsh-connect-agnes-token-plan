@@ -216,7 +216,11 @@ async function withNetwork(stub, body) {
     check("rejection carries refresh_rejected", caught?.code === "refresh_rejected", caught?.code);
     const state = await store.state();
     check("state records the failure", typeof state.error === "string" && state.error.length > 0, state.error);
-    check("state reports the stored grant present", state.configured === true);
+    // No account is stored to recover this dead refresh with, so the grant is
+    // reaped rather than left ownerless (see 8h for the "hit once, then ask"
+    // guarantee); with an account present it would instead fall back to login.
+    check("a rejected refresh with no account reaps the grant",
+      state.configured === false && state.hasRefreshToken === false, JSON.stringify(state));
   } catch (error) {
     fail("rejected refresh token surfaces clearly", error);
   } finally {
@@ -608,6 +612,53 @@ async function withNetwork(stub, body) {
     check("a served wait allows exactly one fallback probe", stub.log.logins === afterFirst + 1,
       `logins went ${afterFirst} -> ${stub.log.logins}`);
   }).catch((error) => fail("a dead refresh token falls back on a schedule", error));
+}
+
+// --- 8h. a dead refresh with NO account reaps the grant -------------------
+// After "forget account" the grant is meant to keep working until its refresh
+// token dies. Once it does, there is no password to recover with: the grant is
+// dead for good. It must then be REMOVED — not left as an ownerless pair in the
+// credentials file and not re-hit against the token endpoint on every poll.
+{
+  const expiredJwt = jwtExpiring(-5);
+  const credentials = fakeCredentials({
+    kind: "grant",
+    payload: { version: 1, accessToken: expiredJwt, refreshToken: "dead-refresh", expiresAt: Date.now() - 1000 }
+    // Deliberately NO refs: no account stored to re-login with.
+  });
+  const stub = await makeTokenStub(accepted);
+  let tokenCalls = 0;
+  await withNetwork(async (url) => {
+    if (String(url).includes("oauth2/token")) {
+      tokenCalls += 1;
+      return new Response(JSON.stringify({ error: "invalid_grant" }),
+        { status: 400, headers: { "content-type": "application/json" } });
+    }
+    return stub(url);
+  }, async () => {
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, skewMs: 120_000 });
+
+    let first = null;
+    try { await store.getToken(); } catch (error) { first = error; }
+    check("the dead refresh is reported", first?.code === "refresh_rejected", String(first?.code));
+    check("the unrecoverable grant is removed from the credentials service",
+      (await credentials.readRecord(KEY)) === undefined,
+      JSON.stringify(await credentials.readRecord(KEY)));
+    const state = await store.state();
+    check("after the reap the panel is unconfigured again",
+      state.configured === false && state.needsAccount === true && state.hasRefreshToken === false,
+      JSON.stringify(state));
+
+    // Further polls must not re-hit the dead token endpoint: the grant is gone,
+    // so the store goes straight to "not configured" instead of refreshing.
+    for (let i = 0; i < 3; i += 1) {
+      let code = null;
+      try { await store.getToken(); } catch (error) { code = error?.code; }
+      check(`poll ${i + 1} after the reap asks for an account`, code === "not_configured", String(code));
+    }
+    check("the dead refresh is hit exactly once, not once per poll", tokenCalls === 1, `tokenCalls=${tokenCalls}`);
+    check("no password login is attempted without an account", stub.log.logins === 0, `logins=${stub.log.logins}`);
+  }).catch((error) => fail("a dead refresh with no account reaps the grant", error));
 }
 
 // --- 9. saveAccount refuses an empty account before any network ---------

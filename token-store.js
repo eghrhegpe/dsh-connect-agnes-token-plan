@@ -446,6 +446,24 @@ export function createTokenStore({
   }
 
   /**
+   * Remove a grant that can no longer be of any use.
+   *
+   * A refresh token the platform has rejected (`refresh_rejected`) is dead for
+   * good, and when no account is stored to re-login with there is no path that
+   * ever revives it. Leaving it on disk did two things: it kept an ownerless
+   * token pair in the credentials file after "forget account", and it made
+   * every poll hit the dead refresh token before giving up. This reaps it.
+   * Best-effort: a read-only store keeps serving from memory until restart.
+   * @param {string} [accessToken] - the dead token, also dropped from the
+   *   in-memory cache and rejection set.
+   */
+  async function purgeGrant(accessToken) {
+    cached = null;
+    if (accessToken !== undefined) rejected.delete(accessToken);
+    await backend().deleteRecord(key).catch(() => {});
+  }
+
+  /**
    * Renew with the stored refresh token.
    * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
    */
@@ -689,10 +707,17 @@ export function createTokenStore({
         const renewed = await renewWithRefresh(stored);
         return renewed.accessToken;
       } catch (error) {
-        // A rejected refresh token is unrecoverable without a password; fall
-        // through to a login when one is configured.
+        // A rejected refresh token (or a grant that never had one) is
+        // unrecoverable without a password. When an account is still stored we
+        // fall through and re-login; when there is none — typically right after
+        // "forget account", once the live token expires — the grant is dead for
+        // good, so reap it instead of leaving an ownerless pair on disk and
+        // re-hitting the dead refresh on every poll.
         if (obj(error).code !== CODE.REFRESH_REJECTED && obj(error).code !== CODE.NO_REFRESH_TOKEN) throw error;
-        if ((await readAccount()) === undefined) throw error;
+        if ((await readAccount()) === undefined) {
+          await purgeGrant(stored?.accessToken);
+          throw error;
+        }
       }
     }
     try {
@@ -803,8 +828,10 @@ export function createTokenStore({
     /**
      * Forget the stored account.
      *
-     * The grant is left alone: the panel keeps working on the refresh token
-     * until that runs out, and only then asks for the account again.
+     * The grant is left alone at first: the panel keeps working on the refresh
+     * token until that runs out, and only then asks for the account again. With
+     * no account left to recover a dead refresh token, `acquire` also reaps the
+     * expired grant then, so nothing ownerless is left behind.
      * @returns {Promise<void>}
      */
     async forgetAccount() {
