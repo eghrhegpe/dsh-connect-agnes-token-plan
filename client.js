@@ -241,9 +241,10 @@ window.__ModuleLoader__.load({
      * a code and — crucially — the `auth` block, so a panel that cannot reach
      * the console can still say whether its token will renew by itself.
      *
-     * A named function rather than inline branching so panel-decision.js can
-     * drive the panel's REAL reading of a response, instead of a hand-written
-     * copy of it that would drift the moment either side is edited.
+     * A named function at module scope, not inline branching, so the
+     * Node-side tests can drive the panel's REAL reading of a response by
+     * loading this bundle as a module (`client-surface.js`) — instead of a
+     * hand-written copy that would drift the moment either side is edited.
      *
      * @param {unknown} body - the parsed snapshot response.
      * @returns {{data: object|null, error: object|string|null}}
@@ -437,14 +438,8 @@ window.__ModuleLoader__.load({
           // Only say "wrong password" when the platform said so. Every other
           // refusal gets its own line, and anything unrecognised shows the
           // platform's own words rather than a guess.
-          const reasons = {
-            login_rejected: "auth.badCredentials",
-            account_locked: "auth.locked",
-            rate_limited: "auth.rateLimited",
-            verification_required: "auth.verification"
-          };
-          if (typeof reasons[code] === "string") {
-            setFormError(tt(reasons[code]));
+          if (typeof REFUSAL_TEXT[code] === "string") {
+            setFormError(tt(REFUSAL_TEXT[code]));
             setFormDetail(typeof body?.detail === "string" && body.detail !== "" ? body.detail : null);
             return;
           }
@@ -602,8 +597,8 @@ window.__ModuleLoader__.load({
           const body = await response.json();
           // The Host answers 200 with `ok:false` for every expected failure, so
           // the code is kept to pick the guidance rather than the message. The
-          // reading is a named function so panel-decision.js can test exactly
-          // what the panel does, instead of a hand-written copy of it.
+          // reading is a named module-scope function, so the tests exercise
+          // exactly what the panel does instead of a copy of it.
           const read = interpretSnapshot(body);
           if (read.data === null) {
             setData(null);
@@ -643,53 +638,9 @@ window.__ModuleLoader__.load({
 
       const pools = data?.pools;
       const trend = data?.trend;
-      // `error` is either a string (transport failure) or the Host's structured
-      // failure. The auth state travels with both, so a panel that cannot read
-      // the console can still say whether the token renews itself.
-      const failure = error === null || error === undefined
-        ? null
-        : typeof error === "string" ? { message: error, code: null, auth: null } : error;
-      const auth = data?.auth ?? failure?.auth ?? null;
-      // With no data the form is the answer whenever the fix is the ACCOUNT:
-      // nothing has been entered yet, or no token can be obtained. The panel
-      // can configure itself, so the user is never sent to edit a file.
-      //
-      // Two codes are NOT answered by the form, because no login can fix
-      // them, and hiding their reason behind a login box turns "the console
-      // is down" into "please sign in":
-      //
-      //   config_error  — a bad endpoint override; the operator must fix it.
-      //   console_error — the console did not answer; it usually clears on the
-      //                   next poll, and the text must say so.
-      //
-      // Everything else the Host classifies as an auth failure (a wrong
-      // password, a lockout, a dead refresh token) does reach the form, which
-      // is also where the platform's own cooldown is shown.
-      //
-      // The first load has no failure and no data yet; it has nothing to
-      // explain, so it falls to the form as well.
-      const needsSetup = data === null
-        && failure?.code !== "config_error"
-        && failure?.code !== "console_error";
-      // The dictionary key, resolved in the active language below. Returned as
-      // a key so panel-decision.js can hold the logic without the dictionary.
-      const guidanceKey = failure === null
-        ? null
-        : failure.code === "auth_error" || failure.code === "jwt_expired"
-          ? "panel.jwtExpired"
-          : failure.code === "not_configured"
-            ? "panel.jwtMissing"
-            : failure.code === "config_error"
-              ? "panel.configError"
-              : null;
-      const guidance = guidanceKey === null
-        ? null
-        : guidanceKey === "panel.configError"
-          ? format(tt(guidanceKey), { error: failure.message })
-          : tt(guidanceKey);
-      // The Host's own contract check: a renamed upstream field would otherwise
-      // look identical to "no usage yet".
-      const shapeWarnings = Array.isArray(data?.shapeWarnings) ? data.shapeWarnings : [];
+      // The decision is `viewOf`'s (module scope): the Node-side tests invoke
+      // this exact function, so there is no second copy that could drift.
+      const { failure, auth, needsSetup, guidance, shapeWarnings } = viewOf(data, error, tt);
       const authChip = auth === null
         ? null
         : auth.error || !auth.configured
@@ -849,6 +800,26 @@ window.__ModuleLoader__.load({
       }, "dsh-connect-sensenova-token-plan: ui mounts");
     }
 
-    return { inject, apply };
+    /**
+     * The module's test surface.
+     *
+     * The Host only ever reads `inject`/`apply`; this object exists so the
+     * Node-side suites can load the shipped bundle as a module and exercise
+     * these REAL definitions — the decision, the dictionaries, the style
+     * tokens, the components — instead of scraping the source text for them.
+     * Everything here is what the browser itself uses; nothing is defined for
+     * the tests' benefit.
+     */
+    const panel = Object.freeze({
+      interpretSnapshot,
+      viewOf,
+      dictionaries: Object.freeze({ zh, en }),
+      tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
+      styles: S,
+      helpers: Object.freeze({ clock, clockLong, count, format }),
+      components: Object.freeze({ WindowRow, PoolCard, TrendTable, AccountForm, PanelPage })
+    });
+
+    return { inject, apply, panel };
   }
 });
