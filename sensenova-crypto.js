@@ -4,8 +4,9 @@
  * Sealing the password into a JWE, deriving a PKCE pair, reading a JWT's own
  * claims. All of it is pure in its inputs: where the login flow reads
  * endpoints from configuration, this module is TOLD which endpoint and which
- * key id to use. Nothing here reaches for a module-level setting, so two
- * callers with different configurations cannot disturb one another, and a
+ * key id to use. Nothing here reaches for a module-level setting — not even the
+ * JWKS cache, which each caller owns via {@link createJwksCache} (see below), so
+ * two callers with different configurations cannot disturb one another, and a
  * test can exercise any of it without configuring the world first.
  *
  * @module dsh-connect-sensenova-token-plan/sensenova-crypto
@@ -108,29 +109,37 @@ export async function pkce() {
 const JWKS_TTL_MS = 600_000;
 
 /**
- * The JWKS documents already fetched, keyed by the endpoint they came from.
+ * A reusable key-set cache: the shape {@link sealPassword} expects in its
+ * `cache` option.
  *
- * Keyed, because two configurations may name different endpoints: a cache keyed
- * on nothing would hand an enterprise mirror the platform's key set, and the
- * failure would surface as a rejection of a perfectly good password.
+ * This used to be one module-level `Map`. That contradicted this module's own
+ * promise — "nothing here reaches for a module-level setting" — and it leaked
+ * across callers exactly the way the throttle file does: two configurations
+ * shared one cached key set, so a test that wanted a clean cache had to reload
+ * the whole module (`import("...?shape=…")`) rather than just make a new cache.
+ * Handing each caller its own removes both problems at once: instances cannot
+ * disturb one another, and the isolation is a `createJwksCache()` call, not an
+ * import-cache hack. Keyed BY ENDPOINT inside, so one instance pointed at two
+ * mirrors still keeps their keys apart.
+ * @returns {Map<string, {keys: object[], at: number}>} an empty cache.
  */
-const jwksCache = new Map();
-
-/** Forget every cached key set. For tests, and for a config that changed. */
-export function forgetJwks() {
-  jwksCache.clear();
+export function createJwksCache() {
+  return new Map();
 }
 
 /**
- * Fetch a platform JWKS, honouring a short cache.
+ * Fetch a platform JWKS, honouring the caller-supplied short cache.
  * @param {object} options - what to fetch and how.
  * @param {string} options.jwksEndpoint - the JWKS document URL.
  * @param {number} [options.timeoutMs] - request deadline.
  * @param {() => number} [options.now] - clock source; injected by the tests.
+ * @param {Map<string, {keys: object[], at: number}>} options.cache - where to
+ *   keep the fetched set. Owned by the caller (see {@link createJwksCache}), so
+ *   no two instances share it unless they are handed the same map on purpose.
  * @returns {Promise<object[]>} the key set.
  */
-async function fetchJwks({ jwksEndpoint, timeoutMs = 15_000, now = Date.now }) {
-  const cached = jwksCache.get(jwksEndpoint);
+async function fetchJwks({ jwksEndpoint, timeoutMs = 15_000, now = Date.now, cache }) {
+  const cached = cache.get(jwksEndpoint);
   if (cached !== undefined && now() - cached.at < JWKS_TTL_MS) return cached.keys;
   const response = await fetch(jwksEndpoint, {
     redirect: "manual",
@@ -145,7 +154,7 @@ async function fetchJwks({ jwksEndpoint, timeoutMs = 15_000, now = Date.now }) {
   const body = obj(await response.json());
   const keys = Array.isArray(body.keys) ? body.keys : [];
   if (keys.length === 0) throw pluginError(CODE.JWKS, "JWKS endpoint returned no keys");
-  jwksCache.set(jwksEndpoint, { keys, at: now() });
+  cache.set(jwksEndpoint, { keys, at: now() });
   return keys;
 }
 
@@ -166,12 +175,16 @@ async function fetchJwks({ jwksEndpoint, timeoutMs = 15_000, now = Date.now }) {
  * @param {string} options.jwksEndpoint - the JWKS document URL.
  * @param {string} options.encKeyId - the `kid` to seal to.
  * @param {number} [options.timeoutMs] - request deadline.
+ * @param {Map<string, {keys: object[], at: number}>} [options.cache] - a
+ *   caller-owned key-set cache (see {@link createJwksCache}). Omitted, the seal
+ *   fetches fresh every call — correct but chatty; the login flow passes one so
+ *   repeated attempts reuse the set WITHOUT sharing it with another instance.
  * @returns {Promise<string>} the compact JWE.
  */
-export async function sealPassword(password, { jwksEndpoint, encKeyId, timeoutMs } = {}) {
+export async function sealPassword(password, { jwksEndpoint, encKeyId, timeoutMs, cache = createJwksCache() } = {}) {
   if (str(jwksEndpoint, "") === "") throw pluginError(CODE.CONFIG, "no JWKS endpoint is configured");
   if (str(encKeyId, "") === "") throw pluginError(CODE.CONFIG, "no encryption key id is configured");
-  const keys = await fetchJwks({ jwksEndpoint, timeoutMs });
+  const keys = await fetchJwks({ jwksEndpoint, timeoutMs, cache });
   const entry = keys.find((key) => obj(key).kid === encKeyId);
   if (entry === undefined) throw pluginError(CODE.JWKS, `JWKS has no key ${encKeyId}`);
   const source = obj(entry);

@@ -8,7 +8,7 @@
  * offline" stays a property you can rely on rather than a claim.
  */
 import { readJwtClaims, readJwtExpiry, createAuth } from "../sensenova-auth.js";
-import { sealPassword } from "../sensenova-crypto.js";
+import { sealPassword, createJwksCache } from "../sensenova-crypto.js";
 import { installNetworkGuard } from "./peer-roots.mjs";
 import {
   AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS,
@@ -90,8 +90,9 @@ async function stubKey() {
     return realFetch(url, init);
   };
   try {
-    const mod = await import(`../sensenova-crypto.js?shape=${Date.now()}`);
-    const sealed = await mod.sealPassword("structural-probe", sealOptions);
+    // No module-reload hack: the JWKS cache is per-call now, so a fresh seal
+    // needs no clean slate forced through `import("...?shape=…")`.
+    const sealed = await sealPassword("structural-probe", sealOptions);
     const seg = sealed.split(".");
     // RFC 7516 §3: five segments — header.encryptedKey.iv.ciphertext.tag.
     check("seal has 5 compact segments", seg.length === 5, `got ${seg.length}`);
@@ -131,14 +132,61 @@ async function stubKey() {
     return realFetch(url, init);
   };
   try {
-    const module = await import(`../sensenova-crypto.js?probe=${Date.now()}`);
-    const sealed = await module.sealPassword("correct horse battery staple", sealOptions);
+    const sealed = await sealPassword("correct horse battery staple", sealOptions);
     const plain = await decryptJwe(sealed, await crypto.subtle.exportKey("jwk", pair.privateKey));
     check("JWE round-trips to the original password", plain === "correct horse battery staple", plain.slice(0, 12));
-    const again = await module.sealPassword("correct horse battery staple", sealOptions);
+    const again = await sealPassword("correct horse battery staple", sealOptions);
     check("each seal uses a fresh CEK/IV", sealed !== again);
   } catch (error) {
     fail("JWE round-trips to the original password", error);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+// --- 2b. the JWKS cache is per-instance, not module-level -----------------
+// The seal used to read a single module-level `Map`, so two callers shared one
+// cached key set — the same class of cross-caller leak the throttle file had,
+// and it forced a test that wanted a clean cache to reload the whole module. Now
+// each caller hands in its own cache (createAuth builds one into cfg). Assert the
+// three properties that matter: reuse within one cache, isolation between two,
+// and no fetch at all on a cold default.
+{
+  const { jwk } = await stubKey();
+  let fetches = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("jwks.json")) {
+      fetches += 1;
+      return new Response(JSON.stringify({ keys: [{ ...jwk, kid: TEST_ENC_KEY_ID, use: "sig" }] }),
+        { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`unexpected fetch in the cache check: ${url}`);
+  };
+  try {
+    // Reuse: two seals through ONE cache hit the endpoint once.
+    const shared = createJwksCache();
+    await sealPassword("a", { ...sealOptions, cache: shared });
+    await sealPassword("b", { ...sealOptions, cache: shared });
+    check("one cache serves two seals with a single fetch", fetches === 1, `fetches=${fetches}`);
+
+    // Isolation: a DIFFERENT cache does not see the first one's entry.
+    fetches = 0;
+    await sealPassword("c", { ...sealOptions, cache: createJwksCache() });
+    check("a fresh cache refetches rather than reusing another instance's", fetches === 1, `fetches=${fetches}`);
+
+    // Per-endpoint keying survives inside one cache: two mirrors, two fetches.
+    fetches = 0;
+    const multi = createJwksCache();
+    await sealPassword("d", { jwksEndpoint: "https://mirror-a/.well-known/jwks.json", encKeyId: TEST_ENC_KEY_ID, cache: multi });
+    await sealPassword("e", { jwksEndpoint: "https://mirror-b/.well-known/jwks.json", encKeyId: TEST_ENC_KEY_ID, cache: multi });
+    check("one cache keyed by endpoint keeps two mirrors apart", fetches === 2, `fetches=${fetches}`);
+
+    // createAuth gives each instance its own cache object.
+    const authA = createAuth({ jwksEndpoint: TEST_JWKS_ENDPOINT });
+    const authB = createAuth({ jwksEndpoint: TEST_JWKS_ENDPOINT });
+    check("two auth instances own distinct JWKS caches",
+      authA.getConfig().jwksCache !== authB.getConfig().jwksCache && authA.getConfig().jwksCache instanceof Map);
   } finally {
     globalThis.fetch = realFetch;
   }

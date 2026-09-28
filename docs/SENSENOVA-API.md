@@ -20,7 +20,7 @@
 
 - **刷新令牌**（插件核心，免去 3 小时手动换）：对 token 端点 `grant_type=refresh_token`、`refresh_token`、`client_id`、`scope`。Hydra **会轮换 refresh_token**——忽略返回的新 refresh_token 会导致下次刷新失败，所以本插件每次都落库新值。
 - `scope` 必须含 `offline offline_access`，否则拿不到 refresh_token。
-- JWKS（密码封包公钥）：`https://signin.sensecore.cn/.well-known/jwks.json`，key id `public:hydra.openid.id-token`。JWKS 的获取与缓存已迁到 `sensenova-crypto.js`：按 `jwksEndpoint` URL 做 key（不同租户各自隔离），TTL 由 `JWKS_TTL_MS=600_000`（10 分钟）控制。
+- JWKS（密码封包公钥）：`https://signin.sensecore.cn/.well-known/jwks.json`，key id `public:hydra.openid.id-token`。JWKS 的获取与缓存已迁到 `sensenova-crypto.js`：缓存**由调用方持有**（`createAuth` 每实例一份 `cfg.jwksCache`），内部再按 `jwksEndpoint` URL 分键——两个实例即便同 endpoint 也不共享；TTL 由 `JWKS_TTL_MS=600_000`（10 分钟）控制。
 
 ---
 

@@ -33,7 +33,7 @@
  */
 
 import { CODE, IAM_REASON_CODES } from "./codes.js";
-import { b64url, pkce, sealPassword } from "./sensenova-crypto.js";
+import { b64url, pkce, sealPassword, createJwksCache } from "./sensenova-crypto.js";
 import { str, obj, verbatim, pluginError } from "./util.js";
 
 // The JWE/PKCE/JWKS primitives now live in sensenova-crypto.js, so this module
@@ -136,7 +136,13 @@ function resolveAuthConfig(overrides = {}) {
       "assumedTokenLifetimeSeconds",
       AUTH_DEFAULTS.assumedTokenLifetimeSeconds,
       true
-    )
+    ),
+    // The key-set cache this instance seals through. Built here so it is owned
+    // by the config, not by the module: two instances (two tenants, or a test
+    // next to production) cannot see each other's cached JWKS. Frozen with the
+    // rest of cfg — freezing the object does not freeze the Map's contents, but
+    // nothing here mutates the reference, only what lives inside it.
+    jwksCache: createJwksCache()
   });
 }
 
@@ -702,7 +708,7 @@ async function performLogin({ username, password }, options, trace, cfg) {
   // 2) Seal the password (RSA-OAEP + A256GCM under the platform JWKS key) and
   //    hand it to IAM with the challenge. The crypto primitive lives in
   //    sensenova-crypto.js; we only hand it the current endpoint and key id.
-  const encrypted = await sealPassword(secret, { jwksEndpoint: cfg.jwksEndpoint, encKeyId: cfg.encKeyId });
+  const encrypted = await sealPassword(secret, { jwksEndpoint: cfg.jwksEndpoint, encKeyId: cfg.encKeyId, cache: cfg.jwksCache });
   const iamUrl = `${cfg.iamOrigin}/iam/authn/v1/auth/nova/login`;
   const iamResponse = await fetch(iamUrl, {
     method: "POST",

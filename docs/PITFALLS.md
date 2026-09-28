@@ -116,7 +116,7 @@
 
 - **现象**：切到企业镜像/预发后密码封包用错公钥。
 - **根因**：JWKS 缓存了上一个租户的密钥，新平台却用不同 key。
-- **修法**：JWKS 缓存已从 `sensenova-auth.js` 迁到 `sensenova-crypto.js`，按 `jwksEndpoint` URL 做 key。不同租户指向不同 endpoint 自然落到各自缓存项，无需手动清空。并且 `sensenova-auth.js` 已无模块级可变状态：`createAuth(overrides)` 每次返回一个自带配置（含 JWKS 缓存 key）的实例，跨租户/测试不再共享单例。
+- **修法**：JWKS 缓存已从 `sensenova-auth.js` 迁到 `sensenova-crypto.js`，且**由调用方持有、非模块级单例**。`createAuth(overrides)` 每次在自带配置里挂一份独立缓存（`cfg.jwksCache = createJwksCache()`），`sealPassword(..., { cache })` 用它——所以两个实例即便指向**同一个** endpoint 也不共享密钥项；缓存内部再按 `jwksEndpoint` URL 分键，一个实例配多镜像也各归各。这一层之前只做了一半：auth 侧已 per-instance，crypto 侧仍是模块级 `Map`，跨实例照样串味，测试只能靠 `import("...?shape=…")` 重载整个模块来强制干净缓存。补全后该 hack 退休，`test/auth.test.mjs` §2b 直接钉住"复用/隔离/分键/两实例各自持有"四条语义。`forgetJwks()` 随模块级缓存一并删除（此前全仓零调用）。
 
 ---
 
