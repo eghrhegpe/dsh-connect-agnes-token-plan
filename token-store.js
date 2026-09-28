@@ -387,10 +387,12 @@ export function createTokenStore({
    * @param {string} accessToken - the new console JWT.
    * @param {string} refreshToken - the refresh token the platform just issued.
    * @param {number} expiresIn - the access token lifetime in seconds.
-   * @param {string} [replacing] - the access token this renewal supersedes. A
-   *   record still holding exactly that token is the one we read, so replacing
-   *   it is right; a record holding anything else was rotated by someone else
-   *   in the meantime and is kept.
+   * @param {string} [replacing] - the access token this write supersedes:
+   *   passed by every refresh, and by a password login that read an existing
+   *   grant. A record still holding exactly that token is the one we read, so
+   *   replacing it is right; a record holding anything else was rotated by
+   *   someone else in the meantime and is kept. Absent only for a first-ever
+   *   login that read no grant.
    * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
    *   the grant now in effect — ours, or the newer one we deferred to.
    */
@@ -408,14 +410,23 @@ export function createTokenStore({
     try {
       const record = await backend().modifyRecord(key, (current) => {
         const existing = parseGrant(current);
-        // Someone else already rotated while this renewal was in flight, and
-        // their token is still good: keep theirs rather than writing a grant
-        // that would invalidate the refresh token they now hold.
-        if (existing !== undefined && replacing === undefined
+        if (replacing !== undefined) {
+          // A named predecessor: compare-and-set used by every refresh AND by a
+          // password login that read an existing grant. If the record moved to
+          // some other token while this write was in flight, that other write
+          // won and this one defers — two processes racing a login/refresh
+          // cannot invalidate each other's rotated refresh token, while an
+          // intentional account switch replaces the grant it read.
+          if (existing !== undefined && existing.accessToken !== replacing) {
+            return undefined;
+          }
+        } else if (existing !== undefined
           && existing.expiresAt !== null && existing.expiresAt > issuedAt + 60_000) {
-          return undefined;
-        }
-        if (existing !== undefined && replacing !== undefined && existing.accessToken !== replacing) {
+          // No named predecessor — a first-ever login that read no grant. Two
+          // processes bootstrapping at once both land here; the one whose write
+          // lands second keeps the already-healthy grant instead of rotating
+          // the refresh token under the first. A login over an EXISTING grant
+          // always names it, so an account switch is never swallowed by this.
           return undefined;
         }
         return Promise.resolve({ kind: "grant", payload });
@@ -469,6 +480,14 @@ export function createTokenStore({
   /**
    * Log in with the stored account. The bootstrap that turns a typed-in
    * username and password into a self-renewing grant.
+   *
+   * The grant read BEFORE the sign-in is named as the one this login
+   * supersedes. It has to be read first: the token pair only arrives after the
+   * network walk, and naming nothing is what let a still-fresh grant from a
+   * DIFFERENT account silently survive a deliberate switch — the panel said
+   * "signed in" while keeping serving the previous account. Naming the read
+   * grant turns the write into the same compare-and-set a refresh uses: an
+   * intentional switch wins, a login racing another process's rotation defers.
    * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
    */
   async function loginFromAccount() {
@@ -476,8 +495,9 @@ export function createTokenStore({
     if (account === undefined) {
       throw pluginError(CODE.NOT_CONFIGURED, "no console account is configured");
     }
+    const previous = await readStored();
     const result = await auth.login({ username: account.username, password: account.password }, { onTrace });
-    return store(result.accessToken, result.refreshToken, result.expiresIn);
+    return store(result.accessToken, result.refreshToken, result.expiresIn, previous?.accessToken);
   }
 
   /** Whether a token is still good for at least `skewMs`. */

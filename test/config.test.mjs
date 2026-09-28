@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey, hostName, isAdmitted } from "../index.js";
+import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey, hostName, isAdmitted, name } from "../index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const patch = readFileSync(join(here, "..", "cordis.patch.yml"), "utf8");
@@ -158,6 +158,28 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
   for (const [host, origin, expected, note] of admitCases) {
     check(`isAdmitted ${note}`, admit(host, origin) === expected, String(admit(host, origin)));
   }
+}
+
+// --- 6. the one slug every addressable surface derives from ----------------
+// `name` is the route prefix, the credential scope, and the state directory.
+// Two files cannot import it and repeat it literally — package.json#name and
+// the patch row's id/name pair — so a rename used to be checked by hand in
+// three places. The old comment admitted the test pinned CONFIG_DEFAULTS only.
+// Pin all three here: a rename that touches the code but not either mirror
+// (or vice versa) now goes red, because the stored grant's scope moves with it.
+{
+  const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
+  check("package.json name equals the host-config slug", pkg.name === name, `${pkg.name} !== ${name}`);
+  // The row is `- insert:` → a list item whose own fields are `- id:` /
+  // `name:`; accept an optional list dash and any indentation on either.
+  const rowId = patch.match(/^\s*-?\s*id:\s*(\S+)\s*$/m)?.[1];
+  check("cordis.patch.yml row id equals the slug", rowId === name, `${rowId} !== ${name}`);
+  const rowName = patch.match(/^\s*-?\s*name:\s*(\S+)\s*$/m)?.[1];
+  check("cordis.patch.yml row name equals the slug", rowName === name, `${rowName} !== ${name}`);
+  // The scope the grant is actually stored under must be this same slug, so the
+  // two checks above are really guarding the stored credential's address.
+  check("the credential scope derives from the same slug",
+    credentialKey(name, "sensenova-console") === `${name}/sensenova-console`);
 }
 
 console.log(JSON.stringify(results, null, 2));

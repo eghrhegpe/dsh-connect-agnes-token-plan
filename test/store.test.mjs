@@ -635,6 +635,44 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("a rejected password leaves no grant", error));
 }
 
+// --- 10b. switching accounts replaces a STILL-FRESH grant ---------------
+// The bug this guards against: `store()` deferred to any existing grant whose
+// access token still had >60s left whenever the caller passed no `replacing`
+// token — and only a password login calls it that way. So signing in as a
+// different account while the previous one's grant was still healthy silently
+// kept the OLD account: the new refresh token was dropped, the panel reported
+// "signed in", and it kept showing the previous account's quota until that
+// refresh token died. A fresh password login is an explicit decision to
+// supersede whatever is stored, so it must win.
+{
+  const tokenA = jwtExpiring(120);
+  const credentials = fakeCredentials(grant(tokenA, "refresh-A", 7200));
+  const stub = await makeTokenStub(accepted);
+  await withNetwork(stub, async () => {
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
+    await store.saveAccount({ username: "account-b", password: "pass-b" });
+
+    const record = await credentials.readRecord(KEY);
+    check("switching accounts replaces the access token",
+      record.payload.accessToken !== tokenA,
+      `old=${String(tokenA).slice(0, 12)} new=${String(record.payload.accessToken).slice(0, 12)}`);
+    check("the old account's refresh token is not retained",
+      record.payload.refreshToken === "rotated-1",
+      String(record.payload.refreshToken));
+    check("the new username is the one stored",
+      credentials.refs.get("SENSENOVA_USERNAME") === "account-b");
+
+    // The served token must be the new account's, reached from the cache with
+    // no second sign-in — the old grant must not linger in this process either.
+    const served = await store.getToken();
+    check("getToken serves the new account, not the old grant",
+      served === record.payload.accessToken,
+      `served=${String(served).slice(0, 12)}`);
+    check("reading it back spends no extra login", stub.log.logins === 1,
+      `logins=${stub.log.logins}`);
+  }).catch((error) => fail("switching accounts replaces a fresh grant", error));
+}
+
 // --- 11. forgetAccount clears the refs but keeps the grant --------------
 {
   const credentials = fakeCredentials(grant(jwtExpiring(120), "keep", 7200), {
