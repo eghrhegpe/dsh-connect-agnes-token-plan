@@ -116,22 +116,23 @@ export function parseTrend(body, trendHours) {
  * Whether one `GET /v1/models` entry can take image input, and WHY.
  *
  * This is the first step of the vision plan (ARCHITECTURE.md §5.1): the panel
- * must show which of this key's callable models accept pictures, so the user
+ * shows which of this key's callable models accept pictures, so the user
  * knows which one to ask for image input.
  *
  * Two signals, in priority order:
  *
- * 1. STRUCTURED — an explicit field names the modalities. Provider APIs
- *   differ, so several spellings are accepted (`input_modalities`,
- *   `inputTypes`, `modality`, `capabilities`): the first one present wins.
- *   When the platform starts returning such a field, identification becomes
- *   exact and the name heuristics below stop mattering — no parser change
- *   needed here.
- * 2. NAME PATTERN — the field is absent (the current expected case: see the
- *   `dsh-connect-trae` source note that the provider API exposes no modality
- *   metadata), so fall back to naming conventions. The result is marked
- *   `source: "name"` so the panel can say "inferred from the name", never
- *   pretending the platform declared it.
+ * 1. STRUCTURED — the SenseNova catalog declares `input_modalities` (an
+ *   array, e.g. `["text","image"]`) on every entry. This is CONFIRMED the
+ *   platform ships it (2026-09 probe), so it is the authoritative answer:
+ *   a model is vision-capable iff `"image"` appears in its input
+ *   modalities. The name fallback below stops mattering on this platform.
+ *   `inputTypes` / `modality` / `capabilities` are kept as the fallback for
+ *   other providers that spell the same idea differently — no parser
+ *   change needed when they arrive.
+ * 2. NAME PATTERN — only when NO structured modality field is present at
+ *   all: naming conventions for the multimodal/vision families. Marked
+ *   `source: "name"` so the panel can say "inferred from the name" and
+ *   never pretend the platform declared it.
  *
  * @param {object} entry - one catalog entry (id + any extra fields).
  * @returns {{"id": string, "vision": boolean, "source": "field"|"name"|null}}
@@ -143,16 +144,21 @@ export function identifyVisionModel(entry) {
   if (modalities !== undefined) {
     return { id, vision: modalities.some((modality) => /image/i.test(modality)), source: "field" };
   }
-  // Naming conventions only: multimodal/vision suffixes and the known
-  // SenseNova vision-capable families. Anything that matches neither is
-  // reported as not-vision — the panel shows the list, a human can correct.
+  // Naming conventions only: multimodal/vision suffixes. Anything that
+  // matches neither is reported as not-vision — the panel shows the list,
+  // a human can correct. (On SenseNova the platform field above makes this
+  // path unreachable; it exists so the plugin degrades sensibly on a
+  // provider that exposes no modality metadata at all.)
   const byName = VISION_NAME_PATTERNS.some((pattern) => pattern.test(id));
   return { id, vision: byName, source: byName ? "name" : null };
 }
 
 /**
  * Read the first modality-listing field off a catalog entry, or undefined.
- * Accepts string or array values so whatever the platform ships parses.
+ * The SenseNova platform's confirmed field is `input_modalities` (array of
+ * strings, e.g. `["text","image"]`); the others are the spellings other
+ * providers are expected to use. Accepts string or array values so whatever
+ * the platform ships parses.
  * @param {object} source - one catalog entry.
  * @returns {string[]|undefined} the modality names, or undefined.
  */
@@ -165,11 +171,16 @@ function modalitiesOf(source) {
   return undefined;
 }
 
-/** Name patterns used only when no structured field is present. */
+/**
+ * Name patterns used ONLY when no structured modality field is present.
+ * `flash-lite` was the legacy guess from before the platform confirmed
+ * `input_modalities`; it is no longer a reliable signal (the name now maps
+ * to a model family whose actual modality mix the platform field decides),
+ * so it is dropped from the fallback set.
+ */
 const VISION_NAME_PATTERNS = Object.freeze([
   /-vl(-|\b)/i,
   /vision/i,
   /qwen.*vl/i,
-  /glm-4v/i,
-  /flash-lite/i
+  /glm-4v/i
 ]);

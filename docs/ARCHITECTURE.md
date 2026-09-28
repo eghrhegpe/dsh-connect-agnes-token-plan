@@ -107,19 +107,32 @@ client.js: interpretSnapshot(body) → {data, error}
 （deepseek provider 有 `maxImagesPerRequest`、图片 offload 一整套参数），
 缺的只是「商汤这套餐里哪把模型能看图」这条结构化信息。
 
-**第一步（本期）**：插件从 `GET /v1/models` 的 `catalogModels` 算出
+**第一步（本期，已完成）**：插件从 `GET /v1/models` 的 `catalogModels` 算出
 `visionModels`（可看图模型清单），发进 `/snapshot`，面板加一行展示。
-识别依据：若 `/v1/models` 返回含 `input_modalities` 类结构化字段则按字段；
-否则按模型名规律（`flash-lite` / `vl` / `vision`）兜底，并在面板标注
-「按名字推断」。字段尚未确认（见 TESTING.md 已知缺口：需经插件诊断端点
-或用户提供 key 拉一次真实响应；注意外部命令拿不到 DSH Host 进程注入的
-env，只能走插件侧）。
+识别依据：**已确认（2026-09 拉真实响应）**——商汤 `/v1/models` 在**每个**模型
+条目上都带结构化字段 `input_modalities`（字符串数组，如
+`["text","image"]`）与 `output_modalities`，所以按字段判定：`"image"` 出现在
+`input_modalities` 里即可看图；名字规律（`vl` / `vision`）仅作为「平台若某
+天不返回模态字段」的兜底，并标 `source: "name"` 注明是按名字推断。实测：
+`deepseek-v4-flash`、`glm-5.2`、`kimi-k3` 等 8 个模型 input 仅 `["text"]`；
+`sensenova-6.8-flash-lite` input 为 `["text","image"]`（即可看图模型）；
+`sensenova-u1-fast`、`sensenova-u1.5-lite` input 仅 `["text"]` 但 output 为
+`["image"]`（出图模型，不是看图模型——只看 `input_modalities` 的判定天然
+把它们排除，名字规律若只看 `-lite` 会误判，所以名字兜底里已删掉 `flash-lite`）。
+
+另外，API key 的读取路径按 DSH 官方 provider 惯例改为**先经 credentials 服务
+的参考层**（`ctx.get("credentials")?.resolve("SENSENOVA_API_KEY")`，对应
+`~/.dsh/.credentials.yaml` 里用户级的 env 变量值），最后才回退 `process.env`。
+旧代码只读 `process.env`，而很多机器（含本机）的 key 只存在 credentials 服务
+里、`process.env` 里根本没有这条——所以旧版「读不到 key」并不等于「没有
+key」，是读错了层。
 
 **第二步（下期，单独验收）**：把识别结果写进 DSH provider settings 的
 `imageModelIds`（对齐 `dsh-connect-trae` / `dsh-connect-workbuddy` /
 `llm-qoder` 的 connect 家族设计；`profiles/*/cordis.patch.yml` 里已有
 `imageModelIds` 与 `imageOverrides` 实例，trae 源码注释亦声明「Provider API
-不暴露模态元数据，image 输入靠显式 `imageModelIds` 声明」）。写入属 DSH
+不暴露模态元数据，image 输入靠显式 `imageModelIds` 声明」——该注释对商汤
+**不成立**：商汤已经暴露 `input_modalities`，见上）。写入属 DSH
 行为面，风险高于第一步，故不合并验收。
 
 ---

@@ -161,10 +161,27 @@ function apply(ctx, config = {}) {
       configError = error instanceof Error ? error.message : String(error);
     }
   }
-  // The API key is the same one the LLM provider route uses; it may live in
-  // the launching environment or only in the DSH credentials store, so treat
-  // it as optional and degrade the model lists when it is absent.
-  const apiKey = str(process.env.SENSENOVA_API_KEY, "");
+  // The API key is the same one the LLM provider route uses. DSH's providers
+  // resolve it through the credentials service's reference layer (the
+  // "user-level environment" the panel's read-only input points at) and only
+  // fall back to the raw process environment — the value may live in
+  // `~/.dsh/.credentials.yaml` alone, which a sibling shell never sees, so
+  // reading `process.env` first is what left this panel blind on machines
+  // where the key is stored there. Treated as optional: absent → the model
+  // lists degrade, the quota panel still works.
+  const resolveApiKey = async () => {
+    try {
+      const credentials = ctx.get("credentials") ?? null;
+      if (credentials && typeof credentials.resolve === "function") {
+        const resolved = await credentials.resolve("SENSENOVA_API_KEY");
+        const value = resolved?.value;
+        if (typeof value === "string" && value.trim() !== "") return value;
+      }
+    } catch {
+      // No credentials service or the reference absent: fall through.
+    }
+    return str(process.env.SENSENOVA_API_KEY, "");
+  };
   /** @type {Map<string, import("./console-client.js").CacheEntry>} */
   const cache = new Map();
   /** One in-flight console fetch per URL, so concurrent polls share a call. */
@@ -248,10 +265,14 @@ function apply(ctx, config = {}) {
             inflight,
             tokenStore
           ),
-          // Optional: a missing API key degrades the model lists, not the quota.
-          apiKey === ""
-            ? Promise.resolve(null)
-            : fetchModelCatalog(settings, 3600_000, cache, inflight, apiKey).catch(() => null)
+          // Optional: a missing API key degrades the model lists, not the
+          // quota. Resolved per poll (not at mount) so a key stored in the
+          // credentials service that arrives after this plugin mounted still
+          // lights the model lists on the next poll.
+          (async () => {
+            const apiKey = await resolveApiKey();
+            return apiKey === "" ? null : fetchModelCatalog(settings, 3600_000, cache, inflight, apiKey).catch(() => null);
+          })()
         ]);
         const pools = parsePools(poolBody);
         const trend = parseTrend(trendBody, settings.trendHours);

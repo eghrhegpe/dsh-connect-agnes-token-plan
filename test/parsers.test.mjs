@@ -196,8 +196,10 @@ function fail(name, error) {
 
 // --- 6. identifyVisionModel(): which callable models take image input ------
 // Step one of the vision plan (ARCHITECTURE.md §5.1). Two signals in priority
-// order: a structured modality field wins; otherwise a name pattern, and the
-// result is marked `source: "name"` so the panel can say "inferred".
+// order: a structured modality field wins (SenseNova confirms
+// `input_modalities` on every catalog entry, 2026-09 probe); otherwise a name
+// pattern, and the result is marked `source: "name"` so the panel can say
+// "inferred".
 {
   try {
     // Structured field: any of the accepted spellings wins over the name.
@@ -209,12 +211,25 @@ function fail(name, error) {
     check("a comma-joined field value parses the same", stringList.vision === true && stringList.source === "field");
     const caps = identifyVisionModel({ id: "mystery", capabilities: "image,vision" });
     check("a `capabilities` field is also honored", caps.vision === true && caps.source === "field");
+    // A text→image (image OUTPUT) model is not a vision model: only the input
+    // side counts.
+    const outOnly = identifyVisionModel({ id: "img-out", input_modalities: ["text"], output_modalities: ["image"] });
+    check("image-only OUTPUT does not make a model vision", outOnly.vision === false && outOnly.source === "field", JSON.stringify(outOnly));
 
-    // Name pattern, used only when no structured field is present.
-    const nameHit = identifyVisionModel({ id: "sensenova-6.8-flash-lite" });
-    check("flash-lite matches the name pattern", nameHit.vision === true && nameHit.source === "name", JSON.stringify(nameHit));
+    // Name pattern, used only when no structured field is present at all.
+    // (On SenseNova the platform field makes this path unreachable; it exists
+    // so the plugin degrades sensibly on a provider with no modality metadata.)
+    const nameHit = identifyVisionModel({ id: "qwen2.5-vl-72b" });
+    check("a vision-sounding name matches the pattern", nameHit.vision === true && nameHit.source === "name", JSON.stringify(nameHit));
     const nameMiss = identifyVisionModel({ id: "deepseek-v4-flash" });
     check("a plain text model is not vision", nameMiss.vision === false && nameMiss.source === null, JSON.stringify(nameMiss));
+    // The legacy `flash-lite` guess is intentionally NOT a pattern anymore:
+    // the real catalog shows sensenova-6.8-flash-lite carries
+    // input_modalities ["text","image"] (vision via the field) while
+    // sensenova-u1.5-lite is ["text"]-in / ["image"]-out — the name alone
+    // was never the reliable signal, so the field is what decides.
+    const flashLiteNoField = identifyVisionModel({ id: "sensenova-6.8-flash-lite" });
+    check("flash-lite without a field no longer matches by name", flashLiteNoField.vision === false && flashLiteNoField.source === null, JSON.stringify(flashLiteNoField));
 
     // A field beats a contradicting name: the platform's word wins.
     const conflict = identifyVisionModel({ id: "some-flash-lite", input_modalities: ["text"] });
