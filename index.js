@@ -30,11 +30,12 @@ import {
   resolveAuthOverrides,
   CONFIG_DEFAULTS,
   isAdmitted,
+  hostName,
   inject,
   name
 } from "./host-config.js";
 import { fetchConsole, fetchModelCatalog } from "./console-client.js";
-import { parsePools, parseTrend, checkShape } from "./parsers.js";
+import { parsePools, parseTrend, checkShape, identifyVisionModel } from "./parsers.js";
 import { writeLoginTrace } from "./trace.js";
 import { str } from "./util.js";
 
@@ -263,8 +264,9 @@ function apply(ctx, config = {}) {
         ];
         // Split each pool's advertised coverage into what this key can call
         // and what the plan lists but the key has no permission for yet.
+        const catalogIds = Array.isArray(catalog) ? catalog.map((entry) => entry.id) : [];
         if (Array.isArray(catalog)) {
-          const available = new Set(catalog);
+          const available = new Set(catalogIds);
           pools.pools = pools.pools.map((pool) => {
             const callable = pool.modelIds.filter((model) => available.has(model));
             const locked = pool.modelIds.filter((model) => !available.has(model));
@@ -277,6 +279,14 @@ function apply(ctx, config = {}) {
             lockedModels: []
           }));
         }
+        // Which of the callable models can take image input — step one of the
+        // vision plan (ARCHITECTURE.md §5.1): the info, not the execution.
+        // Absent API key → no catalog → the list is simply undeclared, not "none".
+        const visionModels = Array.isArray(catalog)
+          ? catalog
+              .map((entry) => identifyVisionModel(entry))
+              .filter((entry) => entry.vision)
+          : undefined;
         writeJson(response, 200, {
           ok: true,
           now: Date.now(),
@@ -290,9 +300,12 @@ function apply(ctx, config = {}) {
           // whether the token renews itself or is waiting on an account.
           auth: await tokenStore.state(),
           catalogAvailable: Array.isArray(catalog),
-          catalogModels: Array.isArray(catalog) ? catalog : [],
+          catalogModels: catalogIds,
+          // `undefined` (no API key) vs `[]` (key present, no vision models) —
+          // the panel must not say "no vision models" when it simply never asked.
+          ...(visionModels !== undefined ? { visionModels } : {}),
           uncountedModels: Array.isArray(catalog)
-            ? catalog.filter((model) => !pools.pools.some((pool) => pool.modelIds.includes(model)))
+            ? catalogIds.filter((model) => !pools.pools.some((pool) => pool.modelIds.includes(model)))
             : [],
           pools,
           trend,
@@ -403,4 +416,4 @@ function apply(ctx, config = {}) {
   }, `${name}: routes`);
 }
 
-export { apply, inject, name, resolveSettings, resolveAuthOverrides, CONFIG_DEFAULTS };
+export { apply, inject, name, resolveSettings, resolveAuthOverrides, CONFIG_DEFAULTS, hostName, isAdmitted };

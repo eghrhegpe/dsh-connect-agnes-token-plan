@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey } from "../index.js";
+import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey, hostName, isAdmitted } from "../index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const patch = readFileSync(join(here, "..", "cordis.patch.yml"), "utf8");
@@ -104,6 +104,60 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
   check("resolveAuthOverrides forwards iamBase -> iamOrigin", auth.iamOrigin === "https://iam.example", auth.iamOrigin);
   check("resolveAuthOverrides forwards tokenEndpoint", auth.tokenEndpoint === "https://tok.example", auth.tokenEndpoint);
   check("resolveAuthOverrides keeps consoleOrigin", auth.consoleOrigin === CONFIG_DEFAULTS.consoleBase, auth.consoleOrigin);
+}
+
+// --- 5. hostName()/isAdmitted(): every Host-header spelling the fence must answer ---
+// The old `split(":")[0]` turned "::1:19387" into "" (and even "::1" into ":"),
+// so the default whitelist entries "::1" / "[::1]" were reachable only through
+// the bracketed form — bare-IPv6 loopback clients were silently refused, a
+// direction an operator has no console to fix from. Pin every form, including
+// the public-IPv6 ones that must stay REFUSED.
+{
+  const cases = [
+    // [spelling, expected name]
+    ["::1", "::1"],
+    ["::1:3080", "::1"],
+    ["::1:80", "::1"],
+    ["[::1]", "[::1]"],
+    ["[::1]:19387", "[::1]"],
+    ["fe80::1", "fe80::1"],
+    ["fe80::1:3080", "fe80::1"],
+    ["2001:db8::1", "2001:db8::1"],
+    ["2001:db8::1:443", "2001:db8::1"],
+    ["127.0.0.1", "127.0.0.1"],
+    ["127.0.0.1:19387", "127.0.0.1"],
+    ["localhost", "localhost"],
+    ["localhost:3080", "localhost"],
+    ["example.com", "example.com"]
+  ];
+  for (const [spelling, expected] of cases) {
+    check(`hostName normalizes "${spelling}"`, hostName(spelling) === expected, hostName(spelling));
+  }
+
+  const { settings } = resolveSettings({});
+  const admit = (host, origin = undefined) => {
+    const headers = { host };
+    if (origin !== undefined) headers.origin = origin;
+    return isAdmitted({ headers }, settings.allowedHosts);
+  };
+  const admitCases = [
+    // Loopback spellings: all four default whitelist entries must be reachable.
+    ["::1", null, true, "bare ::1 with no port"],
+    ["::1:3080", null, true, "bare ::1 with a port — the old dead entry"],
+    ["[::1]", null, true, "bracketed ::1 without a port"],
+    ["[::1]:19387", null, true, "bracketed ::1 with a port"],
+    ["localhost:3080", null, true, "hostname with a port"],
+    ["127.0.0.1:19387", null, true, "IPv4 with a port"],
+    // Not loopback: the whitelist must keep refusing it.
+    ["2001:db8::1", null, false, "a public IPv6 literal is refused"],
+    ["2001:db8::1:443", null, false, "a public IPv6 literal with a port is refused"],
+    ["example.com", null, false, "a foreign hostname is refused"],
+    // The cross-site forgery layer still fires on top of the whitelist.
+    ["localhost:3080", "http://evil.test", false, "a foreign Origin is refused even on a whitelisted host"]
+  ];
+  for (const [host, origin, expected, note] of admitCases) {
+    check(`isAdmitted ${note}`, admit(host, origin) === expected, String(admit(host, origin)));
+  }
 }
 
 console.log(JSON.stringify(results, null, 2));

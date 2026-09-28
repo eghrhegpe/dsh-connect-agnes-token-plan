@@ -129,8 +129,17 @@ export async function fetchModelCatalog(settings, cacheMs, cache, inflight, apiK
     });
     if (!response.ok) throw new Error(`/v1/models returned HTTP ${response.status}`);
     const body = await response.json();
+    // Keep the WHOLE entry, not just the id: vision identification may read
+    // structured fields (input_modalities etc.) that a bare id list throws
+    // away. `id` is normalized; unknown fields ride along untouched so a
+    // platform adding `input_modalities` needs no parser change here.
     const models = Array.isArray(body?.data)
-      ? body.data.map((entry) => str(obj(entry).id, "")).filter((id) => id !== "")
+      ? body.data
+          .map((entry) => {
+            const source = obj(entry);
+            return { id: str(source.id, ""), ...source };
+          })
+          .filter((entry) => entry.id !== "")
       : [];
     cache.set(url, { body: models, at: Date.now() });
     sweepCache(cache);

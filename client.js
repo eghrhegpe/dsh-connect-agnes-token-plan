@@ -92,6 +92,8 @@ function clientFactory(require) {
     "pool.locked": "需开通 +{count} 个",
     "pool.lockedTitle": "套餐覆盖但当前 Key 无权限",
     "pool.uncounted": "不计入积分池：{models}",
+    "pool.vision": "可看图：{models}",
+    "pool.visionInferred": "（按模型名推断，平台未声明）",
     "shape.api": "接口",
     "shape.missing": "缺少字段",
     "section.trend": "每模型消耗（近 {hours} 小时）",
@@ -154,6 +156,8 @@ function clientFactory(require) {
     "pool.locked": "+{count} need activation",
     "pool.lockedTitle": "In the plan but this key has no permission",
     "pool.uncounted": "Not billed to credit pools: {models}",
+    "pool.vision": "Vision-capable: {models}",
+    "pool.visionInferred": "(inferred from model names; not declared by the platform)",
     "shape.api": "endpoint",
     "shape.missing": "missing field",
     "section.trend": "Per-model consumption (last {hours} h)",
@@ -224,10 +228,20 @@ function clientFactory(require) {
       grant: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" },
       models: { display: "flex", flexWrap: "wrap", gap: 6 },
       modelTag: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 11, padding: "2px 6px", borderRadius: 6, background: "var(--dsw-alias-bg-layer-2)", border: "1px solid var(--dsw-alias-border-l1)" },
-      table: { width: "100%", borderCollapse: "collapse" },
-      th: { textAlign: "left", fontSize: 12, color: "var(--dsw-alias-label-secondary)", fontWeight: 500, padding: "6px 8px", borderBottom: "1px solid var(--dsw-alias-border-l1)" },
-      td: { padding: "8px", borderBottom: "1px solid var(--dsw-alias-border-l1)", fontSize: 13 },
-      mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12 },
+      // The per-model consumption card: a label row over one horizontal-bar
+      // row per model. The bar is relative to the LARGEST consumer — the
+      // chart answers "which model is burning credits" — so the top model
+      // fills the track and the rest shrink proportionally; the absolute
+      // number stays right-aligned beside the model name.
+      trendHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, paddingBottom: 6, borderBottom: "1px solid var(--dsw-alias-border-l1)" },
+      trendHeadLabel: { fontSize: 12, color: "var(--dsw-alias-label-secondary)", fontWeight: 500 },
+      trendRow: { display: "flex", flexDirection: "column", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--dsw-alias-border-l1)" },
+      trendRowHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, minWidth: 0 },
+      trendModel: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+      trendCredits: { fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" },
+      // The trend card sits on layer-1 like the pool cards, so its bar track
+      // must be layer-2 (the quota bars invert this: layer-1 inside layer-2).
+      trendBar: { height: 6, borderRadius: 3, background: "var(--dsw-alias-bg-layer-2)", overflow: "hidden" },
       muted: { color: "var(--dsw-alias-label-secondary)" },
       error: { color: "var(--dsw-alias-state-error-primary)" },
       note: { marginTop: 24, color: "var(--dsw-alias-label-secondary)", fontSize: 12, lineHeight: "18px" },
@@ -419,35 +433,46 @@ function clientFactory(require) {
       );
     }
 
-    /** Per-model credit consumption table. */
+    /**
+     * Per-model credit consumption, drawn as a mini bar chart so the eye
+     * lands on WHICH model is burning credits: each row carries a bar
+     * relative to the largest consumer (the top model fills the track), with
+     * the absolute number right-aligned beside the model name. The whole
+     * block sits in a card like the quota cards instead of floating as a
+     * bare table.
+     */
     function TrendTable({ trend, tt }) {
-      if (!trend || trend.models.length === 0) return h("div", { style: S.empty }, tt("trend.none"));
-      const cell = (text, mono) => h("td", { style: { ...S.td, ...(mono ? S.mono : {}) } }, text);
+      if (!trend || trend.models.length === 0) return h("div", { style: S.card }, h("div", { style: S.empty }, tt("trend.none")));
+      const max = Math.max(0, ...trend.models.map((row) => Math.max(0, Number(row.credits) || 0)));
       return h(
-        "table",
-        { style: S.table },
+        "div",
+        { style: S.card },
         h(
-          "thead",
-          null,
-          h(
-            "tr",
-            null,
-            h("th", { style: S.th }, tt("trend.model")),
-            h("th", { style: S.th }, tt("trend.credits"))
-          )
+          "div",
+          { style: S.trendHead },
+          h("span", { style: S.trendHeadLabel }, tt("trend.model")),
+          h("span", { style: { ...S.trendHeadLabel, textAlign: "right" } }, tt("trend.credits"))
         ),
-        h(
-          "tbody",
-          null,
-          trend.models.map((row) =>
+        trend.models.map((row) => {
+          const credits = Math.max(0, Number(row.credits) || 0);
+          const pct = max > 0 ? (credits / max) * 100 : 0;
+          return h(
+            "div",
+            { key: row.model, style: S.trendRow },
             h(
-              "tr",
-              { key: row.model },
-              cell(row.model, true),
-              cell(count(row.credits))
+              "div",
+              { style: S.trendRowHead },
+              // Long model ids truncate; the full name is one hover away.
+              h("span", { style: S.trendModel, title: row.model }, row.model),
+              h("span", { style: S.trendCredits }, count(credits))
+            ),
+            h(
+              "div",
+              { style: S.trendBar, role: "progressbar", "aria-label": `${row.model} ${Math.round(pct)}%`, "aria-valuenow": Math.round(pct), "aria-valuemin": 0, "aria-valuemax": 100 },
+              h("div", { style: { ...S.barFill, width: `${pct}%` } })
             )
-          )
-        )
+          );
+        })
       );
     }
 
@@ -902,6 +927,15 @@ function clientFactory(require) {
             data.uncountedModels && data.uncountedModels.length > 0
               ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
                   format(tt("pool.uncounted"), { models: data.uncountedModels.join(" · ") }))
+              : null,
+            // Step one of the vision plan: which of THIS key's models take
+            // image input. Only shown when the Host actually had a catalog to
+            // ask (no API key → the field is absent → no claim either way).
+            data.visionModels && data.visionModels.length > 0
+              ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
+                  format(tt("pool.vision"), {
+                    models: data.visionModels.map((entry) => entry.id).join(" · ") + (data.visionModels.every((entry) => entry.source === "name") ? tt("pool.visionInferred") : "")
+                  }))
               : null,
             h("div", { style: S.sectionTitle }, format(tt("section.trend"), { hours: trend?.hours ?? 24 })),
             h(TrendTable, { trend, tt }),

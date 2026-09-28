@@ -17,6 +17,7 @@ import {
   checkShape,
   parsePools,
   parseTrend,
+  identifyVisionModel,
   EXPECTED_SHAPES
 } from "../parsers.js";
 
@@ -190,6 +191,41 @@ function fail(name, error) {
       parseTrend({ series: [{ model_id: "Z", points: [{}, { credits: 4 }] }] }, 24).models[0].credits === 4);
   } catch (error) {
     fail("parseTrend survives malformed input", error);
+  }
+}
+
+// --- 6. identifyVisionModel(): which callable models take image input ------
+// Step one of the vision plan (ARCHITECTURE.md §5.1). Two signals in priority
+// order: a structured modality field wins; otherwise a name pattern, and the
+// result is marked `source: "name"` so the panel can say "inferred".
+{
+  try {
+    // Structured field: any of the accepted spellings wins over the name.
+    const byField = identifyVisionModel({ id: "mystery", input_modalities: ["text", "image"] });
+    check("a structured input_modalities field wins", byField.vision === true && byField.source === "field", JSON.stringify(byField));
+    const byFieldOff = identifyVisionModel({ id: "mystery", input_modalities: ["text"] });
+    check("a structured field saying text-only is not vision", byFieldOff.vision === false && byFieldOff.source === "field", JSON.stringify(byFieldOff));
+    const stringList = identifyVisionModel({ id: "mystery", input_modalities: "text,image" });
+    check("a comma-joined field value parses the same", stringList.vision === true && stringList.source === "field");
+    const caps = identifyVisionModel({ id: "mystery", capabilities: "image,vision" });
+    check("a `capabilities` field is also honored", caps.vision === true && caps.source === "field");
+
+    // Name pattern, used only when no structured field is present.
+    const nameHit = identifyVisionModel({ id: "sensenova-6.8-flash-lite" });
+    check("flash-lite matches the name pattern", nameHit.vision === true && nameHit.source === "name", JSON.stringify(nameHit));
+    const nameMiss = identifyVisionModel({ id: "deepseek-v4-flash" });
+    check("a plain text model is not vision", nameMiss.vision === false && nameMiss.source === null, JSON.stringify(nameMiss));
+
+    // A field beats a contradicting name: the platform's word wins.
+    const conflict = identifyVisionModel({ id: "some-flash-lite", input_modalities: ["text"] });
+    check("a text-only field overrides a vision-sounding name", conflict.vision === false && conflict.source === "field");
+
+    // Malformed input must not throw — the catalog poll must survive.
+    check("a bare id with no other fields reads as not-vision",
+      identifyVisionModel({ id: "x" }).vision === false);
+    check("an entry without an id still returns a row", identifyVisionModel({}).id === "");
+  } catch (error) {
+    fail("identifyVisionModel classifies catalog entries", error);
   }
 }
 

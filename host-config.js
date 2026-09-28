@@ -206,15 +206,33 @@ export function hostName(host) {
   if (host.startsWith("[") && host.includes("]")) {
     return host.slice(0, host.indexOf("]") + 1);
   }
-  // A bare IPv6 literal carries more than one colon ("::1", "::1:3080"):
-  // splitting on the first colon hands back "" for both, which was how the
-  // whitelist entry "::1" ended up dead — no Host spelling could ever match
-  // it. A colon count above 1 means the value IS the name (the "port" form
-  // only exists with brackets), so return it untouched: a host the operator
-  // did not name then is refused, which is the safe direction.
-  const colons = host.split(":").length - 1;
-  if (colons > 1) return host;
-  return host.split(":")[0];
+  // A bare IPv6 literal carries more than one colon. A "name with an optional
+  // port" is valid for such a value only when the ENTIRE part after the
+  // SECOND-TO-LAST colon is a bare port:
+  //   "::1:3080"   -> segments ["", "", "1", "3080"], after the 2nd-to-last
+  //                    colon is "3080" (digits) -> name "::1"
+  //   "::1"        -> segments ["", "", "1"], after the 2nd-to-last colon is
+  //                    ":1" (colons are not digits) -> name "::1"
+  //   "fe80::1"    -> segments ["fe80", "", "1"], after the 2nd-to-last
+  //                    colon is ":1" -> name "fe80::1"
+  // So the port, when present, is ALWAYS the last segment alone, and the
+  // port-separator is the last colon only when the text after it is all
+  // digits AND the text between that last colon and the one before it is
+  // ALSO all digits ("1:3080" — the address's final group plus the port).
+  // That distinguishes "::1" (":1" after the 2nd-to-last colon: has a colon,
+  // not a port) from "::1:3080" ("3080" after the last colon: bare port).
+  // A host the operator did not name is returned untouched: refused, which
+  // is the safe direction.
+  const colons = host.split(":");
+  if (colons.length > 2) {
+    // "address + port" = 2nd-to-last and last segments are BOTH digits.
+    if (/^\d+$/.test(colons[colons.length - 2]) && /^\d+$/.test(colons[colons.length - 1])) {
+      return host.slice(0, host.lastIndexOf(":"));
+    }
+    return host;
+  }
+  // 0 or 1 colons: a bare `:port` tail, or nothing at all.
+  return colons.length > 1 ? host.slice(0, host.lastIndexOf(":")) : host;
 }
 
 /**

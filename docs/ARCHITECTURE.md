@@ -82,7 +82,49 @@ client.js: interpretSnapshot(body) → {data, error}
 
 ---
 
-## 5. 与上游 Python 工具的差异（给移植 / 对照用）
+## 5. 生态分工：插件只做信息，不做执行
+
+本插件**不是**一个「商汤全家桶」。商汤集成在 DSH 生态里按故障域分三层，
+本插件只占第一层；第二、三层各有专职项目，合并不成立（爆炸半径教训：
+本插件曾是桌面端必需启动项，一次凭据事故炸过整机，见 PITFALLS §10）：
+
+| 层 | 谁干 | 本插件的角色 |
+|---|---|---|
+| 额度 / 登录 / 模型清单 | **本插件** | 维持现状 |
+| 「哪些模型能看图」的识别与信息下发 | **本插件（扩展中，见 §5.1）** | 算 `visionModels` 发进 `/snapshot`；后续写 `imageModelIds` 进 provider settings |
+| 真把图喂给模型（视觉/绘图路由） | `dsh-media-skills` / `dsh-draw-router`（社区） | 不碰 |
+| 429 自愈网关（多 Key 池化、AIMD 限速） | `st-rotator`（独立 Python 进程） | 不碰 |
+
+本插件是机器里**唯一既知道本 Key 实际能调哪些模型、又常驻 DSH 里**的组件，
+所以「大统一商汤全过程」统一的是**信息**（告诉 DSH 哪把模型能当 vision 用），
+不是执行——喂图与网关代码一律不进本插件。
+
+### 5.1 视觉能力：两步走（2026-09 决议）
+
+痛点：用户在 DSH 设置里填入 `SENSENOVA_API_KEY` 后，模型卡片的「输入类型」
+不会自动标记「图片」，Agent 不知道 `sensenova-6.8-flash-lite` 可当 vision
+模型，填 key 不会自动打开看图。DSH 的 LLM 链路本身原生认图片输入
+（deepseek provider 有 `maxImagesPerRequest`、图片 offload 一整套参数），
+缺的只是「商汤这套餐里哪把模型能看图」这条结构化信息。
+
+**第一步（本期）**：插件从 `GET /v1/models` 的 `catalogModels` 算出
+`visionModels`（可看图模型清单），发进 `/snapshot`，面板加一行展示。
+识别依据：若 `/v1/models` 返回含 `input_modalities` 类结构化字段则按字段；
+否则按模型名规律（`flash-lite` / `vl` / `vision`）兜底，并在面板标注
+「按名字推断」。字段尚未确认（见 TESTING.md 已知缺口：需经插件诊断端点
+或用户提供 key 拉一次真实响应；注意外部命令拿不到 DSH Host 进程注入的
+env，只能走插件侧）。
+
+**第二步（下期，单独验收）**：把识别结果写进 DSH provider settings 的
+`imageModelIds`（对齐 `dsh-connect-trae` / `dsh-connect-workbuddy` /
+`llm-qoder` 的 connect 家族设计；`profiles/*/cordis.patch.yml` 里已有
+`imageModelIds` 与 `imageOverrides` 实例，trae 源码注释亦声明「Provider API
+不暴露模态元数据，image 输入靠显式 `imageModelIds` 声明」）。写入属 DSH
+行为面，风险高于第一步，故不合并验收。
+
+---
+
+## 6. 与上游 Python 工具的差异（给移植 / 对照用）
 
 - **凭据安全**：上游明文 `accounts.json`；本插件零明文、零调试日志，仅经 DSH 凭据服务。
 - **续期策略**：上游过期即重登（依赖明文密码）；本插件 `refresh_token` 续期，密码可从环境变量删除。
@@ -91,7 +133,7 @@ client.js: interpretSnapshot(body) → {data, error}
 
 ---
 
-## 6. 相关文档
+## 7. 相关文档
 
 - [SETUP.md](./SETUP.md) — 安装、配置、重启注意事项
 - [AUTH.md](./AUTH.md) — 认证、续期、节流设计

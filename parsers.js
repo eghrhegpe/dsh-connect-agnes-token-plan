@@ -111,3 +111,65 @@ export function parseTrend(body, trendHours) {
   rows.sort((a, b) => b.credits - a.credits);
   return { hours: trendHours, models: rows };
 }
+
+/**
+ * Whether one `GET /v1/models` entry can take image input, and WHY.
+ *
+ * This is the first step of the vision plan (ARCHITECTURE.md §5.1): the panel
+ * must show which of this key's callable models accept pictures, so the user
+ * knows which one to ask for image input.
+ *
+ * Two signals, in priority order:
+ *
+ * 1. STRUCTURED — an explicit field names the modalities. Provider APIs
+ *   differ, so several spellings are accepted (`input_modalities`,
+ *   `inputTypes`, `modality`, `capabilities`): the first one present wins.
+ *   When the platform starts returning such a field, identification becomes
+ *   exact and the name heuristics below stop mattering — no parser change
+ *   needed here.
+ * 2. NAME PATTERN — the field is absent (the current expected case: see the
+ *   `dsh-connect-trae` source note that the provider API exposes no modality
+ *   metadata), so fall back to naming conventions. The result is marked
+ *   `source: "name"` so the panel can say "inferred from the name", never
+ *   pretending the platform declared it.
+ *
+ * @param {object} entry - one catalog entry (id + any extra fields).
+ * @returns {{"id": string, "vision": boolean, "source": "field"|"name"|null}}
+ */
+export function identifyVisionModel(entry) {
+  const source = obj(entry);
+  const id = str(source.id, "");
+  const modalities = modalitiesOf(source);
+  if (modalities !== undefined) {
+    return { id, vision: modalities.some((modality) => /image/i.test(modality)), source: "field" };
+  }
+  // Naming conventions only: multimodal/vision suffixes and the known
+  // SenseNova vision-capable families. Anything that matches neither is
+  // reported as not-vision — the panel shows the list, a human can correct.
+  const byName = VISION_NAME_PATTERNS.some((pattern) => pattern.test(id));
+  return { id, vision: byName, source: byName ? "name" : null };
+}
+
+/**
+ * Read the first modality-listing field off a catalog entry, or undefined.
+ * Accepts string or array values so whatever the platform ships parses.
+ * @param {object} source - one catalog entry.
+ * @returns {string[]|undefined} the modality names, or undefined.
+ */
+function modalitiesOf(source) {
+  for (const key of ["input_modalities", "inputTypes", "modality", "capabilities"]) {
+    const value = source[key];
+    if (Array.isArray(value)) return value.map((modality) => String(modality));
+    if (typeof value === "string" && value !== "") return value.split(/[,|]/).map((modality) => modality.trim());
+  }
+  return undefined;
+}
+
+/** Name patterns used only when no structured field is present. */
+const VISION_NAME_PATTERNS = Object.freeze([
+  /-vl(-|\b)/i,
+  /vision/i,
+  /qwen.*vl/i,
+  /glm-4v/i,
+  /flash-lite/i
+]);
