@@ -68,6 +68,17 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
 
 ## 7. 已知取舍（挂起，按需收）
 
-- **`SENSENOVA_API_KEY` 走 `process.env` 不走凭据服务**（详见 [OPEN-ISSUES.md §SENSENOVA_API_KEY](./OPEN-ISSUES.md#sensenova_api_key-走-processenv-不走凭据服务)）。
-  挂载时从 `process.env` 读一次，空则 `catalog` 整块不查、`catalogAvailable: false`。
-  收口时需把 `index.js` 的 `apiKey` 改成「凭据服务优先、env 兜底」并同步两份 docs 与测试。
+- **`SENSENOVA_API_KEY` 走 `process.env` 不走凭据服务**
+  `index.js` 挂载时从 `process.env` 读一次，空则 `catalog` 整块不查、`catalogAvailable: false`；
+  `peer-roots.mjs` 的 `isolateHostEnv()` 把这支隔离在测试外。与账号/密码腿（走 `ctx.credentials.modifyRecord`、
+  kind=grant、跨重启、跨进程）不对称：API key 明文 Bearer 上 `GET /v1/models`，但持久化与跨进程行为全缺。
+  收口面（估时 40 分钟，改 `index.js` + 两份 docs + 一个测试文件）：
+  1. `index.js`：`apiKey` 改成 `await readApiKey()`，优先 `ctx.credentials.resolve("SENSENOVA_API_KEY")`，
+     fallback 到 `process.env`；snapshot 路由里 `catalog` 的 fetch 等 key 读到再发，`apiKey === ""` 判断保留。
+  2. `docs/API.md` / `docs/SETUP.md`：把「env 变量」口径改成「凭据服务优先、env 兜底」。
+  3. 测试补「凭据里有 key、env 没 key」与「两个都有、凭据赢」两条用例；
+     `peer-roots.mjs` 的 `isolateHostEnv` 注释更新为「API key 现优先走凭据服务，env 只是兜底」。
+  不动的部分：不给 `token-store.js` 加 API key 的 `modifyRecord`（无写路径需求）；
+  不改 `console-client.js` 的 `fetchModelCatalog`（只接字符串参数，谁供都不关心）。
+  风险：凭据服务可能晚于插件挂载注册（账号腿即如此），`readApiKey()` 必须每次读、不能在 `apply` 开头缓存；
+  `resolve` 返回 `{ value, source }`，要解包成字符串。
