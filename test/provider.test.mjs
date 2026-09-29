@@ -456,7 +456,11 @@ const BASE_URL = "https://token.sensenova.cn/v1";
   try {
     const dir = join(process.env.DSH_HOME, "state", "dsh-connect-sensenova-token-plan");
     const file = join(dir, "catalog.json");
-    const clock = (() => { let t = 1000; return () => (t += 500); })();
+    // 可读当前值的注入时钟：断言用「最后一次 now() 的返回值」而不是硬编码的第
+    // N 次调用，免得实现里多读一次时钟就让这条断言红——行为（ stamp 了注入时钟
+    // 的值）才是要守的东西。
+    let clockNow = 1000;
+    const clock = () => (clockNow += 500);
     const store = createFileCatalogStore({ dir, now: clock });
     await store.replace([
       { id: "SenseNova-Lite", input_modalities: ["text"] },
@@ -467,7 +471,11 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     })());
     const persisted = JSON.parse(readFileSync(file, "utf8"));
     check("the payload carries the format version", persisted.version === CATALOG_VERSION);
-    check("the payload stamps fetchedAt", persisted.fetchedAt === 1500);
+    // 不钉「第几次调用」——replace 内部还要给临时文件名与读缓存各取一次时钟；
+    // 要守的是 stampedAt 出自注入时钟（既不是 Date.now() 的真值，也不是 0）。
+    check("the payload stamps fetchedAt from the injected clock",
+      persisted.fetchedAt > 1000 && persisted.fetchedAt <= clockNow && persisted.fetchedAt % 500 === 0,
+      `fetchedAt=${persisted.fetchedAt} clockNow=${clockNow}`);
     check("the payload kept whole entries for vision detection",
       Array.isArray(persisted.entries) && persisted.entries.length === 2 &&
       JSON.stringify(persisted.entries[1].input_modalities) === JSON.stringify(["text", "image"]));
@@ -496,6 +504,52 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     })());
   } catch (error) {
     fail("file catalog store", error);
+  } finally {
+    restoreHome();
+    restoreEnv();
+  }
+}
+
+// --- 8b. 另一个进程的写入，本进程必须很快看得见（不等重启） --------------
+// PITFALLS §22：两个 profile 的 Host 进程共享同一个 state 目录。进程内的读缓存
+// 一旦没有 TTL，就是「另一个进程改了允许清单 / 开关，这边要重启才生效」——
+// provider/draw 两个开关早就带 1s TTL，catalog 却完全没有，属于同一 bug 的漂移。
+// 这里用两个 store 实例共享同一个 dir 模拟两个进程：第二个进程写，第一个进程读。
+{
+  const restoreEnv = isolateHostEnv();
+  const restoreHome = isolateStateDir();
+  try {
+    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-sensenova-token-plan");
+    // 手动推进的时钟：一次 tick = 600ms，刚好跨过 1000ms TTL 需要两跳。
+    let t = 10_000;
+    const clock = () => (t += 600);
+
+    const here = createFileCatalogStore({ dir, now: clock });
+    const elsewhere = createFileCatalogStore({ dir, now: () => t + 5_000 });
+    await elsewhere.replace([{ id: "written-by-the-other-process" }]);
+
+    const first = await here.list();
+    check("a second process's write is visible here, not cached away until restart",
+      first.length === 1 && first[0].id === "written-by-the-other-process",
+      `entries=${JSON.stringify(first.map((e) => e.id))}`);
+
+    // 一次新的 replace 必须保住磁盘上真实的 allow-list——即使本进程还没读过盘。
+    // 旧实现里 held 是惰性填充的，先 replace 后 list 会把别人存好的清单重置成 []。
+    await elsewhere.setEnabledIds(["kept-across-processes"]);
+    const fresh = createFileCatalogStore({ dir, now: () => t + 9_000 });
+    await fresh.replace([{ id: "after-replace" }]);
+    check("a replace before any read preserves the stored allow-list",
+      JSON.stringify(await fresh.listEnabledIds()) === JSON.stringify(["kept-across-processes"]),
+      `enabledModelIds=${JSON.stringify(await fresh.listEnabledIds())}`);
+
+    // 开关 store 走同一个原语：面板在另一个进程里拨动后，这边同样要跟上。
+    const switchHere = createFileProviderStore({ dir });
+    const switchElsewhere = createFileProviderStore({ dir });
+    await switchElsewhere.save(true);
+    check("a second process's panel switch is visible here too",
+      (await switchHere.enabled()) === true, `enabled=${await switchHere.enabled()}`);
+  } catch (error) {
+    fail("cross-process visibility of the shared state directory", error);
   } finally {
     restoreHome();
     restoreEnv();

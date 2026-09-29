@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * The five HTTP route handlers, extracted from `index.js` (IMPROVEMENTS.md §2.3).
+ * The six HTTP route handlers, extracted from `index.js` (IMPROVEMENTS.md §2.3).
  *
  * `apply()` stays the single mount seam: it assembles a `wiring` object and
  * hands it to {@link registerRoutes}; the handlers keep exactly the behaviour
@@ -148,7 +148,7 @@ function failureCode(error) {
 }
 
 /**
- * Register the five routes on the Host's web server.
+ * Register the six routes on the Host's web server.
  *
  * The handlers close over `wiring` only — every service they touch is listed
  * there, so `apply()` is the single place that decides what a route can do.
@@ -169,9 +169,11 @@ function failureCode(error) {
  *   publisher.publish with rollback.
  * @param {{current: Function|null}} wiring.visionPublish - the settings-row
  *   writer filled by `startSideEffects` (no-op until then).
+ * @param {object} wiring.drawStore - the `createFileDrawStore` instance; the
+ *   draw switch route reads and writes it.
  * @param {object} [wiring.logger] - `ctx.logger` (Host logging), used by the
  *   trace-write handler; optional so tests may omit it.
- * @returns {Function[]} the five `off()` unregister callbacks, in registration
+ * @returns {Function[]} the six `off()` unregister callbacks, in registration
  *   order — `teardown` runs them last.
  */
 export function registerRoutes(ctx, wiring) {

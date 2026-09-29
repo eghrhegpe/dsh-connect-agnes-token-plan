@@ -77,7 +77,7 @@ export const credentialKey = (scope, id) => `${scope}/${id}`;
 export { catalogSignature } from "./provider-publish.js";
 
 /**
- * Host body: assemble the wiring, register the five routes, run the mount
+ * Host body: assemble the wiring, register the six routes, run the mount
  * side effects, and hang the unmount effect. The route handlers live in
  * `routes.js`, the side effects in `lifecycle.js` — this function only
  * decides what they may touch.

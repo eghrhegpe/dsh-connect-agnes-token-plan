@@ -47,6 +47,8 @@ import { catalogSignature } from "./provider-publish.js";
  * @param {object} context.catalogStore - the `createFileCatalogStore` instance.
  * @param {() => Promise<boolean|null>} context.panelSwitch - the panel-saved
  *   provider switch (`provider-store.enabled()`); null when untouched.
+ * @param {() => Promise<boolean|null>} context.drawSwitch - the panel-saved
+ *   draw-tool switch (`draw-store.enabled()`), same shape and precedence.
  * @returns {Promise<object>} the snapshot body (`{ ok, now, ..., pools, trend, ... }`).
  */
 export async function buildSnapshotBody({

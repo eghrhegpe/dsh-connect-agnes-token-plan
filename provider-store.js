@@ -27,7 +27,7 @@
 import { obj } from "./util.js";
 import { join } from "node:path";
 import { name } from "./host-config.js";
-import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, stateDir as pluginStateDir } from "./state-store.js";
+import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, stateDir as pluginStateDir } from "./state-store.js";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const PROVIDER_VERSION = 1;
@@ -54,31 +54,26 @@ export function normalizeEnabled(raw) {
  * The file-backed provider switch.
  * @param {object} [options]
  * @param {string} [options.dir] - override the state directory (tests).
+ * @param {number} [options.ttlMs] - how long a parsed switch may be reused
+ *   before disk is consulted again; defaults to {@link STATE_READ_TTL_MS}.
  * @returns {object} the store.
  */
-export function createFileProviderStore({ dir } = {}) {
+export function createFileProviderStore({ dir, ttlMs = STATE_READ_TTL_MS } = {}) {
   const stateDir = dir ?? providerDir();
   const filePath = join(stateDir, "provider.json");
 
-  /** Cache of the last good read; `undefined` = never read from disk. */
-  let cached;
-  let cachedAt = 0;
-
-  /**
-   * Read the persisted switch.
-   * @returns {Promise<boolean|null>} the saved value, `null` when unset.
-   */
-  const read = async () => {
-    if (cached !== undefined && Date.now() - cachedAt < 1000) return cached;
+  // Short-TTL read cache, deliberately shared with the draw switch and the
+  // catalog (`state-store.js`): "someone else edited this file" must become
+  // visible here within a tick, not after a restart, but one poll must not
+  // re-read the file for every question it asks.
+  const cache = createStateReadCache(async () => {
     // Shape check, not trust: anything unexpected reads as "not set" so a
     // corrupted or downgraded file can never silently flip the switch.
     // Absent/unreadable/non-JSON reads as `null` (`readStateJson`).
     const source = obj(await readStateJson(filePath));
-    const value = source.version === PROVIDER_VERSION ? normalizeEnabled(source.enabled) : null;
-    cached = value;
-    cachedAt = Date.now();
-    return value;
-  };
+    return source.version === PROVIDER_VERSION ? normalizeEnabled(source.enabled) : null;
+  }, { ttlMs });
+  const read = () => cache.read();
 
   return {
     /**
@@ -109,16 +104,14 @@ export function createFileProviderStore({ dir } = {}) {
       const temporary = temporaryOf(stateDir, "provider.json");
       await ensureStateDir(stateDir);
       await writeStateFile(filePath, JSON.stringify({ version: PROVIDER_VERSION, enabled, updatedAt: new Date().toISOString() }, null, 2), { temporary });
-      cached = enabled;
-      cachedAt = Date.now();
+      cache.remember(enabled);
     },
     /**
      * Forget the panel-saved value: the config default rules again.
      * @returns {Promise<void>}
      */
     async forget() {
-      cached = null;
-      cachedAt = Date.now();
+      cache.remember(null);
       const temporary = temporaryOf(stateDir, "provider.json");
       await ensureStateDir(stateDir);
       await writeStateFile(filePath, JSON.stringify({ version: PROVIDER_VERSION, updatedAt: new Date().toISOString() }, null, 2), { temporary });

@@ -22,7 +22,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { str, obj, num } from "./util.js";
 import { name } from "./host-config.js";
-import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, stateDir as pluginStateDir } from "./state-store.js";
+import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, stateDir as pluginStateDir } from "./state-store.js";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const CATALOG_VERSION = 1;
@@ -84,7 +84,7 @@ export function normalizeEntries(raw) {
  *
  * The safe direction for a cache is "absent": the next snapshot re-fetches.
  * @param {unknown} raw - the parsed file contents.
- * @returns {{fetchedAt: number, entries: object[], enabledModelIds: string[]}|null}
+ * @returns {{version: number, fetchedAt: number, entries: object[], enabledModelIds: string[]}|null}
  */
 function parse(raw) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -94,7 +94,10 @@ function parse(raw) {
   if (fetchedAt <= 0) return null;
   const entries = normalizeEntries(body.entries);
   const enabledModelIds = normalizeEnabledIds(body.enabledModelIds);
-  return { fetchedAt, entries, enabledModelIds };
+  // `version` travels with the record so the in-memory view and the written
+  // payload are the same shape: what `parse` accepted is exactly what `persist`
+  // will write back.
+  return { version: CATALOG_VERSION, fetchedAt, entries, enabledModelIds };
 }
 
 /**
@@ -113,12 +116,30 @@ function parse(raw) {
  * @param {object} [options] - wiring.
  * @param {string} [options.dir] - directory; defaults to {@link catalogDir}.
  * @param {() => number} [options.now] - clock source; injected by the tests.
+ * @param {number} [options.ttlMs] - how long a parsed record may be reused
+ *   before disk is consulted again; defaults to {@link STATE_READ_TTL_MS}.
  * @returns {CatalogStore} the store.
  */
-export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = {}) {
+export function createFileCatalogStore({ dir = catalogDir(), now = Date.now, ttlMs = STATE_READ_TTL_MS } = {}) {
   const file = join(dir, "catalog.json");
-  /** Last read/written record, so `list()` costs no I/O after the first call. */
+  /**
+   * Last known record, mirrored from {@link cache} so the writers can reuse the
+   * allow-list without a second read. `undefined` means "never synced from
+   * disk", `null` means "synced, nothing usable stored".
+   * @type {{version: number, fetchedAt: number, entries: object[], enabledModelIds: string[]}|null|undefined}
+   */
   let held;
+  // Read-through with a short TTL, NOT a once-per-process cache: this state
+  // directory is shared with every other Host process (another profile included,
+  // see PITFALLS §22), so a cache that never expires means another process's
+  // allow-list edit stays invisible here until a restart. Same bound the
+  // provider and draw switches already use.
+  const cache = createStateReadCache(async () => parse(await readStateJson(file)), { ttlMs, now });
+  /** Sync `held` with disk (through the TTL cache) and return it. */
+  const seen = async () => {
+    held = await cache.read();
+    return held;
+  };
 
   /**
    * Persist the held record atomically; a write failure only loses the cache.
@@ -145,10 +166,8 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = 
      * @returns {Promise<object[]>}
      */
     async list() {
-      if (held === undefined) {
-        held = parse(await readStateJson(file));
-      }
-      return held === null ? [] : held.entries;
+      const record = await seen();
+      return record === null ? [] : record.entries;
     },
 
     /**
@@ -156,10 +175,8 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = 
      * @returns {Promise<string[]>}
      */
     async listEnabledIds() {
-      if (held === undefined) {
-        held = parse(await readStateJson(file));
-      }
-      return held === null ? [] : held.enabledModelIds;
+      const record = await seen();
+      return record === null ? [] : record.enabledModelIds;
     },
 
     /**
@@ -174,27 +191,36 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = 
      * @returns {Promise<void>}
      */
     async replace(entries, enabledModelIds) {
-      const kept = held === null || held === undefined ? [] : held.enabledModelIds;
+      // Sync first, so the allow-list being preserved is the one ACTUALLY
+      // stored — including a list another process wrote since this one last
+      // looked. Reading it lazily used to silently reset it to `[]` whenever a
+      // replace happened before the first `list()`.
+      const current = await seen();
+      const kept = current === null ? [] : current.enabledModelIds;
       held = {
         version: CATALOG_VERSION,
         fetchedAt: now(),
         entries: normalizeEntries(entries),
         enabledModelIds: enabledModelIds === undefined ? kept : normalizeEnabledIds(enabledModelIds)
       };
+      cache.remember(held);
       await persist();
     },
 
     /** Replace ONLY the curated allow-list, keeping the cached catalog. */
     async setEnabledIds(ids) {
-      const entries = held === null || held === undefined ? [] : held.entries;
-      const fetchedAt = held === null || held === undefined ? now() : held.fetchedAt;
+      const current = await seen();
+      const entries = current === null ? [] : current.entries;
+      const fetchedAt = current === null ? now() : current.fetchedAt;
       held = { version: CATALOG_VERSION, fetchedAt, entries, enabledModelIds: normalizeEnabledIds(ids) };
+      cache.remember(held);
       await persist();
     },
 
     /** Remove the stored catalog (used when the API key is forgotten). */
     async clear() {
       held = null;
+      cache.remember(null);
       try {
         await rm(file, { force: true });
       } catch {
