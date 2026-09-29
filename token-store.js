@@ -48,11 +48,17 @@
  * @module dsh-connect-sensenova-token-plan/token-store
  */
 
-import { createAuth, readJwtExpiry } from "./sensenova-auth.js";
 import { CODE, isCredentialRefusal } from "./codes.js";
 import { str, obj, verbatim, num, numOrNull, pluginError } from "./util.js";
 import { name as RECORD_SCOPE } from "./host-config.js";
 import { createStoreContext } from "./token-store/state.js";
+import {
+  readStored as readStoredImpl,
+  adoptLegacyGrant as adoptLegacyGrantImpl,
+  storeGrant,
+  purgeGrant as purgeGrantImpl,
+  isFresh as isFreshImpl
+} from "./token-store/grant.js";
 
 /** Record address: this plugin's own namespace, so a stranger cannot collide. */
 const RECORD_ID = "sensenova-console";
@@ -66,8 +72,6 @@ const RECORD_ID = "sensenova-console";
  * legacy record is adopted once and deleted.
  */
 const LEGACY_SCOPE = "dsh-llm-rate-panel";
-/** Bumped if the stored payload shape ever changes incompatibly. */
-const GRANT_VERSION = 1;
 
 /**
  * The reference form of a credential name.
@@ -149,32 +153,6 @@ const MAX_LOGIN_BACKOFF_MS = 30 * 60_000;
  */
 const THROTTLE_VERSION = 1;
 
-
-
-/**
- * The stored grant, or `undefined` when nothing usable is stored.
- *
- * A payload that does not match the expected shape reads as absent rather
- * than throwing: a hand-edited or downgraded record should degrade the panel
- * into "not configured", not crash the route on every poll.
- * @param {unknown} record - a credential record.
- * @returns {{accessToken: string, refreshToken: string, expiresAt: number|null}|undefined}
- */
-function parseGrant(record) {
-  if (record === undefined || record === null || obj(record).kind !== "grant") return undefined;
-  const payload = obj(obj(record).payload);
-  if (num(payload.version) !== GRANT_VERSION) return undefined;
-  const accessToken = str(payload.accessToken, "");
-  if (accessToken === "") return undefined;
-  return {
-    accessToken,
-    refreshToken: str(payload.refreshToken, ""),
-    // Prefer the claim we can read off the token itself; fall back to what the
-    // token endpoint reported when the claim is unreadable.
-    expiresAt: numOrNull(payload.expiresAt) ?? readJwtExpiry(accessToken)
-  };
-}
-
 /**
  * The refusal an in-force throttle stands for.
  *
@@ -250,13 +228,7 @@ export function createTokenStore(options) {
 
   /** Read the durable grant through the credentials service. */
   async function readStored() {
-    try {
-      const current = parseGrant(await backend().readRecord(key));
-      if (current !== undefined) return current;
-      return await adoptLegacyGrant();
-    } catch {
-      return undefined;
-    }
+    return readStoredImpl(wiring, state);
   }
 
   /**
@@ -269,24 +241,7 @@ export function createTokenStore(options) {
    * @returns {Promise<object|undefined>} the adopted grant, or undefined.
    */
   async function adoptLegacyGrant() {
-    try {
-      const legacyKey = credentialKey(LEGACY_SCOPE, "sensenova-console");
-      const grant = parseGrant(await backend().readRecord(legacyKey));
-      if (grant === undefined) return undefined;
-      await backend().modifyRecord(key, () => Promise.resolve({
-        kind: "grant",
-        payload: {
-          version: GRANT_VERSION,
-          accessToken: grant.accessToken,
-          refreshToken: grant.refreshToken,
-          expiresAt: grant.expiresAt ?? null
-        }
-      }));
-      await backend().deleteRecord(legacyKey).catch(() => {});
-      return grant;
-    } catch {
-      return undefined;
-    }
+    return adoptLegacyGrantImpl(wiring, state);
   }
 
   /**
@@ -308,52 +263,7 @@ export function createTokenStore(options) {
    *   the grant now in effect — ours, or the newer one we deferred to.
    */
   async function store(accessToken, refreshToken, expiresIn, replacing) {
-    // The injected clock, not `Date.now()`: every other deadline in this store
-    // is measured with it, and a grant whose expiry came from a different clock
-    // is the one thing a test crossing a window deliberately cannot control.
-    const issuedAt = now();
-    const payload = {
-      version: GRANT_VERSION,
-      accessToken,
-      refreshToken,
-      expiresAt: issuedAt + num(expiresIn, 10800) * 1000
-    };
-    try {
-      const record = await backend().modifyRecord(key, (current) => {
-        const existing = parseGrant(current);
-        if (replacing !== undefined) {
-          // A named predecessor: compare-and-set used by every refresh AND by a
-          // password login that read an existing grant. If the record moved to
-          // some other token while this write was in flight, that other write
-          // won and this one defers — two processes racing a login/refresh
-          // cannot invalidate each other's rotated refresh token, while an
-          // intentional account switch replaces the grant it read.
-          if (existing !== undefined && existing.accessToken !== replacing) {
-            return undefined;
-          }
-        } else if (existing !== undefined
-          && existing.expiresAt !== null && existing.expiresAt > issuedAt + 60_000) {
-          // No named predecessor — a first-ever login that read no grant. Two
-          // processes bootstrapping at once both land here; the one whose write
-          // lands second keeps the already-healthy grant instead of rotating
-          // the refresh token under the first. A login over an EXISTING grant
-          // always names it, so an account switch is never swallowed by this.
-          return undefined;
-        }
-        return Promise.resolve({ kind: "grant", payload });
-      });
-      const stored = parseGrant(record) ?? payload;
-      state.cached = stored;
-      return stored;
-    } catch (error) {
-      // A read-only store must not break the panel: keep the token in memory
-      // for this process and let the next start re-login.
-      state.cached = { accessToken, refreshToken, expiresAt: payload.expiresAt };
-      throw new Error(
-        `could not persist the console token (${error instanceof Error ? error.message : String(error)}); ` +
-          "it stays valid until dsh restarts"
-      );
-    }
+    return storeGrant(wiring, state, accessToken, refreshToken, expiresIn, replacing);
   }
 
   /**
@@ -369,9 +279,7 @@ export function createTokenStore(options) {
    *   in-memory cache and rejection set.
    */
   async function purgeGrant(accessToken) {
-    state.cached = null;
-    if (accessToken !== undefined) rejected.delete(accessToken);
-    await backend().deleteRecord(key).catch(() => {});
+    return purgeGrantImpl(wiring, state, accessToken);
   }
 
   /**
@@ -461,12 +369,8 @@ export function createTokenStore(options) {
   }
 
   /** Whether a token is still good for at least `skewMs`. */
-  function isFresh(token, at = now()) {
-    if (token === undefined || token === null) return false;
-    // A token the console refused is never fresh, however long its `exp` says.
-    if (rejected.has(token.accessToken)) return false;
-    if (token.expiresAt === null) return true; // unknown expiry: let the console decide
-    return token.expiresAt - at > skewMs;
+  function isFresh(token, at) {
+    return isFreshImpl(wiring, state, token, at);
   }
 
   /**

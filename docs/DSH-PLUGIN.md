@@ -39,7 +39,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
     "parsers.js", "throttle-store.js", "catalog-store.js", "provider-store.js", "provider-publish.js", "snapshot-aggregate.js", "state-store.js", "routes.js", "lifecycle.js", "api-key-store.js",
     "llm-models.js", "llm-adapter.js", "llm-retry.js", "llm-error-fix.js", "draw.js",
     "trace.js", "util.js",
-    "sensenova-auth.js", "sensenova-crypto.js", "token-store.js", "token-store/state.js",
+    "sensenova-auth.js", "sensenova-crypto.js", "token-store.js", "token-store/state.js", "token-store/grant.js",
     "cordis.patch.yml", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {

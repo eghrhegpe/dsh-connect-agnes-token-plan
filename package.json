@@ -47,6 +47,7 @@
     "sensenova-crypto.js",
     "token-store.js",
     "token-store/state.js",
+    "token-store/grant.js",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
