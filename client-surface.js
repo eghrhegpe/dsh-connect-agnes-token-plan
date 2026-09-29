@@ -64,7 +64,13 @@ const React = Object.freeze({
   Fragment: Symbol("Fragment"),
   useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
   useEffect: () => undefined,
-  useCallback: (callback) => callback
+  useCallback: (callback) => callback,
+  // `useMemo` returns the computed value (a fresh one per call, as a real
+  // renderer would on its first pass); `useRef` hands back a stable mutable
+  // box. Hook components are not mounted through this surface today, but
+  // these keep the stand-in honest for anything that calls them.
+  useMemo: (factory) => factory(),
+  useRef: (initial) => ({ current: initial })
 });
 
 await import("./client.js");

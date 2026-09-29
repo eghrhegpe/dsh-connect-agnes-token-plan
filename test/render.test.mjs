@@ -543,6 +543,23 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("count renders its input unchanged for small numbers",
     rendered(render.TrendTable, { trend: { models: [{ model: "m", credits: 12.345 }] }, tt }).includes("12.35"),
     "count(12.345) should round to 2 places");
+
+  // === H2. the first frame says "loading", not "sign in" ==================
+  // `viewOf(null, null)` reads as needsSetup, so the OLD PanelPage rendered
+  // AccountForm for the whole first poll — `panel.loading` was dead code, and
+  // a configured user saw the sign-in form flash on every mount. The
+  // `loadedOnce` gate (set in the load's finally) is invisible to `viewOf`;
+  // only driving the mounted page proves the gate is wired. The stand-in
+  // returns useState's INITIAL value, so this is the true first frame.
+  {
+    const firstFrame = rendered(render.PanelPage, {
+      onClose: () => {}, tt, localeSubscribe: undefined
+    });
+    check("the first frame shows the loading line", firstFrame.includes("panel.loading"),
+      firstFrame.join("\n"));
+    check("the first frame does NOT show the sign-in form", !firstFrame.includes("auth.title"),
+      firstFrame.join("\n"));
+  }
 }
 
 // === I. the decision table: every wire code gets an answer ================

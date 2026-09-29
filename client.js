@@ -30,7 +30,7 @@
 function clientFactory(require) {
   const React = require("react");
   const h = React.createElement;
-  const { useState, useEffect, useCallback, useRef } = React;
+  const { useState, useEffect, useCallback, useRef, useMemo } = React;
 
   /** Dictionary namespace this plugin owns. */
   const NS = "dsh-connect-sensenova-token-plan";
@@ -438,7 +438,11 @@ function clientFactory(require) {
       return sameDay ? clock(epoch) : clockLong(epoch);
     }
 
-    /** Thousands-separated number, trimmed. */
+    /**
+     * A credit figure as text: 2-decimal precision under 10 000, whole with
+     * thousands separators at or above it. The switch is deliberate — a pool
+     * limit of 60 000 reads as "60,000", a live balance of 47.5 as "47.5".
+     */
     function count(value) {
       const number = typeof value === "number" && Number.isFinite(value) ? value : 0;
       if (number >= 10000) return Math.round(number).toLocaleString();
@@ -934,8 +938,11 @@ function clientFactory(require) {
       const auth = data?.auth ?? failure?.auth ?? null;
       // With no data the form is the answer whenever the fix is the ACCOUNT:
       // nothing has been entered yet, or no token can be obtained — except for
-      // the codes no login can fix. The first load has neither failure nor
-      // data; it has nothing to explain, so it falls to the form as well.
+      // the codes no login can fix. `data === null, error === null` also reads
+      // as setup here, and that is the STEADY-STATE answer only: the mounted
+      // page holds it behind its `loadedOnce` gate until the first attempt has
+      // concluded, so the true first frame shows the loading line, not the
+      // form (pinned by `test/render.test.mjs` group H2).
       const needsSetup = data === null && !FORM_EXCLUDED_CODES.has(failure?.code ?? null);
       // The dictionary key, resolved with the caller's `tt`; returned as a key
       // so tests can assert the decision without owning a dictionary.
@@ -1353,8 +1360,12 @@ function clientFactory(require) {
       const [savedKey, setSavedKey] = useState(null);
       const [notice, setNotice] = useState(null);
 
-      const hostKey = JSON.stringify(hostIds);
-      const dirty = JSON.stringify(ids) !== hostKey;
+      // Serialising the allow-lists is the picker's only per-render cost that
+      // scales with the catalogue, so it is memoised on the arrays themselves:
+      // a keystroke in the search box must not re-stringify every saved id.
+      const hostKey = useMemo(() => JSON.stringify(hostIds), [hostIds]);
+      const idsKey = useMemo(() => JSON.stringify(ids), [ids]);
+      const dirty = idsKey !== hostKey;
       const justSaved = savedKey !== null && savedKey === hostKey;
 
       // Follow the Host while the picker is untouched, so a catalogue refresh
@@ -1400,11 +1411,15 @@ function clientFactory(require) {
       }, [busy, ids, onDone, tt]);
 
       const needle = query.trim().toLowerCase();
-      const visible = models.filter((model) => {
+      // `models` keeps its identity between polls (it comes straight off the
+      // snapshot object), so memoising on it and the search text gives `bulk`
+      // dependency values that are stable by REFERENCE — the earlier
+      // `JSON.stringify(...)` deps existed only to fake that stability.
+      const visible = useMemo(() => models.filter((model) => {
         if (needle === "") return true;
         return String(model?.id ?? "").toLowerCase().includes(needle)
           || String(model?.name ?? "").toLowerCase().includes(needle);
-      });
+      }), [needle, models]);
       const tickedCount = visible.filter((model) => modelIsOn(ids, String(model?.id ?? ""))).length;
 
       /** Apply "tick all" / "untick all" to the VISIBLE rows only. */
@@ -1416,8 +1431,7 @@ function clientFactory(require) {
         const targets = visible.map((model) => String(model?.id ?? ""));
         setIds(bulkModelsIn(ids, roster, targets, allOn));
         setNotice(null);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [JSON.stringify(visible.map((model) => model?.id)), JSON.stringify(models), JSON.stringify(ids)]);
+      }, [models, visible, ids]);
 
       return h(
         "div",
@@ -1634,6 +1648,15 @@ function clientFactory(require) {
     function PanelPage({ onClose, tt, localeSubscribe }) {
       const [data, setData] = useState(null);
       const [error, setError] = useState(null);
+      // Has the FIRST load attempt reached a conclusion? Until it has, the
+      // panel must show "loading", not the account form: `viewOf` reads
+      // `data === null, error === null` as "nothing says you are configured",
+      // and `needsSetup` then renders the sign-in form for a fraction of a
+      // second on every mount — including for users who are configured and
+      // about to see their pools. That first-frame form was the unreachable
+      // `panel.loading` branch: without this gate the loading line was DEAD
+      // CODE, because the null/null state always routed to the form.
+      const [loadedOnce, setLoadedOnce] = useState(false);
       const [updatedAt, setUpdatedAt] = useState(0);
       const [, setLocaleRevision] = useState(0);
       // The content sections start expanded — the panel opens showing
@@ -1710,6 +1733,12 @@ function clientFactory(require) {
           if (!isCurrent()) return;
           setError(reason instanceof Error ? reason.message : String(reason));
         } finally {
+          // The attempt is over one way or another — even where the early
+          // `return`s above skipped their state writes (a missing `ok`, a
+          // body that failed to parse). Only the CURRENT load gets to say
+          // so: an aborted, superseded attempt must not flip the gate while
+          // its replacement is still in flight.
+          if (isCurrent()) setLoadedOnce(true);
           if (inFlight.current === controller) inFlight.current = null;
         }
       }, []);
@@ -1768,6 +1797,10 @@ function clientFactory(require) {
       // The decision is `viewOf`'s (module scope): the Node-side tests invoke
       // this exact function, so there is no second copy that could drift.
       const { failure, auth, needsSetup, guidance, shapeWarnings } = viewOf(data, error, tt);
+      // The one gate that turns `panel.loading` from dead code into the real
+      // first frame: until an attempt has concluded, nothing may claim the
+      // user needs setup.
+      const showSetupForm = needsSetup && loadedOnce;
       const authChip = auth === null
         ? null
         : auth.error || !auth.configured
@@ -1777,7 +1810,7 @@ function clientFactory(require) {
       // stored account can be changed or cleared without waiting to fail.
       const authManage = auth !== null && auth.hasAccount === true;
       const body = !data
-        ? needsSetup
+        ? showSetupForm
           ? h(AccountForm, { auth, onDone: () => void load(), tt })
           : h(
               "div",
