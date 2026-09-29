@@ -30,7 +30,7 @@
 function clientFactory(require) {
   const React = require("react");
   const h = React.createElement;
-  const { useState, useEffect, useCallback } = React;
+  const { useState, useEffect, useCallback, useRef } = React;
 
   /** Dictionary namespace this plugin owns. */
   const NS = "dsh-connect-sensenova-token-plan";
@@ -59,6 +59,7 @@ function clientFactory(require) {
     "panel.jwtMissing": "还没有配置控制台账号。",
     "panel.jwtExpired": "控制台令牌已失效，且无法用已保存的 refresh_token 续期。请重新登录一次。",
     "panel.configError": "插件配置有误：{error}",
+    "panel.consoleTransient": "商汤控制台暂时无法读取，通常下一次自动刷新即可恢复；若持续出现，请检查网络后稍再重试。",
     "panel.shapeDrift": "上游返回的结构可能有变：{detail}",
     "auth.title": "连接商汤控制台",
     "auth.username": "账号",
@@ -73,6 +74,8 @@ function clientFactory(require) {
     "auth.forgotten": "已清除账号（当前令牌仍可用）",
     "auth.saved": "账号与登录令牌已保存在 DSH 凭据中；密码不落盘，refresh 令牌失效后需重新输入一次。",
     "auth.ephemeral": "注意：当前 Host 没有凭据服务，账号只保存在内存中，重启后需要重新登录。",
+    "auth.autoRecoverOn": "自动恢复：已开启，refresh 失效后将自动重登",
+    "auth.autoRecoverOff": "自动恢复：未开启，refresh 失效后需手动重登",
     "auth.badCredentials": "账号或密码不正确",
     "auth.locked": "账号已被锁定，请在商汤控制台用手机号验证或联系客服解锁。",
     "auth.retryAfter": "平台要求等待约 {minutes} 分钟后再试；等待期间面板不会自动重试，避免再次触发锁定。",
@@ -166,6 +169,7 @@ function clientFactory(require) {
     "panel.jwtMissing": "No SenseNova console account is configured yet.",
     "panel.jwtExpired": "The console token is no longer valid and could not be renewed from the stored refresh_token. Sign in again.",
     "panel.configError": "The plugin is misconfigured: {error}",
+    "panel.consoleTransient": "The SenseNova console could not be read just now. This usually clears on the next automatic refresh; if it persists, check your network and try again shortly.",
     "panel.shapeDrift": "The upstream payload shape may have changed: {detail}",
     "auth.title": "Connect the SenseNova console",
     "auth.username": "Username",
@@ -180,6 +184,8 @@ function clientFactory(require) {
     "auth.forgotten": "Account cleared (the current token still works)",
     "auth.saved": "Account and login token stored in the DSH credentials; the password is never written to disk — you'll be asked to sign in again once the refresh token dies.",
     "auth.ephemeral": "Note: this Host has no credentials service, so the account lives in memory only and must be entered again after a restart.",
+    "auth.autoRecoverOn": "Auto-recover: on (a dead refresh token re-signs in automatically)",
+    "auth.autoRecoverOff": "Auto-recover: off (a dead refresh token means signing in again manually)",
     "auth.badCredentials": "That username or password is not right",
     "auth.locked": "This account is locked. Verify by phone in the SenseNova console or contact support to unlock it.",
     "auth.retryAfter": "The platform asks to wait about {minutes} more minutes. The panel will not retry on its own during that window, so the lock is not extended.",
@@ -306,7 +312,10 @@ function clientFactory(require) {
       // longest "used x / limit" caption beside the headline figures).
       quotas: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))", gap: 10, marginTop: 14 },
       quota: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, padding: "12px 14px", borderRadius: 10, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)" },
-      quotaTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
+      // `flexWrap` because the reset stamp can grow to `MM-DD HH:mm`: in a narrow
+      // twin column the label and the date no longer share a row, and the date is
+      // the one part of the line that must never be clipped.
+      quotaTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
       quotaLabel: { fontSize: 12, fontWeight: 500, color: "var(--dsw-alias-label-secondary)" },
       quotaReset: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
       quotaFigures: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 },
@@ -398,6 +407,25 @@ function clientFactory(require) {
       return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }
 
+    /**
+     * A date-aware reset clock: `HH:MM` when the instant lands on today's local
+     * date, `MM-DD HH:mm` once it crosses into another day.
+     *
+     * Why this exists: `clock` was the one shared formatter, so the weekly
+     * (`window_7d`) reset — an absolute instant days away — read as "重置 18:10"
+     * and looked like it fired later TODAY. A bare time is honest only for the
+     * 5-hour window; a reset that crosses midnight must carry its day.
+     */
+    function when(epoch) {
+      if (typeof epoch !== "number" || !Number.isFinite(epoch) || epoch <= 0) return "—";
+      const date = new Date(epoch * 1000);
+      const now = new Date();
+      const sameDay = date.getFullYear() === now.getFullYear()
+        && date.getMonth() === now.getMonth()
+        && date.getDate() === now.getDate();
+      return sameDay ? clock(epoch) : clockLong(epoch);
+    }
+
     /** Thousands-separated number, trimmed. */
     function count(value) {
       const number = typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -485,6 +513,24 @@ function clientFactory(require) {
       return allowListFor(new Set(allOn ? rosterIds(roster) : []), roster);
     }
 
+    /**
+     * The next allow-list after a bulk "tick all" / "untick all" over one set
+     * of targets, computed against the WHOLE roster.
+     *
+     * The targets are the ids the reader is looking at right now (a filtered
+     * view); the rows outside them keep whatever the Host already offers, so
+     * the result stays a complete allow-list rather than a diff. Both id lists
+     * must be STRINGS — `rosterIds` drops anything that is not one, so a roster
+     * of `{id}` rows would filter to nothing and the whole call would collapse
+     * to the hide-all sentinel no matter which way the button was pressed.
+     */
+    function bulkModelsIn(enabledIds, roster, targets, allOn) {
+      const on = new Set(rosterIds(roster).filter((model) => modelIsOn(enabledIds, model)));
+      for (const id of targets) if (allOn) on.add(id);
+      else on.delete(id);
+      return allowListFor(on, roster);
+    }
+
     /** The sidebar row glyph: the shell owns the button, this draws the coin. */
     function PanelIcon({ size }) {
       return h(
@@ -529,8 +575,10 @@ function clientFactory(require) {
           { style: S.quotaTop },
           h("span", { style: S.quotaLabel }, label),
           remaining <= 0
-            ? h("span", { style: { ...S.chip, color: "var(--dsh-alias-state-error-primary)", borderColor: "var(--dsh-alias-state-error-primary)" } }, tt("pool.exhausted"))
-            : h("span", { style: S.quotaReset }, resetAt ? format(tt("pool.reset"), { time: clock(resetAt) }) : "")
+            ? h("span", { style: { ...S.chip, color: "var(--dsw-alias-state-error-primary)", borderColor: "var(--dsw-alias-state-error-primary)" } }, tt("pool.exhausted"))
+            // `when` not `clock`: the weekly reset can land on another day, and
+            // a bare HH:MM reads as "later today" — wrong and alarming.
+            : h("span", { style: S.quotaReset }, resetAt ? format(tt("pool.reset"), { time: when(resetAt) }) : "")
         ),
         h(
           "div",
@@ -553,7 +601,7 @@ function clientFactory(require) {
         ),
         h(
           "div",
-          { style: S.bar, role: "progressbar", "aria-label": `${label} ${pct.toFixed(1)}%`, "aria-valuenow": Math.round(pct), "aria-valuemin": 0, "aria-valuemax": 100 },
+          { style: S.bar, role: "progressbar", "aria-label": `${label} ${pct.toFixed(1)}%`, "aria-valuenow": pct.toFixed(1), "aria-valuemin": 0, "aria-valuemax": 100 },
           h("div", { style: { ...tone, width: `${pct}%` } })
         )
       );
@@ -580,7 +628,7 @@ function clientFactory(require) {
           h("span", { style: S.spacer }),
           // Spendable grant money belongs up with the headline, not buried.
           pool.grantBalance > 0
-            ? h("span", { style: S.grantChip, title: tt("pool.grant") }, format(tt("pool.grant"), { balance: count(pool.grantBalance) }))
+            ? h("span", { style: S.grantChip, title: format(tt("pool.grant"), { balance: count(pool.grantBalance) }) }, format(tt("pool.grant"), { balance: count(pool.grantBalance) }))
             : null
         ),
         h(
@@ -653,7 +701,9 @@ function clientFactory(require) {
         }
       }
       if (!anyExhausted) return null;
-      const time = earliest > 0 ? clock(earliest) : "—";
+      // `when`, not `clock`: the earliest reset may belong to the weekly window
+      // and sit days out, and a bare HH:MM would promise recovery in hours.
+      const time = earliest > 0 ? when(earliest) : "—";
       return h(
         "div",
         {
@@ -766,6 +816,25 @@ function clientFactory(require) {
     }
 
     /**
+     * The failure a non-2xx snapshot response becomes.
+     *
+     * A non-2xx carries no body, so the status is the only clue. 401/403 mean
+     * the token is gone — the same story as the Host's own `jwt_expired`, and
+     * the only reading that keeps the sign-in form on screen instead of leaving
+     * the reader with a bare status code. Anything else is a plain transport
+     * string, which keeps the form reachable too.
+     *
+     * Named and module-scoped for the same reason as `interpretSnapshot`: the
+     * Node-side tests drive this mapping instead of a copy of it.
+     * @param {number} status - the HTTP status code.
+     * @returns {{message: string, code: string, auth: null}|string}
+     */
+    function errorOfStatus(status) {
+      if (status === 401 || status === 403) return { message: `HTTP ${status}`, code: "jwt_expired", auth: null };
+      return `HTTP ${status}`;
+    }
+
+    /**
      * The panel's guidance line for a wire code, keyed by `body.code`.
      *
      * This is the ONE deliberate copy of the Host's taxonomy: the browser
@@ -779,7 +848,11 @@ function clientFactory(require) {
       auth_error: "panel.jwtExpired",
       jwt_expired: "panel.jwtExpired",
       not_configured: "panel.jwtMissing",
-      config_error: "panel.configError"
+      config_error: "panel.configError",
+      // The console did not answer. `FORM_EXCLUDED_CODES` already keeps the
+      // login form away from this code, so the guidance line is the whole
+      // explanation — and it must say the failure is expected to pass.
+      console_error: "panel.consoleTransient"
     });
 
     /**
@@ -1064,11 +1137,11 @@ function clientFactory(require) {
           // Two different outcomes, two different sentences: "the account was
           // cleared" must never read as "saved and signed in".
           forgotten
-            ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" } }, tt("auth.forgotten"))
+            ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("auth.forgotten"))
             : saved
-              ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" } }, tt("auth.working"))
+              ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("auth.working"))
               : null,
-          formError ? h("p", { style: S.formError }, formError) : null,
+          formError ? h("p", { style: S.formError, role: "alert" }, formError) : null,
           formError && formDetail ? h("p", { style: S.formNote }, formDetail) : null,
           // The wait is stated with the platform's own number, so the reason
           // the button is greyed out is never a mystery.
@@ -1076,7 +1149,13 @@ function clientFactory(require) {
             ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } },
                 format(tt("auth.retryAfter"), { minutes: coolingMinutes }))
             : null,
-          h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved"))
+          h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved")),
+          // The auto-recovery readiness is a boolean from the Host (`state()`):
+          // whether the environment carries `SENSENOVA_PASSWORD`. The value
+          // itself never reaches the bundle; the line only tells the user
+          // whether a dead refresh token re-signs in by itself or asks again.
+          h("p", { style: S.formNote },
+            auth?.autoRecoverArmed === true ? tt("auth.autoRecoverOn") : tt("auth.autoRecoverOff"))
         )
       );
     }
@@ -1103,7 +1182,7 @@ function clientFactory(require) {
       }
       // The registration line is the one the section title promises.
       if (llm.registerProvider === true && llm.providerRegistered === true) {
-        rows.push(h("div", { style: { fontSize: 12, color: "var(--dsw-alias-state-success-primary)" } },
+        rows.push(h("div", { style: { fontSize: 12, color: "var(--dsw-alias-state-success-primary)" }, role: "status" },
           format(tt("llm.registered"), {
             id: String(llm.providerId ?? ""),
             models: count(llm.modelCount),
@@ -1112,7 +1191,7 @@ function clientFactory(require) {
       } else if (llm.registerProvider === true && llm.llmAvailable !== true) {
         rows.push(h("div", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } }, tt("llm.noService")));
       } else if (llm.registerProvider === true && typeof llm.providerError === "string" && llm.providerError !== "") {
-        rows.push(h("div", { style: S.formError }, format(tt("llm.error"), { error: llm.providerError })));
+        rows.push(h("div", { style: S.formError, role: "alert" }, format(tt("llm.error"), { error: llm.providerError })));
       } else {
         rows.push(h("div", { style: S.formNote }, tt("llm.off")));
       }
@@ -1165,7 +1244,7 @@ function clientFactory(require) {
         { style: { display: "flex", gap: 8, alignItems: "center", margin: "0 0 12px", cursor: busy ? "wait" : "pointer" } },
         h("input", { type: "checkbox", checked: enabled, disabled: busy, onChange: toggle }),
         h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, busy ? tt("llm.switchBusy") : tt("llm.switch")),
-        switchError ? h("span", { style: S.formError }, switchError) : null
+        switchError ? h("span", { style: S.formError, role: "alert" }, switchError) : null
       );
     }
 
@@ -1181,9 +1260,11 @@ function clientFactory(require) {
      * @param {{id: string, name: string, vision: boolean}[]} props.models
      * @param {string[]} props.enabledIds - the allow-list; empty = every row on.
      * @param {boolean} props.busy - while saving, the checkboxes are inert.
+     * @param {(id: string) => void} props.onToggle - the checkbox handler; the roster stays
+     *        hook-free, so the picker hands its draft edit in.
      * @param {(key: string) => string} props.tt
      */
-    function ModelRoster({ models, enabledIds, busy, tt }) {
+    function ModelRoster({ models, enabledIds, busy, tt, onToggle }) {
       const list = Array.isArray(models) ? models : [];
       return h(
         "ul",
@@ -1208,7 +1289,11 @@ function clientFactory(require) {
                 checked: on,
                 disabled: busy === true,
                 style: S.modelCheck,
-                "aria-label": label
+                "aria-label": label,
+                // The roster is hook-free, so the handler is handed in from the
+                // picker. Without it this box is display-only and the allow-list
+                // cannot be edited by a single row at all.
+                onChange: onToggle ? () => onToggle(id) : undefined
               }),
               h("span", { style: S.modelName, title: id }, label)
             ),
@@ -1289,13 +1374,12 @@ function clientFactory(require) {
 
       /** Apply "tick all" / "untick all" to the VISIBLE rows only. */
       const bulk = useCallback((allOn) => {
-        const targets = new Set(visible.map((model) => String(model?.id ?? "")));
-        const on = new Set(rosterIds(models).filter((model) => modelIsOn(ids, model)));
-        for (const id of targets) {
-          if (allOn) on.add(id);
-          else on.delete(id);
-        }
-        setIds(allowListFor(on, models));
+        // Strings, never the `{id, name, vision}` rows: the allow-list is
+        // compared against a roster of ids, and an object roster would filter to
+        // nothing — "tick all" would have posted the hide-all sentinel.
+        const roster = models.map((model) => String(model?.id ?? ""));
+        const targets = visible.map((model) => String(model?.id ?? ""));
+        setIds(bulkModelsIn(ids, roster, targets, allOn));
         setNotice(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [JSON.stringify(visible.map((model) => model?.id)), JSON.stringify(models), JSON.stringify(ids)]);
@@ -1317,6 +1401,7 @@ function clientFactory(require) {
                   style: { ...S.input, flex: "1 1 200px", width: "auto" },
                   value: query,
                   placeholder: tt("llm.rosterSearchPlaceholder"),
+                  "aria-label": tt("llm.rosterSearchPlaceholder"),
                   disabled: busy,
                   onChange: (event) => setQuery(event.target.value)
                 }),
@@ -1334,12 +1419,24 @@ function clientFactory(require) {
                 }, tt("llm.rosterNone")),
                 h("span", {
                   style: S.rosterCount,
-                  title: tt("llm.rosterCount")
+                  title: format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })
                 }, format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length }))
               ),
               visible.length === 0
                 ? h("p", { style: S.empty }, tt("llm.rosterNoMatch"))
-                : h(ModelRoster, { models: visible, enabledIds: ids, busy, tt }),
+                : h(ModelRoster, {
+                    models: visible,
+                    enabledIds: ids,
+                    busy,
+                    tt,
+                    // One row is toggled against the WHOLE roster, not the
+                    // filtered view, so an edit survives a later change of the
+                    // search box.
+                    onToggle: (id) => {
+                      setIds(toggleModelIn(ids, models.map((model) => String(model?.id ?? "")), id));
+                      setNotice(null);
+                    }
+                  }),
               dirty
                 ? h(
                     "div",
@@ -1362,9 +1459,9 @@ function clientFactory(require) {
                     h("span", { style: { ...S.muted, fontSize: 12 } }, tt("llm.rosterUnsaved"))
                   )
                 : justSaved
-                  ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" } }, tt("llm.rosterSaved"))
+                  ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("llm.rosterSaved"))
                   : null,
-              notice !== null ? h("p", { style: S.formError }, notice) : null
+              notice !== null ? h("p", { style: S.formError, role: "alert" }, notice) : null
             )
       );
     }
@@ -1489,11 +1586,11 @@ function clientFactory(require) {
             : null
         ),
         forgotten
-          ? h("p", { style: { ...S.formNote, color: "var(--dsh-alias-state-success-primary)" } }, tt("llm.forgotten"))
+          ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("llm.forgotten"))
           : saved
-            ? h("p", { style: { ...S.formNote, color: "var(--dsh-alias-state-success-primary)" } }, tt("llm.saved"))
+            ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("llm.saved"))
             : null,
-        formError ? h("p", { style: S.formError }, formError) : null,
+        formError ? h("p", { style: S.formError, role: "alert" }, formError) : null,
         h("p", { style: S.formNote }, tt("llm.footnote"))
       );
     }
@@ -1522,11 +1619,37 @@ function clientFactory(require) {
       // this default only covers the first load, before any answer arrives.
       const [cadenceMs, setCadenceMs] = useState(30_000);
 
+      // A snapshot only writes if it is still the newest one: the interval can
+      // start a second load before the first returns, and without this the
+      // slower response lands last, replacing fresh numbers with a stale
+      // snapshot — the usage bar visibly moves backwards. The generation is
+      // bumped when a load STARTS, which is also what lets a manual refresh
+      // supersede the scheduled one that is already on its way.
+      const generation = useRef(0);
+      const inFlight = useRef(null);
+
       const load = useCallback(async () => {
+        generation.current += 1;
+        const mine = generation.current;
+        const isCurrent = () => generation.current === mine;
+        // Cancel the superseded poll, not just ignore it: a stale request keeps
+        // the Host's connection open for nothing.
+        inFlight.current?.abort?.();
+        const controller = typeof AbortController === "function" ? new AbortController() : null;
+        inFlight.current = controller;
         try {
-          const response = await fetch(SNAPSHOT_PATH, { headers: { accept: "application/json" }, cache: "no-store" });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const response = await fetch(SNAPSHOT_PATH, {
+            headers: { accept: "application/json" },
+            cache: "no-store",
+            signal: controller ? controller.signal : undefined
+          });
+          if (!isCurrent()) return;
+          if (!response.ok) {
+            setError(errorOfStatus(response.status));
+            return;
+          }
           const body = await response.json();
+          if (!isCurrent()) return;
           // The Host answers 200 with `ok:false` for every expected failure, so
           // the code is kept to pick the guidance rather than the message. The
           // reading is a named module-scope function, so the tests exercise
@@ -1548,7 +1671,11 @@ function clientFactory(require) {
             setCadenceMs(Math.min(3600, Math.max(5, Math.floor(stated))) * 1000);
           }
         } catch (reason) {
+          // An abort is our own supersession, not a network failure.
+          if (!isCurrent()) return;
           setError(reason instanceof Error ? reason.message : String(reason));
+        } finally {
+          if (inFlight.current === controller) inFlight.current = null;
         }
       }, []);
 
@@ -1559,16 +1686,45 @@ function clientFactory(require) {
       // One effect owns the whole polling cycle: an immediate load on mount,
       // then the cadence the Host last stated. Re-running on `cadenceMs` is
       // what lets a changed rate take effect without a reload.
+      //
+      // The interval is stopped while the tab is hidden — nobody is watching
+      // the screen, and every poll keeps a Host connection open — and a single
+      // load fires on the way back, which also gives a stale "更新于" line
+      // something fresh to say.
       useEffect(() => {
         let alive = true;
+        let timer = null;
         const run = () => {
           if (alive) void load();
         };
+        const start = () => {
+          if (timer === null) timer = setInterval(run, cadenceMs);
+        };
+        const stop = () => {
+          if (timer !== null) {
+            clearInterval(timer);
+            timer = null;
+          }
+        };
         run();
-        const timer = setInterval(run, cadenceMs);
+        start();
+        const onVisibility = () => {
+          if (!alive) return;
+          if (document.visibilityState === "hidden") stop();
+          else {
+            run();
+            start();
+          }
+        };
+        if (typeof document !== "undefined" && document.addEventListener) {
+          document.addEventListener("visibilitychange", onVisibility);
+        }
         return () => {
           alive = false;
-          clearInterval(timer);
+          stop();
+          if (typeof document !== "undefined" && document.addEventListener) {
+            document.removeEventListener("visibilitychange", onVisibility);
+          }
         };
       }, [load, cadenceMs]);
 
@@ -1596,14 +1752,14 @@ function clientFactory(require) {
                 : h(
                     "div",
                     null,
-                    h("div", null, guidance ?? format(tt("panel.error"), { error: failure.message }))
+                    h("div", { role: "alert" }, guidance ?? format(tt("panel.error"), { error: failure.message }))
                   )
             )
         : h(
             "div",
             null,
             shapeWarnings.length > 0
-              ? h("div", { style: S.formError },
+              ? h("div", { style: S.formError, role: "status" },
                   format(tt("panel.shapeDrift"), {
                     detail: shapeWarnings.map((entry) => `${tt("shape.api")} ${entry.api} ${tt("shape.missing")} ${entry.missing}`).join("; ")
                   }))
@@ -1686,7 +1842,7 @@ function clientFactory(require) {
             // With data on screen a failure is a stale-data warning, so it rides
             // in the header; without data the body already explains it.
             failure && data
-              ? h("span", { style: S.error, title: failure.message }, format(tt("panel.error"), { error: failure.message }))
+              ? h("span", { style: S.error, role: "status", title: failure.message }, format(tt("panel.error"), { error: failure.message }))
               : null,
             h("button", { type: "button", style: S.button, onClick: () => void load() }, tt("panel.refresh")),
             h("button", { type: "button", style: S.button, onClick: () => onClose?.() }, tt("panel.back"))
@@ -1788,19 +1944,22 @@ function clientFactory(require) {
     const panel = Object.freeze({
       interpretSnapshot,
       viewOf,
+      errorOfStatus,
       dictionaries: Object.freeze({ zh, en }),
       tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
       styles: S,
       helpers: Object.freeze({
         clock,
         clockLong,
+        when,
         count,
         format,
         HIDE_ALL_MODELS,
         modelIsOn,
         allowListFor,
         toggleModelIn,
-        setAllModelsIn
+        setAllModelsIn,
+        bulkModelsIn
       }),
       components: Object.freeze({
         QuotaCard,

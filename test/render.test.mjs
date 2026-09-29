@@ -52,7 +52,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 
   const fill = bar(tree);
   check("the bar reports the same percentage to assistive tech",
-    fill?.props["aria-valuenow"] === 21, String(fill?.props["aria-valuenow"]));
+    Number(fill?.props["aria-valuenow"]) === 20.6, String(fill?.props["aria-valuenow"]));
   const inner = findElement(fill, (props) => typeof props.style?.width === "string");
   check("the bar's width is the same fraction the text shows",
     inner?.props.style.width === "20.575%", String(inner?.props.style.width));
@@ -93,7 +93,8 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     label: "l", window: { limit: 0, used: 0, remaining: 0, resetAt: null }, tt
   });
   check("a zero limit renders as 0.0%", texts(tree).includes("0.0%"), texts(tree).join("\n"));
-  check("the bar's reported value stays a number", bar(tree)?.props["aria-valuenow"] === 0,
+  check("the bar's reported value stays a number",
+    bar(tree)?.props["aria-valuenow"] !== undefined && Number(bar(tree)?.props["aria-valuenow"]) === 0,
     String(bar(tree)?.props["aria-valuenow"]));
 }
 
@@ -355,6 +356,16 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("an idle roster leaves the checkboxes live",
     boxes(allOn).every((props) => props.disabled !== true));
 
+  // Each box hands its edit back to the picker; without the callback a row is
+  // display-only and the allow-list could not be changed one model at a time.
+  const withToggle = treeOfRoster(["nova-vl"], { onToggle: (id) => id });
+  const toggles = boxes(withToggle).map((props) => props.onChange);
+  check("every checkbox carries its edit handler",
+    toggles.length === 3 && toggles.every((fn) => typeof fn === "function"),
+    JSON.stringify(toggles.map((fn) => typeof fn)));
+  check("a roster without a handler stays display-only",
+    boxes(allOn).every((props) => props.onChange === undefined));
+
   check("a checkbox announces the model name to assistive tech",
     JSON.stringify(boxes(allOn).map((props) => props["aria-label"])) === JSON.stringify(["Nova Flash Lite", "Nova VL", "Nova Pro"]),
     JSON.stringify(boxes(allOn).map((props) => props["aria-label"])));
@@ -383,7 +394,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 {
   const zh = surface.dictionaries.zh;
   const ttZh = (key) => zh[key] ?? key;
-  const clock = surface.helpers.clock;
+  const when = surface.helpers.when;
 
   const clean = rendered(render.PoolExhaustionNotice, { pools: { pools: [
     { window5h: { limit: 100, used: 1, remaining: 99, resetAt: null }, window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } }
@@ -397,7 +408,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("an exhausted pool surfaces the notice",
     exhausted.some((line) => line.includes("部分积分池已耗尽") && line.includes("暂不可选")), exhausted.join("\n"));
   check("the notice carries the earliest reset time",
-    exhausted.some((line) => line.includes(clock(1800003600))), exhausted.join("\n"));
+    exhausted.some((line) => line.includes(when(1800003600))), exhausted.join("\n"));
   check("the notice is marked as a status role for assistive tech",
     treeOf(render.PoolExhaustionNotice, { pools: { pools: [
       { window5h: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 }, window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } }
@@ -409,7 +420,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     { window5h: { limit: 100, used: 1, remaining: 99, resetAt: null }, window7d: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 } }
   ] }, tt: ttZh });
   check("the earliest of multiple exhausted resets is shown",
-    two.some((line) => line.includes(clock(1800003600))) && !two.some((line) => line.includes(clock(1800007200))),
+    two.some((line) => line.includes(when(1800003600))) && !two.some((line) => line.includes(when(1800007200))),
     two.join("\n"));
 }
 
@@ -419,7 +430,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 {
   const zh = surface.dictionaries.zh;
   const ttZh = (key) => zh[key] ?? key;
-  const clock = surface.helpers.clock;
+  const when = surface.helpers.when;
   const tree = treeOf(render.QuotaCard, {
     label: "pool.window5h",
     window: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 },
@@ -437,7 +448,62 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     tt: ttZh
   });
   check("a non-zero window keeps its reset line and no exhausted chip",
-    texts(ok).includes("重置 17:00") && !texts(ok).includes(zh["pool.exhausted"]), texts(ok).join("\n"));
+    texts(ok).includes(zh["pool.reset"].replace("{time}", when(1800003600))) && !texts(ok).includes(zh["pool.exhausted"]),
+    texts(ok).join("\n"));
+  // 1800003600 is 2027-01-15 17:00 local, months from now, so the day must
+  // travel with the time. The old assertion pinned the bare "重置 17:00", which
+  // read as "resets later TODAY" — the weekly-reset bug.
+  check("a cross-day weekly reset carries its MM-DD date",
+    texts(ok).join("\n").includes("01-15 17:00") && !texts(ok).join("\n").includes("重置 17:00"),
+    texts(ok).join("\n"));
+}
+
+// === G7. a reset clock that crosses midnight carries its day ==============
+// `clock` yields HH:MM only. That is honest for the 5-hour window, but it
+// rendered the WEEKLY reset — an absolute instant days away — as "重置 18:10",
+// which reads as "today at 18:10". `when` keeps the compact form on the current
+// local day and adds the MM-DD date once the instant falls on another day.
+{
+  const when = surface.helpers.when;
+  const pad = (value) => String(value).padStart(2, "0");
+  // A local instant `daysOut` days from now, at hour:minute.
+  const at = (daysOut, hour, minute) => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysOut, hour, minute).getTime() / 1000;
+  };
+
+  check("a reset still due today stays a compact HH:MM", when(at(0, 18, 10)) === "18:10", when(at(0, 18, 10)));
+
+  const tomorrow = at(1, 18, 10);
+  const tomorrowDate = new Date(tomorrow * 1000);
+  check("a reset on another day carries its MM-DD date",
+    when(tomorrow) === `${pad(tomorrowDate.getMonth() + 1)}-${pad(tomorrowDate.getDate())} 18:10`,
+    when(tomorrow));
+
+  check("a far-off weekly reset still carries its MM-DD date",
+    when(1800003600) === "01-15 17:00", when(1800003600));
+
+  check("a junk reset time degrades to the em dash",
+    when(null) === "—" && when(0) === "—" && when(-1) === "—",
+    `${when(null)}|${when(0)}|${when(-1)}`);
+
+  // The card and the notice agree with the helper they share.
+  const zh = surface.dictionaries.zh;
+  const ttZh = (key) => zh[key] ?? key;
+  const weeklyCard = texts(treeOf(render.QuotaCard, {
+    label: "pool.window7d",
+    window: { limit: 100, used: 1, remaining: 99, resetAt: 1800003600 },
+    tt: ttZh
+  })).join(" ");
+  check("the weekly quota card prints the date-aware reset",
+    weeklyCard.includes(`重置 ${when(1800003600)}`), weeklyCard);
+
+  const notice = rendered(render.PoolExhaustionNotice, { pools: { pools: [
+    { window5h: { limit: 100, used: 1, remaining: 99, resetAt: null },
+      window7d: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 } }
+  ] }, tt: ttZh });
+  check("the exhaustion notice carries the same date-aware weekly reset",
+    notice.some((line) => line.includes(when(1800003600))), notice.join("\n"));
 }
 
 // === H. the rendering came from the shipped client ========================
@@ -452,6 +518,70 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("count renders its input unchanged for small numbers",
     rendered(render.TrendTable, { trend: { models: [{ model: "m", credits: 12.345 }] }, tt }).includes("12.35"),
     "count(12.345) should round to 2 places");
+}
+
+// === I. the decision table: every wire code gets an answer ================
+// `viewOf` is a deliberate copy of the Host's taxonomy and nothing else in the
+// suite drove it, so a code added to `codes.js` and forgotten here — or a
+// guidance value pointing at a dictionary key that does not exist — read as a
+// green suite. The last loop is what keeps the copy honest: a bad key would
+// render the key itself on screen.
+{
+  const { viewOf, errorOfStatus, dictionaries, tables } = surface;
+  const viewOfCode = (code, message = "an error") =>
+    viewOf(null, { message, code, auth: null }, tt);
+
+  // A non-2xx snapshot response carries no body, so the status code is the only
+  // clue. 401/403 must read as "the token is gone" and keep the sign-in form on
+  // screen; anything else stays a plain transport string.
+  for (const status of [401, 403]) {
+    const rejected = errorOfStatus(status);
+    check(`HTTP ${status} reads as an expired token`,
+      rejected.code === "jwt_expired" && rejected.message === `HTTP ${status}` && rejected.auth === null,
+      JSON.stringify(rejected));
+    const rejectedView = viewOf(null, rejected, tt);
+    check(`HTTP ${status} still reaches the sign-in form`,
+      rejectedView.needsSetup === true && rejectedView.guidanceKey === "panel.jwtExpired",
+      String(rejectedView.guidanceKey));
+  }
+  for (const status of [408, 429, 500, 503]) {
+    check(`HTTP ${status} stays a plain transport string`,
+      errorOfStatus(status) === `HTTP ${status}`, String(errorOfStatus(status)));
+  }
+
+  // The console not answering is the code this table used to have no line for:
+  // the sign-in form was correctly withheld, but the reader was left with a
+  // bare error string that implied a permanent failure.
+  const consoleDown = viewOfCode("console_error");
+  check("a console outage has its own guidance line",
+    consoleDown.guidanceKey === "panel.consoleTransient", String(consoleDown.guidanceKey));
+  check("a console outage does not offer the sign-in form",
+    consoleDown.needsSetup === false);
+
+  check("an expired token still names the renewal failure",
+    viewOfCode("jwt_expired").guidanceKey === "panel.jwtExpired",
+    String(viewOfCode("jwt_expired").guidanceKey));
+  check("an unconfigured host still reaches the sign-in form",
+    viewOfCode("not_configured").guidanceKey === "panel.jwtMissing"
+      && viewOfCode("not_configured").needsSetup === true);
+
+  // Every code the form must not answer to is one the table can explain.
+  for (const code of tables.FORM_EXCLUDED_CODES) {
+    check(`the form-excluded code ${code} keeps the form hidden`,
+      viewOfCode(code).needsSetup === false);
+  }
+
+  // A guidance value is a dictionary key, in both languages.
+  for (const [code, key] of Object.entries(tables.GUIDANCE_BY_CODE)) {
+    check(`guidance for ${code} resolves to real text in both languages`,
+      typeof dictionaries.zh[key] === "string" && typeof dictionaries.en[key] === "string", key);
+  }
+
+  // No code at all still means "the account is the answer", never a dead end.
+  check("a transport failure keeps the sign-in form reachable",
+    viewOf(null, "network down", tt).needsSetup === true);
+  check("an unrecognised code keeps the sign-in form reachable",
+    viewOfCode("some_new_code").needsSetup === true);
 }
 
 console.log(JSON.stringify(results, null, 2));

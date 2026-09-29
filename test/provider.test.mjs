@@ -382,6 +382,21 @@ const BASE_URL = "https://token.sensenova.cn/v1";
       JSON.stringify(clientSurface.helpers.setAllModelsIn(["a", "b"], true)) === JSON.stringify([]));
     check("setAllModelsIn: untick all is the sentinel spelling",
       JSON.stringify(clientSurface.helpers.setAllModelsIn(["a", "b"], false)) === JSON.stringify([HIDE_ALL_MODELS]));
+    // A bulk edit applies to the VISIBLE rows only, but the result stays a
+    // complete allow-list: the rows outside the current view keep whatever the
+    // Host already offers. The last case is the regression that turned the
+    // picker's "tick all" into a save that hid every model, when the caller
+    // handed {id} objects to a helper that wants id strings.
+    check("bulkModelsIn: ticking a visible row joins the allow-list",
+      JSON.stringify(clientSurface.helpers.bulkModelsIn(["b"], ["a", "b", "c"], ["c"], true)) === JSON.stringify(["b", "c"]));
+    check("bulkModelsIn: ticking from the sentinel restores the picked row only",
+      JSON.stringify(clientSurface.helpers.bulkModelsIn([HIDE_ALL_MODELS], ["a", "b", "c"], ["a"], true)) === JSON.stringify(["a"]));
+    check("bulkModelsIn: unticking one leaves the rest offered",
+      JSON.stringify(clientSurface.helpers.bulkModelsIn([], ["a", "b", "c"], ["b"], false)) === JSON.stringify(["a", "c"]));
+    check("bulkModelsIn: unticking the filtered view keeps the unseen rows",
+      JSON.stringify(clientSurface.helpers.bulkModelsIn([], ["a", "b", "c"], ["a"], false)) === JSON.stringify(["b", "c"]));
+    check("bulkModelsIn: unticking everything is the sentinel spelling",
+      JSON.stringify(clientSurface.helpers.bulkModelsIn([], ["a", "b"], ["a", "b"], false)) === JSON.stringify([HIDE_ALL_MODELS]));
     // allowListFor is the funnel: every spelling it emits is one the Host reads
     // the way the picker shows it.
     check("allowListFor: a partial set is emitted in roster order",

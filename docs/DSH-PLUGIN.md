@@ -19,12 +19,12 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 
 ## 2. bundle 结构（本插件 `package.json` 真实字段）
 
-> 以下片段为**教学示意**，以仓库内真实 [package.json](../package.json) 为准；它不被任何测试钉住，改动 package.json 字段后请同步本片段。
+> 以下片段为**教学示意**，以仓库内真实 [package.json](../package.json) 为准；`test/docs.test.mjs` 会核对 `name` / `version` / `main` 与 `files` 数组，改动 package.json 后请同步本片段，漏改会让该套件红。
 
 ```jsonc
 {
   "name": "dsh-connect-sensenova-token-plan",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "main": "./index.js",                 // Host 半边入口
   "exports": {
     ".": "./index.js",
