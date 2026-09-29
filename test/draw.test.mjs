@@ -306,6 +306,21 @@ async function rejects(fn) {
     check("after the window the tool works again", recovered.url === "https://img/ok.png");
   }
   {
+    const message = await rejects(() => makeTool({ getEntries: [] }).execute({ prompt: "a cat" }));
+    check("a junk getEntries source degrades with the catalog hint", /没有出图模型/.test(message ?? ""), message);
+  }
+  {
+    const liveCatalog = [
+      { id: "sensenova-u1-fast", output_modalities: ["image"] },
+      { id: "sensenova-u1.5-lite", output_modalities: ["image"] },
+      { id: "sensenova-6.8", input_modalities: ["text"] }
+    ];
+    const tool = makeTool({ getEntries: async () => liveCatalog });
+    const result = await tool.execute({ prompt: "a cat" });
+    check("an async getEntries (the index.js shape) is awaited and used",
+      result.model === "sensenova-u1-fast");
+  }
+  {
     const message = await rejects(() => makeTool({ isDisposed: () => true }).execute({ prompt: "a cat" }));
     check("a disposed plugin refuses draws", /no longer mounted/.test(message ?? ""), message);
   }

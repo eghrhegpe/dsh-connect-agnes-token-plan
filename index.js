@@ -573,7 +573,19 @@ function apply(ctx, config = {}, deps = {}) {
         defineDrawTool({
           defineTool,
           resolveApiKey,
-          getEntries: () => providerState.entries,
+          // The draw's discovery set is the catalog, NOT the LLM offer: the
+          // picker's allow-list is a filter on what the picker OFFERS, and
+          // silently binding the agent's image tools to that curation would
+          // drop a draw model from the tool's world the moment a user trimmed
+          // the picker. The full persisted catalog is read at call time
+          // (after mount an empty read is a no-op — `catalog-store.list()` is
+          // cached in memory), so a catalog refresh lands without re-registering.
+          getEntries: async () => {
+            const live = Array.isArray(providerState.entries) && providerState.entries.length > 0
+              ? providerState.entries
+              : await catalogStore.list().catch(() => []);
+            return Array.isArray(live) ? live : [];
+          },
           settings,
           fetchImpl: drawFetch,
           isDisposed: () => disposed

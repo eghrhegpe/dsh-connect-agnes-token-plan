@@ -276,8 +276,11 @@ export function createDrawCooldown(cooldownMs = DRAW_COOLDOWN_MS) {
  * @param {Function} options.defineTool - the peer's tool factory.
  * @param {Function} options.resolveApiKey - async `() => Promise<string>`, the
  *   live `SENSENOVA_API_KEY` value (empty when unset).
- * @param {Function} options.getEntries - `() => catalog entries`, read at call
- *   time so a catalog refresh is picked up without re-registration.
+ * @param {Function} options.getEntries - `() => catalog entries` (sync or
+ *   async), read at call time so a catalog refresh is picked up without
+ *   re-registration. The caller (`index.js`) hands the FULL persisted catalog,
+ *   not the picker's allow-list-filtered offer — the curation binds the picker,
+ *   never the agent's tools.
  * @param {object} options.settings - `{ apiBase, drawModelId, drawTimeoutMs }`.
  * @param {Function} options.fetchImpl - the fetch for `drawOnce`.
  * @param {object} [options.cooldown] - a `createDrawCooldown()` gate.
@@ -334,7 +337,13 @@ export function defineDrawTool({
       if (typeof apiKey !== "string" || apiKey.trim() === "") {
         throw new Error("SENSENOVA_API_KEY 未配置：在面板「模型接入」粘贴 sk- Key，或设置该环境变量");
       }
-      const entries = Array.isArray(getEntries?.()) ? getEntries() : [];
+      let picked;
+      try {
+        picked = (await getEntries?.()) ?? [];
+      } catch {
+        picked = [];
+      }
+      const entries = Array.isArray(picked) ? picked : [];
       const model = pickDrawModel(entries, params?.model, settings?.drawModelId);
       if (model === null) {
         throw new Error(
