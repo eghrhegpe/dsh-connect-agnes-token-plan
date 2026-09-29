@@ -184,6 +184,57 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - **探测结果缓存（避免重复花费）**：推理档位需实测（网关只部分校验）、实测花积分，故按「账号 + 目录行指纹」缓存结论（有效期 14 天），上游改行即作废重测。若我们未来做推理档位实测（目前靠官方目录声明），可借鉴指纹缓存。
 - **429 处理（反例，确认取舍）**：其 `retryPolicy` 传 `undefined` 用默认，所有 429 当 `soft_rate` 甩给 pi-ai 默认重试，**不做配额耗尽 vs 限频分诊**。这恰是我们 `llm-retry.js` 已做得更细之处，且印证「Token Plan 硬配额池需精细治理」是 raccoon 触及不到的维度——不要回退。
 
+### 6.1.1 桌面端登录态作为「第二条登录路径」：已实测否决，实施延后
+
+> **状态（2026-09-29）**：**不做**，但**保留原理与复测判据**。方向上是「最终仍想融」，
+> 因此这里只钉结论与前置门禁——**实施统一推迟到本体稳定之后**，本块不阻塞任何主线。
+
+**结论**：小浣熊桌面端的登录态**不能**作为本插件 OIDC 之外的第二条登录路径。
+原因不是权限没开，而是**两个独立认证域**。
+
+**实测证据**（2026-09-29，只读探针，token 只在内存中过一遍 `Authorization` 头，
+未落盘、未进日志）：
+
+| 观测 | 结果 |
+|---|---|
+| 桌面 `~/.box-agent/config/auth.json` 的 JWT claims | `iss` 为**数字型 App 级标识**（本例 `721217`），**无 `aud`、无 `scope`** |
+| `GET platform.sensenova.cn/lite/console/v1/tokenplan/pool-usage`（带该 token） | `401` `auth_token_invalid` / `Invalid access token` |
+| `GET token.sensenova.cn/v1/models`（同上） | `401`，`{"code":16,"message":"Forbidden"}` |
+
+对照本插件自己的令牌：Hydra 签发、`client_id=nova`、`scope=openid offline offline_access`
+（见 [SENSENOVA-API.md](./SENSENOVA-API.md) §1）。**令牌这一层就不通用**——
+换登录方式（扫码 / 短信 / 深链回调）也绕不过去。
+
+**同期核实的上游事实**（来自 `upstream/deepseek-harness-codearts-master`，即
+`dsh-codearts-auth`）：
+
+- 小浣熊桌面官方授权链路 `office-raccoon://auth/callback` 在网页里**写死**，
+  宿主侧 Node 进程收不到回调；第三方插件只能自建登录流（微信扫码 / 短信验证码）。
+  故「读桌面 `auth.json`」是**捷径而非唯一路径**。
+- `desktop/v1/login/points/grant` 是小浣熊「桌面端登录奖励（每号一次）」端点，
+  但其积分属于**小浣熊域（`xiaohuanxiong.com`）**，不是 Token Plan 积分池——
+  对 §6「签到 / 每日领取」边界仍不适用。
+
+**三条凭据路线（原理；未来真要融时先回到这张表对形态）**：
+
+| 路线 | 做法 | 代表 | 风险面 |
+|---|---|---|---|
+| 只读桌面登录态 | 读 App 凭据文件、绝不写回，刷新结果写插件自有副本 | workbuddy 类 | 低：不可能弄坏 App 的登录 |
+| 回写桌面登录态 | 上游 refresh 是单次使用语义，必须把轮换后的令牌写回 App 文件 | 小浣熊桌面 | 高：写坏即把用户登出 App |
+| 自有登录 + 凭据服务 | 自己走 OAuth / 扫码，凭据只进 DSH 凭据服务 | **本插件**、codearts | 低，但每个产品要各写一套 |
+
+**若未来要融，正确形态是「第二上游 provider」而不是「第二登录路径」**：把
+`xiaohuanxiong.com/api/web/llm/v2` 注册为独立 provider（opt-in、默认关、
+独立凭据生命周期、不碰 Token Plan 池语义）。它撞
+[ARCHITECTURE.md](./ARCHITECTURE.md) §5 不变量 3（只吸收与商汤 Key/账号线强相关的
+能力），属「合规 / 授权分叉」，须先定方向——**不默认吸收**。
+
+**复测判据（本体稳定后、开工前先跑，1 次只读请求）**：拿桌面 `access_token` 打
+`GET platform.sensenova.cn/lite/console/v1/tokenplan/pool-usage`；
+`200` = 认证域已合并（本结论被推翻，可继续）；`401 auth_token_invalid` = 仍然判死。
+
+**前置门禁**：本插件本体稳定——§2.1 / §2.2 两个 P0 已落地且无挂起中的吸收项。
+
 ## 7. 优先级与时间盒
 
 | 优先级 | 项 | 侵入性 | 门禁 |
@@ -195,6 +246,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 | **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.js`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.js` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs`（56 项）已落地；离线 12 套件全绿 |
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
+| **P2（观望）** | 小浣熊 desktop 融合：桌面端登录态 / 第二上游 provider（§6.1.1，**已实测否决**，只留原理与复测判据） | 高（新上游 + 新凭据生命周期） | **等本体稳定后再评估**；开工前先跑 §6.1.1 的 1 次只读复测 |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 
 > **顺序约束**：两个 P0（§2.1 / §2.2）已落地（2026-09），是后续任何「继续吸收」的前置门禁。

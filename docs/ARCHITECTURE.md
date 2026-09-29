@@ -233,6 +233,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 | `dsh-draw-router` | 绘图路由，含 `sensenova-u1-fast` 出图 | 出图路由的对接参考（`sensenova-u1-fast` 即 catalog 里 output 为 `["image"]` 的出图模型，§5.1 已识别）；参考件放 `upstream/dsh-draw-router/` 作对照 |
 | `mmx-quota-tool` | 聚合面板基准：实时积分面板、跨 provider 汇总、用量告警 | 面板 UX 基准（实时性、告警形态）向它对齐；跨 provider 聚合本身**不**吸收 |
 | `dsh-provider-quota` / `dsh-musage` | 品类对照：泛化的「provider 额度面板」 | 定位边界样本：本插件不泛化成通用额度面板，只深耕商汤 |
+| `dsh-codearts-auth`（`upstream/deepseek-harness-codearts-master`） | **多 provider 聚合登录插件**：codearts / buddy / workbuddy / lobsterai / qoder / loomy / raccoon / trae 各写一套自有登录流（IAM OAuth、扫码轮询、短信），凭据一律进 DSH 凭据服务；其中小浣熊走微信扫码——因官方深链回调 `office-raccoon://auth/callback` 写死、宿主 Node 收不到 | 「自有登录 + 凭据服务」形态的完整先例（与本插件同机制）；其跨 provider 泛化正是 §5 不变量 3 划出的边界，**不吸收**。小浣熊部分的事实见 [ROADMAP.md](./ROADMAP.md) §6.1.1 |
 
 ### 5.4 出图对接点：dsh-draw-router 源码级对照（2026-09-29）
 
