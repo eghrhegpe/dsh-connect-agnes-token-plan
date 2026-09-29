@@ -374,6 +374,72 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     boxes(treeOf(render.ModelRoster, { models: "nope", enabledIds: [], tt })).length === 0);
 }
 
+// === G5. the exhaustion notice explains WHY models vanish and WHEN back ===
+// When a pool hits zero the host drops its models from the picker; without this
+// line the reader sees models disappear with no cause or recovery expectation.
+// The component is hook-free and reads only the snapshot's pools, so the render
+// suite drives the real one. It must stay silent when nothing is exhausted, and
+// must surface the EARLIEST reset among the exhausted windows.
+{
+  const zh = surface.dictionaries.zh;
+  const ttZh = (key) => zh[key] ?? key;
+  const clock = surface.helpers.clock;
+
+  const clean = rendered(render.PoolExhaustionNotice, { pools: { pools: [
+    { window5h: { limit: 100, used: 1, remaining: 99, resetAt: null }, window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } }
+  ] }, tt: ttZh });
+  check("a fully-stocked plan renders no exhaustion notice", clean.length === 0, clean.join("\n"));
+
+  const exhausted = rendered(render.PoolExhaustionNotice, { pools: { pools: [
+    { window5h: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 },
+      window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } }
+  ] }, tt: ttZh });
+  check("an exhausted pool surfaces the notice",
+    exhausted.some((line) => line.includes("部分积分池已耗尽") && line.includes("暂不可选")), exhausted.join("\n"));
+  check("the notice carries the earliest reset time",
+    exhausted.some((line) => line.includes(clock(1800003600))), exhausted.join("\n"));
+  check("the notice is marked as a status role for assistive tech",
+    treeOf(render.PoolExhaustionNotice, { pools: { pools: [
+      { window5h: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 }, window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } }
+    ] }, tt: ttZh })?.props?.role === "status");
+
+  // Two exhausted windows across pools: the EARLIEST reset wins, not the latest.
+  const two = rendered(render.PoolExhaustionNotice, { pools: { pools: [
+    { window5h: { limit: 100, used: 100, remaining: 0, resetAt: 1800007200 }, window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } },
+    { window5h: { limit: 100, used: 1, remaining: 99, resetAt: null }, window7d: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 } }
+  ] }, tt: ttZh });
+  check("the earliest of multiple exhausted resets is shown",
+    two.some((line) => line.includes(clock(1800003600))) && !two.some((line) => line.includes(clock(1800007200))),
+    two.join("\n"));
+}
+
+// === G6. a zeroed quota window is labelled "已耗尽", not just 0 ============
+// The bare "0 / 100%" left the reader to infer exhaustion; a chip names it, and
+// the reset line is suppressed on that window (the notice above carries recovery).
+{
+  const zh = surface.dictionaries.zh;
+  const ttZh = (key) => zh[key] ?? key;
+  const clock = surface.helpers.clock;
+  const tree = treeOf(render.QuotaCard, {
+    label: "pool.window5h",
+    window: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 },
+    tt: ttZh
+  });
+  check("a zeroed window is labelled 已耗尽",
+    texts(tree).includes(zh["pool.exhausted"]), texts(tree).join("\n"));
+  // The reset line must NOT appear on the exhausted window (the notice owns it).
+  check("the exhausted window does not also print its own reset line",
+    !texts(tree).includes(zh["pool.reset"]), texts(tree).join("\n"));
+
+  const ok = treeOf(render.QuotaCard, {
+    label: "pool.window7d",
+    window: { limit: 100, used: 1, remaining: 99, resetAt: 1800003600 },
+    tt: ttZh
+  });
+  check("a non-zero window keeps its reset line and no exhausted chip",
+    texts(ok).includes("重置 17:00") && !texts(ok).includes(zh["pool.exhausted"]), texts(ok).join("\n"));
+}
+
 // === H. the rendering came from the shipped client ========================
 // Reaching here means every extraction marker was found. These checks pin the
 // lifted pieces themselves, so a refactor that silently empties one of them

@@ -87,6 +87,8 @@ function clientFactory(require) {
     "pool.window7d": "每周",
     "pool.used": "已用",
     "pool.remaining": "剩余",
+    "pool.exhausted": "已耗尽",
+    "pool.exhaustedNotice": "部分积分池已耗尽（剩余 0），最早于 {time} 重置；所属模型在额度恢复前暂不可选。",
     "pool.reset": "重置 {time}",
     "pool.grant": "返赠余额 {balance}",
     "pool.grantExpiry": "最近返赠到期 {time}（{balance} 分）",
@@ -192,6 +194,8 @@ function clientFactory(require) {
     "pool.window7d": "Weekly",
     "pool.used": "Used",
     "pool.remaining": "Remaining",
+    "pool.exhausted": "Exhausted",
+    "pool.exhaustedNotice": "Some credit pools are exhausted (0 remaining); the earliest resets at {time}. Models in those pools are unavailable until quota recovers.",
     "pool.reset": "resets {time}",
     "pool.grant": "Grant balance {balance}",
     "pool.grantExpiry": "Next grant expiry {time} ({balance} cr)",
@@ -524,7 +528,9 @@ function clientFactory(require) {
           "div",
           { style: S.quotaTop },
           h("span", { style: S.quotaLabel }, label),
-          h("span", { style: S.quotaReset }, resetAt ? format(tt("pool.reset"), { time: clock(resetAt) }) : "")
+          remaining <= 0
+            ? h("span", { style: { ...S.chip, color: "var(--dsh-alias-state-error-primary)", borderColor: "var(--dsh-alias-state-error-primary)" } }, tt("pool.exhausted"))
+            : h("span", { style: S.quotaReset }, resetAt ? format(tt("pool.reset"), { time: clock(resetAt) }) : "")
         ),
         h(
           "div",
@@ -612,6 +618,49 @@ function clientFactory(require) {
               )
             )
           : null
+      );
+    }
+
+    /**
+     * A top-of-section notice for the "transient exhaustion" case: when one or
+     * more credit pools have hit zero, the picker (host side) drops those pools'
+     * models, so the reader sees models vanish with no explanation. This line
+     * says WHY they vanished and WHEN they are expected back — the earliest
+     * `resetAt` among the exhausted windows — so a zeroed pool reads as
+     * "recovers at HH:MM", never as a mystery.
+     *
+     * Hook-free: it only reads the snapshot's `pools` array, so the render suite
+     * drives the exact component the browser draws. Returns null when nothing is
+     * exhausted (the common case stays silent). It does not guess whether a zero
+     * came from a true quota drain or a rate-limit blip — the panel never sees
+     * the 429 class — it only reports the pool's own reset clock, which is the
+     * one honest recovery signal available here.
+     * @param {{pools?: Array<object>}} props
+     * @param {(key: string) => string} props.tt
+     */
+    function PoolExhaustionNotice({ pools, tt }) {
+      const list = Array.isArray(pools?.pools) ? pools.pools : [];
+      let earliest = 0;
+      let anyExhausted = false;
+      for (const pool of list) {
+        for (const key of ["window5h", "window7d"]) {
+          const win = pool?.[key];
+          if (win && Number(win.remaining) <= 0) {
+            anyExhausted = true;
+            const reset = Number(win.resetAt) || 0;
+            if (reset > 0 && (earliest === 0 || reset < earliest)) earliest = reset;
+          }
+        }
+      }
+      if (!anyExhausted) return null;
+      const time = earliest > 0 ? clock(earliest) : "—";
+      return h(
+        "div",
+        {
+          style: { ...S.formNote, color: "var(--dsw-alias-state-error-primary)", marginTop: 4, marginBottom: 10 },
+          role: "status"
+        },
+        format(tt("pool.exhaustedNotice"), { time })
       );
     }
 
@@ -1568,6 +1617,7 @@ function clientFactory(require) {
               pools && pools.plan.name
                 ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 10 } }, pools.plan.name)
                 : null,
+              h(PoolExhaustionNotice, { pools, tt }),
               h(
                 "div",
                 { style: S.poolsGrid },
@@ -1755,6 +1805,7 @@ function clientFactory(require) {
       components: Object.freeze({
         QuotaCard,
         PoolCard,
+        PoolExhaustionNotice,
         TrendTable,
         SectionCard,
         AccountForm,
