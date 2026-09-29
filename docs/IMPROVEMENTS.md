@@ -92,6 +92,11 @@
      原因"），让注册 provider 的故障对用户可见、可处置。
 - 迁移成本：**零代码**，纯文档 + 面板一行字。风险：低。门禁：`docs.test.mjs`
   （README 行数上限）、`panel.test.mjs`（字典一致性）。
+- **落地状态（2026-09-29）**：文档侧已完成——README 定位句与 `package.json`
+  `description` 改为"connect 全家桶（面板 + provider 注册 + 429 自愈）"，并说明
+  429 误判纠正（见 §3）；**不写**"默认推理通道"。面板侧"推理线健康"行**本已具备**
+  （`ProviderStatus` 渲染 `llm.registered` / `llm.noService` / `llm.error` /
+  `llm.off`，即"已注册 N 模型 / 异常原因"），无需新增。§1.3 完成，零剩余项。
 
 ---
 
@@ -331,11 +336,16 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   `client.js`（浏览器 entry）与测试 seam **都** import 它——单一事实源，Node
   侧直接测 `client-logic.js`（不加载 React），浏览器侧 `client.js` 仍不 import
   任何包（只 `require("react")` + `client-logic.js` 的纯导出）。
-- **前提待验证**：`client-logic.js` 能否被浏览器 module table 解析（它会被
-  `client.js` 相对 import）。需读 Loader 的 client 注入机制确认"相对 import 是否
-  被浏览器端解析"。若不解析，退路：保持 `client.js` 单文件但把 i18n 字典 +
-  决策**外置成数据文件**（`panel-strings.json` / `panel-decision.json`），
-  `client.js` 仍单 entry，只是把 ≈1.9k 行里的静态部分外置。
+- **前提核验（2026-09-29 实测 Loader）**：**不可行，§4.4 判停**。
+  `@deepseek-ai/dsh-client-modules/lib/client.js:698-705` —— 插件 bundle 的同步
+  `require(spec)` 只认 `this.seed`（平台静态 seed 包名），相对路径直接抛
+  "missed the module table"；`require.async` 只接受 build-time 命名的
+  `CLIENT_CHUNK`（`:707-716`）。**client.js 无法相对 import 任何本地模块或
+  JSON**（`package.test.mjs` §5 的"无相对路径 + 只 require react"正是这条纪律的
+  钉子）。因此 4.4a（外置 `panel-strings.json`）与 4.4b（抽 `client-logic.js`）
+  **都走不通**——除非 Loader 未来支持相对 client 模块（等上游/平台，归入 §3.3②
+  同类的"等上游"档）。`client.js` 保持单 entry 内联是当前架构的硬约束，不是可
+  优化项。
 - **推荐**：先做 4.4a（字典/决策数据外置成 JSON，零 Loader 风险，立刻把
   `client.js` 减 ~400 行）；4.4b（纯逻辑抽 `client-logic.js`）作为可选项，
   待验证 Loader 相对 import 能力。
@@ -350,11 +360,11 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 | **P0** | §4.3 `autoRecoverArmed` 布尔 + 面板一行（**Host 侧已落地**；client 渲染行随 `client.js` 并行改动合入） | 低 | 中（量化 UX 代价） | 极低 | `store` + `panel`（已绿） |
 | **P1** | §4.2 CI live-contract job（best-effort + secret） | 极低 | 高（漂移当天可见） | 极低 | CI 新增档 |
 | **P1** | §4.1 状态文件统一（`state-store.js` + 可选 `dsh-atomic-write`） | 中 | 中（删 3 份重复 + 跨进程锁） | 中（新 peer 依赖） | `store` + 新增注入 |
-| **P1** | §4.4a 字典/决策外置成 JSON（`client.js` 瘦 ~400 行） | 低 | 中 | 极低 | `panel` + `render` + `docs`（字典一致性） |
+| **P1** | §4.4a 字典/决策外置成 JSON（`client.js` 瘦 ~400 行） | — | — | — | **判停**：Loader 不支持 client 相对 import（`require` 只认 seed，见 §4.4 前提核验） |
 | **P2** | §2.3 抽 `routes.js` + `lifecycle.js`（`index.js` 瘦到 <300 行） | 中 | 中（接线味收编） | 中（改 2 套测试注入缝） | `routes` + `draw` + `wiring` + `e2e` |
-| **P2** | §1.3 定位对齐（README/文档 + 面板显示推理线健康） | 极低 | 中（消自我矛盾） | 极低 | `docs` + `panel` |
+| **P2** | §1.3 定位对齐（README/文档 + 面板显示推理线健康，**已落地**） | 极低 | 中（消自我矛盾） | 极低 | `docs` + `panel`（已绿） |
 | **P3** | §3.3 ② 上游修 peer + ③ 收紧 peer 范围（生态配合） | — | 高（根除 429 误判） | 中（依赖上游） | 等上游 |
-| **P3** | §4.4b 纯逻辑抽 `client-logic.js`（先验证 Loader） | 中 | 中 | 中 | `panel` + `render` |
+| **P3** | §4.4b 纯逻辑抽 `client-logic.js` | — | — | — | **判停**（同 §4.4a：Loader 硬约束） |
 
 > **不做**（与 §5.3 / ROADMAP §6 边界一致）：跨 provider 通用聚合、多 Key 池、
 > 签到/每日领取（先证商汤有端点）。
