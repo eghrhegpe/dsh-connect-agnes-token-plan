@@ -10,7 +10,7 @@
  * readable orchestrator:
  *
  *   - `host-config.js`    config contract + the `isAdmitted` trust fence
- *   - `routes.js`         the five HTTP route handlers (peer-free, wiring-injected)
+ *   - `routes.js`         the six HTTP route handlers (peer-free, wiring-injected)
  *   - `lifecycle.js`      mount seed / draw tool / vision step two / teardown
  *   - `console-client.js` console/catalog fetch with cache + single-flight
  *   - `parsers.js`        response normalization + shape-drift detection

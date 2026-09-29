@@ -119,7 +119,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 ## 5. 与 Host 的边界（哪些该放插件、哪些归 Host）
 
 - **插件不该做的事**：管理进程生命周期、持有全局状态、碰 Host 隐私数据。插件通过 `ctx`（cordis 容器）拿服务，如 `ctx.webServer`（注册路由）、`ctx.credentials`（凭据服务）、`ctx.slots`（注入 UI）、`ctx.locale`（字典）。
-- **本插件注册的路由**：`GET /api/dsh-connect-sensenova-token-plan/snapshot`（只读聚合）、`GET/POST /api/dsh-connect-sensenova-token-plan/account`（账号配置，同源校验 + body ≤ 4KB）。两条路由都过 `isAdmitted` 同源闸（见 [PITFALLS.md](./PITFALLS.md) 第 13 条）。
+- **本插件注册的路由**（六条，都在 `registerRoutes` 里，全部过 `isAdmitted` 同源闸，见 [PITFALLS.md](./PITFALLS.md) 第 13 条）：`GET|HEAD snapshot`（只读聚合，始终 HTTP 200，成败在 body 的 `ok`/`code`）、`GET|POST account`（账号配置，POST 校验 body ≤ 4KB）、`GET|POST api-key`（`SENSENOVA_API_KEY` 引用存取，响应永不回显明文）、`GET|POST provider`（面板 provider 热开关，`docs/PROVIDER-HOT-RELOAD.md`）、`POST models`（模型允许清单保存）、`GET|POST draw`（出图工具开关）。路由白名单以 `routes.js` 为准——文档这里只给清单与约束，不复制契约。
 - **凭据归 Host 的凭据服务**：账号与 access/refresh token 只经 `@deepseek-ai/dsh-credentials` 落 `~/.dsh/.credentials.yaml`；**密码不落盘**（仅登录瞬间内存使用，`SENSENOVA_PASSWORD` 环境变量是唯一持久来源）。插件自己不写明文文件。没有凭据服务时退化为进程内存（`ephemeral`），重启需重登。
 
 ---
