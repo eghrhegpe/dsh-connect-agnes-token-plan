@@ -107,5 +107,8 @@
     "type": "git",
     "url": "git+https://github.com/eghrhegpe/dsh-connect-sensenova-token-plan.git"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.3"
+  }
 }
