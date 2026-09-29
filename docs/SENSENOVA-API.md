@@ -197,19 +197,31 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 
 **注意**：官方示例图 `https://www.sensenova.cn/marketing-home/showcase-hero.png` 实测直接请求 **400「inference request is invalid」且耗时约 91 秒**——该 URL 本机 HEAD 是 200 `image/png`，但体积 **4.28 MB**，是图太大、不是 URL 不可达。插件 `llm-adapter.js` 的 `requestImageMaxBytes: 1_048_576`（1 MB，dsh-llm 默认）比平台容忍度紧，超限图由插件本地处理，属正常保护。
 
-### 7.5 逐模型实测（2026-09-29，9 个目录模型）
+### 7.5 逐模型实测（2026-09-29 初测，9 个目录模型；2026-09-30 目录漂移复核）
+
+> **2026-09-30 目录漂移**（`live-contract` 首次实跑逮住，证据见基线 `driftLog`）：
+> 平台把 `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-flash` / `glm-5.2` /
+> `kimi-k3` / `deepseek-v4.1-flash` 六家的 `input_modalities` 由 `["text","image"]`
+> **退回** `["text"]`；`sensenova-6.8-flash-lite` 仍为 `["text","image"]`。
+> **推理响应方言不变**——glm-5.2 实测仍吐 `reasoning_content`（2026-09-30 复核），
+> flash-lite 仍吐 `reasoning`。即：本表「思考字段」列与 `reasoning_effort` 支持面
+> **不受此次目录改动影响**；受影响的是插件 vision 识别（`identifyVisionModel` 按
+> `input_modalities` 判定，方向是宽松的「字段说有才算」，回退 `["text"]` 即六家
+> 不再出现在 vision 清单——`test/contract.test.mjs` 已按刷新后的基线全绿）。
+> 目录 `input_modalities` 是平台**声明**能力，不是实测结论；实测能力以本节「思考字段」
+> 列与推理端点响应为准。
 
 | 模型 | 对话可用 | 思考字段 | 实测备注 |
 |---|---|---|---|
-| `sensenova-6.8-flash-lite` | ✅ 200 | `reasoning` | 唯一吐 `reasoning` 的；当天曾整体 404「model is not found」（抖动，见 §7.6） |
-| `deepseek-v4-flash` | ✅ 200 | `reasoning_content` | 思考 ~20–32 rTok；`max` 400、`xhigh` 200 |
-| `deepseek-v4-pro` | ✅ 200 | `reasoning_content` | 思考 ~123 rTok（128 配额几乎全烧） |
-| `deepseek-flash` | ✅ 200 | `reasoning_content` | |
-| `glm-5.2` | ✅ 200 | `reasoning_content` | `max` **200 有效**；思考极烧 token（一句话 126 rTok）；`thinking` object `disabled` 有效（官方文档说会失败，实测可用） |
-| `kimi-k3` | ✅ 200 | `reasoning_content` | **超慢**：关思考 8s、开思考 14s（1 词回复） |
+| `sensenova-6.8-flash-lite` | ✅ 200 | `reasoning` | 唯一吐 `reasoning` 的；当天曾整体 404「model is not found」（抖动，见 §7.6）；**2026-09-30 目录仍声明 `input_modalities:["text","image"]`** |
+| `deepseek-v4-flash` | ✅ 200 | `reasoning_content` | 思考 ~20–32 rTok；`max` 400、`xhigh` 200；**2026-09-30 目录 `input_modalities` 回退 `["text"]`** |
+| `deepseek-v4-pro` | ✅ 200 | `reasoning_content` | 思考 ~123 rTok（128 配额几乎全烧）；**2026-09-30 目录 `input_modalities` 回退 `["text"]`** |
+| `deepseek-flash` | ✅ 200 | `reasoning_content` | **2026-09-30 目录 `input_modalities` 回退 `["text"]`** |
+| `glm-5.2` | ✅ 200 | `reasoning_content` | `max` **200 有效**；思考极烧 token（一句话 126 rTok）；`thinking` object `disabled` 有效（官方文档说会失败，实测可用）；**2026-09-30 目录 `input_modalities` 回退 `["text"]`，推理仍吐 `reasoning_content`（复核 200）** |
+| `kimi-k3` | ✅ 200 | `reasoning_content` | **超慢**：关思考 8s、开思考 14s（1 词回复）；**2026-09-30 目录 `input_modalities` 回退 `["text"]`** |
 | `sensenova-u1-fast` | ❌ **404** | — | 图像生成模型，非对话（`output_modalities:["image"]`）→ 插件选择器已排除（`isChatModel`） |
 | `sensenova-u1.5-lite` | ❌ **404** | — | 同上 |
-| `deepseek-v4.1-flash` | ❌ **403** | — | 目录有、当前 Key 套餐未开通（面板「需开通」）；文档自述 `thinking` object 形态 + 原生 `max`（该 Key 403 未实测） |
+| `deepseek-v4.1-flash` | ❌ **403** | — | 目录有、当前 Key 套餐未开通（面板「需开通」）；文档自述 `thinking` object 形态 + 原生 `max`（该 Key 403 未实测）；**2026-09-30 目录 `input_modalities` 回退 `["text"]`** |
 
 ### 7.6 家族差异与插件取舍
 
@@ -220,3 +232,4 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 - **`max_tokens` 默认（文档）**：flash-lite 65535；v4-flash 非思考 8K / 思考 64K（`max` 档 128K）；v4.1-flash 131072（范围 [1,393216]）；glm 64K（[1,128K]）。目录 `max_output_length` 是权威值（v4.1-flash 目录为 65536，与文档默认 131072 不符——以目录为准）。
 - **U 系列不是对话模型**：`sensenova-u1-fast`/`u1.5-lite` 是图像生成（`output_modalities:["image"]`，独立 images 数组 API），对话端点 404。`llm-models.js` 的 `isChatModel` 按 `output_modalities` 把它们从**选择器 roster、descriptor 列表、注册计数**三处一致排除，杜绝「选了就 404」。
 - **可用性抖动**：flash-lite 当天出现整体 404「model is not found」（连 `reasoning_effort:"high"` 对照都 404）。按错误码文档（§14）404 = 模型下线或不存在，遇到先查平台状态，不是参数语义。
+- **目录声明 ≠ 实测能力（2026-09-30 复核）**：`input_modalities` 是平台的**声明字段**，插件 vision 识别（`identifyVisionModel`）按它判定（`"image"` ∈ `input_modalities` 才算看图，方向宽松——缺字段不算）。2026-09-29 初测时 6 家 DeepSeek/GLM/Kimi 系声明 `["text","image"]`，2026-09-30 平台把其中 5 家（`deepseek-v4-flash`/`v4-pro`/`deepseek-flash`/`glm-5.2`/`kimi-k3`，外加 403 的 `deepseek-v4.1-flash`）退回 `["text"]`，`sensenova-6.8-flash-lite` 仍声明 `["text","image"]`。**推理响应方言不受此次目录改动影响**：glm-5.2 复核仍 200 且吐 `reasoning_content`，flash-lite 仍吐 `reasoning`。即：目录回退只影响插件 vision 清单（5 家从「可看图」掉出），不影响思考透出。`test/contract.test.mjs` 按刷新后的基线（`visionInput:false`）全绿；`live-contract` 是抓这类目录漂移的护栏，红了先查基线 `driftLog`，再决定是否随平台刷新。

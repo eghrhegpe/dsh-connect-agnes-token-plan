@@ -17,9 +17,75 @@
 - **决策**：吸收 `st-rotator` 的两条纪律——① 先分诊「限频（可退避）vs 配额不足（别空转）」；② 降速退避而非继续冲——但**不吸收多 Key 池化**。
 - §5 的「拟吸收」行已据本文件改为「429 自愈（退避 + 分诊），不做多 Key 池」。
 
-## 2. 旗舰刀口：429 自愈（全局级，低侵入）✅ 已实现
+## 2. P0：`index.js` 控制面解耦 + 商汤契约自动化回归 ✅ 已实现（2026-09）
 
-### 2.1 配置粒度结论（已查证代码）
+> 来源：2026-09 锐评结论。两个 P0 先于任何「继续吸收」——ROADMAP §0 已承认本插件
+> 是双 profile 的 `agent-default-model`（默认推理通道），`index.js` 1187 行里同时挂着
+> 5 条路由 + `providerState` 状态机 + `publishChain` 串行化 + 两个 fire-and-forget IIFE
+> （catalog seed、draw 注册），复杂度已溢出：注释越解释越拆不动。再谈下一块吸收之前，
+> 先把「控制面」和「契约护栏」立住，否则吸收越快、爆炸半径越大。
+>
+> **落地状态（本节完成时）**：§2.1 抽 `provider-publish.js` + `snapshot-aggregate.js`，
+> `index.js` 从 1187 行瘦到 778 行（wiring F3 经新模块注入仍全绿）；§2.2 落
+> `test/contract.test.mjs`（77 项，进 `npm test`）+ `test/baselines/sensenova-contract.json`
+> （冻结 2026-09-29 实测）+ `test/live-contract.mjs`（`npm run test:live:contract`，手动档）。
+> 离线全量 12 套件 + e2e-gate 全绿。
+
+### 2.1 拆 `index.js`：控制面状态机独立成模块
+
+**现状**（`index.js`，2026-09 实测）：`providerState` 8 字段 + `publishProvider` /
+`publishProviderOnce` / `registerPair` / `releaseProvider` / `catalogSignature` 全内联在
+`apply()` 闭包里；路由 handler 直接读写 `providerState`。`test/wiring.test.mjs` 的
+F3（并发 publish「最后发起者最终注册」门控）依赖对 `index.js` 内部状态的注入，
+所以拆之前必须先给状态机一个可注入的边界。
+
+**做法**（peer-free，离线可测，与 `llm-retry.js` 同纪律）：
+
+| 步骤 | 内容 | 门禁 |
+|---|---|---|
+| ① 抽模块 | 新建 `provider-publish.js`：`createProviderPublisher({ settings, panelSwitch, loadAdapterModule, getLlm, onEvent, logger })` 返回 `{ publish, release, dispose, state }`；内部持有 `publishChain` / `disposed` / `registerPair` 单点定义（PITFALLS §18/§19 语义原样迁移） | `test/wiring.test.mjs` F3 改为对新模块注入（gate 语义不变），原 F3 红→绿即完成 |
+| ② 瘦 router | `index.js` 只留路由 handler + 快照组装 + 各 store 接线；`providerState` 改为 `publisher.state` 只读引用；目标 `index.js` < 700 行 | `test/routes.test.mjs` + `test/provider.test.mjs` 全绿；快照 14 键契约零改动（`docs.test.mjs` §5 门禁） |
+| ③ 第二个 IIFE 收编 | draw 注册（`index.js:558-597` 的 `void (async () => {...})()`）改走 publisher 的 `onEvent` 钩子或独立 `draw-register.js`，与 ① 同批评审 | `test/draw.test.mjs` 全绿；快照契约仍零改动（工具缺席时 14 键不变） |
+
+**不变量**：① 并发语义（`publishChain` 串行、`disposed` 闸、慢者赢修复）与 ② 回滚语义
+（`registerPair` 单点、factory 结果 await + 形状校验）必须**原样**迁过去，不是重写；
+`test/wiring.test.mjs` F3 是钉死并发语义的最后一道测试，拆完它必须仍红能抓同样的竞态。
+**完成判据**：`index.js` 无 `providerState` 字段声明、`index.js` 行数 < 700、
+wiring/routes/provider/draw 四套件全绿、e2e-gate 通过。
+
+### 2.2 商汤契约自动化回归（把 §20/§21 的实测从一次性变可复跑）
+
+**现状**：ROADMAP §0 引用的「40+ 实测请求」与 `PITFALLS.md` §20/§21 的方言表
+（thinking 形态、`reasoning_effort` 取值、采样规则、404/403 模型清单）全靠 2026-09-29
+一次性手工实测维持，`docs/SENSENOVA-API.md` §7 是注释层，**没有自动化护栏**——
+商汤下次改一个 400 语义就又是一轮 40 请求。`test/live-jwks.test.mjs` 已证明
+「live 档不进 `npm test`、手动 `npm run test:live`」这套纪律在本仓库可复用。
+
+**做法**（与 `live-jwks` 同型：离线骨架进门禁，live 重放手动跑）：
+
+| 档 | 文件 | 内容 | 门禁 |
+|---|---|---|---|
+| 离线 | `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/sensenova-contract.json`（冻结 2026-09-29 实测：9 模型的 thinking 形态 / reasoning_effort 支持面 / 采样参数 / `context_length` / 模态 / 404-403 标记） | 断言 `llm-models.js` 的 `toPiDescriptor` / `identifyVisionModel` / `isChatModel` / `exhaustedModelIds` 对契约表的输出与冻结值一致；`parsers.js` 对契约表的解析结果；`codes.js` 的 reason 折叠对 429/quota 文案的分类。契约表改动必须附「平台响应原文」证据（提交约定） | `npm test` 全绿 |
+| live | `test/live-contract.mjs`（不进 `npm test`，`npm run test:live:contract`） | 对 `token.sensenova.cn/v1/models` 发 1 请求核对 9 模型目录仍含冻结字段（模态 / context_length / max_output_length / supported_sampling_parameters）；推理端点按契约表**每格 1 请求、限流友好**（每格失败记漂移不重试），红 = 平台方言漂移，修法走 `SENSENOVA-API.md` §7 注释层，不静默改代码 | 手动 / CI best-effort（同 `live-jwks`） |
+
+**完成判据**：`test/contract.test.mjs` 进 `package.json` 的 `test` 脚本链；
+`test/baselines/sensenova-contract.json` 字段与 `SENSENOVA-API.md` §7.5 逐模型表一一对应；
+live 档在 `package.json` 加 `test:live:contract` 脚本（与 `test:live` 并列）。
+
+### 2.3 顺序约束（防漂移）
+
+- §2.1 与 §2.2 **互不依赖，可并行**（不同文件域：§2.1 碰 `index.js`/`wiring`，
+  §2.2 碰 `test/`+`package.json` 脚本）；但**都先于**任何「继续吸收」
+  （§6.1 raccoon 机制点、§5 doctor、§6 明确不做清单之外的新模块）。
+- §2.1 完成前，**冻结「大统一」下一块吸收**——`index.js` 还挂着 5 路由 + 2 个
+  IIFE 时再加模块，会重演 PITFALLS §18「慢者赢」的并发陷阱面。
+- §2.2 的 live 档失败**不是回归**（同 `live-jwks` 纪律）：平台改字段时它红，
+  修法是更新 `test/baselines/sensenova-contract.json` + `SENSENOVA-API.md` §7 注释，
+  不是改 `llm-models.js` 逻辑去迁就平台。
+
+## 3. 旗舰刀口：429 自愈（全局级，低侵入）✅ 已实现
+
+### 3.1 配置粒度结论（已查证代码）
 
 | 检查点 | 结论 |
 |---|---|
@@ -30,7 +96,7 @@
 
 per-model 可用性标记即用户要的「清单自带识别」——但它是 **availability 信号**，不是 retry 配置，不碰 peer 钩子，随 `publishProvider` 重建即生效。
 
-### 2.2 落地分层（peer-free 与 peer 依赖分离）
+### 3.2 落地分层（peer-free 与 peer 依赖分离）
 
 > spike 已查实：429 的「配额超限 vs 限频」**分类已由 peer 完成**，不需要我们重写。
 > `dsh-llm-pi-ai/lib/index.js:1376` 的 `classifyPiAiError` 把 429 消息分成
@@ -44,7 +110,7 @@ per-model 可用性标记即用户要的「清单自带识别」——但它是 
 - **quota→provider 桥 — 已实现**：快照处理器用 `exhaustedModelIds(pools)`（`llm-models.js`）算出借尽池覆盖的模型集，经 `publishProvider(entries, enabledIds, unavailableModelIds)` 透传给 `createSensenovaAdapter`，由 `buildDescriptors` 在 picker 侧排除（避免发出必 429 的请求）；另以 `quotaSignature`（`index.js`）去抖，仅在额度跨越零点时触发一次重注册（memoize 约束下唯一生效路径）。
 - **per-model 可用性（「清单自带识别」）— 已实现**：`buildDescriptors`（`llm-models.js`）按 `pool.remaining<=0` 在 picker 侧排除借尽模型；面板则通过 `rosterWithAvailability(entries, pools)` 列出全部 chat 模型并附 `available`/`quotaExhausted` 标记（始终可见、灰色显示原因）。不依赖 peer 钩子，随 `publishProvider` 重建即生效。
 
-### 2.3 spike 结论（已查证）：memoize → 走 re-registration
+### 3.3 spike 结论（已查证）：memoize → 走 re-registration
 
 `PiAiAdapter.current()`（`dsh-llm-pi-ai/lib/index.js:1759`）用
 `if (this.snapshot?.profiles === profiles) return this.snapshot;` 做记忆化，**key 是
@@ -53,7 +119,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 
 因此「池耗尽即降级」走 **B 路（spike 前已预判的真实分支）**：在 quota 状态变化时触发一次
 `publishProvider`，复用现有 catalog 签名去抖思路、加 `quota-signature` 即可整体重建 adapter、
-重算 `resolveRetryPolicy`。这同时驱动 §2.2 的 per-model 可用性标记（本就走 `publishProvider`），
+重算 `resolveRetryPolicy`。这同时驱动 §3.2 的 per-model 可用性标记（本就走 `publishProvider`），
 **两个能力共用一个重注册信号，全局、低侵入**。
 
 **已排除的 C 路（精确窗口退避）**：peer 的 `dsh-llm-retry` 在 `failure.providerRetryAfterMs`
@@ -63,12 +129,12 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 推理侧响应钩子把 `Retry-After` 转成 `providerRetryAfterMs`，而该钩子面本次未在 peer 中查证到公开
 入口。**C 路非必需**（默认已对 `RATE_LIMIT` 退避），列为 deferred，不阻塞主线。
 
-### 2.4 测试（按域裁剪，禁全量）
+### 3.4 测试（按域裁剪，禁全量）
 
 - `test/retry.test.mjs` 已落地（peer-free）：断言 `buildRetryPolicyConfig` 形状（排除 QUOTA/ACCOUNT_QUOTA、保留 RATE_LIMIT）、`exhaustedModelIds`、`buildDescriptors` 排除借尽模型、`rosterWithAvailability` 标记；peer 可达时额外断言 `resolveRetryPolicy` 解析结果。
 - 验证只跑 `parsers` / `provider` / `auth` 相关 + 新增 `retry`；**不跑全量**（`AGENTS.md` 并行纪律：禁连跑全量 vitest 卡死用户机）。
 
-## 3. 官方文档保真：不提炼、不 git rm、保留逐字原文
+## 4. 官方文档保真：不提炼、不 git rm、保留逐字原文
 
 `docs/sensenova-api-reference/*.md`（12 个，商汤**官方一手信源**，已由 `.txt` 改名 `.md`）的处理原则已据评审纠偏——**原「提炼回 SENSENOVA-API.md 后 git rm」方案作废**，理由：
 
@@ -84,46 +150,50 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - **不做**：提炼/转述、把官方原文合并进 SENSENOVA-API.md、`git rm` 官方副本。
 - **不做**「把 `upstream/` 拉进库」的反向操作（`upstream/` 仍 gitignored、独立历史）。
 
-## 4. P1：CLI `doctor --json`
+## 5. P1：CLI `doctor --json`
 
 - 零平台依赖，降最长登录链路排障成本；workbuddy 侧独有缺口。
 - 离线可测，归入 `config` / `parsers` 套件验证。
 
-## 5. 明确不做（边界，写死防止漂移）
+## 6. 明确不做（边界，写死防止漂移）
 
 - **多 Key 池化**：同池无效，已纠偏（§1）。
 - **签到 / 每日领取**：先证商汤有端点，否则不吸。
 - **不再往 `upstream/` 拉新项目**，除非同时定义「提炼出口」（吸知识不吸代码）。
 - **跨 provider 通用聚合**：不吸收 `dsh-provider-quota` / `dsh-musage` 的泛化定位（见 §5.3）。
 
-## 5.1 竞品参照：raccoon 的机制点（可选模式范本）
+## 6.1 竞品参照：raccoon 的机制点（可选模式范本）
 
 > 仅作**机制参考，不抄代码**。参照对象：`liudapeng0311/dsh-raccoon-work`（DSH 小浣熊 Connect，接入商汤小浣熊桌面 App 模型）。
 > 关键事实：它接的是**小浣熊桌面 App 登录态网关**（`xiaohuanxiong.com/api/web/llm/v2` + box-agent 登录态文件），**不是** Token Plan 配额池——限流宇宙与我们不同，故「它不限速」是源差异、非技术碾压。
 
 可借鉴的机制点（纯架构，不移植实现）：
 
-- **零配置复用桌面 App 登录态（接入模式范本）**：读 App 自维护的登录态文件，不另起 OAuth 流，账号切换自动跟随。若未来做「App 登录态直连」可选 provider 模式，这是骨架——但属合规/授权分叉，需先定方向（见 §5 边界，不默认吸收）。
+- **零配置复用桌面 App 登录态（接入模式范本）**：读 App 自维护的登录态文件，不另起 OAuth 流，账号切换自动跟随。若未来做「App 登录态直连」可选 provider 模式，这是骨架——但属合规/授权分叉，需先定方向（见 §6 边界，不默认吸收）。
 - **刷新令牌单用回写（必要纪律）**：上游刷新是单用语义，会服务端轮换 refresh token，必须把轮换后的对回写 App 登录态文件，否则 App 下次撞 `refresh_conflict` 被登出；冲突时先重读 App 文件拿有效令牌再继续。任何「回读桌面凭证」模式都必须照搬，否则会卡住用户登录面（同源于 AGENTS.md 并行纪律）。
 - **信封→HTTP 状态翻译（shim 范本）**：网关用 `{code, message, data}` 信封 + 业务码（积分不足 `200402`/`200429`、限频短语「频繁 / rate limit」）表达语义，插件翻译成 HTTP 状态（401/402/429）交给 pi-ai 默认重试。我们 `codes.js` 的 `RATE_LIMITED` 分诊哲学可参考其写法。
 - **探测结果缓存（避免重复花费）**：推理档位需实测（网关只部分校验）、实测花积分，故按「账号 + 目录行指纹」缓存结论（有效期 14 天），上游改行即作废重测。若我们未来做推理档位实测（目前靠官方目录声明），可借鉴指纹缓存。
 - **429 处理（反例，确认取舍）**：其 `retryPolicy` 传 `undefined` 用默认，所有 429 当 `soft_rate` 甩给 pi-ai 默认重试，**不做配额耗尽 vs 限频分诊**。这恰是我们 `llm-retry.js` 已做得更细之处，且印证「Token Plan 硬配额池需精细治理」是 raccoon 触及不到的维度——不要回退。
 
-## 6. 优先级与时间盒
+## 7. 优先级与时间盒
 
 | 优先级 | 项 | 侵入性 | 门禁 |
 |---|---|---|---|
+| **P0 ✅** | `index.js` 控制面解耦（§2.1：`provider-publish.js` + `snapshot-aggregate.js` 抽状态机与聚合、`index.js` 1187→778 行、5 路由 + 2 IIFE 收编） | 中（纯重构，快照契约零改动） | `test/wiring.test.mjs` F3 经新模块注入仍全绿 + `routes`/`provider`/`draw` 四套件全绿 + `e2e-gate` |
+| **P0 ✅** | 商汤契约自动化回归（§2.2：`test/contract.test.mjs` 77 项进 `npm test` + `test/live-contract.mjs` live 手动档 + `test/baselines/sensenova-contract.json` 冻结 2026-09-29 实测） | 低（纯测试基建，不碰运行时） | `npm test` 全绿；`package.json` 加 `test:live:contract` 脚本 |
 | **P0 ✅** | 429 spike + 配额联动（全局策略 `llm-retry.js` + per-model 可用性 `llm-models.js` + `index.js` quota 重注册） | 低（1 行 peer + peer-free 分类器 + 状态文件桥） | `e2e-gate`（dsh CLI 在则实跑）；`test/retry.test.mjs` 已落地 |
 | **P0 文档** | §5 纠偏 + 本文入库 | 无（仅 doc） | `docs.test.mjs` |
 | **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.js`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.js` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs`（56 项）已落地；离线 12 套件全绿 |
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
-| P1（可选） | §3 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
+| P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 
-## 7. 关联文档
+> **顺序约束**：两个 P0（§2.1 / §2.2）已落地（2026-09），是后续任何「继续吸收」的前置门禁。
+
+## 8. 关联文档
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) §5 — 定位与边界（本文承接，不复制其表）
 - [AGENTS.md](../AGENTS.md) — 验证裁剪、红线
 - [TESTING.md](./TESTING.md) — `docs.test.mjs` 孤儿文件 / 跨文件重复表规则
-- [SENSENOVA-API.md](./SENSENOVA-API.md) — 商汤接口全集（§3 保真：链接官方原文，不提炼）
+- [SENSENOVA-API.md](./SENSENOVA-API.md) — 商汤接口全集（§4 保真：链接官方原文，不提炼）
 - [PITFALLS.md](./PITFALLS.md) — 改代码前避坑（§16 peer 解析、§6 凭据事故）

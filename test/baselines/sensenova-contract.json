@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "source": "SENSENOVA-API.md §7 (2026-09-29 实测，9 目录模型)",
+    "note": "冻结 2026-09-29 实测契约。改表必须附平台响应原文证据（提交约定）。",
+    "baseUrl": "https://token.sensenova.cn/v1",
+    "apiKeyRef": "SENSENOVA_API_KEY",
+    "driftLog": [
+      {
+        "date": "2026-09-30",
+        "change": "平台目录 input_modalities 回退：deepseek-v4-flash / deepseek-v4-pro / deepseek-flash / glm-5.2 / kimi-k3 / deepseek-v4.1-flash 的 input_modalities 由 [\"text\",\"image\"] 退回 [\"text\"]（sensenova-6.8-flash-lite 仍为 [\"text\",\"image\"]）。推理响应方言不变（glm-5.2 仍吐 reasoning_content、flash-lite 仍吐 reasoning）。基线 visionInput 字段据 live-contract 实测刷新。",
+        "evidence": "GET /v1/models 2026-09-30 返回 deepseek-v4-flash input_modalities=[\"text\"]；POST /v1/chat/completions glm-5.2 响应 message.reasoning_content 存在（'say hi in 3 words' → 'Hi'）。"
+      }
+    ]
+  },
+  "models": [
+    {
+      "id": "sensenova-6.8-flash-lite",
+      "chat": true,
+      "visionInput": true,
+      "thinkingField": "reasoning",
+      "reasoningEffort": { "max": false, "xhigh": false, "none": true, "default": "high" },
+      "thinkingObject": "untested",
+      "status": "ok",
+      "contextLength": 262144,
+      "maxOutputLength": 65536,
+      "supportedSamplingParameters": ["temperature", "stop"]
+    },
+    {
+      "id": "deepseek-v4-flash",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "reasoning_content",
+      "reasoningEffort": { "max": false, "xhigh": true, "none": true, "default": "high" },
+      "thinkingObject": "ok",
+      "status": "ok",
+      "supportedSamplingParameters": ["temperature", "stop"]
+    },
+    {
+      "id": "deepseek-v4-pro",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "reasoning_content",
+      "reasoningEffort": { "max": false, "none": true, "default": "high" },
+      "thinkingObject": "ok",
+      "status": "ok",
+      "supportedSamplingParameters": ["temperature", "stop"]
+    },
+    {
+      "id": "deepseek-flash",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "reasoning_content",
+      "reasoningEffort": { "none": true, "default": "high" },
+      "thinkingObject": "ok",
+      "status": "ok",
+      "supportedSamplingParameters": ["temperature", "stop"]
+    },
+    {
+      "id": "glm-5.2",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "reasoning_content",
+      "reasoningEffort": { "max": true, "none": true, "default": "high" },
+      "thinkingObject": "ok",
+      "status": "ok",
+      "supportedSamplingParameters": ["temperature", "stop"]
+    },
+    {
+      "id": "kimi-k3",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "reasoning_content",
+      "reasoningEffort": { "none": true, "default": "high" },
+      "thinkingObject": "unknown",
+      "status": "ok",
+      "supportedSamplingParameters": ["temperature", "stop"]
+    },
+    {
+      "id": "sensenova-u1-fast",
+      "chat": false,
+      "visionInput": false,
+      "imageGen": true,
+      "status": "404"
+    },
+    {
+      "id": "sensenova-u1.5-lite",
+      "chat": false,
+      "visionInput": false,
+      "imageGen": true,
+      "status": "404"
+    },
+    {
+      "id": "deepseek-v4.1-flash",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "reasoning_content",
+      "reasoningEffort": { "max": "doc-claimed", "none": true, "default": "high" },
+      "thinkingObject": "doc-claimed",
+      "status": "403"
+    }
+  ]
+}

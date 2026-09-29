@@ -7,9 +7,10 @@
 ## 1. 运行
 
 ```powershell
-npm test       # 依次跑 auth / store / routes / panel / render / parsers / provider / config / package / docs / wiring，末尾 e2e-gate（无 dsh CLI 则 SKIP）
+npm test       # 依次跑 auth / store / routes / panel / render / parsers / provider / config / package / docs / wiring / contract，末尾 e2e-gate（无 dsh CLI 则 SKIP）
 npm run test:e2e    # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
 npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可达
+npm run test:live:contract # 仅 live-contract.mjs，需联网 + SENSENOVA_API_KEY，重放商汤推理契约
 ```
 
 测试**无需 `npm install`**：`@deepseek-ai/dsh-credentials` 是 Host 里的 peer 依赖，由 `test/peer-roots.mjs` 在 DSH 运行时里就地解析（`$DSH_HOME` → 插件 `node_modules` → 默认安装位置 `~/.dsh/dsh-asar-unpacked` → 打包安装目录）。找不到时会列出每个候选根**各自失败的原因**，而不是静默跳过或只报搜索路径。`config.test.mjs` 不依赖任何 peer，干净检出即可跑。
@@ -30,8 +31,10 @@ npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可
 | `test/config.test.mjs` | **配置单一事实源钉子**：`CONFIG_DEFAULTS` 与 `cordis.patch.yml` 不得静默漂移；不依赖 peer，干净检出即可跑 |
 | `test/package.test.mjs` | **打包清单钉子**：从 `main`/`exports` 走静态 import 闭包，可达模块必须在 `files` 里（曾漏 5 个 → tarball 加载即崩）；反向钉住"`files` 里却无人引用"的死重；不依赖 peer，干净检出即可跑 |
 | `test/docs.test.mjs` | **文档一致性钉子**：内部链接全部可解析、同一张表格不出现在 ≥2 个文件（防多源事实）、根 `README.md` 行数上限、`DSH-PLUGIN.md` 教学快照与 `package.json` 同步、**`API.md` 快照示例与契约键集一致**；不依赖 peer，干净检出即可跑 |
+| `test/contract.test.mjs` | **商汤推理契约回归（离线档）**：`test/baselines/sensenova-contract.json`（冻结 2026-09-29 实测：9 目录模型的 thinking 形态 / reasoning_effort 支持面 / 采样参数 / context_length / 模态 / 404-403 标记）驱动 `llm-models.js` 的 `toPiDescriptor` / `isChatModel` / `buildDescriptors` / `exhaustedModelIds` / `thinkingLevelMapFor` 与 `parsers.js` 的归一、`llm-retry.js` 的 429/quota 分类；红 = 代码偏离冻结契约，修法走 `SENSENOVA-API.md` §7 + 基线刷新 |
 | `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误；第三步的可选 `ctx.get("llm")` 注册对（`registerAdapter` + `registerConfigurableProviders`，id `sensenova-token-plan`）、opt-in 关闭不注册、fiber dispose 释放注册对与三条路由 |
 | `test/live-jwks.test.mjs` | （仅 `test:live`）真实拉取 JWKS 文档，确认封包公钥可达 |
+| `test/live-contract.mjs` | （仅 `test:live:contract`）重放 `test/baselines/sensenova-contract.json` 对商汤推理端点：`/v1/models` 目录核对 + 少量 `reasoning_effort:"none"` 探针（限流友好，每格 1 请求不重试）；红 = 平台方言漂移，**不是回归**，修法走 `SENSENOVA-API.md` §7 注释层 |
 
 不碰真实账号的保证：网络层打桩，密码用临时密钥加密，不发往商汤；`routes.test.mjs` 用真实响应形状但全 stub。
 

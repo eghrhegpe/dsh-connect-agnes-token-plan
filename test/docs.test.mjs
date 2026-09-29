@@ -115,7 +115,7 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
 }
 
 // 5) API.md 快照示例 JSONC ↔ 声明契约
-// 契约键集是 API.md 与 index.js 之外的第三个事实源：示例手滑打错字段、或文档了代码里
+// 契约键集是 API.md 与代码之外的第三个事实源：示例手滑打错字段、或文档了代码里
 // 不存在的键，都会红。示例是带省略号与注释的 JSONC，先剥注释（保字符串内 // 不动）再解析。
 {
   const apiDoc = readFileSync(join(ROOT, "docs", "API.md"), "utf8");
@@ -158,9 +158,18 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
       const docKeys = Object.keys(parsed).sort().join(",");
       if (docKeys !== canonical) bad(`API.md 快照示例顶层键与契约不符：\n  文档：${docKeys}\n  契约：${canonical}`);
       else note("API.md 快照示例顶层键与契约一致（14 键）");
+      // The contract keys must appear in the code that BUILDS the snapshot
+      // body. That is `snapshot-aggregate.js` (the extracted aggregation half)
+      // plus `index.js` (which still assembles the error-path bodies and
+      // carries the key names through its route handlers). Either file may
+      // carry a key; both are required to be import-reachable from index.js.
       const indexSrc = readFileSync(join(ROOT, "index.js"), "utf8");
-      const missing = canonical.split(",").filter((k) => !new RegExp(`\\b${k}\\b`).test(indexSrc));
-      if (missing.length) bad(`契约键在 index.js 中未出现：${missing.join(", ")}`);
+      const aggregateSrc = existsSync(join(ROOT, "snapshot-aggregate.js"))
+        ? readFileSync(join(ROOT, "snapshot-aggregate.js"), "utf8")
+        : "";
+      const sourceText = `${indexSrc}\n${aggregateSrc}`;
+      const missing = canonical.split(",").filter((k) => !new RegExp(`\\b${k}\\b`).test(sourceText));
+      if (missing.length) bad(`契约键在快照构建源码中未出现：${missing.join(", ")}`);
     }
   }
 }
