@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Shared value readers and the error constructor used across the Host half.
  *
@@ -5,6 +6,18 @@
  * for. Centralising them stops copies from drifting apart the way the error-code
  * taxonomy once did.
  * @module dsh-connect-sensenova-token-plan/util
+ */
+
+/**
+ * The error `pluginError` actually produces at runtime: an `Error` with a
+ * stable `code` the panel branches on, plus optional structured fields the
+ * panel and trace read. The fields are attached, not inherited, so this is a
+ * structural annotation, not a subclass.
+ * @typedef {Error & {
+ *   code: import("./codes.js").CodeValue,
+ *   retryAfterMs?: number,
+ *   detail?: string
+ * }} PluginError
  */
 
 /** Read a finite positive number, else the fallback. */
@@ -81,13 +94,17 @@ export function numOrNull(value) {
  * carries optional structured fields (retryAfterMs, detail) that the panel
  * and the trace need; only defined extras are copied, so an absent field
  * stays absent rather than reading as a zero.
- * @param {string} code - a {@link import("./codes.js").CODE} value.
+ *
+ * The runtime value is a plain `Error` with these fields attached; the
+ * {@link PluginError} type records that shape so a `catch (e)` downstream can
+ * read `e.code` as more than a hopeful guess.
+ * @param {import("./codes.js").CodeValue} code - a {@link import("./codes.js").CODE} wire value.
  * @param {string} message - human-readable description.
- * @param {object} [extra] - optional structured fields.
- * @returns {Error}
+ * @param {{ retryAfterMs?: number, detail?: string }} [extra] - optional structured fields.
+ * @returns {PluginError}
  */
 export function pluginError(code, message, extra = {}) {
-  const error = new Error(message);
+  const error = /** @type {PluginError} */ (new Error(message));
   error.code = code;
   if (extra.retryAfterMs !== undefined) error.retryAfterMs = extra.retryAfterMs;
   if (extra.detail !== undefined) error.detail = extra.detail;

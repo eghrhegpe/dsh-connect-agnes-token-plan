@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Console response parsing and shape-drift detection.
  *

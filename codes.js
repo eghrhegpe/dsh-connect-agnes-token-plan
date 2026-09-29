@@ -167,6 +167,15 @@ export function isCredentialRefusal(code) {
 }
 
 /**
+ * Union of the wire values of {@link CODE} (e.g. `"config"`, `"login_rejected"`).
+ *
+ * Any `@ts-check` module that annotates a field against this gets a compile
+ * error when it misspells a code — the exact class of silent failure the three
+ * hand-copied lists used to allow.
+ * @typedef {typeof CODE[keyof typeof CODE]} CodeValue
+ */
+
+/**
  * Failures that no sign-in can fix — the ones the panel must not answer with
  * the account form.
  *
