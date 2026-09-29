@@ -15,9 +15,15 @@
  * purpose: it is a PEER, so the runtime copy is whatever the Host shipped, and
  * a devDep copy's declarations would describe a version this plugin does not
  * control — a confidently-wrong shape is worse here than an honest `any`.
+ *
+ * `react` is the same story from the browser side: `client.js` ships unbuilt
+ * and gets React from the shell's module table (or a stand-in in the Node
+ * suites), so there is no installed copy to resolve and no honest shape to
+ * declare beyond its existence.
  */
 declare module "@deepseek-ai/dsh-tools";
 declare module "@deepseek-ai/dsh-llm";
 declare module "@deepseek-ai/dsh-llm-pi-ai";
 declare module "@earendil-works/pi-ai";
 declare module "@earendil-works/pi-ai/api/openai-completions.lazy";
+declare module "react";

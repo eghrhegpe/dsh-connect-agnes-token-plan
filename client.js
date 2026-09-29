@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * dsh-connect-sensenova-token-plan — Client half.
  *
@@ -708,7 +709,9 @@ function clientFactory(require) {
      * came from a true quota drain or a rate-limit blip — the panel never sees
      * the 429 class — it only reports the pool's own reset clock, which is the
      * one honest recovery signal available here.
-     * @param {{pools?: Array<object>}} props
+     * @param {object} props
+     * @param {{pools?: Array<object>}} [props.pools] - the snapshot's pools
+     *   block; its own `pools` array holds one entry per credit pool.
      * @param {(key: string) => string} props.tt
      */
     function PoolExhaustionNotice({ pools, tt }) {
@@ -839,12 +842,17 @@ function clientFactory(require) {
      *   exactly one of the two is non-null.
      */
     function interpretSnapshot(body) {
-      if (body && body.ok === false) {
+      // The body is validated by the checks themselves, so the shape is
+      // asserted here rather than pretended at the signature: a non-object
+      // body (a string, `null`) must keep falling through to the same two
+      // refusals it always has.
+      const payload = /** @type {{ok?: unknown, error?: unknown, code?: unknown, auth?: unknown}|null|undefined} */ (body);
+      if (payload && payload.ok === false) {
         // The code is kept to pick the guidance rather than the message.
-        return { data: null, error: { message: body.error || "unexpected payload", code: body.code, auth: body.auth ?? null } };
+        return { data: null, error: { message: payload.error || "unexpected payload", code: payload.code, auth: payload.auth ?? null } };
       }
-      if (!body || body.ok !== true) return { data: null, error: "unexpected payload" };
-      return { data: body, error: null };
+      if (!payload || payload.ok !== true) return { data: null, error: "unexpected payload" };
+      return { data: payload, error: null };
     }
 
     /**
@@ -2067,8 +2075,12 @@ const REGISTRATION = { id: "dsh-connect-sensenova-token-plan", factory: clientFa
 // In every world the SAME `clientFactory` is what the panel runs, so the Node
 // suites exercise the browser's own decision, tables, and components — never a
 // copy and never a scrape of this source text.
-if (typeof window !== "undefined" && window.__ModuleLoader__ !== undefined) {
-  window.__ModuleLoader__.load(REGISTRATION);
+if (typeof window !== "undefined") {
+  // The module table is shell-attached, so the DOM lib does not declare it.
+  // Asserted once here — the same face `client-surface.js` installs before it
+  // imports this bundle in Node.
+  const loader = /** @type {Window & typeof globalThis & {__ModuleLoader__?: {load: (registration: object) => void}}} */ (window).__ModuleLoader__;
+  if (loader !== undefined) loader.load(REGISTRATION);
 }
 if (typeof module !== "undefined" && module !== null && module.exports !== undefined) {
   module.exports = REGISTRATION;
