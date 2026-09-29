@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * One taxonomy for every failure this plugin reports.
  *
@@ -115,6 +116,7 @@ export const IAM_REASON_CODES = Object.freeze({
  * avoid repeating. Parking it would write a throttle record on every fresh
  * install and then report `needsUserAction` to a user who has done nothing
  * wrong yet.
+ * @type {ReadonlySet<string>}
  */
 export const CREDENTIAL_REFUSALS = Object.freeze(new Set([
   CODE.LOGIN_REJECTED,
@@ -129,6 +131,7 @@ export const CREDENTIAL_REFUSALS = Object.freeze(new Set([
  * set is what keeps that distinction honest — a code the auth half can produce
  * MUST be in here, or it will be reported as `console_error` and the user will
  * be told the wrong thing.
+ * @type {ReadonlySet<string>}
  */
 export const AUTH_FAILURE_CODES = Object.freeze(new Set([
   CODE.JWKS,
@@ -153,7 +156,7 @@ export const AUTH_FAILURE_CODES = Object.freeze(new Set([
  * @returns {boolean} true when the token could not be obtained.
  */
 export function isAuthFailure(error) {
-  const code = error === null || typeof error !== "object" ? undefined : error.code;
+  const code = error === null || typeof error !== "object" ? undefined : /** @type {{ code?: unknown }} */ (error).code;
   return typeof code === "string" && AUTH_FAILURE_CODES.has(code);
 }
 

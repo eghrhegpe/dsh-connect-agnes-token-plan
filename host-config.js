@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The plugin's configuration contract and the Host trust fence.
  *

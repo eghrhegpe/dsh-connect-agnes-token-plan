@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The snapshot route's DATA AGGREGATION — the peer-free pure half.
  *
