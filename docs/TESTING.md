@@ -7,7 +7,7 @@
 ## 1. 运行
 
 ```powershell
-npm test       # 依次跑 auth / store / routes / panel / render / parsers / provider / config / package / docs / wiring / contract，末尾 e2e-gate（无 dsh CLI 则 SKIP）
+npm test       # 依次跑 auth / store / routes / panel / render / parsers / provider / config / package / docs / wiring / contract / retry / draw，末尾 e2e-gate（无 dsh CLI 则 SKIP）
 npm run test:e2e    # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
 npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可达
 npm run test:live:contract # 仅 live-contract.mjs，需联网 + SENSENOVA_API_KEY，重放商汤推理契约
@@ -29,9 +29,11 @@ npm run test:live:contract # 仅 live-contract.mjs，需联网 + SENSENOVA_API_K
 | `test/parsers.test.mjs` | **控制台响应解析层**（纯函数、无网络）：字符串数值与 epoch 归一（§11）、`reset_at="0"` 不得读成 1970、`checkShape` 双向漂移检测（§12 `shapeWarnings` 的来源）、trend 对 points **求和**而非取首个 |
 | `test/provider.test.mjs` | **第三步纯逻辑层（无 peer、干净检出可跑）**：`llm-models` descriptor 映射（vision 自动识别、`supportsDeveloperRole:false`、不声明 maxTokens 值、contextWindow fallback、去重、允许清单空=不过滤）、`catalog-store`（版本号拒绝、损坏即忽略、原子往返、只读目录降级内存）、`provider-store`（开关归一、面板值持久与重挂载读取、版本号拒绝、非布尔即未设置、forget 回退配置默认）、`api-key-store`（credentials→memory→env 优先级、save/forget、forget 不动环境变量、凭据服务故障穿透） |
 | `test/config.test.mjs` | **配置单一事实源钉子**：`CONFIG_DEFAULTS` 与 `cordis.patch.yml` 不得静默漂移；不依赖 peer，干净检出即可跑 |
-| `test/package.test.mjs` | **打包清单钉子**：从 `main`/`exports` 走静态 import 闭包，可达模块必须在 `files` 里（曾漏 5 个 → tarball 加载即崩）；反向钉住"`files` 里却无人引用"的死重；不依赖 peer，干净检出即可跑 |
+| `test/package.test.mjs` | **打包清单 + 门禁名册双钉子**：从 `main`/`exports` 走静态 import 闭包，可达模块必须在 `files` 里（曾漏 5 个 → tarball 加载即崩）；反向钉住"`files` 里却无人引用"的死重；**钉住「磁盘上的 `*.test.mjs` ↔ `npm test` 链 ↔ CI 离线 job」三处一致**（retry/draw 曾各自绿着躺在磁盘上、两个门禁都不跑它们，就是这个钉子要防的漂移）；`live-jwks.test.mjs` 是唯一显式豁免（联网档，默认不得进链）；不依赖 peer，干净检出即可跑 |
 | `test/docs.test.mjs` | **文档一致性钉子**：内部链接全部可解析、同一张表格不出现在 ≥2 个文件（防多源事实）、根 `README.md` 行数上限、`DSH-PLUGIN.md` 教学快照与 `package.json` 同步、**`API.md` 快照示例与契约键集一致**；不依赖 peer，干净检出即可跑 |
 | `test/contract.test.mjs` | **商汤推理契约回归（离线档）**：`test/baselines/sensenova-contract.json`（冻结 2026-09-29 实测：9 目录模型的 thinking 形态 / reasoning_effort 支持面 / 采样参数 / context_length / 模态 / 404-403 标记）驱动 `llm-models.js` 的 `toPiDescriptor` / `isChatModel` / `buildDescriptors` / `exhaustedModelIds` / `thinkingLevelMapFor` 与 `parsers.js` 的归一、`llm-retry.js` 的 429/quota 分类；红 = 代码偏离冻结契约，修法走 `SENSENOVA-API.md` §7 + 基线刷新 |
+| `test/retry.test.mjs` | **429 自愈逻辑层（peer-free）**：`buildRetryPolicyConfig` 形状（排除 QUOTA/ACCOUNT_QUOTA、保留 RATE_LIMIT）、`exhaustedModelIds`、`buildDescriptors` 排除借尽模型、`rosterWithAvailability` 标记；peer 可达时追加断言 `resolveRetryPolicy` 的解析结果；不依赖 peer 的部分干净检出可跑 |
+| `test/draw.test.mjs` | **出图模块（peer-free，如 `provider.test.mjs`）**：端点拼接（`apiBase` 各种写法归一）、结构化识别 image-output 模型（看字段、绝不用名字正则）、挑选优先级、wire body 钳制、响应解析、失败分诊（429 配额 vs 限频）、`drawOnce` 对假 fetch（成功/分类失败/超时）、失败冷却门、`defineDrawTool` 用直通 `defineTool` + 假 store 端到端 |
 | `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误；第三步的可选 `ctx.get("llm")` 注册对（`registerAdapter` + `registerConfigurableProviders`，id `sensenova-token-plan`）、opt-in 关闭不注册、fiber dispose 释放注册对与三条路由 |
 | `test/live-jwks.test.mjs` | （仅 `test:live`）真实拉取 JWKS 文档，确认封包公钥可达 |
 | `test/live-contract.mjs` | （仅 `test:live:contract`）重放 `test/baselines/sensenova-contract.json` 对商汤推理端点：`/v1/models` 目录核对 + 少量 `reasoning_effort:"none"` 探针（限流友好，每格 1 请求不重试）；红 = 平台方言漂移，**不是回归**，修法走 `SENSENOVA-API.md` §7 注释层 |

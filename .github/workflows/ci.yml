@@ -2,9 +2,13 @@ name: CI
 
 # Two tiers, on purpose.
 #
-#   offline — the ten peer-free / stubbed-network suites. These are the real
-#             gate: they run on a clean checkout with no DSH install and no
-#             network (test/peer-roots.mjs installs a sentinel that fails any
+#   offline — the full offline suite list (see package.json's `test` script,
+#             minus the e2e-gate tail). The roster is pinned three ways by
+#             test/package.test.mjs: disk ↔ `test` script ↔ this job, so a
+#             suite that is written but not gated, or gated but not run here,
+#             goes red instead of rotting silently.
+#             These are the real gate: they stub the network
+#             (test/peer-roots.mjs installs a sentinel that fails any
 #             request escaping a stub), so a red here is always a regression.
 #   e2e     — boots a REAL `dsh web` process against a fake platform. It proves
 #             the loader, routes, and trust fence assemble correctly — the class
@@ -48,10 +52,14 @@ jobs:
           node test/panel.test.mjs
           node test/render.test.mjs
           node test/parsers.test.mjs
+          node test/provider.test.mjs
           node test/config.test.mjs
           node test/package.test.mjs
           node test/docs.test.mjs
           node test/wiring.test.mjs
+          node test/contract.test.mjs
+          node test/retry.test.mjs
+          node test/draw.test.mjs
 
   e2e:
     name: End-to-end (best effort)
