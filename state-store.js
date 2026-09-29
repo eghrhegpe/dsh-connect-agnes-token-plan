@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 状态文件公共原语 —— 把三个 store（throttle / catalog / provider）此前各自
  * 手写的同一段"版本载荷 + temp 文件 + rename 原子 + 0600 + 损坏即忽略"收敛

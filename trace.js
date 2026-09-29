@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Login-trace persistence.
  *

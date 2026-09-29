@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * dsh-connect-sensenova-token-plan — where the sign-in throttle lives.
  *
@@ -16,7 +17,7 @@
  *
  * @module dsh-connect-sensenova-token-plan/throttle-store
  */
-import { rename, rm } from "node:fs/promises";
+import { readFile, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { str, num } from "./util.js";
@@ -64,7 +65,7 @@ function legacyThrottleFile() {
  */
 function parse(raw, now) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const body = raw;
+  const body = /** @type {{ version?: unknown, code?: unknown, parked?: unknown, until?: unknown, attempt?: unknown }} */ (raw);
   if (num(body.version, 0) !== THROTTLE_VERSION) return null;
   const code = str(body.code, "");
   if (code === "") return null;

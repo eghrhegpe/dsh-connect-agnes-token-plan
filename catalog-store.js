@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The persisted model catalog — this plugin's OWN state file, never the Host's
  * configuration.
@@ -87,20 +88,32 @@ export function normalizeEntries(raw) {
  */
 function parse(raw) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  if (num(raw.version, 0) !== CATALOG_VERSION) return null;
-  const fetchedAt = num(raw.fetchedAt, 0);
+  const body = /** @type {{ version?: unknown, fetchedAt?: unknown, entries?: unknown, enabledModelIds?: unknown }} */ (raw);
+  if (num(body.version, 0) !== CATALOG_VERSION) return null;
+  const fetchedAt = num(body.fetchedAt, 0);
   if (fetchedAt <= 0) return null;
-  const entries = normalizeEntries(raw.entries);
-  const enabledModelIds = normalizeEnabledIds(raw.enabledModelIds);
+  const entries = normalizeEntries(body.entries);
+  const enabledModelIds = normalizeEnabledIds(body.enabledModelIds);
   return { fetchedAt, entries, enabledModelIds };
 }
+
+/**
+ * The store contract both the file-backed and in-memory factories satisfy:
+ * one cached catalog of model entries plus a curated id allow-list.
+ * @typedef {object} CatalogStore
+ * @property {() => Promise<object[]>} list - stored entries, `[]` when none usable.
+ * @property {() => Promise<string[]>} listEnabledIds - allow-list; `[]` means "no filter".
+ * @property {(entries: object[], enabledModelIds?: string[]) => Promise<void>} replace - swap the catalog, preserving the allow-list unless given a new one.
+ * @property {(ids: string[]) => Promise<void>} setEnabledIds - swap ONLY the allow-list.
+ * @property {() => Promise<void>} clear - remove the stored catalog.
+ */
 
 /**
  * A catalog store backed by one atomically-written file.
  * @param {object} [options] - wiring.
  * @param {string} [options.dir] - directory; defaults to {@link catalogDir}.
  * @param {() => number} [options.now] - clock source; injected by the tests.
- * @returns {{list: Function, replace: Function, clear: Function}} the store.
+ * @returns {CatalogStore} the store.
  */
 export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = {}) {
   const file = join(dir, "catalog.json");
@@ -197,7 +210,7 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = 
  * Used by the tests and by hosts given nothing writable; deliberately not the
  * default, like the memory throttle store.
  * @param {() => number} [now] - clock source.
- * @returns {{list: Function, replace: Function, clear: Function}}
+ * @returns {CatalogStore}
  */
 export function createMemoryCatalogStore(now = Date.now) {
   let held = null;

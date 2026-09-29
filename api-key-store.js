@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The SenseNova inference API key (`sk-…`) store — the credential behind the
  * directly-registered LLM provider and the `/v1/models` catalog.
@@ -30,8 +31,8 @@ export const API_KEY_REF = "SENSENOVA_API_KEY";
 
 /**
  * Build the API-key store.
- * @param {object} options - wiring.
- * @param {object|Function|null} options.credentials - the `ctx.credentials`
+ * @param {object} [options] - wiring.
+ * @param {object|Function|null} [options.credentials] - the `ctx.credentials`
  *   service, a resolver, or `null`. Resolved on EVERY use, like token-store:
  *   the service may register after this plugin mounts.
  * @param {object} [options.env] - environment source; defaults to `process.env`.
