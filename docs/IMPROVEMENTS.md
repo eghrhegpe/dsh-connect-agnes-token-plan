@@ -294,6 +294,12 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   失败必然触发重登表单。无需埋点，一个布尔 + 一行字。
 - **投入**：极小（`state()` 加一字段 + 面板一行 + 字典 + 测试断言布尔不回显值）。
   **门禁**：`store.test.mjs` + `panel.test.mjs`（字典一致性 + 不回显红线）。
+- **落地状态（2026-09-29）**：Host 侧已完成——`token-store.js` `state()` 新增
+  `autoRecoverArmed` 布尔（只查 env 密码存在性，值不出 store），`store.test.mjs`
+  新增 4 条断言（无密码/有密码/空密码 + 序列化不含秘密值的红线）；client 侧中英
+  字典（`auth.autoRecoverOn/Off`）与账号区渲染行已在 `client.js` 就位——该文件正
+  含并行未提交改动，client 行随其一并合入提交（未单独带出，见 AGENTS.md 并行纪律）。
+  门禁 `store` + `panel` 已绿。
 
 ### 4.4 `client.js` 单体 ≈1.9k 行 → 纯逻辑抽 peer-free 兄弟模块
 
@@ -327,7 +333,7 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 | 序 | 项 | 侵入性 | 收益 | 风险 | 门禁 |
 |---|---|---|---|---|---|
 | **P0** | §3.3 ① peer 契约护栏测试（`test/peer-contract.test.mjs`，**已落地**） | 极低（纯测试） | 高（把静默漏纠变可见红） | 极低 | `npm test`（peer 不可达 SKIP，已进三方名册） |
-| **P0** | §4.3 `autoRecoverArmed` 布尔 + 面板一行 | 低 | 中（量化 UX 代价） | 极低 | `store` + `panel` |
+| **P0** | §4.3 `autoRecoverArmed` 布尔 + 面板一行（**Host 侧已落地**；client 渲染行随 `client.js` 并行改动合入） | 低 | 中（量化 UX 代价） | 极低 | `store` + `panel`（已绿） |
 | **P1** | §4.2 CI live-contract job（best-effort + secret） | 极低 | 高（漂移当天可见） | 极低 | CI 新增档 |
 | **P1** | §4.1 状态文件统一（`state-store.js` + 可选 `dsh-atomic-write`） | 中 | 中（删 3 份重复 + 跨进程锁） | 中（新 peer 依赖） | `store` + 新增注入 |
 | **P1** | §4.4a 字典/决策外置成 JSON（`client.js` 瘦 ~400 行） | 低 | 中 | 极低 | `panel` + `render` + `docs`（字典一致性） |

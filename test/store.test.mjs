@@ -1049,6 +1049,37 @@ async function withNetwork(stub, body) {
   }
 }
 
+// --- 19. autoRecoverArmed: 只报布尔，不回显值 -------------------------------
+// `state()` 报告环境里有没有自动恢复密码（`SENSENOVA_PASSWORD`），供面板显示
+// "refresh 失效后自动重登 / 需手动重登"。红线：值本身绝不能出 store——
+// 断言序列化后的 state 不含密码文本，也没有 password/secret 键。
+{
+  const plainStore = createTokenStore({ credentials: fakeCredentials(null), credentialKey: credentialKeyFn, env: {} });
+  const armedStore = createTokenStore({
+    credentials: fakeCredentials(null),
+    credentialKey: credentialKeyFn,
+    env: { SENSENOVA_PASSWORD: "hunter2-秘密" }
+  });
+  const blankStore = createTokenStore({
+    credentials: fakeCredentials(null),
+    credentialKey: credentialKeyFn,
+    env: { SENSENOVA_PASSWORD: "   " }
+  });
+
+  const plain = await plainStore.state();
+  const armed = await armedStore.state();
+  check("no env password -> auto-recover is not armed", plain.autoRecoverArmed === false, JSON.stringify(plain));
+  check("env password present -> armed", armed.autoRecoverArmed === true);
+  check("a blank env password is not armed", (await blankStore.state()).autoRecoverArmed === false);
+
+  const serialized = JSON.stringify(armed);
+  const keys = Object.keys(armed);
+  check("the password value is never echoed (boolean only)",
+    !serialized.includes("hunter2") && !serialized.includes("秘密") &&
+      !serialized.includes("SENSENOVA_PASSWORD") && !keys.some((k) => /password|secret/i.test(k)),
+    `${serialized.slice(0, 100)} keys=${keys.join(",")}`);
+}
+
 // The store is exercised against stubbed platform responses; nothing here may
 // reach the real one. See the same guard in test/auth.test.mjs.
 const unstubbed = releaseNetworkGuard();

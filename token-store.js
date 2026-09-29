@@ -905,6 +905,12 @@ export function createTokenStore({
         // one, or an account is stored to obtain the next one.
         configured: stored !== undefined || account !== undefined,
         hasAccount: username !== "",
+        // Whether the environment carries the auto-recovery password
+        // (`SENSENOVA_PASSWORD`). A boolean ONLY — the value never leaves the
+        // store: the panel uses this to say "a dead refresh token re-signs in
+        // automatically (or needs a manual re-login)". Absent or blank means
+        // not armed, and the next dead refresh will surface the account form.
+        autoRecoverArmed: str(env[PASSWORD_REF], "") !== "",
         hasRefreshToken: str(stored?.refreshToken, "") !== "",
         expiresAt: stored?.expiresAt ?? null,
         // Why the panel should ask for an account: nothing works yet.
