@@ -1,8 +1,12 @@
 # token-store.js 拆分方案（登录 / 续期 / 节流 / 迁移）
 
-> 锐评 #5：944 行 `token-store.js` 单体。本文是拆分的设计蓝图——**先读这份再动刀**。
-> 前置护栏已落地：`test/store-baseline.test.mjs`（17 场景 48 帧全行为冻结基线，
+> 锐评 #5：944 行 `token-store.js` 单体。本文是拆分的设计蓝图。
+> 前置护栏：`test/store-baseline.test.mjs`（17 场景 48 帧全行为冻结基线，
 > 见 [TESTING.md §5](./TESTING.md)）。拆分的门禁 = 基线零漂移 + `store.test.mjs` 131 项全绿。
+>
+> **状态（2026-09-29）：6 步全部落地，token-store.js 从 944 行收口为 314 行薄 facade。**
+> 各块已抽至 `token-store/{state,grant,throttle,account,renewal,acquire}.js`，
+> 全量 17 离线套件 + 基线 48 帧零漂移全绿。剩余：§7 迁移块退役（下次大版本）。
 
 ---
 
@@ -92,15 +96,15 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 
 ## 4. 分步落地（每步独立提交、独立可回滚）
 
-| 步 | 内容 | 门禁 |
-|---|---|---|
-| 1 | 新增 `token-store/state.js`：`createStoreContext(options)` 产出 `{ wiring, state }`；`createTokenStore` 改为「组 context → 委托」，函数体不动 | 基线零漂移 + store 131 |
-| 2 | 抽 `grant.js`（模块级 `parseGrant`/`throttleError` 随之定家；`store` 的 CAS 注释整段保留） | 同上 |
-| 3 | 抽 `throttle.js`（七函数 + `consecutiveRefusals` 并入 `state.throttle` 单字段语义） | 同上，S3/S4/S5/S11 帧重点核对 |
-| 4 | 抽 `account.js`（`passwordSwept` 并入 `state.account`） | 同上，S9c/S10 帧重点核对 |
-| 5 | 抽 `renewal.js` + `acquire.js`（acquire 保持 729 行起 ~80 行原文形状） | 同上，S6a/b/c、S7a/b、S8 帧重点核对 |
-| 6 | `token-store.js` 退化为 re-export shim；`index.js`/`package.json` 确认零改动 | 全量 npm test（17 套件 + e2e-gate） |
-| 7（下个大版本） | 退役三处 legacy 迁移（§3 条件满足时），`UPDATE_BASELINE=1` 重生成并在提交信息写明 | 基线（新版）零漂移 |
+| 步 | 内容 | 门禁 | 提交 | 状态 |
+|---|---|---|---|---|
+| 1 | 新增 `token-store/state.js`：`createStoreContext(options)` 产出 `{ wiring, state }`；`createTokenStore` 改为「组 context → 委托」，函数体不动 | 基线零漂移 + store 131 | `57cdc7e`+`ffca7af` | ✅ |
+| 2 | 抽 `token-store/grant.js`（`parseGrant` 模块级 + 五个闭包函数 `(wiring,state)` 参数化） | 同上 | `fabe450`+`d57207d` | ✅ |
+| 3 | 抽 `token-store/throttle.js`（七函数 + `DEFAULT_LOGIN_BACKOFF_MS`/`MAX_LOGIN_BACKOFF_MS`/`THROTTLE_MARKER` 常量随迁） | 同上，S3/S4/S5/S11 帧重点核对 | `6c9ec96`+`00eeaef` | ✅ |
+| 4 | 抽 `token-store/account.js`（`readUsername`/`readAccount`/`loginFromAccount`/`forgetAccount` + `passwordSwept` 语义 + `USERNAME_REF`/`PASSWORD_REF` 随迁） | 同上，S9c/S10 帧重点核对 | `b44a5f8`+`fd854fa` | ✅ |
+| 5 | 抽 `token-store/renewal.js` + `token-store/acquire.js`（`renewWithRefresh` 经 `store` 回调注入；`acquire` 经 `blocks` 参数注入四块函数，调用次序 = 基线次序） | 同上，S6a/b/c、S7a/b、S8 帧重点核对 | `623b673`+`a0ee546` | ✅ |
+| 6 | `token-store.js` 收口为薄 facade（944 行 → 314 行）：删除全部死委托壳，`createTokenStore` 内 14 行 const 一行委托 + 公开 API 编排；公开导出面不变 | 全量 17 离线套件全绿 | `47c0bdf` | ✅ |
+| 7（下个大版本） | 退役三处 legacy 迁移（§3 条件满足时），`UPDATE_BASELINE=1` 重生成并在提交信息写明 | 基线（新版）零漂移 | — | ⏳ |
 
 每步**只搬不写**：函数体、注释、调用次序原样移动；唯一允许的新代码是
 `state.js` 的 context 工厂与 facade 委托。某一步基线红了，就是该步动了语义——
@@ -110,18 +114,18 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 
 ## 5. 红线核对表（拆分前后逐条过）
 
-- [ ] `get` 到的 token 的**来源次序**不变：节流闸门 → 内存缓存 → 持久 grant（含旧命名收养）→ refresh（含 CAS）→ 登录兜底。基线 S1–S8 帧钉死。
-- [ ] 凭据服务**调用序列**不变（基线逐帧 `calls` 数组即序列快照）；尤其
+- [x] `get` 到的 token 的**来源次序**不变：节流闸门 → 内存缓存 → 持久 grant（含旧命名收养）→ refresh（含 CAS）→ 登录兜底。基线 S1–S8 帧钉死。
+- [x] 凭据服务**调用序列**不变（基线逐帧 `calls` 数组即序列快照）；尤其
       `saveAccount` 的「先 set ref、清节流、再 login」与 `state()` 的六步读序。
-- [ ] 错误对象：`throttleError(held, cause)` 的 cause 语义（窗口期内报平台原话、
+- [x] 错误对象：`throttleError(held, cause)` 的 cause 语义（窗口期内报平台原话、
       过窗后报本模块话术）原样保留；`state().error` 仍取 `lastError.message`。
-- [ ] `state()` 九键 + `autoRecoverArmed` 布尔，键集与取值规则不变（S 帧 result 逐值）。
-- [ ] 密码不落盘：`saveAccount` 只 `set` username ref；`readAccount` 的密码来源只有
+- [x] `state()` 九键 + `autoRecoverArmed` 布尔，键集与取值规则不变（S 帧 result 逐值）。
+- [x] 密码不落盘：`saveAccount` 只 `set` username ref；`readAccount` 的密码来源只有
       env 与显式入参。`store.test.mjs` 8/10 组独立守住，基线 S10/S11 帧同。
-- [ ] 节流寄居记录的 marker/version 校验不变（`THROTTLE_MARKER` + `THROTTLE_VERSION`），
+- [x] 节流寄居记录的 marker/version 校验不变（`THROTTLE_MARKER` + `THROTTLE_VERSION`），
       非法记录读作 absent（S9b 帧）。
-- [ ] `createTokenStore` 的**公开选项名**不变（index.js 与 e2e 的注入面）。
-- [ ] `token-store.js` 的 re-export 面不变：`createTokenStore` + `RECORD_SCOPE` /
+- [x] `createTokenStore` 的**公开选项名**不变（index.js 与 e2e 的注入面）。
+- [x] `token-store.js` 的 re-export 面不变：`createTokenStore` + `RECORD_SCOPE` /
       `LEGACY_SCOPE` / `RECORD_ID` / `USERNAME_REF` / `PASSWORD_REF` / `THROTTLE_ID` /
       `DEFAULT_LOGIN_BACKOFF_MS` / `MAX_LOGIN_BACKOFF_MS`（`store.test.mjs` 与
       `peer-contract` 依赖这些名）。
