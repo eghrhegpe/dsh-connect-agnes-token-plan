@@ -39,7 +39,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
     "parsers.js", "throttle-store.js", "catalog-store.js", "provider-store.js", "provider-publish.js", "snapshot-aggregate.js", "state-store.js", "routes.js", "lifecycle.js", "api-key-store.js",
     "llm-models.js", "llm-adapter.js", "llm-retry.js", "llm-error-fix.js", "draw.js",
     "trace.js", "util.js",
-    "sensenova-auth.js", "sensenova-crypto.js", "token-store.js",
+    "sensenova-auth.js", "sensenova-crypto.js", "token-store.js", "token-store/state.js",
     "cordis.patch.yml", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
@@ -135,7 +135,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 ## 7. 测试与构建（本插件）
 
 - 本插件测试**无需 `npm install`**：网络层打桩，密码用临时密钥加密，不碰真实账号；peer 依赖由 `test/peer-roots.mjs` 在 DSH 运行时就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到会列全部查过的位置，而非静默跳过。这只是让**测试**拿得到 peer；插件运行期自己 `import()` 的解析链是另一回事，见 [PITFALLS.md](./PITFALLS.md) §16。
-- 跑 `npm test`（十四个离线套件：`auth` / `store` / `routes` / `panel` / `render` / `parsers` / `provider` / `config` / `package` / `docs` / `wiring` / `contract` / `retry` / `draw`），末尾接 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。`package.test.mjs` 还把「磁盘上的 *.test.mjs ↔ npm test 链 ↔ CI 离线 job」钉成同一个事实：新写套件忘接门禁会直接红。
+- 跑 `npm test`（十七个离线套件：`auth` / `store` / `store-baseline` / `routes` / `panel` / `render` / `parsers` / `provider` / `config` / `package` / `docs` / `wiring` / `contract` / `retry` / `error-fix` / `peer-contract` / `draw`），末尾接 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。`package.test.mjs` 还把「磁盘上的 *.test.mjs ↔ npm test 链 ↔ CI 离线 job」钉成同一个事实：新写套件忘接门禁会直接红。`store-baseline` 是 token-store 的全行为冻结基线（拆分 guardrail），详见 `docs/TESTING.md`。
 - 本插件 **Client 半边无构建步骤**：`client.js` 直接随 bundle 注入，没有 `src/` → 产物的分离（这点与 `dsh-connect-qoder` 不同，后者有 `src/client/` 经 `tsdown` 重建 `lib/client.js`）。
 - 所有离线测试均已通过；各套件用例数会随并行会话变化，以 `npm test` 实际输出为准，不在此处保留快照（详见 [TESTING.md](./TESTING.md)）。
 

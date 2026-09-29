@@ -39,18 +39,24 @@
  * first use, then keeps itself alive from the refresh token alone. The
  * password is never persisted by this module.
  *
+ * Structure: `createTokenStore` builds one shared context — the wiring
+ * (backend, keys, clock, env, auth, throttle store) plus the seven mutable
+ * fields the four blocks (grant / account / renewal / throttle) operate on —
+ * via `createStoreContext` (`./token-store/state.js`), and keeps its public
+ * behavior exactly as before. The split doc is `docs/TOKEN-STORE-SPLIT.md`.
+ *
  * @module dsh-connect-sensenova-token-plan/token-store
  */
 
 import { createAuth, readJwtExpiry } from "./sensenova-auth.js";
 import { CODE, isCredentialRefusal } from "./codes.js";
-import { createMemoryThrottleStore } from "./throttle-store.js";
 import { str, obj, verbatim, num, numOrNull, pluginError } from "./util.js";
-import { name } from "./host-config.js";
+import { name as RECORD_SCOPE } from "./host-config.js";
+import { createStoreContext } from "./token-store/state.js";
 
 /** Record address: this plugin's own namespace, so a stranger cannot collide. */
-const RECORD_SCOPE = name;
 const RECORD_ID = "sensenova-console";
+
 /**
  * The namespace this plugin used before the rename.
  *
@@ -121,9 +127,6 @@ const THROTTLE_ID = "sensenova-console-throttle";
  * an adopted throttle apart from another plugin's data at the same address.
  */
 const THROTTLE_MARKER = "signin-throttle";
-
-/** Renew this long before the access token actually expires. */
-const DEFAULT_SKEW_MS = 120_000;
 
 /**
  * The first wait imposed on a refusal the platform gave no window for.
@@ -226,119 +229,24 @@ function throttleError(held, cause) {
  * @returns the store: `getToken`, `invalidate`, `saveAccount`,
  *   `forgetAccount`, and `state`.
  */
-export function createTokenStore({
-  credentials,
-  credentialKey,
-  auth = createAuth(),
-  env = process.env,
-  skewMs = DEFAULT_SKEW_MS,
-  throttleStore: injectedThrottleStore,
-  now = Date.now,
-  onTrace
-}) {
-  const key = credentialKey(RECORD_SCOPE, RECORD_ID);
-  const THROTTLE_KEY = credentialKey(RECORD_SCOPE, THROTTLE_ID);
-  // Resolved here rather than as a parameter default, for two reasons.
-  //
-  // It has to judge its window with the clock the rest of the store uses: a
-  // store given an injected clock and a throttle reading the real one would
-  // disagree about whether a wait is over, which is invisible in production
-  // and fatal in a test that crosses the window deliberately.
-  //
-  // And it defaults to MEMORY, not to the file. The file is shared and
-  // durable, so a default that writes it makes every store in the process
-  // share one throttle — in a test suite that means one case's lockout
-  // refuses the next case's login, which reads as a bug in the code under
-  // test. The Host passes the file store explicitly; see index.js.
-  const throttleStore = injectedThrottleStore ?? createMemoryThrottleStore(now);
-  // No deadline of its own. The login flow's timeout is part of the auth
-  // configuration (`loginTimeoutMs`), and a second knob on this store would
-  // only add the question of which of the two is lying.
-  /**
-   * The in-memory fallback used while no credentials service is reachable. A
-   * Host without the service still gets a working panel: the account and grant
-   * live here, which is exactly as private as the real store and simply does
-   * not outlive the process.
-   */
-  const memory = {
-    records: new Map(),
-    account: new Map(),
-    async readRecord(k) { return this.records.get(k); },
-    async modifyRecord(k, mutate) {
-      const next = await mutate(this.records.get(k));
-      if (next === undefined) return this.records.get(k);
-      this.records.set(k, next);
-      return next;
-    },
-    // Keyed, because the throttle is a second record: clearing one throttle
-    // must not take a stored grant with it.
-    async deleteRecord(k) { this.records.delete(k); },
-    async resolve(ref) {
-      const value = this.account.get(ref);
-      return typeof value === "string" && value !== "" ? { value, source: "memory" } : undefined;
-    },
-    async set(ref, value) { this.account.set(ref, value); },
-    async unset(ref) { this.account.delete(ref); }
-  };
-  /**
-   * Resolve the credentials service on EVERY use, not once at mount: the
-   * service may register after this plugin loads, and a flag frozen at mount
-   * would then claim "no credentials service" forever while the store quietly
-   * exists on disk. Accepts the service itself (tests) or a resolver function
-   * (index.js) and normalises anything absent to `null`.
-   */
-  const resolveService = () => {
-    const value = typeof credentials === "function" ? credentials() : credentials;
-    return value ?? null;
-  };
-  /** The live backend: the real service when attached, else the in-memory vault. */
-  const backend = () => resolveService() ?? memory;
-  /** True while nothing written through the store would survive a restart. */
-  const ephemeral = () => resolveService() === null;
-
-  /** In-memory token for this process; the record is the durable truth. */
-  let cached = null;
-  /**
-   * Tokens the console has already rejected.
-   *
-   * A 401 does not prove the token expired — it proves the console refused it —
-   * so a rejected token must never be handed out again even while its `exp`
-   * still looks valid. Without this the store would re-read the same record
-   * and replay the token the console just refused.
-   */
-  const rejected = new Set();
-  /** One in-flight acquisition, so N concurrent polls share one login. */
-  let inflight = null;
-  /** Last failure, surfaced to the panel instead of a bare "not configured". */
-  let lastError = null;
-  /**
-   * A refusal that must not be repeated on a timer.
-   *
-   * The platform locks an account after a few bad attempts, so retrying a
-   * failed sign-in automatically turns one mistake into a lockout. This records
-   * why sign-in is pointless right now and until when.
-   *
-   * `until` is the absolute deadline when the platform names one ("try again
-   * in 8 minutes"); otherwise a local backoff applies, doubling per attempt up
-   * to {@link MAX_LOGIN_BACKOFF_MS}.
-   *
-   * `parked` matters as much as the clock. A refusal that says the
-   * *credentials* are wrong is not fixed by waiting — time does not make a
-   * wrong password right — so it is parked until the user acts, with no
-   * deadline at all. Anything else (locked, rate-limited, a transient platform
-   * fault) is time-shaped and does come back on its own.
-   */
-  let throttle = null;
-
-  /**
-   * How many refusals in a row this store has seen.
-   *
-   * Kept separately from `throttle` because the throttle record is deleted as
-   * soon as its window closes, while this count must survive that deletion —
-   * otherwise the doubling has nothing to double from and every wait restarts
-   * at the shortest one.
-   */
-  let consecutiveRefusals = 0;
+export function createTokenStore(options) {
+  const { wiring, state } = createStoreContext(options);
+  const {
+    auth,
+    env,
+    skewMs,
+    throttleStore,
+    now,
+    onTrace,
+    credentialKey,
+    key,
+    THROTTLE_KEY,
+    backend,
+    ephemeral
+  } = wiring;
+  const {
+    rejected
+  } = state;
 
   /** Read the durable grant through the credentials service. */
   async function readStored() {
@@ -362,7 +270,7 @@ export function createTokenStore({
    */
   async function adoptLegacyGrant() {
     try {
-      const legacyKey = credentialKey(LEGACY_SCOPE, RECORD_ID);
+      const legacyKey = credentialKey(LEGACY_SCOPE, "sensenova-console");
       const grant = parseGrant(await backend().readRecord(legacyKey));
       if (grant === undefined) return undefined;
       await backend().modifyRecord(key, () => Promise.resolve({
@@ -435,12 +343,12 @@ export function createTokenStore({
         return Promise.resolve({ kind: "grant", payload });
       });
       const stored = parseGrant(record) ?? payload;
-      cached = stored;
+      state.cached = stored;
       return stored;
     } catch (error) {
       // A read-only store must not break the panel: keep the token in memory
       // for this process and let the next start re-login.
-      cached = { accessToken, refreshToken, expiresAt: payload.expiresAt };
+      state.cached = { accessToken, refreshToken, expiresAt: payload.expiresAt };
       throw new Error(
         `could not persist the console token (${error instanceof Error ? error.message : String(error)}); ` +
           "it stays valid until dsh restarts"
@@ -461,7 +369,7 @@ export function createTokenStore({
    *   in-memory cache and rejection set.
    */
   async function purgeGrant(accessToken) {
-    cached = null;
+    state.cached = null;
     if (accessToken !== undefined) rejected.delete(accessToken);
     await backend().deleteRecord(key).catch(() => {});
   }
@@ -479,9 +387,6 @@ export function createTokenStore({
     // detected instead of silently overwritten.
     return store(result.accessToken, result.refreshToken, result.expiresIn, stored.accessToken);
   }
-
-  /** True once a legacy stored password has been swept from the credentials service. */
-  let passwordSwept = false;
 
   /**
    * The account's identity: the stored username, with the environment as a
@@ -516,8 +421,8 @@ export function createTokenStore({
     // legacy value is removed on first contact (the environment remains the
     // opt-in path). Best-effort: a read-only service keeps the old value
     // until the user re-saves, which still cannot leak it anywhere new.
-    if (!passwordSwept) {
-      passwordSwept = true;
+    if (!state.passwordSwept) {
+      state.passwordSwept = true;
       await backend().unset(credentialRef(PASSWORD_REF)).catch(() => {});
     }
     const password = verbatim(env[PASSWORD_REF], "");
@@ -670,25 +575,25 @@ export function createTokenStore({
     // A window the platform stated is taken at its word; only a window we
     // invented is capped.
     const stated = numOrNull(error?.retryAfterMs);
-    consecutiveRefusals = num(previousAttempt, consecutiveRefusals) + 1;
-    const attempt = consecutiveRefusals;
+    state.consecutiveRefusals = num(previousAttempt, state.consecutiveRefusals) + 1;
+    const attempt = state.consecutiveRefusals;
     const until = parked
       ? null
       : now() + (stated === null ? localBackoffMs(attempt) : Math.max(stated, 0));
-    throttle = { code, parked, until, attempt };
+    state.throttle = { code, parked, until, attempt };
     // This plugin's own file, not the credentials service: a throttle is not a
     // credential, and the only two record kinds that service admits are. See
     // THROTTLE_ID for what writing one here used to cost.
-    await throttleStore.write(throttle).catch(() => {
+    await throttleStore.write(state.throttle).catch(() => {
       // A store that cannot be written must not break the panel: this process
       // still honours the wait in memory.
     });
-    return throttle;
+    return state.throttle;
   }
 
   /** Drop the throttle, so the next sign-in is allowed to try. */
   async function clearThrottle() {
-    throttle = null;
+    state.throttle = null;
     await throttleStore.clear().catch(() => {
       // Nothing to do: the in-memory clear above already took effect.
     });
@@ -718,8 +623,8 @@ export function createTokenStore({
     // A refused sign-in is not repeated on a timer: the platform locks an
     // account after a few bad attempts, so a poll loop that keeps trying
     // turns one mistake into a lockout. Fail fast and say why instead.
-    const held = throttle ?? await readThrottle();
-    throttle = held;
+    const held = state.throttle ?? await readThrottle();
+    state.throttle = held;
     if (held !== null && (held.parked || held.until > now())) {
       throw throttleError(held);
     }
@@ -728,13 +633,13 @@ export function createTokenStore({
       // count is kept, so the next wait is longer than this one. Clearing the
       // throttle here and forgetting the count is what made every backoff
       // silently restart at one minute.
-      consecutiveRefusals = held.attempt;
+      state.consecutiveRefusals = held.attempt;
       await clearThrottle();
     }
 
-    const stored = (await readStored()) ?? cached ?? undefined;
+    const stored = (await readStored()) ?? state.cached ?? undefined;
     if (isFresh(stored)) {
-      cached = stored;
+      state.cached = stored;
       return stored.accessToken;
     }
     // Prefer renewal: it needs no password, and the password may have been
@@ -761,8 +666,8 @@ export function createTokenStore({
       const fresh = await loginFromAccount();
       // A sign-in that worked clears any earlier refusal: the wait is over by
       // the only evidence that matters, and the backoff starts over.
-      consecutiveRefusals = 0;
-      if (throttle !== null) await clearThrottle();
+      state.consecutiveRefusals = 0;
+      if (state.throttle !== null) await clearThrottle();
       return fresh.accessToken;
     } catch (error) {
       // No account is not a refusal and no request was made, so there is
@@ -773,7 +678,7 @@ export function createTokenStore({
       // lock again. The platform's own error is what the panel shows, since it
       // carries the reason and any stated window; the throttle only governs
       // when the next attempt may happen.
-      const held = await writeThrottle(error, throttle?.attempt);
+      const held = await writeThrottle(error, state.throttle?.attempt);
       throw held.parked ? error : throttleError(held, error);
     }
   }
@@ -784,22 +689,22 @@ export function createTokenStore({
      * @returns {Promise<string>}
      */
     async getToken() {
-      if (isFresh(cached)) return cached.accessToken;
+      if (isFresh(state.cached)) return state.cached.accessToken;
       // One acquisition in flight: a panel poll storm must not trigger a
       // login stampede or a burst of refresh-token rotations.
-      inflight ??= acquire()
+      state.inflight ??= acquire()
         .then((token) => {
-          lastError = null;
+          state.lastError = null;
           return token;
         })
         .catch((error) => {
-          lastError = error;
+          state.lastError = error;
           throw error;
         })
         .finally(() => {
-          inflight = null;
+          state.inflight = null;
         });
-      return inflight;
+      return state.inflight;
     },
 
     /**
@@ -809,14 +714,14 @@ export function createTokenStore({
      *   cached one.
      */
     invalidate(token) {
-      const refused = str(token, cached?.accessToken ?? "");
+      const refused = str(token, state.cached?.accessToken ?? "");
       if (refused !== "") {
         rejected.add(refused);
         // Bounded: only the most recent refusals can still be in play, since a
         // token that was superseded is never handed out again.
         while (rejected.size > 8) rejected.delete(rejected.values().next().value);
       }
-      cached = null;
+      state.cached = null;
     },
 
     /**
@@ -845,7 +750,7 @@ export function createTokenStore({
       // ever sits in the credentials document.
       await backend().set(credentialRef(USERNAME_REF), username);
       // The password may differ from the one that produced the current grant.
-      cached = null;
+      state.cached = null;
       rejected.clear();
       // A deliberate resubmit is the user acting on what the panel told them,
       // so it clears the throttle — otherwise a corrected password would be
@@ -881,7 +786,7 @@ export function createTokenStore({
     async forgetAccount() {
       await backend().unset(credentialRef(USERNAME_REF));
       await backend().unset(credentialRef(PASSWORD_REF));
-      cached = null;
+      state.cached = null;
     },
 
     /**
@@ -899,7 +804,7 @@ export function createTokenStore({
       const username = await readUsername();
       // Read the throttle here too, so a second Host process shows the same
       // countdown rather than inviting an attempt that would be refused.
-      const held = throttle ?? await readThrottle();
+      const held = state.throttle ?? await readThrottle();
       return {
         // "configured" means the panel can get a token: either it already has
         // one, or an account is stored to obtain the next one.
@@ -926,7 +831,7 @@ export function createTokenStore({
         // user must clear. The panel says so instead of showing a countdown
         // that would tick down to another attempt that never happens.
         needsUserAction: held !== null && held.parked,
-        error: lastError === null ? null : lastError instanceof Error ? lastError.message : String(lastError)
+        error: state.lastError === null ? null : state.lastError instanceof Error ? state.lastError.message : String(state.lastError)
       };
     }
   };
@@ -934,8 +839,8 @@ export function createTokenStore({
 
 export {
   RECORD_SCOPE,
-  LEGACY_SCOPE,
   RECORD_ID,
+  LEGACY_SCOPE,
   USERNAME_REF,
   PASSWORD_REF,
   THROTTLE_ID,

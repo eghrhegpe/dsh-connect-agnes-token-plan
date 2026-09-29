@@ -7,7 +7,7 @@
 ## 1. 运行
 
 ```powershell
-npm test       # 依次跑 auth / store / routes / panel / render / parsers / provider / config / package / docs / wiring / contract / retry / draw，末尾 e2e-gate（无 dsh CLI 则 SKIP）
+npm test       # 依次跑 auth / store / store-baseline / routes / panel / render / parsers / provider / config / package / docs / wiring / contract / retry / error-fix / peer-contract / draw，末尾 e2e-gate（无 dsh CLI 则 SKIP）
 npm run test:e2e    # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
 npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可达
 npm run test:live:contract # 仅 live-contract.mjs，需联网 + SENSENOVA_API_KEY，重放商汤推理契约
@@ -23,6 +23,7 @@ npm run test:live:contract # 仅 live-contract.mjs，需联网 + SENSENOVA_API_K
 |---|---|
 | `test/auth.test.mjs` | JWE 封包（RSA-OAEP + A256GCM）round-trip、PKCE（S256 向量）、登录分类（错密码 / 锁号 / 限频 / 验证码）、拒绝消息取平台原话、**登录 trace 成功与失败都要上报**、**错误码 taxonomy 一致性** |
 | `test/store.test.mjs` | 令牌存储与续期、并发轮询只触发一次刷新、401 拒绝记忆、节流状态跨进程、env 账号识别、内存态 ephemeral、**真实凭据服务解析器校验写入记录**（非 `grant` kind 即红） |
+| `test/store-baseline.test.mjs` | **token-store 全行为冻结基线**：17 个场景、48 帧，把凭据服务调用序列（read/modify/delete/resolve/set/unset）、节流存储读写、grant/ref 落盘、错误码与完整 `state()` 逐帧冻结在 `test/baselines/token-store-behavior.json`；拆分/改动 token-store 前后必须零漂移（见 §5） |
 | `test/routes.test.mjs` | 把面板的判断逻辑**原样跑在真实接口响应上**，专门守住「无凭据服务时表单仍可达」这条路径；同源校验、body 上限、跨域拒绝、**一个请求只答一次**；第三步的 api-key 路由（credentials/memory/env 三来源、不回显、forget 不动环境变量）、快照 `llm` 块与 provider 注册/签名去抖/无 llm 降级（假 adapter 工厂经 apply 第三参注入，不碰真 peer） |
 | `test/panel.test.mjs` | 面板「显示什么」的决策，**直接从 `client.js` 抠出决策块求值**（见 `panel-decision.js`），而不是手写副本——逻辑一变测试自动跟；**中英文字典键集一致**；控制台故障不伪装成登录表单 |
 | `test/render.test.mjs` | 面板「数字怎么上屏」的渲染，`panel-render.js` 抠出 `WindowRow` / `PoolCard` / `TrendTable` 真源码、以记录型 `h` 在 Node 求值：`used/limit` 写反、剩余量丢失、进度条色阶错档、除零 NaN 都会红 |
@@ -63,3 +64,21 @@ npm run test:live:contract # 仅 live-contract.mjs，需联网 + SENSENOVA_API_K
 - **视觉第二步（opt-in 写入本插件 settings row）钉在 `test/routes.test.mjs` M 组。** `writeImageModelIds: true` 且无 settings 服务的 Host 上，poll 照常成功、`visionModels` 照常进 snapshot（写入是旁路，失败不拖垮应答）；`ctx.get("settings")` 缺席时 `visionPublish.current` 保持 null，poll 不炸。写入本身的正确性（写了真的落进 row、revision 计数）依赖 settings 服务在运行——由 DSH 侧的 `settings.update` 契约保证，本套件不重复验。
 - **路由测试用的是假 `response`，不是真实的 `http.ServerResponse`。** 它会计数写入次数（这是抓住「保存账号答了两次」的原因），但不会复现真实对象的 `ERR_HTTP_HEADERS_SENT`、`setHeader` 顺序与流语义。
 - **端到端已进 `npm test` 门禁，但依赖 dsh CLI。** `test/e2e.mjs` 拉起**真 Host 进程**（`dsh web`）+ 一个 127.0.0.1 上的**假商汤平台**（`test/fake-platform.mjs`，自带独立 `$DSH_HOME`、零真实凭据、全部端点重定向到本机），断言登录/池用量/节流分类等端到端行为，并校验假平台真的收到了流量。它曾长期被排除在默认跑之外——而「嵌套 `auth:` 块打到真平台锁号」这类最危险的 bug 只有它能抓。现在 `npm test` 末尾接 `test/e2e-gate.mjs`：探到 dsh CLI 就实跑（失败即红），探不到就打醒目 SKIP 并退出 0。缺 CLI 不是回归，但一次绿跑若跳过了端到端，装配路径就没被真正验过——`.github/workflows/ci.yml` 把它列为独立的 best-effort job 正是为了让这个信号不被离线绿灯掩盖。**它自己也开着 `registerProvider: true` 并断言 provider 真的注册上了**（含目录/vision/去密状态），所以第三步那套 Host 侧装配不会被「离线全绿」掩盖；同时它把 `SENSENOVA_API_KEY`/`SENSENOVA_USERNAME`/`SENSENOVA_PASSWORD` 从子进程环境里删掉——否则开发机的 Key 会被凭据服务当成只读环境值传进 Host，目录不再降级、面板保存被拒，测试只在作者机器上红（PITFALLS §17）。
+
+- **本机 2026-09-29 已知环境故障（非插件缺陷，勿当回归）**：隔离 Home 启动真 Host 时全部 154 个 `@deepseek-ai/*` 宿主插件 `failed to import`（required 插件 `webserver` 缺席 → 面板插件等不到 `webServer` 服务 → `dsh web` 启动失败）。根因在 **Host 运行时的宿主插件包解析链**（`C:\Users\Zhujieling11\AppData\Roaming\npm\dsh.ps1` 对应的 dsh 运行时与其 `dsh-asar-unpacked` 运行态），不在本插件代码——`DSH_HOME` 指向真实 `~/.dsh` 时 `dsh web` 正常启动（127.0.0.1:3080），且 17 个离线套件全绿。此故障下 `test/e2e-gate.mjs` 会在 `npm test` 里红；修复 DSH 运行时后自然恢复，离线门禁已独立守住全部行为语义。
+
+---
+
+## 5. 行为冻结基线（`store-baseline.test.mjs`）
+
+`token-store.js` 计划拆成登录 / 续期 / 节流 / 迁移四块（锐评 #5：944 行单体），但四块共享闭包状态、迁移挂在读路径上，纯搬文件极易静默改掉细语义。`store.test.mjs` 的手写 check 只断言「作者想到的语义」；`store-baseline.test.mjs` 把 store 的**完整可观察面**冻结在 `test/baselines/token-store-behavior.json`：17 个场景、48 帧，每帧记录凭据服务调用序列（read/modify/delete/resolve/set/unset）、节流存储读视图、grant/ref 落盘内容、抛出的 `{code,message}` 与完整 `state()` 对象。
+
+- **驱动方式**：只走公开 API（`getToken`/`invalidate`/`saveAccount`/`forgetAccount`/`state`），注入脚本化 `auth`、内存凭据服务、共享内存节流存储（第二个 store 实例模拟「重启」）、虚拟时钟；无网络、无 peer、无墙钟，干净检出可跑。
+- **已钉死的阴沟语义**：`not_configured` 绝不写节流；parked 跨重启零新登录；本地退避 60s→120s 翻倍且关窗后 attempt 保留；平台声明的 2h 窗口不被 30 分钟本地帽截断；并发轮询单飞（恰好一次 refresh）；compare-and-set 慢者赢（并发旋转的 grant 不被覆盖）；`refresh_rejected` 无账号回收 vs 有账号重登的岔路；被拒令牌不复播；旧命名空间 grant/节流一次性收养（节流只收养第一条、第二条等 `clearThrottle` 扫）；密码不落盘（`autoRecoverArmed` 只报布尔）；无凭据服务降级并标记 `ephemeral`。
+- **门禁纪律**：拆分后该套件必须零漂移。有意改动 store 行为时，先逐帧评审、再显式重生成，并在提交信息写明原因：
+
+  ```powershell
+  $env:UPDATE_BASELINE='1'; node test/store-baseline.test.mjs; Remove-Item Env:UPDATE_BASELINE
+  ```
+
+  重生成不是「让测试变绿」的手段。套件与基线同进 `npm test` 链与 CI 离线 job（三方名册由 `package.test.mjs` 钉住）。
