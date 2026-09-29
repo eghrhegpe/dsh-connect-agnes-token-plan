@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The directly-registered SenseNova provider's request-retry policy — the
  * peer-FREE half of the 429 self-healing work.

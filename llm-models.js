@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Catalog entry -> pi-ai model descriptor mapping — the pure half of the
  * directly-registered SenseNova LLM provider ("one-stop service", step three).
@@ -187,9 +188,9 @@ export function thinkingLevelMapFor(entry) {
  * fallback only when no structured field exists) — so the model picker cannot
  * disagree with the panel's vision list about which models accept images.
  * @param {object} entry - one normalized catalog entry (must carry `id`).
- * @param {object} options - wiring.
- * @param {string} options.providerId - the provider id the descriptor belongs to.
- * @param {string} options.baseUrl - the OpenAI-compatible base URL.
+ * @param {object} [options] - wiring.
+ * @param {string} [options.providerId] - the provider id the descriptor belongs to.
+ * @param {string} [options.baseUrl] - the OpenAI-compatible base URL.
  * @returns {object} the pi-ai descriptor.
  */
 export function toPiDescriptor(entry, { providerId = LLM_PROVIDER_ID, baseUrl } = {}) {
@@ -259,7 +260,8 @@ export const HIDE_ALL_MODELS = "__hide_all__";
  * Mirrors {@link filterByEnabled}: an empty list offers everything, a
  * non-empty list is a strict allow-list, and the {@link HIDE_ALL_MODELS}
  * sentinel offers nothing.
- * @param {string[]} [enabledIds] - the allow-list.
+ * @param {string[]|undefined} enabledIds - the allow-list; positionally required,
+ *   though `undefined`/non-array is tolerated at runtime (treated as empty).
  * @param {string} id - the model id to ask about.
  * @returns {boolean}
  */

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The five HTTP route handlers, extracted from `index.js` (IMPROVEMENTS.md §2.3).
  *
@@ -119,9 +120,11 @@ function refuseMethod(response) {
  */
 async function readJsonBodyOr400(request, response) {
   const body = await readJsonBody(request);
-  if (body.ok) return body;
-  writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
-  return null;
+  if (!body.ok) {
+    writeJson(response, 400, { ok: false, error: /** @type {{ok: false, error: string}} */ (body).error }, { "cache-control": "no-store" });
+    return null;
+  }
+  return body;
 }
 
 /**
@@ -137,7 +140,8 @@ async function readJsonBodyOr400(request, response) {
  * @returns {string} the panel-facing code.
  */
 function failureCode(error) {
-  if (error?.code === CODE.NOT_CONFIGURED || error?.code === CODE.JWT_EXPIRED) return error.code;
+  const code = error && typeof error === "object" ? /** @type {{code?: string}} */ (error).code : undefined;
+  if (code === CODE.NOT_CONFIGURED || code === CODE.JWT_EXPIRED) return code;
   return isAuthFailure(error) ? CODE.AUTH_ERROR : CODE.CONSOLE_ERROR;
 }
 
@@ -163,6 +167,8 @@ function failureCode(error) {
  *   publisher.publish with rollback.
  * @param {{current: Function|null}} wiring.visionPublish - the settings-row
  *   writer filled by `startSideEffects` (no-op until then).
+ * @param {object} [wiring.logger] - `ctx.logger` (Host logging), used by the
+ *   trace-write handler; optional so tests may omit it.
  * @returns {Function[]} the five `off()` unregister callbacks, in registration
  *   order — `teardown` runs them last.
  */

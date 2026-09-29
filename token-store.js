@@ -139,8 +139,10 @@ const THROTTLE_ID = "sensenova-console-throttle";
  *   Host process see a lock another is waiting out. Injected by the tests.
  * @param {() => number} [options.now] - clock source; injected by the tests so
  *   a backoff window can be crossed deliberately instead of by waiting.
- * @param {function(object[], Error|null): void} [options.onTrace] - called with
- *   the sanitized hop list when a sign-in attempt ENDS, success or failure.
+ * @param {function(?object[], ?(Error & {code?: unknown})): void} [options.onTrace] - called with
+ *   the sanitized hop list when a sign-in attempt ENDS, success or failure;
+ *   the second argument is `null` on success and the thrown error otherwise
+ *   (matching the contract `sensenova-auth.js` uses).
  * @returns the store: `getToken`, `invalidate`, `saveAccount`,
  *   `forgetAccount`, and `state`.
  */

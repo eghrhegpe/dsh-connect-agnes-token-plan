@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The SenseNova image-generation module ("draw absorption", ARCHITECTURE §5.4
  * route B) — the PEER-FREE half.

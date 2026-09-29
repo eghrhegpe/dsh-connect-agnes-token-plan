@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * dsh-connect-sensenova-token-plan — Host half (thin router).
  *

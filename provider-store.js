@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The provider-registration switch — this plugin's OWN state file, never the
  * Host's configuration.

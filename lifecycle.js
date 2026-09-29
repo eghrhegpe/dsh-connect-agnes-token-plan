@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The plugin's side effects, extracted from `index.js` (IMPROVEMENTS.md §2.3).
  *

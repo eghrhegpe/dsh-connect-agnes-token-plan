@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The directly-registered provider's PUBLISH STATE MACHINE — the peer-free
  * control-plane half of step three ("one-stop service").
@@ -41,15 +42,15 @@ import { name as pluginName } from "./host-config.js";
  * service may register with the Host after this plugin mounts — the same
  * resolver-not-snapshot pattern `index.js` uses for `credentials`.
  *
- * @param {object} deps
- * @param {object} deps.settings - the resolved settings row (reads `registerProvider` and `apiBase` only).
- * @param {() => Promise<boolean|null>} deps.panelSwitch - the panel-saved value
+ * @param {object} [deps]
+ * @param {object} [deps.settings] - the resolved settings row (reads `registerProvider` and `apiBase` only).
+ * @param {() => Promise<boolean|null>} [deps.panelSwitch] - the panel-saved value
  *   (`provider-store.enabled()`); null when the state file is untouched.
- * @param {() => Promise<function>} deps.loadAdapterModule - the peer-dependent
- *   adapter factory module; defaults to the real `llm-adapter.js`.
- * @param {(service: string) => object|null} deps.getLlm - optional-service
+ * @param {() => Promise<{createSensenovaAdapter: Function}>} [deps.loadAdapterModule] - the
+ *   peer-dependent adapter factory module; defaults to the real `llm-adapter.js`.
+ * @param {(service: string) => object|null} [deps.getLlm] - optional-service
  *   resolver for the `llm` registration service.
- * @param {() => Promise<string>} deps.resolveApiKey - resolves the live `sk-`
+ * @param {() => Promise<string>} [deps.resolveApiKey] - resolves the live `sk-`
  *   key per request (the `api-key-store.js` seam). The adapter factory reads
  *   it, so it must be a real resolver, never a snapshot.
  * @param {(event: string) => void} [deps.emit] - `ctx.emit` for the adapter

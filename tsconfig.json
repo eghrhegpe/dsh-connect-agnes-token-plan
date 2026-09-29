@@ -15,6 +15,6 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["*.js", "token-store/*.js"],
+  "include": ["*.js", "token-store/*.js", "types/*.d.ts"],
   "exclude": ["node_modules", "upstream", "test", "assets", "docs", ".github", ".box-agent", ".box-agent-scratch"]
 }

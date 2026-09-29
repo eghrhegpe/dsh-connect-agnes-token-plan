@@ -614,7 +614,7 @@ function rejectionCode(body) {
  * @param {string} credentials.password - its password.
  * @param {object} [options] - request options.
  * @param {number} [options.timeoutMs] - deadline override.
- * @param {function(?object[], ?Error): void} [options.onTrace] - called with the
+ * @param {function(?object[], ?(Error & {code?: unknown})): void} [options.onTrace] - called with the
  *   sanitized hop list when the attempt ENDS, success or failure; the second
  *   argument is `null` on success and the thrown error otherwise. A success
  *   throws nothing to carry a trace on, so this is the only way one is ever
