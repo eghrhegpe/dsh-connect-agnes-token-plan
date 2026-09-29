@@ -182,6 +182,35 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
     credentialKey(name, "sensenova-console") === `${name}/sensenova-console`);
 }
 
+// --- 7. numeric field clamping boundaries ----------------------------
+// Every numeric field flows through `clampInt(raw, def, min, max?)` in
+// `resolveSettings`: floor, then clamp low, then clamp high; a non-positive or
+// NaN `raw` falls back to `def`. Pin each bound so a future edit to the clamp
+// cannot change the effective range the panel reports without going red.
+// (Note: `num` rejects 0, so to exercise the *lower* clamp a small FRACTIONAL
+// raw is used — an integer 0 would fall back to `def` instead.)
+{
+  const clamp = (cfg) => resolveSettings(cfg).settings;
+  const tFloor = clamp({ trendHours: 12.9 }).trendHours;
+  check("trendHours floors fractional input", tFloor === 12, String(tFloor));
+  const tMax = clamp({ trendHours: 9999 }).trendHours;
+  check("trendHours caps at 168", tMax === 168, String(tMax));
+  const tLow = clamp({ trendHours: 0.5 }).trendHours;
+  check("trendHours clamps to its 1 floor on a fractional raw", tLow === 1, String(tLow));
+  const cLow = clamp({ cacheSeconds: 3 }).cacheSeconds;
+  check("cacheSeconds clamps to its 5 floor", cLow === 5, String(cLow));
+  const pLow = clamp({ pollSeconds: 3 }).pollSeconds;
+  check("pollSeconds clamps to its 5 floor", pLow === 5, String(pLow));
+  const ctLow = clamp({ consoleTimeoutMs: 500 }).consoleTimeoutMs;
+  check("consoleTimeoutMs clamps to its 1000 floor", ctLow === 1000, String(ctLow));
+  const skLow = clamp({ tokenSkewSeconds: 0.5 }).tokenSkewSeconds;
+  check("tokenSkewSeconds clamps to its 0 floor on a fractional raw", skLow === 0, String(skLow));
+  const dtLow = clamp({ drawTimeoutMs: 10 }).drawTimeoutMs;
+  check("drawTimeoutMs clamps to its 5000 floor", dtLow === 5000, String(dtLow));
+  const nanFall = clamp({ trendHours: "not a number" }).trendHours;
+  check("a non-numeric trendHours falls back to default", nanFall === CONFIG_DEFAULTS.trendHours, String(nanFall));
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.pass);
 if (failed.length > 0) {

@@ -102,6 +102,26 @@ export const CONFIG_DEFAULTS = Object.freeze({
 });
 
 /**
+ * Clamp a raw numeric setting to its effective integer.
+ *
+ * Every numeric field in {@link resolveSettings} follows the same shape: floor
+ * the raw value, clamp it at a lower bound, then (optionally) at an upper bound;
+ * a non-positive or non-finite raw falls back to `def` (because `num` only
+ * accepts a positive finite number). The sequence — `Math.min(max, Math.max(min,
+ * Math.floor(raw)))` with `max` defaulting to `Infinity` — is exactly what the
+ * inline `Math.max`/`Math.min` chains used to spell out one field at a time, so
+ * this is a MOVE of that pattern into one tested place, not a behaviour change.
+ * @param {unknown} raw - the raw value read from the row.
+ * @param {number} def - the fallback when `raw` is not a positive finite number.
+ * @param {number} min - the lower clamp (inclusive) applied after flooring.
+ * @param {number} [max] - the upper clamp (inclusive); omit for no upper bound.
+ * @returns {number} the clamped integer.
+ */
+export function clampInt(raw, def, min, max = Infinity) {
+  return Math.min(max, Math.max(min, Math.floor(num(raw, def))));
+}
+
+/**
  * Resolve the row's raw patch config into effective settings.
  *
  * A malformed row must not throw out of here: `apply` runs at mount, and an
@@ -114,29 +134,30 @@ export const CONFIG_DEFAULTS = Object.freeze({
 export function resolveSettings(config) {
   const source = obj(config);
   const consoleBase = str(source.consoleBase, CONFIG_DEFAULTS.consoleBase).replace(/\/+$/, "");
+  const apiBase = str(source.apiBase, CONFIG_DEFAULTS.apiBase).replace(/\/+$/, "");
   try {
     return {
       settings: {
         consoleBase,
-        apiBase: str(source.apiBase, CONFIG_DEFAULTS.apiBase).replace(/\/+$/, ""),
-        trendHours: Math.min(168, Math.max(1, Math.floor(num(source.trendHours, CONFIG_DEFAULTS.trendHours)))),
-        cacheSeconds: Math.max(5, Math.floor(num(source.cacheSeconds, CONFIG_DEFAULTS.cacheSeconds))),
+        apiBase,
+        trendHours: clampInt(source.trendHours, CONFIG_DEFAULTS.trendHours, 1, 168),
+        cacheSeconds: clampInt(source.cacheSeconds, CONFIG_DEFAULTS.cacheSeconds, 5),
         // How often the panel asks again. The Host states it rather than the
         // panel assuming one, so the two cannot disagree about how fresh the
         // screen is.
-        pollSeconds: Math.max(5, Math.floor(num(source.pollSeconds, CONFIG_DEFAULTS.pollSeconds))),
+        pollSeconds: clampInt(source.pollSeconds, CONFIG_DEFAULTS.pollSeconds, 5),
         // Deadline for one console call. The login flow has its own
         // (`loginTimeoutMs`, below): it walks several IAM hops, so the two
         // are not the same number and pretending otherwise is how a slow
         // login gets blamed on the console.
-        consoleTimeoutMs: Math.max(1_000, Math.floor(num(source.consoleTimeoutMs, CONFIG_DEFAULTS.consoleTimeoutMs))),
+        consoleTimeoutMs: clampInt(source.consoleTimeoutMs, CONFIG_DEFAULTS.consoleTimeoutMs, 1_000),
         // Which host names this Host answers as. See `isAdmitted`: the panel
         // has a write route, so the loopback defaults can be widened but not
         // replaced.
         allowedHosts: resolveAllowedHosts(source),
         // Renew the console token this long before it actually expires, so a
         // panel poll never races the expiry boundary.
-        tokenSkewSeconds: Math.max(0, Math.floor(num(source.tokenSkewSeconds, CONFIG_DEFAULTS.tokenSkewSeconds))),
+        tokenSkewSeconds: clampInt(source.tokenSkewSeconds, CONFIG_DEFAULTS.tokenSkewSeconds, 0),
         // Console login-flow overrides, handed to `createAuth` verbatim: it owns
         // the platform defaults, so only what the operator actually set travels.
         auth: resolveAuthOverrides(source, consoleBase),
@@ -160,7 +181,7 @@ export function resolveSettings(config) {
         // sized deadline would abort healthy requests.
         drawEnabled: source.drawEnabled === true,
         drawModelId: str(source.drawModelId, ""),
-        drawTimeoutMs: Math.max(5_000, Math.floor(num(source.drawTimeoutMs, CONFIG_DEFAULTS.drawTimeoutMs)))
+        drawTimeoutMs: clampInt(source.drawTimeoutMs, CONFIG_DEFAULTS.drawTimeoutMs, 5_000)
       },
       configError: null
     };
@@ -170,7 +191,7 @@ export function resolveSettings(config) {
     return {
       settings: {
         consoleBase,
-        apiBase: str(source.apiBase, CONFIG_DEFAULTS.apiBase).replace(/\/+$/, ""),
+        apiBase,
         trendHours: CONFIG_DEFAULTS.trendHours,
         cacheSeconds: CONFIG_DEFAULTS.cacheSeconds,
         pollSeconds: CONFIG_DEFAULTS.pollSeconds,

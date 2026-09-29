@@ -81,6 +81,50 @@ async function readJsonBody(request, limit = MAX_ACCOUNT_BODY_BYTES) {
 }
 
 /**
+ * Refuse a request the trust fence rejects, with the one body the panel reads.
+ *
+ * Every route opens with the identical line, so the wording and the 403 shape
+ * live in one place: a route that forgets the fence, or words it differently,
+ * is now the odd one out rather than a second truth.
+ * @param response - the outgoing HTTP response.
+ * @returns {void}
+ */
+function refuseOrigin(response) {
+  writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+}
+
+/**
+ * Refuse a disallowed method with the family's 405 shape.
+ *
+ * The 405 carries no `cache-control`: unlike a snapshot, a method refusal is
+ * not a fresh answer anyone would want to keep, so there is nothing to tell a
+ * cache not to store.
+ * @param response - the outgoing HTTP response.
+ * @returns {void}
+ */
+function refuseMethod(response) {
+  writeJson(response, 405, { ok: false, error: "method not allowed" });
+}
+
+/**
+ * Read and validate a JSON body, or answer 400 and signal the caller to stop.
+ *
+ * Collapses the "read body -> not ok ? write 400 and return" block every POST
+ * route repeats. Returns the `readJsonBody` result on success (so callers keep
+ * reading the parsed object through `body.value`, exactly as before), or `null`
+ * after it has already written the 400 — a `null` is the caller's cue to return.
+ * @param request - the incoming HTTP request.
+ * @param response - the outgoing HTTP response (written on failure).
+ * @returns {Promise<object|null>} the read result, or null if a 400 was sent.
+ */
+async function readJsonBodyOr400(request, response) {
+  const body = await readJsonBody(request);
+  if (body.ok) return body;
+  writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
+  return null;
+}
+
+/**
  * Map a thrown console/auth error to the one code the panel branches on.
  *
  * A raw error message carries no intent, so the panel keys its guidance off
@@ -123,18 +167,18 @@ function failureCode(error) {
  *   order — `teardown` runs them last.
  */
 export function registerRoutes(ctx, wiring) {
-  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, publisher, providerState, publishProvider, visionPublish } = wiring;
+  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, publisher, providerState, publishProvider, visionPublish, logger } = wiring;
 
   const offRoute = ctx.webServer.register({
     kind: "exact",
     path: SNAPSHOT_PATH,
     handler: async (request, response) => {
       if (!isAdmitted(request, settings.allowedHosts)) {
-        writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+        refuseOrigin(response);
         return;
       }
       if (request.method !== undefined && request.method !== "GET" && request.method !== "HEAD") {
-        writeJson(response, 405, { ok: false, error: "method not allowed" });
+        refuseMethod(response);
         return;
       }
       if (configError !== null) {
@@ -165,7 +209,12 @@ export function registerRoutes(ctx, wiring) {
           panelSwitch: () => providerStore.enabled().catch(() => null)
         });
         if (body.visionModels !== undefined) {
-          void visionPublish.current?.(body.visionModels, body.visionModels.map((entry) => entry.id)).catch(() => {});
+          // A write failure here is silent otherwise: the vision list fails to
+          // persist to this row's settings, so the later image-routing plugin
+          // reads a stale or empty set with no trace to explain why. Log it; the
+          // in-memory body the panel already got is unaffected.
+          void visionPublish.current?.(body.visionModels, body.visionModels.map((entry) => entry.id))
+            .catch((error) => logger?.warn?.(`${name}: vision model list write failed`, error));
         }
         writeJson(response, 200, body, { "cache-control": "no-store" });
       } catch (error) {
@@ -188,7 +237,7 @@ export function registerRoutes(ctx, wiring) {
       // The same fence as the snapshot route: without it, any page the
       // browser visits could post an account into this panel.
       if (!isAdmitted(request, settings.allowedHosts)) {
-        writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+        refuseOrigin(response);
         return;
       }
       const method = request.method === undefined ? "POST" : request.method;
@@ -199,14 +248,11 @@ export function registerRoutes(ctx, wiring) {
         return;
       }
       if (method !== "POST") {
-        writeJson(response, 405, { ok: false, error: "method not allowed" });
+        refuseMethod(response);
         return;
       }
-      const body = await readJsonBody(request);
-      if (!body.ok) {
-        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
-        return;
-      }
+      const body = await readJsonBodyOr400(request, response);
+      if (body === null) return;
       // `forget: true` clears the account without logging in again; the grant
       // survives on its refresh token until it needs the password again.
       if (body.value.forget === true) {
@@ -269,7 +315,7 @@ export function registerRoutes(ctx, wiring) {
       // Same trust fence as the other two routes: a foreign page must not be
       // able to plant or wipe an inference key.
       if (!isAdmitted(request, settings.allowedHosts)) {
-        writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+        refuseOrigin(response);
         return;
       }
       const method = request.method === undefined ? "GET" : request.method;
@@ -291,21 +337,23 @@ export function registerRoutes(ctx, wiring) {
         return;
       }
       if (method !== "POST") {
-        writeJson(response, 405, { ok: false, error: "method not allowed" });
+        refuseMethod(response);
         return;
       }
-      const body = await readJsonBody(request);
-      if (!body.ok) {
-        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
-        return;
-      }
+      const body = await readJsonBodyOr400(request, response);
+      if (body === null) return;
       // Forget: drop the panel-saved REFERENCE only. An environment value is
       // deliberately left standing (forget cannot delete an operator's .env),
       // and the cached catalog answers the old key until the poll after.
       if (body.value.forget === true) {
         try {
           await apiKeyStore.forget();
-          await catalogStore.clear().catch(() => {});
+          // The key itself is already gone; a leftover cached catalog would only
+          // surface stale models on the next poll. If the clear fails we still
+          // answer success, but record it — silently losing it would make a
+          // "forgot the key but old models still offered" report undebuggable.
+          await catalogStore.clear()
+            .catch((error) => logger?.warn?.(`${name}: catalog cache clear failed after api-key forget`, error));
           cache.clear();
           providerState.signature = "";
           providerState.quotaSignature = "";
@@ -337,7 +385,7 @@ export function registerRoutes(ctx, wiring) {
       // Same trust fence as the other three routes: a foreign page must not be
       // able to flip model routing for the whole Host.
       if (!isAdmitted(request, settings.allowedHosts)) {
-        writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+        refuseOrigin(response);
         return;
       }
       const method = request.method === undefined ? "GET" : request.method;
@@ -364,14 +412,11 @@ export function registerRoutes(ctx, wiring) {
         return;
       }
       if (method !== "POST") {
-        writeJson(response, 405, { ok: false, error: "method not allowed" });
+        refuseMethod(response);
         return;
       }
-      const body = await readJsonBody(request);
-      if (!body.ok) {
-        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
-        return;
-      }
+      const body = await readJsonBodyOr400(request, response);
+      if (body === null) return;
       if (typeof body.value.enabled !== "boolean") {
         writeJson(response, 400, { ok: false, error: "expected { enabled: boolean }" }, { "cache-control": "no-store" });
         return;
@@ -398,19 +443,16 @@ export function registerRoutes(ctx, wiring) {
       // Same fence as the other routes: a foreign page must not be able to
       // decide which models this Host offers.
       if (!isAdmitted(request, settings.allowedHosts)) {
-        writeJson(response, 403, { ok: false, error: "forbidden: origin mismatch" });
+        refuseOrigin(response);
         return;
       }
       const method = request.method === undefined ? "POST" : request.method;
       if (method !== "POST") {
-        writeJson(response, 405, { ok: false, error: "method not allowed" });
+        refuseMethod(response);
         return;
       }
-      const body = await readJsonBody(request);
-      if (!body.ok) {
-        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
-        return;
-      }
+      const body = await readJsonBodyOr400(request, response);
+      if (body === null) return;
       // An absent field is refused rather than read as "all models": writing
       // that would silently widen the offer to every model in the catalogue.
       if (!Array.isArray(body.value.enabledModelIds)) {
