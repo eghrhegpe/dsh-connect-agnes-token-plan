@@ -288,6 +288,12 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   红**（best-effort 不挡离线门禁，但 CI 日志会标红），不再等下一轮 40 请求。
 - **代价**：一个 CI secret（owner 维护）+ 一行 workflow。风险极低。
 - **推荐**：做。投入极小，把 §20/§21 实测从"一次性手工"变"可自动探"。
+- **落地状态（2026-09-29）**：已在 `ci.yml` 加第三档 `live-contract`（best-effort、
+  `continue-on-error: true`），跑 `node test/live-contract.mjs`，凭据走 repo secret
+  `SENSENOVA_API_KEY`（owner 注入，不进代码）。`live-contract.mjs` 非 `*.test.mjs`
+  （其头部明示"无 key → loud SKIP + exit 0"，与 e2e 缺 CLI 同形），因此**不进三方
+  名册比对**，offline 硬门禁与 `npm test` 链不受影响。剩余动作只剩 owner 在 CI
+  仓库配置 `SENSENOVA_API_KEY` secret。
 
 ### 4.3 UX 代价量化 → 最小实现：面板显示 auto-recover armed 状态
 
