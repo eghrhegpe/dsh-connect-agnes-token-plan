@@ -48,7 +48,7 @@
  * @module dsh-connect-sensenova-token-plan/token-store
  */
 
-import { CODE, isCredentialRefusal } from "./codes.js";
+import { CODE } from "./codes.js";
 import { str, obj, verbatim, num, numOrNull, pluginError } from "./util.js";
 import { name as RECORD_SCOPE } from "./host-config.js";
 import { createStoreContext } from "./token-store/state.js";
@@ -59,6 +59,18 @@ import {
   purgeGrant as purgeGrantImpl,
   isFresh as isFreshImpl
 } from "./token-store/grant.js";
+import {
+  throttleError as throttleErrorImpl,
+  localBackoffMs as localBackoffMsImpl,
+  readThrottle as readThrottleImpl,
+  adoptLegacyThrottle as adoptLegacyThrottleImpl,
+  writeThrottle as writeThrottleImpl,
+  clearThrottle as clearThrottleImpl,
+  inForceWaitMs as inForceWaitMsImpl,
+  DEFAULT_LOGIN_BACKOFF_MS,
+  MAX_LOGIN_BACKOFF_MS,
+  THROTTLE_MARKER
+} from "./token-store/throttle.js";
 
 /** Record address: this plugin's own namespace, so a stranger cannot collide. */
 const RECORD_ID = "sensenova-console";
@@ -124,36 +136,6 @@ const PASSWORD_REF = "SENSENOVA_PASSWORD";
 const THROTTLE_ID = "sensenova-console-throttle";
 
 /**
- * Marker inside the legacy payload, so a `grant` record holding throttle state
- * was never mistaken for a console grant (and vice versa).
- *
- * Still needed to recognise the old record during migration; it is what tells
- * an adopted throttle apart from another plugin's data at the same address.
- */
-const THROTTLE_MARKER = "signin-throttle";
-
-/**
- * The first wait imposed on a refusal the platform gave no window for.
- *
- * Doubles from here; `MAX_LOGIN_BACKOFF_MS` caps it.
- */
-const DEFAULT_LOGIN_BACKOFF_MS = 60_000;
-
-/**
- * Cap on a self-imposed wait.
- *
- * Applies ONLY to a wait this store invented. A window the platform stated
- * itself ("try again in 2 hours") is never truncated by it: capping that is
- * exactly what walks back into a lock that is still in force.
- */
-const MAX_LOGIN_BACKOFF_MS = 30 * 60_000;
-
-/**
- * Store version, bumped when the throttle's persisted shape changes.
- */
-const THROTTLE_VERSION = 1;
-
-/**
  * The refusal an in-force throttle stands for.
  *
  * Rethrows the platform's own failure while it is still the live one, so the
@@ -169,14 +151,7 @@ const THROTTLE_VERSION = 1;
  * @returns {Error} the error to throw.
  */
 function throttleError(held, cause) {
-  if (cause !== undefined) return cause;
-  const error = new Error(
-    held.parked
-      ? "sign-in is not being retried automatically: the account needs to be entered again"
-      : `sign-in is not being retried automatically: waiting out a ${held.code} refusal`
-  );
-  error.code = held.code;
-  return error;
+  return throttleErrorImpl(held, cause);
 }
 
 /**
@@ -402,8 +377,7 @@ export function createTokenStore(options) {
    * @returns {number} milliseconds to wait.
    */
   function localBackoffMs(attempt) {
-    const doubled = DEFAULT_LOGIN_BACKOFF_MS * 2 ** Math.max(0, attempt - 1);
-    return Math.min(doubled, MAX_LOGIN_BACKOFF_MS);
+    return localBackoffMsImpl(attempt);
   }
 
   /**
@@ -415,9 +389,7 @@ export function createTokenStore(options) {
    * @returns {Promise<{code: string, parked: boolean, until: number|null, attempt: number}|null>}
    */
   async function readThrottle() {
-    const held = await throttleStore.read().catch(() => null);
-    if (held !== null) return held;
-    return adoptLegacyThrottle();
+    return readThrottleImpl(wiring, state);
   }
 
   /**
@@ -432,35 +404,7 @@ export function createTokenStore(options) {
    * @returns {Promise<object|null>} the adopted throttle, or null.
    */
   async function adoptLegacyThrottle() {
-    const candidates = [THROTTLE_KEY, credentialKey(LEGACY_SCOPE, THROTTLE_ID)];
-    for (const legacyKey of candidates) {
-      try {
-        // The record must be OURS: a grant, carrying the throttle marker. A
-        // record that is anything else — a console grant at this address, a
-        // hand-edited file, another plugin's data — reads as absent rather than
-        // being interpreted.
-        const record = obj(await backend().readRecord(legacyKey));
-        if (record.kind !== "grant") continue;
-        const payload = obj(record.payload);
-        if (payload.marker !== THROTTLE_MARKER) continue;
-        if (num(payload.version) !== THROTTLE_VERSION) continue;
-        const code = str(payload.code, "");
-        if (code === "") continue;
-        const attempt = num(payload.attempt, 1);
-        const until = numOrNull(payload.until);
-        const adopted = payload.parked === true
-          ? { code, parked: true, until: null, attempt }
-          : { code, parked: false, until, attempt };
-        // A window that has closed is no longer a reason to refuse.
-        if (adopted.parked !== true && (until === null || until <= now())) continue;
-        await throttleStore.write(adopted).catch(() => {});
-        await backend().deleteRecord(legacyKey).catch(() => {});
-        return adopted;
-      } catch {
-        continue;
-      }
-    }
-    return null;
+    return adoptLegacyThrottleImpl(wiring, state);
   }
 
   /**
@@ -474,40 +418,12 @@ export function createTokenStore(options) {
    *   the throttle now in force.
    */
   async function writeThrottle(error, previousAttempt) {
-    const code = str(error?.code, CODE.LOGIN_FAILED);
-    const parked = isCredentialRefusal(code);
-    // A window the platform stated is taken at its word; only a window we
-    // invented is capped.
-    const stated = numOrNull(error?.retryAfterMs);
-    state.consecutiveRefusals = num(previousAttempt, state.consecutiveRefusals) + 1;
-    const attempt = state.consecutiveRefusals;
-    const until = parked
-      ? null
-      : now() + (stated === null ? localBackoffMs(attempt) : Math.max(stated, 0));
-    state.throttle = { code, parked, until, attempt };
-    // This plugin's own file, not the credentials service: a throttle is not a
-    // credential, and the only two record kinds that service admits are. See
-    // THROTTLE_ID for what writing one here used to cost.
-    await throttleStore.write(state.throttle).catch(() => {
-      // A store that cannot be written must not break the panel: this process
-      // still honours the wait in memory.
-    });
-    return state.throttle;
+    return writeThrottleImpl(wiring, state, error, previousAttempt);
   }
 
   /** Drop the throttle, so the next sign-in is allowed to try. */
   async function clearThrottle() {
-    state.throttle = null;
-    await throttleStore.clear().catch(() => {
-      // Nothing to do: the in-memory clear above already took effect.
-    });
-    // Discarded records from a previous version, if any are still around. They
-    // are never written again, so this is housekeeping rather than a state
-    // change. Both the current address and the pre-rename one are swept.
-    await Promise.all([
-      backend().deleteRecord(THROTTLE_KEY).catch(() => {}),
-      backend().deleteRecord(credentialKey(LEGACY_SCOPE, THROTTLE_ID)).catch(() => {})
-    ]);
+    return clearThrottleImpl(wiring, state);
   }
 
   /**
@@ -518,8 +434,7 @@ export function createTokenStore(options) {
    * @returns {number|null} milliseconds remaining.
    */
   function inForceWaitMs(held) {
-    if (held === null || held.parked) return null;
-    return Math.max(0, held.until - now());
+    return inForceWaitMsImpl(wiring, held);
   }
 
   /** Acquire a usable token, logging in or refreshing as needed. */
