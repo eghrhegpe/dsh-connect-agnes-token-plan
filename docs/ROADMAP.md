@@ -82,6 +82,11 @@ live 档在 `package.json` 加 `test:live:contract` 脚本（与 `test:live` 并
 - §2.2 的 live 档失败**不是回归**（同 `live-jwks` 纪律）：平台改字段时它红，
   修法是更新 `test/baselines/sensenova-contract.json` + `SENSENOVA-API.md` §7 注释，
   不是改 `llm-models.js` 逻辑去迁就平台。
+- §2.2 冻结的事实是**套餐层级相关**的（PITFALLS §20 自认部分模型 403 未实测、
+  `reasoning_effort:"max"` 仅 glm 实测通过）：契约基线保的是「本机这把 Key 的世界
+  没漂移」，不是「所有套餐都对」。分发到其它套餐的用户首遇方言差异时，修法走
+  `SENSENOVA-API.md` §7 注释层 + 基线增行，不静默改 `llm-models.js`——live 档
+  只在作者机器有护栏，这一层保护随大统一分发而变薄，吸收新模块前先记住这一点。
 
 ## 3. 旗舰刀口：429 自愈（全局级，低侵入）✅ 已实现
 
@@ -170,6 +175,11 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - **签到 / 每日领取**：先证商汤有端点，否则不吸。
 - **不再往 `upstream/` 拉新项目**，除非同时定义「提炼出口」（吸知识不吸代码）。
 - **跨 provider 通用聚合**：不吸收 `dsh-provider-quota` / `dsh-musage` 的泛化定位（见 §5.3）。
+- **client.js 文件级分解（2026-09-29 锐评评估后定界）**：Client 半边无构建步骤、
+  浏览器模块表只解析包名（`docs/DSH-PLUGIN.md`、`client.js` 头注），跨文件拆分的
+  前置是引入构建链（同 `dsh-connect-qoder` 的 tsdown 路线）。在那笔取舍（改 Client
+  从「浏览器刷新」变成「必须构建」）被明确接受之前不拆文件，继续以 `client-surface.js`
+  测试面补偿；若 client.js 再显著增长，重新开这个决策，而不是默默引入构建。
 
 ## 6.1 竞品参照：raccoon 的机制点（可选模式范本）
 

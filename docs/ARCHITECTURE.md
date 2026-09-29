@@ -235,6 +235,8 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 | `dsh-provider-quota` / `dsh-musage` | 品类对照：泛化的「provider 额度面板」 | 定位边界样本：本插件不泛化成通用额度面板，只深耕商汤 |
 | `dsh-codearts-auth`（`upstream/deepseek-harness-codearts-master`） | **多 provider 聚合登录插件**：codearts / buddy / workbuddy / lobsterai / qoder / loomy / raccoon / trae 各写一套自有登录流（IAM OAuth、扫码轮询、短信），凭据一律进 DSH 凭据服务；其中小浣熊走微信扫码——因官方深链回调 `office-raccoon://auth/callback` 写死、宿主 Node 收不到 | 「自有登录 + 凭据服务」形态的完整先例（与本插件同机制）；其跨 provider 泛化正是 §5 不变量 3 划出的边界，**不吸收**。小浣熊部分的事实见 [ROADMAP.md](./ROADMAP.md) §6.1.1 |
 
+**代价核实（同日二次核实，2026-09-29）**：上表核实的是「形态存在」，这里补「维护代价」的实测快照。GitHub 查询：`alaxrpg/dsh-sensenova-provider` 最后推送 2026-09-26、0 star、2 个开放 issue（活跃）；`hhb1028/dsh-retry-boost` 最后推送 2026-09-03（4 star）；`Thedeergod666/dsh-musage` 2026-08-31（6 star）；`mtty-ai/mmx-quota-tool` 2026-08-16（2 star）。由此钉住两件事：其一，这批存在性证明全部是**个人维护、个位数采用**的插件，没有一个经受过规模检验——§5 决议的真实依据强度是「单包可行」，不是「已被验证的成熟路线」；其二，本机这批插件一个都没安装（仅 `upstream/` 参考件），本机事实上已经只跑本插件。这把执行纪律（每块吸收都挂快照契约 + e2e 门禁，[ROADMAP.md](./ROADMAP.md) §2.3 顺序约束）从谨慎升级为必需。
+
 ### 5.4 出图对接点：dsh-draw-router 源码级对照（2026-09-29）
 
 对象：`upstream/dsh-draw-router/repo/lib/index.js`（495 行，v0.1.1）。
