@@ -32,6 +32,7 @@
     "provider-store.js",
     "provider-publish.js",
     "snapshot-aggregate.js",
+    "state-store.js",
     "api-key-store.js",
     "llm-models.js",
     "llm-adapter.js",

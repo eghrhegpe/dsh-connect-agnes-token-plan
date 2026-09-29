@@ -17,11 +17,11 @@
  *
  * @module dsh-connect-sensenova-token-plan/catalog-store
  */
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { str, obj, num } from "./util.js";
 import { name } from "./host-config.js";
+import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, stateDir as pluginStateDir } from "./state-store.js";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const CATALOG_VERSION = 1;
@@ -53,8 +53,7 @@ export function normalizeEnabledIds(raw) {
  * @returns {string} the directory.
  */
 export function catalogDir() {
-  const home = str(process.env.DSH_HOME, join(homedir(), ".dsh"));
-  return join(home, "state", name);
+  return pluginStateDir(name);
 }
 
 /**
@@ -109,25 +108,18 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = 
   let held;
 
   /**
-   * A unique temporary path per write.
+   * Persist the held record atomically; a write failure only loses the cache.
    *
-   * Two Host processes can share this state directory (the module header says
-   * so), so a FIXED temp name would let both writes land on the same path and
-   * each `rename` could move the other's half-written file — a lost catalog
-   * that looks like a crash. A process-unique suffix keeps concurrent writers
-   * off each other; the rename is still atomic per path.
+   * The temp path is process-plus-clock unique (`state-store.js`'s
+   * `temporaryOf`), so two Host processes sharing this directory never write
+   * the same temp name and `rename` each other's half-written file away.
    */
-  const temporaryOf = () => join(dir, `catalog.json.${process.pid}.${now()}.tmp`);
-
-  /** Persist the held record atomically; a write failure only loses the cache. */
   const persist = async () => {
     if (held === null) return;
-    const temporary = temporaryOf();
+    const temporary = temporaryOf(dir, "catalog.json", now);
     try {
-      await mkdir(dir, { recursive: true, mode: 0o700 });
-      const body = JSON.stringify(held);
-      await writeFile(temporary, `${body}\n`, { encoding: "utf8", mode: 0o600 });
-      await rename(temporary, file);
+      await ensureStateDir(dir);
+      await writeStateFile(file, JSON.stringify(held), { temporary });
     } catch {
       // The in-memory record still serves this process.
       await rm(temporary, { force: true }).catch(() => {});
@@ -141,11 +133,7 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = 
      */
     async list() {
       if (held === undefined) {
-        try {
-          held = parse(JSON.parse(await readFile(file, "utf8")));
-        } catch {
-          held = null;
-        }
+        held = parse(await readStateJson(file));
       }
       return held === null ? [] : held.entries;
     },
@@ -156,11 +144,7 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now } = 
      */
     async listEnabledIds() {
       if (held === undefined) {
-        try {
-          held = parse(JSON.parse(await readFile(file, "utf8")));
-        } catch {
-          held = null;
-        }
+        held = parse(await readStateJson(file));
       }
       return held === null ? [] : held.enabledModelIds;
     },

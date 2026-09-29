@@ -23,11 +23,10 @@
  *
  * @module dsh-connect-sensenova-token-plan/provider-store
  */
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { obj } from "./util.js";
 import { join } from "node:path";
-import { str, obj } from "./util.js";
 import { name } from "./host-config.js";
+import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, stateDir as pluginStateDir } from "./state-store.js";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const PROVIDER_VERSION = 1;
@@ -38,8 +37,7 @@ export const PROVIDER_VERSION = 1;
  * @returns {string} the directory.
  */
 export function providerDir() {
-  const home = str(process.env.DSH_HOME, join(homedir(), ".dsh"));
-  return join(home, "state", name);
+  return pluginStateDir(name);
 }
 
 /**
@@ -71,17 +69,10 @@ export function createFileProviderStore({ dir } = {}) {
    */
   const read = async () => {
     if (cached !== undefined && Date.now() - cachedAt < 1000) return cached;
-    let payload;
-    try {
-      payload = JSON.parse(await readFile(filePath, "utf8"));
-    } catch {
-      cached = null;
-      cachedAt = Date.now();
-      return null;
-    }
     // Shape check, not trust: anything unexpected reads as "not set" so a
     // corrupted or downgraded file can never silently flip the switch.
-    const source = obj(payload);
+    // Absent/unreadable/non-JSON reads as `null` (`readStateJson`).
+    const source = obj(await readStateJson(filePath));
     const value = source.version === PROVIDER_VERSION ? normalizeEnabled(source.enabled) : null;
     cached = value;
     cachedAt = Date.now();
@@ -112,10 +103,11 @@ export function createFileProviderStore({ dir } = {}) {
     async save(value) {
       const enabled = normalizeEnabled(value);
       if (enabled === null) throw new TypeError("provider switch expects a boolean");
-      await mkdir(stateDir, { recursive: true });
-      const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-      await writeFile(tmp, `${JSON.stringify({ version: PROVIDER_VERSION, enabled, updatedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
-      await rename(tmp, filePath);
+      // Write failures PROPAGATE on purpose: a switch the panel ordered must
+      // not silently stay off because the state file could not be written.
+      const temporary = temporaryOf(stateDir, "provider.json");
+      await ensureStateDir(stateDir);
+      await writeStateFile(filePath, JSON.stringify({ version: PROVIDER_VERSION, enabled, updatedAt: new Date().toISOString() }, null, 2), { temporary });
       cached = enabled;
       cachedAt = Date.now();
     },
@@ -126,10 +118,9 @@ export function createFileProviderStore({ dir } = {}) {
     async forget() {
       cached = null;
       cachedAt = Date.now();
-      await mkdir(stateDir, { recursive: true });
-      const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-      await writeFile(tmp, `${JSON.stringify({ version: PROVIDER_VERSION, updatedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
-      await rename(tmp, filePath);
+      const temporary = temporaryOf(stateDir, "provider.json");
+      await ensureStateDir(stateDir);
+      await writeStateFile(filePath, JSON.stringify({ version: PROVIDER_VERSION, updatedAt: new Date().toISOString() }, null, 2), { temporary });
     }
   };
 }

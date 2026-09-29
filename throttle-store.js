@@ -16,11 +16,12 @@
  *
  * @module dsh-connect-sensenova-token-plan/throttle-store
  */
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { str, num } from "./util.js";
 import { name } from "./host-config.js";
+import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, stateDir as pluginStateDir } from "./state-store.js";
 
 /** Shape version, bumped when the persisted form changes. */
 const THROTTLE_VERSION = 1;
@@ -34,8 +35,7 @@ const THROTTLE_VERSION = 1;
  * @returns {string} the directory.
  */
 export function throttleDir() {
-  const home = str(process.env.DSH_HOME, join(homedir(), ".dsh"));
-  return join(home, "state", name);
+  return pluginStateDir(name);
 }
 
 /**
@@ -90,7 +90,6 @@ function parse(raw, now) {
  */
 export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } = {}) {
   const file = join(dir, "throttle.json");
-  const temporary = join(dir, "throttle.json.tmp");
 
   /**
    * Move a throttle written before the rename into the current location.
@@ -104,7 +103,7 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
     if (legacyAdopted) return;
     legacyAdopted = true;
     try {
-      await mkdir(dir, { recursive: true, mode: 0o700 });
+      await ensureStateDir(dir);
     } catch {
       // A read-only Home: nothing can be moved, the current store stands.
     }
@@ -123,17 +122,15 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
   return {
     async read() {
       await adoptLegacyFile();
-      try {
-        return parse(JSON.parse(await readFile(file, "utf8")), now);
-      } catch {
-        // Absent, unreadable, or not JSON: no throttle is in force.
-        return null;
-      }
+      // Absent, unreadable, or not JSON reads as "no throttle" (`readStateJson`
+      // returns null): the safe direction for a time window.
+      return parse(await readStateJson(file), now);
     },
     async write(state) {
       await adoptLegacyFile();
+      const temporary = temporaryOf(dir, "throttle.json");
       try {
-        await mkdir(dir, { recursive: true, mode: 0o700 });
+        await ensureStateDir(dir);
         const body = JSON.stringify({
           version: THROTTLE_VERSION,
           code: state.code,
@@ -141,8 +138,7 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
           until: state.parked === true ? null : state.until,
           attempt: state.attempt
         });
-        await writeFile(temporary, `${body}\n`, { encoding: "utf8", mode: 0o600 });
-        await rename(temporary, file);
+        await writeStateFile(file, body, { temporary });
       } catch {
         // A read-only Home must not break the panel: the caller still honours
         // the wait for this process, it just will not outlive it.

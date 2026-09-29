@@ -264,6 +264,14 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   损坏即忽略"，`throttle/catalog/provider` 三 store 改为对它的薄封装；再接
   `dsh-atomic-write`（可选开关，peer 缺席走手写）。投入中、风险低、门禁
   `store.test.mjs` + 新增 `state-store` 注入。
+- **落地状态（2026-09-29）**：第一步已完成——新增 `state-store.js`（peer-free，
+  导出 `stateDir/ensureStateDir/temporaryOf/writeStateFile/readStateJson`），
+  三个 store 的目录解析与原子读写全部改走原语（`throttleDir/catalogDir/
+  providerDir` 委托 `stateDir`）。`catalog`/`provider` 原有 pid+时间戳唯一临时名
+  策略并入原语，`throttle` 的固定 tmp 名一并消除（顺带收敛它的双进程互踩面）；
+  provider 目录权限收紧到 0o700、写失败抛错语义保留。`store.test.mjs` 全部
+  黑盒断言无行为变化（131 checks 全绿）。第二步（`dsh-atomic-write` peer 接入，
+  拿 `withFileLock` 跨进程写锁）未做，待 peer 依赖评估。
 
 ### 4.2 契约基线 → 加 CI live-contract job（best-effort，同 e2e 纪律）
 
