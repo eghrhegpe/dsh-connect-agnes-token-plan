@@ -101,7 +101,6 @@ function clientFactory(require) {
     "pool.callable": "可调用",
     "pool.details": "模型与返赠详情",
     "pool.locked": "需开通 +{count} 个",
-    "pool.lockedTitle": "套餐覆盖但当前 Key 无权限",
     "pool.uncounted": "不计入积分池：{models}",
     "pool.vision": "可看图：{models}",
     "pool.visionInferred": "（按模型名推断，平台未声明）",
@@ -213,7 +212,6 @@ function clientFactory(require) {
     "pool.callable": "Callable",
     "pool.details": "Models & grant details",
     "pool.locked": "+{count} need activation",
-    "pool.lockedTitle": "In the plan but this key has no permission",
     "pool.uncounted": "Not billed to credit pools: {models}",
     "pool.vision": "Vision-capable: {models}",
     "pool.visionInferred": "(inferred from model names; not declared by the platform)",
@@ -566,21 +564,30 @@ function clientFactory(require) {
       );
     }
 
+    /** The bar fill and figure tone for a usage percentage: 70 warn / 90 danger. */
+    function usageTone(pct) {
+      if (pct >= 90) return { fill: S.barFillError, color: "var(--dsw-alias-state-error-primary)" };
+      if (pct >= 70) return { fill: S.barFillWarn, color: "var(--dsw-alias-state-warn-primary)" };
+      return { fill: S.barFill, color: "var(--dsw-alias-label-secondary)" };
+    }
+
     /**
      * One quota window as a compact sub-card: the REMAINING balance is the
      * headline number (the panel is opened to see how much is left), the
      * percentage sits beside it in a usage tone, and used/limit is a single
      * quiet caption under the bar.
+     *
+     * A window that is not an object at all (a pool row the Host flagged as
+     * shape-drifted, or a window field simply absent) renders NOTHING instead
+     * of throwing: one malformed pool must not blank the whole panel — the
+     * shape warning above already says what is wrong.
      */
     function QuotaCard({ label, window, tt }) {
+      if (window === null || typeof window !== "object") return null;
       const { limit, used, remaining, resetAt } = window;
       const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
-      const tone = pct >= 90 ? S.barFillError : pct >= 70 ? S.barFillWarn : S.barFill;
-      const pctColor = pct >= 90
-        ? "var(--dsw-alias-state-error-primary)"
-        : pct >= 70
-          ? "var(--dsw-alias-state-warn-primary)"
-          : "var(--dsw-alias-label-secondary)";
+      const tone = usageTone(pct);
+      const pctColor = tone.color;
       return h(
         "div",
         { style: S.quota },
@@ -616,7 +623,7 @@ function clientFactory(require) {
         h(
           "div",
           { style: S.bar, role: "progressbar", "aria-label": `${label} ${pct.toFixed(1)}%`, "aria-valuenow": pct.toFixed(1), "aria-valuemin": 0, "aria-valuemax": 100 },
-          h("div", { style: { ...tone, width: `${pct}%` } })
+          h("div", { style: { ...tone.fill, width: `${pct}%` } })
         )
       );
     }
@@ -737,7 +744,9 @@ function clientFactory(require) {
      * bare table.
      */
     function TrendTable({ trend, tt }) {
-      if (!trend || trend.models.length === 0) return h("div", { style: S.card }, h("div", { style: S.empty }, tt("trend.none")));
+      // `models` missing entirely (a drifted payload the Host still passed as
+      // data) is the empty case, not a crash: the empty note is honest.
+      if (!trend || !Array.isArray(trend.models) || trend.models.length === 0) return h("div", { style: S.card }, h("div", { style: S.empty }, tt("trend.none")));
       const max = Math.max(0, ...trend.models.map((row) => Math.max(0, Number(row.credits) || 0)));
       return h(
         "div",
@@ -1353,9 +1362,16 @@ function clientFactory(require) {
       // `dirty` in the guard keeps an edit in flight from being clobbered.
       useEffect(() => {
         if (dirty === false) setIds(hostIds);
-        setSavedKey(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [hostKey]);
+
+      // The "已保存" notice ends when the picker is edited again (or the
+      // Host's value moves on). It must NOT end on the poll that echoes our
+      // own write — that echo is exactly when the notice is supposed to show;
+      // clearing it on every hostKey change made the success line unreachable.
+      useEffect(() => {
+        if (dirty === true) setSavedKey(null);
+      }, [dirty]);
 
       const save = useCallback(async () => {
         if (busy) return;
@@ -1789,7 +1805,7 @@ function clientFactory(require) {
             h(
               SectionCard,
               { title: tt("section.pools"), open: openSections.pools, onToggle: () => toggleSection("pools"), tt },
-              pools && pools.plan.name
+              pools?.plan?.name
                 ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 10 } }, pools.plan.name)
                 : null,
               h(PoolExhaustionNotice, { pools, tt }),
@@ -1798,14 +1814,14 @@ function clientFactory(require) {
                 { style: S.poolsGrid },
                 (pools?.pools || []).map((pool) => h(PoolCard, { key: pool.id, pool, tt }))
               ),
-              data.uncountedModels && data.uncountedModels.length > 0
+              Array.isArray(data.uncountedModels) && data.uncountedModels.length > 0
                 ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
                     format(tt("pool.uncounted"), { models: data.uncountedModels.join(" · ") }))
                 : null,
               // Step one of the vision plan: which of THIS key's models take
               // image input. Only shown when the Host actually had a catalog to
               // ask (no API key → the field is absent → no claim either way).
-              data.visionModels && data.visionModels.length > 0
+              Array.isArray(data.visionModels) && data.visionModels.length > 0
                 ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
                     format(tt("pool.vision"), {
                       models: data.visionModels.map((entry) => entry.id).join(" · ") + (data.visionModels.every((entry) => entry.source === "name") ? tt("pool.visionInferred") : "")

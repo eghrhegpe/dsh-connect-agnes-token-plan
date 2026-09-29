@@ -506,6 +506,31 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     notice.some((line) => line.includes(when(1800003600))), notice.join("\n"));
 }
 
+// === G8. a drifted payload degrades to a line, never a crash ==============
+// The Host flags top-level shape drift but still passes the data through, so
+// a pool row whose window is absent — or a trend block with no models — must
+// render nothing/empty instead of throwing and blanking the whole panel. One
+// malformed pool must not take the quota view (and its shape warning) down.
+{
+  const zh = surface.dictionaries.zh;
+  const ttZh = (key) => zh[key] ?? key;
+
+  check("a quota window that is not an object renders nothing",
+    texts(treeOf(render.QuotaCard, { label: "pool.window5h", window: null, tt: ttZh })).length === 0
+      && texts(treeOf(render.QuotaCard, { label: "pool.window5h", window: undefined, tt: ttZh })).length === 0,
+    texts(treeOf(render.QuotaCard, { label: "pool.window5h", window: null, tt: ttZh })).join("\n"));
+
+  const barePool = rendered(render.PoolCard, {
+    pool: { name: "通用池", poolType: "default", grantBalance: 0 }, tt: ttZh
+  });
+  check("a pool missing both windows still renders its identity",
+    barePool.includes("通用池") && barePool.includes(zh["pool.default"]), barePool.join("\n"));
+
+  const emptyTrend = rendered(render.TrendTable, { trend: {}, tt: ttZh });
+  check("a trend block without models shows the empty note, not a crash",
+    emptyTrend.includes(zh["trend.none"]), emptyTrend.join("\n"));
+}
+
 // === H. the rendering came from the shipped client ========================
 // Reaching here means every extraction marker was found. These checks pin the
 // lifted pieces themselves, so a refactor that silently empties one of them
