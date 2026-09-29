@@ -50,6 +50,8 @@
     "token-store/grant.js",
     "token-store/throttle.js",
     "token-store/account.js",
+    "token-store/renewal.js",
+    "token-store/acquire.js",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
