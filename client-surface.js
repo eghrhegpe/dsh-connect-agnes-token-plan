@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The shipped client bundle, loaded as a module instead of scraped as text.
  *
@@ -46,8 +47,9 @@ const registrations = [];
 
 // The client's only module-scope side effect. Installed before the dynamic
 // import below, which is why the import is awaited at the top level.
-globalThis.window ??= {};
-globalThis.window.__ModuleLoader__ = {
+const win = /** @type {Window & typeof globalThis & { __ModuleLoader__?: { load: (r: object) => void } }} */ (globalThis.window ?? {});
+globalThis.window = win;
+win.__ModuleLoader__ = {
   load: (registration) => registrations.push(registration)
 };
 
@@ -90,8 +92,7 @@ if (registration === undefined) {
  * Host reads, and `panel` is the module's own test surface (dictionaries, the
  * decision function, tables, style tokens, components) — all definitions the
  * browser runs, exposed rather than copied.
- * @type {{interpretSnapshot: Function, viewOf: Function, dictionaries: object,
- *   tables: object, styles: object, helpers: object, components: object}}
+ * @type {{inject: Function, apply: Function, panel: object}}
  */
 const materialized = registration.factory((specifier) => {
   if (specifier === "react") return React;
@@ -100,4 +101,4 @@ const materialized = registration.factory((specifier) => {
       "The shipped bundle must stay dependency-free apart from react."
   );
 });
-export const surface = Object.freeze(materialized.panel ?? materialized);
+export const surface = Object.freeze(/** @type {object} */ (materialized.panel ?? materialized));

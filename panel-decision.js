@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The panel's own reading and decision — the real module, not a copy.
  *
