@@ -39,17 +39,18 @@
  * first use, then keeps itself alive from the refresh token alone. The
  * password is never persisted by this module.
  *
- * Structure: `createTokenStore` builds one shared context — the wiring
- * (backend, keys, clock, env, auth, throttle store) plus the seven mutable
- * fields the four blocks (grant / account / renewal / throttle) operate on —
- * via `createStoreContext` (`./token-store/state.js`), and keeps its public
- * behavior exactly as before. The split doc is `docs/TOKEN-STORE-SPLIT.md`.
+ * Structure: this file is the FACADE — `createTokenStore` builds the shared
+ * context via `createStoreContext` (`./token-store/state.js`) and delegates to
+ * the four extracted blocks (grant / account / renewal / throttle, in
+ * `./token-store/{grant,account,renewal,throttle}.js`) plus the acquire seam
+ * (`./token-store/acquire.js`). Public API and export surface are unchanged.
+ * The split doc is `docs/TOKEN-STORE-SPLIT.md`.
  *
  * @module dsh-connect-sensenova-token-plan/token-store
  */
 
 import { CODE } from "./codes.js";
-import { str, obj, verbatim, num, numOrNull, pluginError } from "./util.js";
+import { str, obj, verbatim, pluginError } from "./util.js";
 import { name as RECORD_SCOPE } from "./host-config.js";
 import { createStoreContext } from "./token-store/state.js";
 import {
@@ -63,13 +64,11 @@ import {
   throttleError as throttleErrorImpl,
   localBackoffMs as localBackoffMsImpl,
   readThrottle as readThrottleImpl,
-  adoptLegacyThrottle as adoptLegacyThrottleImpl,
   writeThrottle as writeThrottleImpl,
   clearThrottle as clearThrottleImpl,
   inForceWaitMs as inForceWaitMsImpl,
   DEFAULT_LOGIN_BACKOFF_MS,
-  MAX_LOGIN_BACKOFF_MS,
-  THROTTLE_MARKER
+  MAX_LOGIN_BACKOFF_MS
 } from "./token-store/throttle.js";
 import {
   readUsername as readUsernameImpl,
@@ -111,39 +110,11 @@ const credentialRef = (name) => name;
 /**
  * Where the throttle used to live, as a record in the credentials service.
  *
- * It is read for MIGRATION ONLY and never written again. The reason it was
- * there at all was that a throttle is not a `grant` and not an `api-key`, and
- * those are the only two kinds the service admits — naming a third makes the
- * credentials document unparseable for every plugin on the machine, so the
- * Host refuses to start. Smuggling state in as a `grant` avoided that, at the
- * cost of every payload write being one typo away from the same outage.
- *
- * The state now lives in this plugin's own file (see `throttle-store.js`).
- * This address is still read once, because a deployment that was parked on a
- * wrong password when it last shut down must not wake up and retry that
- * password automatically — a parked refusal is exactly the one that must
- * survive.
+ * Read for MIGRATION ONLY and never written again. The marker-based adoption
+ * lives in `token-store/throttle.js`; this constant stays here as the public
+ * export surface (`THROTTLE_ID`).
  */
 const THROTTLE_ID = "sensenova-console-throttle";
-
-/**
- * The refusal an in-force throttle stands for.
- *
- * Rethrows the platform's own failure while it is still the live one, so the
- * message the user reads is the platform's words, not this store's. Once the
- * wait has been served and re-reading finds a fresh refusal, that failure is
- * gone — so the throttle's own description takes over.
- *
- * The classification code is preserved on the synthesized error, so the panel
- * can still tell a wrong password from a lockout and say which it is.
- * @param {{code: string, parked: boolean, until: number|null, attempt: number}} held
- *   the throttle in force.
- * @param {Error} [cause] - the original refusal, when it is still current.
- * @returns {Error} the error to throw.
- */
-function throttleError(held, cause) {
-  return throttleErrorImpl(held, cause);
-}
 
 /**
  * Build the token store.
@@ -175,239 +146,30 @@ function throttleError(held, cause) {
  */
 export function createTokenStore(options) {
   const { wiring, state } = createStoreContext(options);
-  const {
-    auth,
-    env,
-    skewMs,
-    throttleStore,
-    now,
-    onTrace,
-    credentialKey,
-    key,
-    THROTTLE_KEY,
-    backend,
-    ephemeral
-  } = wiring;
-  const {
-    rejected
-  } = state;
+  const { env, backend, ephemeral } = wiring;
+  const { rejected } = state;
 
-  /** Read the durable grant through the credentials service. */
-  async function readStored() {
-    return readStoredImpl(wiring, state);
-  }
-
-  /**
-   * Take over a grant a previous version saved under the old namespace.
-   *
-   * Runs once, when the record under the current name is absent. The legacy
-   * record is re-written at the current address and deleted, so the next read
-   * is a plain lookup; a grant that is still good must not be abandoned to the
-   * "please log in again" path just because this plugin was renamed.
-   * @returns {Promise<object|undefined>} the adopted grant, or undefined.
-   */
-  async function adoptLegacyGrant() {
-    return adoptLegacyGrantImpl(wiring, state);
-  }
-
-  /**
-   * Persist a token pair.
-   *
-   * Goes through `modifyRecord` so the read-decide-replace is exclusive: a
-   * refresh token is single-use, and two processes racing on it would
-   * otherwise invalidate each other's grant.
-   * @param {string} accessToken - the new console JWT.
-   * @param {string} refreshToken - the refresh token the platform just issued.
-   * @param {number} expiresIn - the access token lifetime in seconds.
-   * @param {string} [replacing] - the access token this write supersedes:
-   *   passed by every refresh, and by a password login that read an existing
-   *   grant. A record still holding exactly that token is the one we read, so
-   *   replacing it is right; a record holding anything else was rotated by
-   *   someone else in the meantime and is kept. Absent only for a first-ever
-   *   login that read no grant.
-   * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
-   *   the grant now in effect — ours, or the newer one we deferred to.
-   */
-  async function store(accessToken, refreshToken, expiresIn, replacing) {
-    return storeGrant(wiring, state, accessToken, refreshToken, expiresIn, replacing);
-  }
-
-  /**
-   * Remove a grant that can no longer be of any use.
-   *
-   * A refresh token the platform has rejected (`refresh_rejected`) is dead for
-   * good, and when no account is stored to re-login with there is no path that
-   * ever revives it. Leaving it on disk did two things: it kept an ownerless
-   * token pair in the credentials file after "forget account", and it made
-   * every poll hit the dead refresh token before giving up. This reaps it.
-   * Best-effort: a read-only store keeps serving from memory until restart.
-   * @param {string} [accessToken] - the dead token, also dropped from the
-   *   in-memory cache and rejection set.
-   */
-  async function purgeGrant(accessToken) {
-    return purgeGrantImpl(wiring, state, accessToken);
-  }
-
-  /**
-   * Renew with the stored refresh token.
-   * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
-   */
-  async function renewWithRefresh(stored) {
-    return renewWithRefreshImpl(wiring, state, stored, store);
-  }
-
-  /**
-   * The account's identity: the stored username, with the environment as a
-   * fallback. Kept apart from the password because only the username is ever
-   * persisted — `state()` asks "is there an account to clear?" without
-   * requiring a password to be available.
-   * @returns {Promise<string>} the username, or `""` when none is known.
-   */
-  const readUsername = async () => {
-    return readUsernameImpl(wiring, state);
-  };
-
-  /**
-   * The account to log in with: a stored (or environment) username and an
-   * ENVIRONMENT password.
-   *
-   * The password is never persisted. `SENSENOVA_PASSWORD` in the environment
-   * is its only durable source, and that is an explicit opt-in: without an env
-   * password the panel simply asks again when the refresh token dies.
-   * @returns {Promise<{username: string, password: string, source: string}|undefined>}
-   */
-  async function readAccount() {
-    return readAccountImpl(wiring, state);
-  }
-
-  /**
-   * Log in with an account and return a self-renewing grant.
-   *
-   * The account is taken EXPLICITLY when the caller just typed it (the panel
-   * save path: the password lives in that call's closure and is never
-   * written anywhere), and read back from the environment otherwise (the
-   * auto-recovery path after a dead refresh token, opt-in via
-   * `SENSENOVA_PASSWORD`).
-   *
-   * The grant read BEFORE the sign-in is named as the one this login
-   * supersedes. It has to be read first: the token pair only arrives after the
-   * network walk, and naming nothing is what let a still-fresh grant from a
-   * DIFFERENT account silently survive a deliberate switch — the panel said
-   * "signed in" while keeping serving the previous account. Naming the read
-   * grant turns the write into the same compare-and-set a refresh uses: an
-   * intentional switch wins, a login racing another process's rotation defers.
-   * @param {{username: string, password: string}} [explicit] - an account
-   *   supplied by the caller (never persisted); falls back to `readAccount`.
-   * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
-   */
-  async function loginFromAccount(explicit) {
-    return loginFromAccountImpl(wiring, state, explicit, readStored, store);
-  }
-
-  /** Whether a token is still good for at least `skewMs`. */
-  function isFresh(token, at) {
-    return isFreshImpl(wiring, state, token, at);
-  }
-
-  /**
-   * Refusals that describe the CREDENTIAL rather than the moment.
-   *
-   * A wrong password does not become right by waiting, so a timer is the
-   * wrong instrument for it: the panel must keep asking for an account instead
-   * of quietly burning another attempt every minute. The platform's own
-   * verification prompts are the same shape — the user has to do something, so
-   * nothing is retried behind their back.
-   *
-   * `not_configured` is deliberately NOT here. It is not a refusal at all: it
-   * means no account has ever been entered, so there was never an attempt to
-   * avoid repeating. Recording it as a park would write a throttle record on
-   * every fresh install and then report `needsUserAction` for a user who has
-   * done nothing wrong yet.
-   *
-   * The set itself lives in `codes.js` beside the taxonomy it belongs to, so
-   * that a new platform reason is classified in one place instead of three.
-   */
-
-  /**
-   * How long a refusal without a stated window should wait.
-   *
-   * Doubles per consecutive refusal so a persistently wrong password settles
-   * at the cap instead of producing a steady one-minute trickle of attempts
-   * for as long as the panel stays open.
-   * @param {number} attempt - how many self-imposed waits have been served.
-   * @returns {number} milliseconds to wait.
-   */
-  function localBackoffMs(attempt) {
-    return localBackoffMsImpl(attempt);
-  }
-
-  /**
-   * Read the persisted throttle, or `null` when absent, stale, or unreadable.
-   *
-   * A parked refusal has no deadline, so it is keyed on its `parked` flag
-   * rather than on a time: reading it back must not depend on a field that is
-   * legitimately absent.
-   * @returns {Promise<{code: string, parked: boolean, until: number|null, attempt: number}|null>}
-   */
-  async function readThrottle() {
-    return readThrottleImpl(wiring, state);
-  }
-
-  /**
-   * Take over a throttle a previous version parked in the credentials service.
-   *
-   * Only ever reads. It matters because a parked refusal has no deadline: lose
-   * it across a restart and the next poll retries a password the user has not
-   * changed, which is how one wrong password becomes a locked account. So the
-   * old record is adopted rather than dropped, then deleted so this runs once.
-   * Both the current address and the pre-rename one are consulted, so a parked
-   * state left under either name survives.
-   * @returns {Promise<object|null>} the adopted throttle, or null.
-   */
-  async function adoptLegacyThrottle() {
-    return adoptLegacyThrottleImpl(wiring, state);
-  }
-
-  /**
-   * Remember a refusal so neither this process nor another one retries it.
-   *
-   * Persisted because a second Host process polling the same account would
-   * otherwise walk straight into a lock this one is politely waiting out.
-   * @param {object} error - the refusal thrown by `login`.
-   * @param {number} [previousAttempt] - the attempt count being superseded.
-   * @returns {Promise<{code: string, parked: boolean, until: number|null, attempt: number}>}
-   *   the throttle now in force.
-   */
-  async function writeThrottle(error, previousAttempt) {
-    return writeThrottleImpl(wiring, state, error, previousAttempt);
-  }
-
-  /** Drop the throttle, so the next sign-in is allowed to try. */
-  async function clearThrottle() {
-    return clearThrottleImpl(wiring, state);
-  }
-
-  /**
-   * How much longer a throttle is in force, or `null` when it is not.
-   *
-   * A parked refusal has no deadline and so no countdown.
-   * @param {{parked: boolean, until: number|null}|null} held - the throttle.
-   * @returns {number|null} milliseconds remaining.
-   */
-  function inForceWaitMs(held) {
-    return inForceWaitMsImpl(wiring, held);
-  }
-
-  /** Acquire a usable token, logging in or refreshing as needed. */
-  async function acquire() {
-    return acquireImpl(wiring, state, {
-      readThrottle, clearThrottle,
-      readStored, isFresh,
-      renewWithRefresh,
-      readAccount, loginFromAccount,
-      writeThrottle, throttleError, purgeGrant
-    });
-  }
+  /** One-line delegations to the extracted blocks. */
+  const readStored = () => readStoredImpl(wiring, state);
+  const store = (at, rt, exp, replacing) => storeGrant(wiring, state, at, rt, exp, replacing);
+  const purgeGrant = (accessToken) => purgeGrantImpl(wiring, state, accessToken);
+  const isFresh = (token, at) => isFreshImpl(wiring, state, token, at);
+  const readThrottle = () => readThrottleImpl(wiring, state);
+  const clearThrottle = () => clearThrottleImpl(wiring, state);
+  const writeThrottle = (error, previousAttempt) => writeThrottleImpl(wiring, state, error, previousAttempt);
+  const throttleError = (held, cause) => throttleErrorImpl(held, cause);
+  const inForceWaitMs = (held) => inForceWaitMsImpl(wiring, held);
+  const readUsername = () => readUsernameImpl(wiring, state);
+  const readAccount = () => readAccountImpl(wiring, state);
+  const loginFromAccount = (explicit) => loginFromAccountImpl(wiring, state, explicit, readStored, store);
+  const renewWithRefresh = (stored) => renewWithRefreshImpl(wiring, state, stored, store);
+  const acquire = () => acquireImpl(wiring, state, {
+    readThrottle, clearThrottle,
+    readStored, isFresh,
+    renewWithRefresh,
+    readAccount, loginFromAccount,
+    writeThrottle, throttleError, purgeGrant
+  });
 
   return {
     /**
