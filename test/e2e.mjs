@@ -27,9 +27,9 @@
  * PATH and prints a loud SKIP (exit 0) when it is not. It boots a server, so it
  * is slower than the offline suites and needs the CLI present to actually run.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,6 +106,43 @@ function withDeadline(promise, ms, what) {
   ]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * The runtime packages a profile resolves, taken from the CLI's own install.
+ *
+ * The Loader resolves every bundle — `@deepseek-ai/dsh-base` included, and the
+ * Host's own internals with it — relative to `<DSH_HOME>/profiles`, NOT relative
+ * to wherever the CLI was installed. A hand-built temp home therefore has no
+ * packages to find, and the boot dies with 154 × `Cannot find package
+ * '<runtime dep>'`: a failure that reads exactly like a plugin regression and is
+ * nothing but a missing shared directory. (It is not even about this plugin —
+ * an isolated profile with no plugin at all fails the same way, and so does one
+ * built from a commit predating the change under test.)
+ *
+ * The CLI's install tree is the right source, and the only one that is both
+ * complete and isolated: it is exactly the package set this CLI version was
+ * built against, and it carries no user plugins (`dsh-connect-*` count: zero),
+ * so sharing it cannot pull the developer's real profile in. The unpacked
+ * desktop runtime under `~/.dsh` looks like a candidate and is not one: it is a
+ * different version, which shows up as a third of its entries failing to
+ * activate.
+ *
+ * `undefined` means the CLI is not an npm install (a packaged desktop app has no
+ * global tree); the home is then left as it was, and the boot failure says what
+ * it could not find.
+ * @returns {string|undefined} a `node_modules` directory to share, or undefined.
+ */
+function cliRuntimeModules() {
+  const root = spawnSync("npm", ["root", "-g"], { shell: true, encoding: "utf8", timeout: 30_000 });
+  if (root.error !== undefined || root.status !== 0) return undefined;
+  const prefix = root.stdout.trim();
+  if (prefix === "") return undefined;
+  const anchor = join(prefix, "@deepseek-ai", "dsh", "node_modules");
+  // The marker is a package the Host itself needs; without it the directory is
+  // not the runtime, and linking it would only trade one ERR_MODULE_NOT_FOUND
+  // for another.
+  return existsSync(join(anchor, "@deepseek-ai", "dsh-base")) ? anchor : undefined;
+}
+
 /** The isolated home: a profile whose only plugin is ours, aimed at the fake. */
 function buildHome(fakePort) {
   const home = mkdtempSync(join(tmpdir(), "dsh-panel-e2e-"));
@@ -140,6 +177,16 @@ function buildHome(fakePort) {
     "    registerProvider: true",
     ""
   ].join("\n"));
+
+  // Sibling of the profile, not inside it: this is the shared tree every
+  // profile on a real machine resolves through, and the CLI looks for it there.
+  const shared = cliRuntimeModules();
+  if (shared === undefined) {
+    note("no CLI install tree to share — the boot will fail to resolve its runtime packages");
+  } else {
+    symlinkSync(shared, join(home, "profiles", "node_modules"), "junction");
+    note(`shared runtime packages: ${shared}`);
+  }
   return home;
 }
 
