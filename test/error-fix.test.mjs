@@ -8,7 +8,7 @@
  *
  * 这些与 peer 缺席与否无关——干净 checkout 也能跑（符合 npm test 离线门禁）。
  */
-import { looksLikeRateLimit, reclassifyFinish, reclassifyStream, CODE } from "../llm-error-fix.js";
+import { looksLikeRateLimit, extractStructuredType, shouldReclassifyQuotaToRate, reclassifyFinish, reclassifyStream, CODE } from "../llm-error-fix.js";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -116,6 +116,49 @@ function fail(name, error) {
   } catch (error) {
     fail("reclassifyStream", error);
   }
+}
+
+// --- 4. 真实商汤线格式：quota_exceeded_error 误命名速率上限 -----------------
+// 线上实际打出的两条体（见会话日志）：code:8 是"rpm exhausted"——请求速率上限，
+// 却被商汤复用 quota_exceeded_error 这个名字；code:429003 是 rate_limit_error，
+// peer 已判 RATE_LIMIT。v1 纯文本启发漏判了 code:8，本层靠结构化 type 纠正。
+{
+  const bodies = [
+    // 请求速率上限，错命名为 quota_exceeded_error：必须纠正为 RATE_LIMIT。
+    { code: CODE.QUOTA, message: '429: {"message":"rpm exhausted","type":"quota_exceeded_error","code":"8"}' },
+    // 仅内层 message 带 rpm（无完整 JSON）：纯文本启发也要接住。
+    { code: CODE.QUOTA, message: "rpm exhausted" },
+    // tpm/rpm 速率上限的另一种措辞。
+    { code: CODE.QUOTA, message: '{"message":"inference exceeds tpm/rpm limit","type":"quota_exceeded_error","code":"8"}' }
+  ];
+  for (const failure of bodies) {
+    check(`shouldReclassifyQuotaToRate true for ${failure.message.slice(0, 46)}`,
+      shouldReclassifyQuotaToRate(failure) === true);
+  }
+
+  // 已是 rate_limit_error 类型（peer 多数已判 RATE_LIMIT，这里防御性确认）。
+  const alreadyRate = { code: CODE.QUOTA, message: '429: {"message":"inference exceeds tpm/rpm limit","type":"rate_limit_error","code":"429003"}' };
+  check("extractStructuredType pulls rate_limit_error", extractStructuredType(alreadyRate.message) === "rate_limit_error");
+  check("shouldReclassifyQuotaToRate true for rate_limit_error type", shouldReclassifyQuotaToRate(alreadyRate) === true);
+
+  // 真配额耗尽（token/credit/balance），即使 type 是 quota_exceeded_error 也保留 QUOTA。
+  const realQuota = [
+    { code: CODE.QUOTA, message: '{"message":"token quota exceeded","type":"quota_exceeded_error","code":"8"}' },
+    { code: CODE.QUOTA, message: '{"message":"月额度已用尽","type":"quota_exceeded_error","code":"8"}' }
+  ];
+  for (const failure of realQuota) {
+    check(`shouldReclassifyQuotaToRate false (true quota): ${failure.message.slice(0, 40)}`,
+      shouldReclassifyQuotaToRate(failure) === false);
+  }
+
+  // 端到端：整条流里 code:8/rpm 的 finish 被纠正为 RATE_LIMIT。
+  async function* src() {
+    yield { type: "finish", reason: { kind: "error", failure: { code: CODE.QUOTA, message: '429: {"message":"rpm exhausted","type":"quota_exceeded_error","code":"8"}' } } };
+  }
+  const seen = [];
+  for await (const c of reclassifyStream(src())) seen.push(c);
+  check("stream corrects code:8 rpm-exhausted to RATE_LIMIT",
+    seen[0]?.reason?.failure?.code === CODE.RATE_LIMIT, JSON.stringify(seen[0]?.reason?.failure));
 }
 
 console.log(JSON.stringify(results, null, 2));

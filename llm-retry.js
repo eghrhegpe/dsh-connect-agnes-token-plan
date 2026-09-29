@@ -19,8 +19,11 @@
  *     NOT retry quota exhaustion — fast-fail and let the panel say why.
  *   - `RATE_LIMIT` — a transient throttle that clears on its own. The peer
  *     retries this by default, and we keep doing so, with a backoff biased
- *     slightly longer than default so an immediate re-hit against the one
- *     shared pool is less likely.
+ *     longer than default so an immediate re-hit against the one shared pool
+ *     is less likely. SenseNova's daytime rate ceiling (rpm/tpm) is aggressive
+ *     (see `llm-error-fix.js`: its `quota_exceeded_error` code 8 is actually a
+ *     per-minute rate cap), so we ride it out with more attempts and a gentler
+ *     initial step than the peer default.
  *
  * @module dsh-connect-sensenova-token-plan/llm-retry
  */
@@ -80,22 +83,25 @@ export function retryableCodes() {
  * We pin it explicitly rather than passing `undefined` so a future change to
  * the peer's default policy cannot silently alter this provider's behaviour.
  *
- * `backoff` is biased slightly LONGER than the peer default on the first delay:
- * with a single shared credit pool, an immediate retry is more likely to
- * re-hit the same limit, so a gentler initial backoff reduces thundering-herd
- * against the quota. `maxRetries` stays at the peer default (5) — enough to
- * ride out a transient throttle, not enough to spin on a real outage.
+ * Tuned for SenseNova's daytime rate ceiling (rpm/tpm), which the peer mislabels
+ * as `QUOTA` — `llm-error-fix.js` pulls those back to `RATE_LIMIT` so they
+ * reach this policy. The numbers: more attempts (8) and a gentler, longer
+ * backoff than the peer default (initial 1.5s → cap 20s, jitter 0.25) so a
+ * single shared credit pool is not stampeded while the rate window refills.
+ * Still bounded: a genuine outage fails after ~90s of backed-off retries rather
+ * than spinning forever. QUOTA stays excluded (a depleted pool cannot be retried
+ * into health; retrying it only prolongs the cool-down — ROADMAP §1).
  * @returns {{mode: "normal", maxRetries: number, retryableCodes: string[], backoff: {initialDelayMs: number, maxDelayMs: number, jitterRatio: number}}}
  */
 export function buildRetryPolicyConfig() {
   return {
     mode: "normal",
-    maxRetries: 5,
+    maxRetries: 8,
     retryableCodes: retryableCodes(),
     backoff: {
-      initialDelayMs: 750,
-      maxDelayMs: 15_000,
-      jitterRatio: 0.2
+      initialDelayMs: 1_500,
+      maxDelayMs: 20_000,
+      jitterRatio: 0.25
     }
   };
 }

@@ -38,8 +38,8 @@ const BASE_URL = "https://token.sensenova.cn/v1";
   try {
     const cfg = buildRetryPolicyConfig();
     check("policy mode is 'normal'", cfg.mode === "normal", cfg.mode);
-    check("maxRetries is a non-negative safe integer",
-      Number.isSafeInteger(cfg.maxRetries) && cfg.maxRetries >= 0, String(cfg.maxRetries));
+    check("maxRetries is a safe integer and rides out daytime rate-limiting (>=8)",
+      Number.isSafeInteger(cfg.maxRetries) && cfg.maxRetries >= 8, String(cfg.maxRetries));
 
     const codes = cfg.retryableCodes;
     check("retryableCodes is a non-empty string array",
@@ -62,6 +62,10 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     check("backoff.initialDelayMs is a positive finite number <= maxDelayMs",
       Number.isFinite(b.initialDelayMs) && b.initialDelayMs > 0 && b.initialDelayMs <= b.maxDelayMs,
       JSON.stringify(b));
+    check("backoff.initialDelayMs is gentle on the shared pool (>=1000ms)",
+      b.initialDelayMs >= 1000, String(b.initialDelayMs));
+    check("backoff.maxDelayMs caps the worst-case wait (>=10000ms)",
+      b.maxDelayMs >= 10_000, String(b.maxDelayMs));
     check("backoff.jitterRatio is within [0, 1]",
       b.jitterRatio >= 0 && b.jitterRatio <= 1, String(b.jitterRatio));
   } catch (error) {

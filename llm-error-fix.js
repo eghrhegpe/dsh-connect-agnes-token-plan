@@ -54,12 +54,14 @@ export function looksLikeRateLimit(message) {
   if (typeof message !== "string" || message.length === 0) return false;
   const m = message.toLowerCase();
 
-  // 显式限频信号：任意一个即够。
+  // 显式限频信号：任意一个即够。rpm/tpm 是商汤速率上限（requests/tokens per
+  // minute），不是 token 配额（配额耗尽会说 quota/credit/balance/额度）。
   const hasRateSignal =
     /\b429\b/.test(m) ||
     /rate[_\s-]?limit/i.test(m) ||
     /too many requests?/i.test(m) ||
     /requests?\s+(?:per|rate|freq)/i.test(m) ||
+    /\b(?:rpm|tpm)\b/.test(m) ||
     /throttl/i.test(m) ||
     /请求过于频繁|限流|频率/.test(m);
   if (!hasRateSignal) return false;
@@ -71,6 +73,60 @@ export function looksLikeRateLimit(message) {
     /额度\s*(?:已)?\s*(?:用尽|耗尽|不足)/.test(m) ||
     /quota\s*(?:exceeded|exhausted|reached)/i.test(m);
   return !hardQuota;
+}
+
+/**
+ * 从错误文本里抽出商汤结构化 `type` 字段（如 `"type":"quota_exceeded_error"`）。
+ *
+ * peer 把整条错误 JSON 拼进 `failure.message`，所以这里能从文本回捞结构信号，
+ * 而不依赖 peer 是否单独透传了 `type`。抓不到返回 null。
+ * @param {string} message
+ * @returns {string|null}
+ */
+export function extractStructuredType(message) {
+  if (typeof message !== "string" || message.length === 0) return null;
+  const match = /"type"\s*:\s*"([^"]+)"/i.exec(message);
+  return match ? match[1] : null;
+}
+
+/**
+ * 一个被 peer 判为 QUOTA 的失败，是否其实是限频、应纠正为 RATE_LIMIT。
+ *
+ * 这是修正 v1（纯文本启发）漏判的核心：`{"message":"rpm exhausted",
+ * "type":"quota_exceeded_error","code":"8"}` 这种体——商汤把**请求速率上限**
+ * 复用 `quota_exceeded_error` 这个名字，纯文本里没有 "rate limit" 字样，v1 的
+ * `looksLikeRateLimit` 既没命中限频信号也没命中硬额度，于是留在 QUOTA、不重试、
+ * 直接失败。本函数改读结构化 `type`：
+ *
+ *   - `type` 含 `rate_limit` → 本就是限频（peer 多数已判 RATE_LIMIT，这里是防御）。
+ *   - `type` 含 `quota` 但仍带 rpm/tpm/rate-limit/per-minute/限流/频率 字样 →
+ *     是"被错命名为 quota 的速率上限"，纠正为 RATE_LIMIT。
+ *   - `type` 含 `quota` 且无任何速率字样（token/credit/balance 真耗尽）→ 保留 QUOTA。
+ *   - 无结构化 `type` → 退回 v1 的纯文本启发 `looksLikeRateLimit`。
+ *
+ * 不纠正真配额耗尽：那是共享 Token Plan 池的硬耗尽，重试只会延长冷却窗口
+ * （ROADMAP §1 纪律），所以宁可快失败。
+ * @param {{code?: string, message?: string}} failure
+ * @returns {boolean} true 表示应纠正为 RATE_LIMIT。
+ */
+export function shouldReclassifyQuotaToRate(failure) {
+  if (!failure || failure.code !== CODE.QUOTA) return false;
+  const message = typeof failure.message === "string" ? failure.message : "";
+  const type = extractStructuredType(message);
+
+  if (type !== null) {
+    const t = type.toLowerCase();
+    if (/rate[_\s-]?limit/.test(t)) return true; // 防御：已是限频类型
+    if (/quota/.test(t)) {
+      // quota_exceeded_error 但带速率上限字样 → 错命名，纠正。
+      const rateCapWords = /\brpm\b|\btpm\b|rate[_\s-]?limit|per[\s_-]?(?:min|minute|sec|second)|too many|限流|频率|请求过于频繁/i;
+      return rateCapWords.test(message);
+    }
+    return false; // 其它非 quota 类型，保守不纠正
+  }
+
+  // 无结构化 type：退回纯文本启发。
+  return looksLikeRateLimit(message);
 }
 
 /**
@@ -90,8 +146,7 @@ export function reclassifyFinish(chunk) {
   }
   const failure = reason.failure;
   if (failure.code !== CODE.QUOTA) return chunk;
-  const message = typeof failure.message === "string" ? failure.message : "";
-  if (!looksLikeRateLimit(message)) return chunk;
+  if (!shouldReclassifyQuotaToRate(failure)) return chunk;
   // 纠正为 RATE_LIMIT：保留 message，仅改 code 以驱动 peer 的退避重试。
   return {
     ...chunk,
