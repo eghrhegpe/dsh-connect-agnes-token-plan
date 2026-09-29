@@ -113,9 +113,11 @@ function clientFactory(require) {
     "trend.model": "模型",
     "trend.credits": "积分",
     "trend.none": "该区间内没有消耗记录。",
+    "trend.legend": "柱长按最高消耗相对显示，非占总额度比例。",
     "auth.selfRenew": "令牌自动续期中",
     "auth.needsLogin": "需要重新登录",
     "llm.title": "模型接入（API Key）",
+    "llm.keyField": "API Key",
     "llm.placeholder": "粘贴 sk- 开头的 API Key",
     "llm.save": "保存 API Key",
     "llm.saving": "保存中…",
@@ -223,9 +225,11 @@ function clientFactory(require) {
     "trend.model": "Model",
     "trend.credits": "Credits",
     "trend.none": "No consumption in this range.",
+    "trend.legend": "Bars are scaled relative to the top consumer, not to the total quota.",
     "auth.selfRenew": "Token renews itself",
     "auth.needsLogin": "Sign-in required",
     "llm.title": "Model access (API key)",
+    "llm.keyField": "API key",
     "llm.placeholder": "Paste your sk- API key",
     "llm.save": "Save API key",
     "llm.saving": "Saving…",
@@ -304,14 +308,21 @@ function clientFactory(require) {
       cardHead: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
       poolName: { fontSize: 15, fontWeight: 600 },
       chip: { display: "inline-flex", alignItems: "center", height: 22, padding: "0 8px", borderRadius: 999, fontSize: 12, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-secondary)" },
-      // The grant balance is money the user can still spend, so it earns a
-      // chip in the card head; its expiry detail rides in the folded section.
-      grantChip: { display: "inline-flex", alignItems: "center", height: 22, padding: "0 8px", borderRadius: 999, fontSize: 12, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-primary)", fontVariantNumeric: "tabular-nums" },
+      // The grant balance is money the user can still spend, so it reads as a
+      // metric, not a decoration: right-aligned tabular figures on the card's
+      // own line, no chip frame. A pill here gave a headline number the same
+      // weight as the static type label beside it.
+      grantChip: { display: "inline-flex", alignItems: "center", fontSize: 13, color: "var(--dsw-alias-label-primary)", fontVariantNumeric: "tabular-nums" },
       // The two quota windows sit side by side as twin sub-cards, stacking
       // when the card gets narrower than ~2*170px (170 leaves room for the
       // longest "used x / limit" caption beside the headline figures).
       quotas: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))", gap: 10, marginTop: 14 },
-      quota: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, padding: "12px 14px", borderRadius: 10, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)" },
+      // The twin quota windows float on a darker surface (layer-2) rather than
+      // a third nested border: the section card owns the outer frame and the
+      // pool card owns the inner one, so the sub-window reads by background
+      // step alone. A border here made three equal-weight rectangles inside
+      // each other and flattened the hierarchy it was meant to express.
+      quota: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, padding: "12px 14px", borderRadius: 10, background: "var(--dsw-alias-bg-layer-2)" },
       // `flexWrap` because the reset stamp can grow to `MM-DD HH:mm`: in a narrow
       // twin column the label and the date no longer share a row, and the date is
       // the one part of the line that must never be clipped.
@@ -353,6 +364,9 @@ function clientFactory(require) {
       // The trend card sits on layer-1 like the pool cards, so its bar track
       // must be layer-2 (the quota bars invert this: layer-1 inside layer-2).
       trendBar: { height: 6, borderRadius: 3, background: "var(--dsw-alias-bg-layer-2)", overflow: "hidden" },
+      // The legend under the bars: quiet secondary text, lifted a little off
+      // the last row's divider so it reads as a caption, not another data row.
+      trendLegend: { marginTop: 10, fontSize: 11, lineHeight: "16px", color: "var(--dsw-alias-label-secondary)" },
       muted: { color: "var(--dsw-alias-label-secondary)" },
       error: { color: "var(--dsw-alias-state-error-primary)" },
       note: { marginTop: 24, color: "var(--dsw-alias-label-secondary)", fontSize: 12, lineHeight: "18px" },
@@ -753,7 +767,12 @@ function clientFactory(require) {
               h("div", { style: { ...S.barFill, width: `${pct}%` } })
             )
           );
-        })
+        }),
+        // The bars above are scaled to the LARGEST consumer, so the top model
+        // always fills the track — that answers "who is burning credits", but
+        // the eye misreads a full track as "this model is at its limit". The
+        // legend names the convention so the chart never lies by omission.
+        h("div", { style: S.trendLegend }, tt("trend.legend"))
       );
     }
 
@@ -1182,7 +1201,7 @@ function clientFactory(require) {
       }
       // The registration line is the one the section title promises.
       if (llm.registerProvider === true && llm.providerRegistered === true) {
-        rows.push(h("div", { style: { fontSize: 12, color: "var(--dsw-alias-state-success-primary)" }, role: "status" },
+        rows.push(h("div", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" }, role: "status" },
           format(tt("llm.registered"), {
             id: String(llm.providerId ?? ""),
             models: count(llm.modelCount),
@@ -1553,7 +1572,7 @@ function clientFactory(require) {
         h(
           "label",
           { style: S.field },
-          h("span", { style: S.fieldLabel }, tt("llm.title")),
+          h("span", { style: S.fieldLabel }, tt("llm.keyField")),
           h(
             "div",
             { style: { display: "flex", gap: 6, alignItems: "center" } },
