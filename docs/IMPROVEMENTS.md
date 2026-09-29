@@ -163,6 +163,16 @@ publish，不测路由骨架）。
 注入缝）。**风险**：低（语义原样迁，无并发逻辑重写）。**回滚**：按 `git` 回退
 单提交即可。
 
+**落地状态（2026-09-29）**：已完成——新增 `routes.js`（`registerRoutes(ctx, wiring)`，
+五个 handler 与 `writeJson`/`readJsonBody`/`failureCode` 原样迁入）与
+`lifecycle.js`（`startSideEffects` = mount seed + `registerDrawTool` + vision
+step two；`teardown` = dispose→release→off×5）。`index.js` 从 778 行瘦到
+**251 行**（组装 wiring + 两处调用 + `ctx.effect` 挂 teardown），全部导出不变。
+实际收敛比原方案更好：**三套测试零改动**——`routes`/`wiring` 经 `apply` 黑盒、
+`draw` 只测 `draw.js` 纯逻辑，无需改注入缝。16 套件全绿。搬运中踩过一个真坑：
+`ctx.effect` 的 cleanup 语义（注册时**返回**的函数在卸载时才执行；误写成注册时
+直接执行会让 teardown 立即清光全部路由，wiring 首轮红即此，已修并加注释）。
+
 ---
 
 ## 3. peer 语义耦合：`llm-error-fix.js` 是"补丁"，可升级为"契约护栏"
@@ -361,7 +371,7 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 | **P1** | §4.2 CI live-contract job（best-effort + secret） | 极低 | 高（漂移当天可见） | 极低 | CI 新增档 |
 | **P1** | §4.1 状态文件统一（`state-store.js` + 可选 `dsh-atomic-write`） | 中 | 中（删 3 份重复 + 跨进程锁） | 中（新 peer 依赖） | `store` + 新增注入 |
 | **P1** | §4.4a 字典/决策外置成 JSON（`client.js` 瘦 ~400 行） | — | — | — | **判停**：Loader 不支持 client 相对 import（`require` 只认 seed，见 §4.4 前提核验） |
-| **P2** | §2.3 抽 `routes.js` + `lifecycle.js`（`index.js` 瘦到 <300 行） | 中 | 中（接线味收编） | 中（改 2 套测试注入缝） | `routes` + `draw` + `wiring` + `e2e` |
+| **P2** | §2.3 抽 `routes.js` + `lifecycle.js`（`index.js` 瘦到 251 行，**已落地**） | 中 | 中（接线味收编） | 中（effect cleanup 坑已修） | `routes` + `draw` + `wiring` + `e2e`（16 套件已绿） |
 | **P2** | §1.3 定位对齐（README/文档 + 面板显示推理线健康，**已落地**） | 极低 | 中（消自我矛盾） | 极低 | `docs` + `panel`（已绿） |
 | **P3** | §3.3 ② 上游修 peer + ③ 收紧 peer 范围（生态配合） | — | 高（根除 429 误判） | 中（依赖上游） | 等上游 |
 | **P3** | §4.4b 纯逻辑抽 `client-logic.js` | — | — | — | **判停**（同 §4.4a：Loader 硬约束） |
