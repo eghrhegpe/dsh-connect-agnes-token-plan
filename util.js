@@ -16,7 +16,8 @@
  * @typedef {Error & {
  *   code: import("./codes.js").CodeValue,
  *   retryAfterMs?: number,
- *   detail?: string
+ *   detail?: string,
+ *   trace?: object[]
  * }} PluginError
  */
 

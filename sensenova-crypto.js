@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * dsh-connect-sensenova-token-plan — the cryptographic primitives the console login needs.
  *
@@ -26,7 +27,7 @@ import { str, obj, pluginError } from "./util.js";
  * hint "The PKCE code verifier must be at least 43 characters", with the real
  * cause nowhere in it. Encoding from the view's own buffer keeps every element
  * width honest.
- * @param {BufferSource} bytes - the bytes to encode.
+ * @param {Uint8Array|ArrayBuffer} bytes - the bytes to encode.
  * @returns {string} the unpadded base64url text.
  */
 export function b64url(bytes) {
@@ -34,9 +35,14 @@ export function b64url(bytes) {
   // TypedArrays whose element width would silently truncate the output.
   const isAcceptable = bytes instanceof Uint8Array || bytes instanceof ArrayBuffer;
   if (!isAcceptable) {
-    throw pluginError(CODE.CONFIG, `b64url expects Uint8Array or ArrayBuffer, got ${bytes?.constructor?.name ?? typeof bytes}`);
+    // The guard above is the real protection (redline 4): only Uint8Array and
+    // ArrayBuffer reach the encoder. Inside the reject branch the tightened
+    // param type narrows `bytes` to `never`, so read the offending shape off a
+    // loose view purely to describe it in the message.
+    const bad = /** @type {*} */ (bytes);
+    throw pluginError(CODE.CONFIG, `b64url expects Uint8Array or ArrayBuffer, got ${bad?.constructor?.name ?? typeof bad}`);
   }
-  return Buffer.from(bytes).toString("base64url");
+  return Buffer.from(/** @type {*} */ (bytes)).toString("base64url");
 }
 
 /** Decode a base64url JWT segment into a UTF-8 string. */
@@ -171,9 +177,11 @@ async function fetchJwks({ jwksEndpoint, timeoutMs = 15_000, now = Date.now, cac
  * header is the AAD, and it enters the AAD as its base64url SEGMENT, not as
  * the JSON text, per RFC 7516 §5.1 step 14.
  * @param {string} password - the account password.
- * @param {object} options - which key and where to find it.
- * @param {string} options.jwksEndpoint - the JWKS document URL.
- * @param {string} options.encKeyId - the `kid` to seal to.
+ * @param {object} [options] - which key and where to find it; the runtime guards
+ *   below reject an absent endpoint / key id, so a missing option is a clear
+ *   CONFIG error rather than a silent fallback.
+ * @param {string} [options.jwksEndpoint] - the JWKS document URL.
+ * @param {string} [options.encKeyId] - the `kid` to seal to.
  * @param {number} [options.timeoutMs] - request deadline.
  * @param {Map<string, {keys: object[], at: number}>} [options.cache] - a
  *   caller-owned key-set cache (see {@link createJwksCache}). Omitted, the seal

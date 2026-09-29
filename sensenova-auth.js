@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * SenseNova console authentication — OIDC authorization-code login and
  * silent refresh.
@@ -417,9 +418,10 @@ function nextFromBody(body, wanted) {
  * @param {string} start - the first URL.
  * @param {RegExp} wanted - what marks the destination.
  * @param {Map<string, string>} jar - cookies collected along the way.
- * @param {number|object} [maxHops] - hop budget; an object here is the trace
- *   recorder (callers pass `MAX_HOPS` explicitly to trace every walk).
- * @param {object} [alsoTrace] - the trace recorder, when hops are logged.
+ * @param {object} cfg - resolved auth config; `cfg.maxHops` is the hop budget.
+ * @param {{ step: (name: string, info?: object) => void }} [trace] - the trace
+ *   recorder; when present every hop is logged and the terminal body is scanned
+ *   for the next hop from the response text.
  * @returns {Promise<string>} the matching URL, or `""` when the chain ends first.
  */
 async function followUntil(start, wanted, jar, cfg, trace) {
@@ -473,9 +475,9 @@ function collectCookies(response, jar) {
  */
 async function readTokenResponse(response, cfg) {
   const status = typeof response.status === "number" ? response.status : 0;
-  const body = obj(response.jsonText !== undefined
-    ? (() => { try { return JSON.parse(response.jsonText); } catch { return {}; } })()
-    : await response.json().catch(() => ({})));
+  const body = obj(/** @type {{ jsonText?: string }} */ (response).jsonText !== undefined
+    ? (() => { try { return JSON.parse(/** @type {{ jsonText?: string }} */ (response).jsonText); } catch { return {}; } })()
+    : await /** @type {Response} */ (response).json().catch(() => ({})));
   const accessToken = str(body.access_token, "");
   if (accessToken === "") {
     const detail = str(body.error_description, str(body.error, `HTTP ${status}`));
@@ -612,7 +614,7 @@ function rejectionCode(body) {
  * @param {string} credentials.password - its password.
  * @param {object} [options] - request options.
  * @param {number} [options.timeoutMs] - deadline override.
- * @param {function(object[]): void} [options.onTrace] - called with the
+ * @param {function(?object[], ?Error): void} [options.onTrace] - called with the
  *   sanitized hop list when the attempt ENDS, success or failure; the second
  *   argument is `null` on success and the thrown error otherwise. A success
  *   throws nothing to carry a trace on, so this is the only way one is ever

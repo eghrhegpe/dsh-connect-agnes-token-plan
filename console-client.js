@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The Host half's console and model-catalog fetches: caching plus single-flight.
  *
@@ -77,7 +78,7 @@ export async function fetchConsole(settings, path, params, cacheMs, cache, infli
       response = await send(token);
     }
     if (response.status === 401 || response.status === 403) {
-      const error = new Error(`console rejected the token (HTTP ${response.status})`);
+      const error = /** @type {import("./util.js").PluginError} */ (new Error(`console rejected the token (HTTP ${response.status})`));
       error.code = CODE.JWT_EXPIRED;
       throw error;
     }
