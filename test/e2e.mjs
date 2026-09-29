@@ -281,6 +281,15 @@ try {
     !warnings.includes("did not activate"), warnings.split("\n").filter((l) => l.includes("activate")).join(" | "));
   check("the routes were not rejected as duplicates",
     !warnings.includes("duplicate exact route"));
+  // A peer-range mismatch makes the loader SKIP the whole bundle, and the run
+  // would then die on the first call to an API route that was never registered:
+  // a bare 401 from the Host's default handler, every subsequent check "401 /
+  // undefined / {}", and a failure mode that looks like a plugin bug but is
+  // really a packaging one. Catch the skip where its evidence exists — in the
+  // boot log — and name the remedy in the first check that would otherwise die.
+  const skippedLines = warnings.split("\n").filter((l) => l.includes("skipping profile bundle"));
+  check("the plugin bundle was not skipped by the loader",
+    skippedLines.length === 0, skippedLines.join(" | ").slice(0, 400));
 
   const session = await openSession(host.url, PORT);
   const call = session.call;
