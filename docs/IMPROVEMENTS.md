@@ -1,0 +1,369 @@
+# 改进研究（Improvements）
+
+对 `dsh-connect-sensenova-token-plan` 当前设计的一次**深化改进研究**：针对已识别的
+四个结构性问题（定位描述与注册能力脱节、`index.js` 接线复杂度、peer 语义耦合、
+状态/契约/UX/client 四块维护债），给出**有实证支撑**的改进方向与分步落地建议。
+本文是**研究结论**，不是待执行清单——每条建议都附证据（文件路径 + 行号），并标注
+投入/风险/门禁。
+
+> **修订记录**：2026-09-29 复核后修正三处原稿硬伤——① §1.2 的"默认推理通道"论断
+> 撤销（`agent-default-model` 是运行时可变的选择记录，原引用内容已不可复现）；
+> ② peer 版本注记由 `0.2.0-rc.1` 纠正为实测的 `0.1.7-rc.2`；③ §3.1③ 的"正则命中
+> 类型名"机制**实测不成立**（`\b` 不穿透 `_`——`_` 是 word 字符，`quota_exceeded_error`
+> 类型名不触发误判；真正触发 `isQuotaExceededError` 的是 message 文本里的额度措辞）。
+> 另修正 §1.1 行数口径与 §4.1 的 catalog-store 并发细节。P0 的 §3.3① 契约护栏测试
+> （`test/peer-contract.test.mjs`，含机制钉）随本次复核落地。
+
+> 定位：承接 [ARCHITECTURE.md](./ARCHITECTURE.md) §5（大统一）与 [ROADMAP.md](./ROADMAP.md)
+> §0–§6（路线图），但聚焦"怎么改得更好"，不重复定位。
+> 实证来源：本机 DSH 运行时（`~/.dsh/dsh-asar-unpacked/dsh/node_modules`，即
+> `test/peer-roots.mjs` 解析到的 peer 根）的 peer 源码、兄弟插件
+> （`~/.dsh/profiles/{web,desktop}` 安装树与 `~/.dsh/fork`）与本插件源码。
+> 版本注记（2026-09-29 核验修订）：所有 peer 行号引用基于本机运行时实测版本
+> `@deepseek-ai/*` `0.1.7-rc.2`、`@earendil-works/pi-ai` `0.85.1`，并已在该版本上
+> 逐行复核一致（原稿误标 `0.2.0-rc.1`，本机无此版本号来源）；平台改行为时以实测为准。
+
+---
+
+## 1. 大统一定位：矛盾不在"合"，在"没对齐"
+
+### 1.1 实证：单包 connect 是生态惯例，不是越界
+
+兄弟插件（本机 `~/.dsh/profiles` 实测）全部是**单包 connect**：面板 + provider +
+工具一体，无一拆分：
+
+| 插件 | 单包形态 | 是否注册 provider | peer 面（含 dsh-llm / pi-ai / host-webserver 等） | 代码量（JS，本机实测） |
+|---|---|---|---|---|
+| `dsh-connect-trae` | 面板+双供应商 provider+签到一体 | 是（`dsh-llm-pi-ai`） | 是 | ≈5.9k 行（2 文件，几乎全在 `lib/index.js`） |
+| `dsh-connect-workbuddy` | 面板+provider+模型管理一体 | 是 | 是 | ≈5.9k 行（4 文件） |
+| `@eghrhegpe/dsh-connect-qoder` | provider 为主（接本机登录态） | 是 | 是 | ≈21.8k 行（fork 副本 76 文件；web 安装树为其硬链接） |
+| `@mars-sea/dsh-commandcode-provider` | 目录+多账号轮换+用量面板 | 是 | 是 | ≈15.5k 行（desktop 副本 2 文件） |
+
+> 行数为 2026-09-29 复核快照（cmd 递归枚举 `*.js`，不含嵌套 `node_modules`；
+> pnpm 硬链接安装树在 node/pwsh 枚举器下计数不稳定，故用 cmd 口径）。web/desktop/
+> fork 副本与统计口径不同会显著改变数值——原稿的 8119/7566/9642/18006 与复核值有
+> 出入，不作追溯。**只取"同量级单包"的定性结论，数字不作门禁。**
+
+本插件（≈1.7 万行 JS：根 25 文件 ≈8.6k + test 21 文件 ≈8.1k，不含 docs/upstream）
+与同族（5.9k–21.8k 行）同量级。**"把面板做大了"不是缺陷，是这类 connect 插件的
+常态**。锐评里"积分面板被过度设计 3 倍"的潜台词——"应该更小"——在 DSH 生态里
+不成立：生态的同类**全部**是全家桶单包。
+
+### 1.2 原"默认推理通道"论断：核验后撤销（2026-09-29）
+
+原稿把 `profiles/web/cordis.patch.yml:93-98` 的 `agent-default-model` 行读成
+"本插件当前就是这台机器的默认推理通道"。复核后**撤销该论断**，两处硬伤：
+
+1. **引用与现行文件不符**：该文件 93-98 行现状是 `- id: agent-default-model` →
+   `provider: agnestokenplan` / `model: agnes-3.0-flash`（`baseURL:
+   https://api.agnes-ai.cn/v1`，独立于本插件）；全文件 grep 不到
+   `sensenova-token-plan`。desktop profile 的同行是 `provider: qoder-cn /
+   model: Qwen3.8-Flash`。原稿引用的 `provider: sensenova-token-plan` /
+   `model: sensenova-6.8-flash-lite / reasoningEffort: high` 在任何现行文件
+   （含 `cordis.patch.yml.bak-plugin-manager` 备份）里都不可复现。
+2. **机制读错**：`agent-default-model` 是 `@deepseek-ai/dsh-agent-default-model`
+   的**"默认模型选择"读写服务**——`lib/index.js:14` 自述 *"Owns the default
+   model **selection**"*，`saveSelection()`（`:53-66`）经 `configEditor.edit()`
+   把用户上次选中的模型**回写**进 profile patch。它是**运行时可变的选择记录**
+   （config schema 里 `provider/model` 均 `.volatile()`），不是静态的"默认通道"
+   架构声明。两个 profile 指向不同供应商、mtime（2026-09-29 12:54 / 15:46）
+   随模型切换被改写，正是这一语义的佐证。
+
+仍成立的事实：本插件确实注册 provider（`llm-models.js:79` `LLM_PROVIDER_ID =
+"sensenova-token-plan"`）——"**有能力**充当推理通道"为真；"**当前**就是这台
+机器的默认推理通道"**无证据**。真正的定位张力弱化为：README/包名/`displayName`
+只写"积分面板 / Token Plan"，没有覆盖已注册的 provider 能力与 429 自愈（§3）
+——这是**文档对齐**问题，不是"该不该做大"的问题（见下节）。
+
+### 1.3 结论与建议
+
+- **保留单包**（生态惯例，拆包反而违背上表核实到的同类形态）。
+- **对齐定位**：把"商汤 connect 全家桶（面板 + 可选 provider 注册 + 429 自愈）"
+  写进 README 与包描述——明确**注册了 provider、能承担推理通道**的能力与对应责任
+  （provider 行的健康、面板只读、429 分诊）。**不写**"默认推理通道"——那由
+  profile 与用户的模型选择决定（见 §1.2），不是插件自身的属性。不靠改名，靠
+  **文档与故障半径对齐**。
+- **不改架构，做"注册 provider 的可靠性工程"**：
+  1. provider 注册（推理线）与 console 登录（面板线）**本就是两条独立路径**
+     （`resolveApiKey` 现取，catalog 独立于 console 凭据）。保持并**固化**这个
+     解耦：console 凭据事故不应波及 provider 已注册的服务中的模型。
+  2. 面板快照 `llm` 块（`providerState.error` / `registered`）已能表达"推理线
+     是否健康"，把它在面板里**显式呈现**（一行"模型接入：已注册 N 模型 / 异常
+     原因"），让注册 provider 的故障对用户可见、可处置。
+- 迁移成本：**零代码**，纯文档 + 面板一行字。风险：低。门禁：`docs.test.mjs`
+  （README 行数上限）、`panel.test.mjs`（字典一致性）。
+
+---
+
+## 2. `index.js` 接线层：5 路由 + 2 IIFE 的收编
+
+### 2.1 现状责任清单（`index.js` 778 行实测）
+
+| 段落（行号） | 责任 | 类型 |
+|---|---|---|
+| `apply()` 头部 `#L195-L236` | 解析 settings、建 auth/apiKeyStore/catalogStore/providerStore | 编排 |
+| `#L263-L293` | 建 `publisher`（provider-publish）+ fire-and-forget `seedPublisherFromCatalog` IIFE① | 副作用 IIFE |
+| `#L305-L344` | draw 工具注册 IIFE②（`void (async () => {...})()`） | 副作用 IIFE |
+| `#L351-L374` | 建 `tokenStore`（带 `onTrace` 钩子） | 编排 |
+| `#L381-L435` | 注册 `SNAPSHOT` 路由（薄，委托 `buildSnapshotBody`） | HTTP 面 |
+| `#L437-L516` | 注册 `ACCOUNT` 路由（最厚：GET/POST/forget、cache 清、trace 落盘） | HTTP 面 |
+| `#L518-L584` | 注册 `API_KEY` 路由（GET/POST/forget、清 catalog/缓存/签名） | HTTP 面 |
+| `#L586-L645` | 注册 `PROVIDER` 路由（开关 + 立即 publish） | HTTP 面 |
+| `#L647-L707` | 注册 `MODELS` 路由（allow-list + 立即 publish） | HTTP 面 |
+| `#L709-L723` | `ctx.effect` teardown：dispose→release→off×5 | 副作用 |
+| `#L741-L775` | vision step two（settings-row writer） | 编排 |
+
+**结论**：`index.js` 现在是"挂载编排器 + 5 个路由 handler + 2 个 IIFE + teardown"。
+`buildSnapshotBody` 已把最重的聚合抽走；剩下的是**路由骨架**与**接线胶水**。
+
+### 2.2 剩余"接线味"的风险分级
+
+- **真风险（保留即可）**：`teardown` 的 `dispose→release→off` 顺序（`#L709`）
+  是 PITFALLS §18 并发修复的一部分，**不能简化**。
+- **审美/可维护性（可动）**：5 个路由 handler 内联在 `apply` 里，使 `index.js`
+  始终是"最大的一个文件"。`ACCOUNT` 路由最厚（含 `forget`、trace 落盘、`cache.clear`
+  副作用），是最值得抽走的。
+- **2 个 IIFE**：`seedPublisherFromCatalog`（IIFE①）与 draw 注册（IIFE②）都
+  fire-and-forget，且 IIFE② 内部还要判断 `tools` 服务、懒 import peer。这是
+  "接线"与"副作用"的混杂点。
+
+### 2.3 目标结构（推荐方案：抽 `routes.js` + `lifecycle.js`）
+
+**方案 A（推荐）**：
+1. 新增 `routes.js`（peer-free）：导出 `registerRoutes(ctx, wiring)`，`wiring` 由
+   `index.js` 组装（含 `settings/auth/tokenStore/apiKeyStore/publisher/catalogStore/
+   providerStore/cache/inflight`）。`SNAPSHOT/ACCOUNT/API_KEY/PROVIDER/MODELS`
+   五个 handler 原样迁入，`writeJson`/`readJsonBody`/`failureCode` 随之迁走。
+2. 新增 `lifecycle.js`（peer-free）：导出 `startSideEffects(ctx, wiring)`（收敛
+   IIFE① seed + IIFE② draw 注册 + vision step two）与 `teardown(ctx, wiring)`
+   （dispose→release→off×5）。IIFE② 内的 `tools` 服务判断保留，但抽成具名函数
+   `registerDrawTool(ctx, wiring)`，`test/draw.test.mjs` 可直接注入。
+3. `index.js` 退化为"组装 wiring + 调 `registerRoutes` + 调 `startSideEffects`/
+   `teardown` + `ctx.effect` 挂 teardown"，目标 **< 300 行**。
+
+**wiring F3 注入点**：`test/wiring.test.mjs` 当前直接 import `index.js` 的
+`apply` 并注入 deps。迁到 `routes.js`/`lifecycle.js` 后，`apply` 仍保持为"唯一
+的挂载缝"，把 deps 透传给新模块——**F3 语义不变**（它测的是 publisher 的并发
+publish，不测路由骨架）。
+
+**peer-free**：`routes.js`/`lifecycle.js` 不 import 任何 peer，纯函数 + 注入，
+与 `snapshot-aggregate.js` 同纪律，离线可测。
+
+**影响**：`test/routes.test.mjs`（路由契约 14 键）改为对 `routes.js` 的 `wiring`
+注入；`test/draw.test.mjs` 改为对 `lifecycle.registerDrawTool` 注入；`index.js`
+的 `apply` 保留给 `e2e`（真 Host 挂载）。门禁：`routes` + `draw` + `wiring` +
+`e2e-gate` 四套全绿。
+
+**投入**：中（纯移动，~300 行进两个新模块 + `index.js` 瘦身 + 改 2 套测试的
+注入缝）。**风险**：低（语义原样迁，无并发逻辑重写）。**回滚**：按 `git` 回退
+单提交即可。
+
+---
+
+## 3. peer 语义耦合：`llm-error-fix.js` 是"补丁"，可升级为"契约护栏"
+
+### 3.1 实证核验：误判机制已逐层坐实（本机 peer 源码）
+
+商汤限频 429 被误判为 `QUOTA` 的**完整链条**（全部已在本机 peer 坐实）：
+
+1. **pi-ai 把 JSON body 拼进 message**（`@earendil-works/pi-ai/dist/api/
+   openai-completions.js:518` → `dist/utils/error-body.js:111-118`，核验修订：
+   原稿漏写 `utils/` 路径段）：非 2xx 时 `errorMessage = "<status>: <body>"`，
+   body 是整段 JSON（含 `"type":"quota_exceeded_error"`）。
+2. **`classifyPiAiError` 先 quota 后 rate**（`dsh-llm-pi-ai/lib/index.js:1376-1379`）：
+   `isQuotaExceededError(message)` 在前，`/\b429\b|rate.?limit/` 在后——限频正则
+   是**死分支**（任何体先被 quota 正则吃下）。
+3. **`isQuotaExceededError` 命中面过宽**（`dsh-llm/lib/types/error.js:76-82`）：
+   `/\b(?:quota|usage[\s_-]+limit)[\s_-]+(?:exceeded|exhausted|reached)\b/i`
+   命中 **message 文本里的硬额度措辞**（`quota exceeded` 空格分隔、`out of
+   credits/budget`、`balance exhausted` 等）。
+
+   ⚠️ **核验修订（2026-09-29 实测）**：原稿"正则命中 `quota_exceeded_error`
+   类型名（`quota` + `_exceeded`）"**不成立**——正则末尾 `\b` 词边界不会穿透
+   `_`（`_` 属于 `\w`，`exceeded_error` 中 `exceeded` 之后**没有**词边界），实测
+   `isQuotaExceededError('"type":"quota_exceeded_error"') === false`、
+   `isQuotaExceededError('quota_exceeded_error') === false`。真正触发误判的是
+   **429 体 message 文本里的额度措辞**：配合第 2 步 quota 先于 rate 的顺序，
+   任何带额度措辞的限频 429 都会被判 `QUOTA`。
+
+**验证结论**：商汤限频 429 的 body 常带额度措辞（如 `quota exceeded`、`out of rate
+budget` 等），`isQuotaExceededError` 命中该措辞 → `classifyPiAiError` 判 `QUOTA`
+（**类型名 `quota_exceeded_error` 本身不触发**，见第 3 条核验修订）；而
+`DEFAULT_RETRYABLE_CODES`（`dsh-llm/lib/types/retry-policy.js:16-22`）不含
+`QUOTA`/`ACCOUNT_QUOTA`——限频**不重试**，且面板把模型按 `exhaustedModelIds`
+静默下线。这就是 `llm-error-fix.js` 存在的实证依据，**不是假设**。
+
+### 3.2 现状评估：`llm-error-fix.js` 设计其实合理，但缺"护栏"
+
+- **合理**：保守（只在 `code===QUOTA` 且有限频信号时纠正）、peer-free、幂等
+  （已是 `RATE_LIMIT`/非 QUOTA 原样放行）、有结构化 type 兜底（`extractStructuredType`）。
+- **缺护栏**：它**依赖 peer 的 message 拼接格式**（整段 JSON 进 `errorMessage`）。
+  一旦 peer 改 `error-body.js`（不再嵌 body，或换 type 字段名），
+  `extractStructuredType` 抓不到 → 退回纯文本启发 → **静默漏纠**，且
+  `test/error-fix.test.mjs` 用固定字符串测，**察觉不到 peer 行为漂移**。
+  这才是"在 peer bug 上盖房子"的真实风险面：不是"peer 修好就死"，而是
+  "peer 改拼接格式就静默漏"。
+
+  > 核验修订（2026-09-29）：漏纠的**精确触发面**是"message 文本含额度措辞 **和**
+  > 速率信号"的临界体（如 `{"message":"rpm quota exhausted,...","type":
+  > "quota_exceeded_error"}`）：结构化 type 分支（rateCapWords 命中 rpm/rate/too
+  > many/限流等）能纠正；一旦 peer 不嵌 body 退回文本启发，`hardQuota` 会命中
+  > 额度措辞 → 判定"真耗尽" → **漏纠**。`error-fix.test.mjs` 的固定字符串覆盖不
+  > 到"文本启发与结构化分支分歧"的临界体——这正是契约护栏（§3.3①）要钉的点，
+  > 已由 `test/peer-contract.test.mjs` 的 B 段钉死。
+
+### 3.3 解耦选项（按推荐序）
+
+| 选项 | 做法 | 风险 | 工作量 | 可行性 |
+|---|---|---|---|---|
+| **① 契约护栏（已落地，2026-09-29）** | `test/peer-contract.test.mjs`：**当真实 peer 可达时**（`peer-roots.mjs` 本地解析），钉死"peer 判 QUOTA + 含限频信号 → 本插件 `reclassifyFinish` 纠正回 RATE_LIMIT"这一**端到端行为契约**，并另设两道漂移护栏——`extractStructuredType` 必须仍能从 peer 拼好的 message 回捞结构化 type（peer 改拼接格式即红）、peer 根因未修（`isQuotaExceededError` 仍命中类型名）有显式现状钉；peer 缺席（干净检出/CI）则 SKIP。 | 低（纯测试，不碰运行时） | 已完成 | 已进 `npm test` 链 + CI offline job（三方名册钉子，见 §7 门禁） |
+| ② 上游修 peer（长期） | 向 `deepseek-harness`（peer 在 `packages/llm/llm`）提 PR：`isQuotaExceededError` 排除 `quota_exceeded_error` 类型名误匹配（要求 `quota` 与 `exceeded` 间非 `_` 连接，或命中时再查限频信号）。 | 高（依赖上游版本节奏，插件不可控） | 中 | 中（上游是公共仓 `github.com/deepseek-ai/deepseek-harness`，可提；但 peer 范围 `>=0.1.5 <0.3` 意味着旧 Host 仍可能跑 bug 版） |
+| ③ 收紧 peer 版本（护栏） | `package.json` peer 范围 `dsh-llm/dsh-llm-pi-ai` 现为 `>=0.1.5 <0.3`。若上游修了，可收紧到 `>=0.2.x`（修后版本）并在 README 注明"需 Host ≥0.2.x 才吃满 429 修复"。 | 中（老 Host 不升级则 429 修复不可用） | 小 | 中（需上游先出修版） |
+
+**推荐组合**：① 已落地（`test/peer-contract.test.mjs`，把"静默漏纠"变"可见红"）；
+上游修复落地后叠 ③（把 peer 范围收紧到修后版本，`llm-error-fix.js` 自然退化为
+no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是刻意的：它是
+"老 Host + bug 版 peer"的兜底，删了反而破坏向后兼容。
+
+**投入**：① 已完成（一个新测试文件 + 进 `npm test` 链 + CI offline job；peer 不可达
+时 SKIP，无需在 CI 另加 best-effort 档——它就是离线门禁的一部分）。**门禁**：离线
+`npm test` 全绿（peer 不可达时 SKIP）。
+
+---
+
+## 4. 状态 / 契约 / UX / client：四块维护债，按"收益/风险比"排
+
+### 4.1 状态文件重复 → 用 Host 的 `dsh-atomic-write` 统一（实证：兄弟插件已用）
+
+- **实证**：`dsh-connect-trae` 的 `package.json` peerDependencies 已含
+  `@deepseek-ai/dsh-atomic-write`（line 79，实测 `>=0.1.7-rc.1 <0.2.0-0`），且它
+  用它写 catalog 状态（`lib/index.js:9,1319-1320` 实为
+  `withFileLock(ownPath, () => writeFileAtomic(...))`）。而本插件在
+  `throttle-store.js` / `catalog-store.js` / `provider-store.js` 三处**手写**
+  同一段"temp 文件 + `rename` 原子 + 0600 + `$DSH_HOME/state/<plugin>`"。
+
+  > 核验修订（2026-09-29）：三处手写逐行坐实（`throttle-store.js:93,144-145`、
+  > `catalog-store.js:120,129-130`、`provider-store.js:107,117-118,131-132`）。
+  > 但"弱隔离"的程度**因 store 而异**：`catalog-store` 已在 `:112-118` 用
+  > `pid+时间戳` 唯一临时名显式处理"两个 Host 进程共享目录"（注释明说，原稿
+  > 对其"裸奔"的表述过重），只剩读改写无锁；**固定 tmp 名、真有两进程互踩风险
+  > 的是 `provider-store`**。`dsh-atomic-write` 的 `withFileLock` 收益仍成立，
+  > 但对 catalog 是"锦上添花"、对 provider-store 才是"补洞"。
+- **`dsh-atomic-write` 的语义**（`README`）：`writeFileAtomic(text, {mode:0o600})`
+  （随机后缀 sibling + `rename`，拒绝跟随 symlink）+ `withFileLock`（跨进程写锁，
+  解决本插件"两个 Host 进程同时写同一状态文件"的多进程问题——这正是
+  `catalog-store` / `provider-store` 的潜在竞态面）。
+- **收益**：删掉 ~3 份手写原子写 + 权限逻辑，收敛成一个 peer 原语；**额外**拿到
+  跨进程写锁（`withFileLock`）——按上述核验修订，对 `provider-store` 是补洞
+  （固定 tmp 名的并发互踩）、对 `catalog-store` 是加固（已有 pid+时间戳唯一
+  临时名，剩读改写无锁），对 `throttle-store` 是统一原语。
+- **代价**：新增 1 个 peer 依赖（`@deepseek-ai/dsh-atomic-write`，零运行时
+  依赖的纯文件系统原语，peer 缺席时降级回手写路径或"状态缺席"，与 provider
+  缺席同形）。**离线可测**：注入 `writeFileAtomic`/`withFileLock` 替身。
+- **推荐**：做。分两步——先抽 `state-store.js` 统一"版本载荷 + 原子写 + 0600 +
+  损坏即忽略"，`throttle/catalog/provider` 三 store 改为对它的薄封装；再接
+  `dsh-atomic-write`（可选开关，peer 缺席走手写）。投入中、风险低、门禁
+  `store.test.mjs` + 新增 `state-store` 注入。
+
+### 4.2 契约基线 → 加 CI live-contract job（best-effort，同 e2e 纪律）
+
+- **现状**：`test/live-contract.mjs`（手动 `npm run test:live:contract`）+
+  `test/live-jwks.test.mjs`（手动 `npm run test:live`）都**不进** `npm test`，
+  也没进 `CI`。`.github/workflows/ci.yml` 只有 `offline`（硬门禁）+ `e2e`
+  （best-effort）两档。→ **平台方言漂移只能靠人工手动跑才看得见**（ROADMAP
+  §2.2 自己也写了"修法走注释层，不静默改代码"，但没有自动触发点）。
+- **改进**：在 `ci.yml` 加第三档 `live-contract`（best-effort，`continue-on-error:
+  true`，同 e2e），跑 `node test/live-contract.mjs`。需要一个平台凭据（API key）
+  来源：CI secret `SENSENOVA_API_KEY`（owner 注入，不进代码）。无凭据时 job
+  SKIP（与 e2e "没有 dsh CLI 就 SKIP" 同形）。
+- **收益**：平台改 `reasoning_effort` 取值 / 400 语义 / 目录字段时，**漂移当天
+  红**（best-effort 不挡离线门禁，但 CI 日志会标红），不再等下一轮 40 请求。
+- **代价**：一个 CI secret（owner 维护）+ 一行 workflow。风险极低。
+- **推荐**：做。投入极小，把 §20/§21 实测从"一次性手工"变"可自动探"。
+
+### 4.3 UX 代价量化 → 最小实现：面板显示 auto-recover armed 状态
+
+- **现状**：`SENSENOVA_PASSWORD` 环境变量是密码唯一持久来源（AGENTS.md 红线，
+  不可动），但**用户从未被告知"我有没有设它、设了没有"**。refresh 被吊销 +
+  无 env 密码 → 面板重新显示表单，用户此刻才第一次知道要重登（`AUTH.md` §7）。
+- **红线内可做的最小改进**：`tokenStore.state()` 增加一个**非秘密**字段
+  `autoRecoverArmed`（是否检测到 env 里有 `SENSENOVA_PASSWORD`，**只报布尔，
+  不回显值**），面板在账号区显一行"自动恢复：已开启/未开启"。用户看到"未开启"
+  才知道"refresh 一死就得手动重登"，可以主动去设 env。
+- **量化**：这个布尔本身就是"重登风险"的可见指标——`false` 时，下次 refresh
+  失败必然触发重登表单。无需埋点，一个布尔 + 一行字。
+- **投入**：极小（`state()` 加一字段 + 面板一行 + 字典 + 测试断言布尔不回显值）。
+  **门禁**：`store.test.mjs` + `panel.test.mjs`（字典一致性 + 不回显红线）。
+
+### 4.4 `client.js` 单体 ≈1.9k 行 → 纯逻辑抽 peer-free 兄弟模块
+
+> 核验修订（2026-09-29）：标题原写 1848 行；复核时点为 1875 行（且工作树有对
+> `client.js` 的未提交改动，数字随改动浮动），取"≈1.9k 行"量级，不影响下述结论。
+
+- **约束**：`client.js` 刻意**不 import** 任何 DSH Client 包（浏览器 module
+  table 只解析包名，无构建步骤，`package.json dsh.client` 只声明 `inject`）。
+  所以**不能**把逻辑拆成"多个 client entry"——client 是单 entry（`./client`）。
+- **可做的拆分**：把 `client.js` 里**纯逻辑**（`interpretSnapshot`、决策、格式化、
+  i18n 字典）抽进 `client-surface.js` / `panel-decision.js` / `panel-render.js`
+  这几个**已存在**的测试 seam（`test/client-surface.js` 等）。现状它们是"把
+  `client.js` 作为模块加载后**物化** `panel` 测试面"——即测试侧反向抽。
+  **反过来**：把纯逻辑**前置**抽成 `client-logic.js`（peer-free、纯函数），
+  `client.js`（浏览器 entry）与测试 seam **都** import 它——单一事实源，Node
+  侧直接测 `client-logic.js`（不加载 React），浏览器侧 `client.js` 仍不 import
+  任何包（只 `require("react")` + `client-logic.js` 的纯导出）。
+- **前提待验证**：`client-logic.js` 能否被浏览器 module table 解析（它会被
+  `client.js` 相对 import）。需读 Loader 的 client 注入机制确认"相对 import 是否
+  被浏览器端解析"。若不解析，退路：保持 `client.js` 单文件但把 i18n 字典 +
+  决策**外置成数据文件**（`panel-strings.json` / `panel-decision.json`），
+  `client.js` 仍单 entry，只是把 ≈1.9k 行里的静态部分外置。
+- **推荐**：先做 4.4a（字典/决策数据外置成 JSON，零 Loader 风险，立刻把
+  `client.js` 减 ~400 行）；4.4b（纯逻辑抽 `client-logic.js`）作为可选项，
+  待验证 Loader 相对 import 能力。
+
+---
+
+## 5. 落地顺序（按 收益/风险 排，非依赖序）
+
+| 序 | 项 | 侵入性 | 收益 | 风险 | 门禁 |
+|---|---|---|---|---|---|
+| **P0** | §3.3 ① peer 契约护栏测试（`test/peer-contract.test.mjs`，**已落地**） | 极低（纯测试） | 高（把静默漏纠变可见红） | 极低 | `npm test`（peer 不可达 SKIP，已进三方名册） |
+| **P0** | §4.3 `autoRecoverArmed` 布尔 + 面板一行 | 低 | 中（量化 UX 代价） | 极低 | `store` + `panel` |
+| **P1** | §4.2 CI live-contract job（best-effort + secret） | 极低 | 高（漂移当天可见） | 极低 | CI 新增档 |
+| **P1** | §4.1 状态文件统一（`state-store.js` + 可选 `dsh-atomic-write`） | 中 | 中（删 3 份重复 + 跨进程锁） | 中（新 peer 依赖） | `store` + 新增注入 |
+| **P1** | §4.4a 字典/决策外置成 JSON（`client.js` 瘦 ~400 行） | 低 | 中 | 极低 | `panel` + `render` + `docs`（字典一致性） |
+| **P2** | §2.3 抽 `routes.js` + `lifecycle.js`（`index.js` 瘦到 <300 行） | 中 | 中（接线味收编） | 中（改 2 套测试注入缝） | `routes` + `draw` + `wiring` + `e2e` |
+| **P2** | §1.3 定位对齐（README/文档 + 面板显示推理线健康） | 极低 | 中（消自我矛盾） | 极低 | `docs` + `panel` |
+| **P3** | §3.3 ② 上游修 peer + ③ 收紧 peer 范围（生态配合） | — | 高（根除 429 误判） | 中（依赖上游） | 等上游 |
+| **P3** | §4.4b 纯逻辑抽 `client-logic.js`（先验证 Loader） | 中 | 中 | 中 | `panel` + `render` |
+
+> **不做**（与 §5.3 / ROADMAP §6 边界一致）：跨 provider 通用聚合、多 Key 池、
+> 签到/每日领取（先证商汤有端点）。
+
+---
+
+## 6. 总判断
+
+- **最大的设计张力（核验修订）**：原稿的"名字叫面板、事实是默认推理通道"不成立——
+  `agent-default-model` 是 `dsh-agent-default-model` 回写的"上次选择"记录
+  （§1.2：web=agnestokenplan、desktop=qoder-cn），且原引用内容已不可复现。真正的
+  张力是**文档没覆盖已注册的 provider 能力**（README/`displayName` 只写"积分
+  面板"）——这是"对齐"而非"重构"的问题：改文档 + 面板一行字，不是改架构。
+- **已落地的第一优先项**是 §3.3 ① 的 peer 契约护栏（2026-09-29）：它把
+  `llm-error-fix.js` 从"静态测试测不到 peer 漂移"的隐患，变成"漂移当天红"的可见
+  护栏，且**零运行时风险**（纯测试，peer 不可达 SKIP）。与既有的 `peer-roots.mjs`
+  / `live-jwks` 纪律同形。**下一步最该做**的是同为 P0 的 §4.3 `autoRecoverArmed`
+  布尔（`store`+`panel` 两套门禁，改动面小）。
+- **最有杠杆的维护债**仍是 §4.1 状态文件统一：一份重复实现抽掉三份，还顺带
+  补上 `dsh-atomic-write` 的跨进程写锁（对 `provider-store` 补洞、对
+  `catalog-store` 加固），是"少写代码 + 更安全"的双赢。
+- **`index.js` 重构（§2.3）排 P2 不 P0**：它有价值（收编接线味）但改 2 套测试
+  注入缝，风险高于纯测试项；且 `buildSnapshotBody` 抽走聚合后，`index.js`
+  已不是"不可读"，是"仍最大"——收益递减。等 §4.1/§4.4a 先清完维护债再做，
+  避免一次改动碰太多面。
+
+> 本文只给方向与门禁；除 P0 的 §3.3① 契约护栏测试（`test/peer-contract.test.mjs`）
+> 已随本次复核落地外，其余各项落地前先读 [PITFALLS.md](./PITFALLS.md)
+> 对应条目（§18 并发 / §16 peer 解析 / §6 凭据事故）与 [AGENTS.md](../AGENTS.md)
+> 红线（凭据不入库 / 只 `grant` 一种 kind / `auth` 顶层键 / PKCE `Uint8Array` /
+> trace 落盘 / 密码 JWE），以及 [CONTRIBUTING.md](./CONTRIBUTING.md) 的提交纪律
+> （路径限定提交、`git status --short` 复核）。
