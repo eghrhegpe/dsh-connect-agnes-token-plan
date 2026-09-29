@@ -10,5 +10,14 @@
  *
  * Dev-only: package.json#files does not include types/, so nothing here ships
  * in the tarball. Keep entries in sync with the peer imports actually in *.js.
+ *
+ * `@earendil-works/pi-ai` IS public on npm, but it is asserted the same way on
+ * purpose: it is a PEER, so the runtime copy is whatever the Host shipped, and
+ * a devDep copy's declarations would describe a version this plugin does not
+ * control — a confidently-wrong shape is worse here than an honest `any`.
  */
 declare module "@deepseek-ai/dsh-tools";
+declare module "@deepseek-ai/dsh-llm";
+declare module "@deepseek-ai/dsh-llm-pi-ai";
+declare module "@earendil-works/pi-ai";
+declare module "@earendil-works/pi-ai/api/openai-completions.lazy";

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The peer-dependent half of the directly-registered SenseNova provider.
  *
@@ -74,6 +75,14 @@ const INERT_AUTH = {
 };
 
 /**
+ * The `fs` service face the image hook reads — a single host-path mapper, and
+ * only that. Resolved lazily through `get("fs")` because the service may be
+ * registered after this adapter is built.
+ * @typedef {object} FsService
+ * @property {(hostPath: string) => unknown} [processPathFromHostPath]
+ */
+
+/**
  * Assemble the adapter instance for one catalog snapshot.
  *
  * A fresh instance per rebuild is deliberate: `PiAiAdapter` memoizes the
@@ -105,6 +114,11 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
       auth: {
         apiKey: {
           name: "SenseNova API key",
+          /**
+           * pi-ai hands the credential it resolved; this route stores none, so
+           * the parameter is typed only to name what is read off it.
+           * @param {{credential?: {key?: string}}} [options]
+           */
           async resolve({ credential } = {}) {
             const apiKey = credential?.key;
             return apiKey === undefined || apiKey.length === 0
@@ -161,7 +175,8 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
     resolveImageAccess: (attachments, ref) =>
       resolveImageAttachmentAccess(
         attachments,
-        (hostPath) => get?.("fs")?.processPathFromHostPath?.(hostPath),
+        (hostPath) =>
+          /** @type {FsService | undefined} */ (get?.("fs"))?.processPathFromHostPath?.(hostPath),
         ref
       )
   });
