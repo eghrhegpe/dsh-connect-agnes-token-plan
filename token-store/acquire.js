@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The single seam where the four blocks meet: `acquire()`.
  *

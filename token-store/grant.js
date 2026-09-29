@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Block 1 of the token-store split: the GRANT read/write and freshness
  * judgments. Owns the grant record's lifecycle — parse, adopt, persist,

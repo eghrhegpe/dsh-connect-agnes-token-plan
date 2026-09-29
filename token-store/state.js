@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The shared context a token store instance runs on — the seam the split
  * around `token-store.js` stands on.

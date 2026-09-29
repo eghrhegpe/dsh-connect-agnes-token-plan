@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Block 4 of the token-store split: the sign-in refusal state machine.
  * Owns the throttle's read/write/clear, the local backoff doubling, the legacy
@@ -61,11 +62,11 @@ const THROTTLE_VERSION = 1;
  */
 export function throttleError(held, cause) {
   if (cause !== undefined) return cause;
-  const error = new Error(
+  const error = /** @type {Error & { code?: string }} */ (new Error(
     held.parked
       ? "sign-in is not being retried automatically: the account needs to be entered again"
       : `sign-in is not being retried automatically: waiting out a ${held.code} refusal`
-  );
+  ));
   error.code = held.code;
   return error;
 }

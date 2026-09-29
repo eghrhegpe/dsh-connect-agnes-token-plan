@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * SenseNova console token store — the seam between the credentials service and
  * the panel's console calls.

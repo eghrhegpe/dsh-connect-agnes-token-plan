@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Block 2 of the token-store split: the account lifecycle. Owns reading the
  * username/account, logging in, saving and forgetting the account, and the
@@ -95,8 +96,9 @@ export async function readAccount(wiring, state) {
  * "signed in" while keeping serving the previous account. Naming the read
  * grant turns the write into the same compare-and-set a refresh uses: an
  * intentional switch wins, a login racing another process's rotation defers.
- * @param {{username: string, password: string}} [explicit] - an account
- *   supplied by the caller (never persisted); falls back to `readAccount`.
+ * @param {{username: string, password: string}|undefined} explicit - an account
+ *   supplied by the caller (never persisted); positionally required, though
+ *   `undefined` is tolerated and falls back to `readAccount`.
  * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
  */
 export async function loginFromAccount(wiring, state, explicit, readStored, store) {

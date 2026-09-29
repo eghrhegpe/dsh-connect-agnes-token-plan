@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Block 3 of the token-store split: renewal through the stored refresh token.
  *
