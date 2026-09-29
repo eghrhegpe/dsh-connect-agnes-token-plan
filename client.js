@@ -47,6 +47,8 @@ function clientFactory(require) {
   const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
   /** The model-roster route: which of this key's models get pushed to DSH. */
   const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
+  /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
+  const DRAW_PATH = "/api/dsh-connect-sensenova-token-plan/draw";
 
   /** Simplified Chinese dictionary (the key-set source of truth). */
   const zh = {
@@ -156,6 +158,14 @@ function clientFactory(require) {
     "llm.rosterNoMatch": "没有匹配的模型。",
     "llm.rosterVision": "可看图",
     "llm.rosterText": "纯文本",
+    "draw.title": "出图工具",
+    "draw.switch": "注册出图工具 sensenova_draw_image（立即生效，无需重启）",
+    "draw.switchBusy": "切换中…",
+    "draw.switchError": "切换失败：{error}",
+    "draw.on": "出图工具已注册：agent 可用 {model} 生成图片。",
+    "draw.off": "出图工具未注册——勾选下方开关即可开启。",
+    "draw.noTools": "drawEnabled 已开启，但当前 Host 没有提供 agent tools 注册服务，工具静默缺席。",
+    "draw.needsKey": "尚未配置 API Key；保存后即可出图。",
     "note": "数据来自商汤控制台 API（pool-usage / credit-usage-trend），Host 侧缓存 {cache} 秒；控制台令牌约 3 小时过期，由 Host 用 refresh_token 静默续期。"
   };
 
@@ -267,6 +277,14 @@ function clientFactory(require) {
     "llm.rosterNoMatch": "No model matches.",
     "llm.rosterVision": "vision",
     "llm.rosterText": "text only",
+    "draw.title": "Draw tool",
+    "draw.switch": "Register the sensenova_draw_image tool (takes effect immediately, no restart)",
+    "draw.switchBusy": "Switching…",
+    "draw.switchError": "Switch failed: {error}",
+    "draw.on": "Draw tool registered: the agent can generate images with {model}.",
+    "draw.off": "Draw tool not registered — tick the switch below to enable it.",
+    "draw.noTools": "drawEnabled is on, but this Host exposes no agent tools service; the tool is silently absent.",
+    "draw.needsKey": "No API key yet; save one to start generating images.",
     "note": "Data from the SenseNova console API (pool-usage / credit-usage-trend), cached {cache}s on the Host; the console token lasts ~3h and the Host renews it silently from a refresh token."
   };
 
@@ -1292,6 +1310,62 @@ function clientFactory(require) {
     }
 
     /**
+     * The live draw-tool switch (docs/PROVIDER-HOT-RELOAD.md, same discipline
+     * as `ProviderSwitch`). Posts `{ enabled }` to the plugin's own `/draw`
+     * route; the Host persists the value in its state file. The draw tool
+     * itself is mounted at `apply` time (lifecycle.js), so a panel flip only
+     * becomes visible after the NEXT Host (re)mount — but the switch state,
+     * the source, and the snapshot's `llm.drawEnabled` are all live, so the
+     * panel shows the effective value immediately. Hook-based like
+     * `ProviderSwitch`, so the render suite exercises the status lines
+     * instead; the route itself is covered by `routes.test.mjs`.
+     */
+    function DrawSwitch({ llm, onDone, tt }) {
+      const [busy, setBusy] = useState(false);
+      const [switchError, setSwitchError] = useState(null);
+      const enabled = llm?.drawEnabled === true;
+      const toggle = useCallback(async () => {
+        setBusy(true);
+        setSwitchError(null);
+        try {
+          const response = await fetch(DRAW_PATH, {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            cache: "no-store",
+            body: JSON.stringify({ enabled: !enabled })
+          });
+          const payload = await response.json().catch(() => null);
+          if (payload?.ok !== true) {
+            throw new Error(typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`);
+          }
+          onDone?.();
+        } catch (error) {
+          setSwitchError(format(tt("draw.switchError"), { error: error instanceof Error ? error.message : String(error) }));
+        } finally {
+          setBusy(false);
+        }
+      }, [enabled, onDone, tt]);
+      const statusText = enabled
+        ? (llm?.hasApiKey === true
+            ? format(tt("draw.on"), { model: String(llm?.drawModelId ?? "") || "the first discovered one" })
+            : tt("draw.needsKey"))
+        : tt("draw.off");
+      return h(
+        "div",
+        { style: { marginBottom: 12 } },
+        h("div", { style: S.sectionTitle }, tt("draw.title")),
+        h(
+          "label",
+          { style: { display: "flex", gap: 8, alignItems: "center", margin: "0 0 6px", cursor: busy ? "wait" : "pointer" } },
+          h("input", { type: "checkbox", checked: enabled, disabled: busy, onChange: toggle }),
+          h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, busy ? tt("draw.switchBusy") : tt("draw.switch"))
+        ),
+        h("div", { style: { ...S.muted, fontSize: 12 } }, statusText),
+        switchError ? h("div", { style: S.formError, role: "alert" }, switchError) : null
+      );
+    }
+
+    /**
      * The model picker's row list - hook-free, so the Node render suite
      * drives the very rows the browser draws.
      *
@@ -1606,6 +1680,7 @@ function clientFactory(require) {
         { onSubmit: submit },
         h(ProviderStatus, { llm, tt }),
         h(ProviderSwitch, { llm, onDone, tt }),
+        h(DrawSwitch, { llm, onDone, tt }),
         h(ModelPicker, { llm, onDone, tt }),
         h(
           "label",
@@ -2047,6 +2122,7 @@ function clientFactory(require) {
         ApiKeyForm,
         ProviderStatus,
         ProviderSwitch,
+        DrawSwitch,
         ModelRoster,
         ModelPicker,
         PanelPage

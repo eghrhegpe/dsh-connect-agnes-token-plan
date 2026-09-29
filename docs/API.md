@@ -41,7 +41,9 @@
     // 模型选择器数据：整份可选目录（不受过滤影响）与当前生效的允许清单。
     // 空清单 = 不过滤 = 全部推送；["__hide_all__"] = 一个都不推送。
     "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false }],
-    "enabledModelIds": []
+    "enabledModelIds": [],
+    // 出图工具开关生效值与来源（0.4.2）；工具实际挂载在下一个 Host 启动时发生
+    "drawEnabled": false, "drawSource": "config"
   },
   "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
 }
@@ -89,6 +91,12 @@
 - **`["__hide_all__"]`** = 一个都不推送（临时全部收起用的哨兵；空数组已表示「未筛选」，需要一个不同的写法表达「筛选后一个都不剩」）。
 
 返回 `{ ok, enabledModelIds, registerProvider, providerRegistered, providerError? }`，不含模型明文号与 Key。缺字段 / 非数组 / 超过 500 项返回 400 且不写入任何值；跨域返回 403。清单只影响**推送给 DSH 的选择器**，`snapshot` 里的 `catalogModels` / `llm.models` 仍是整份目录，面板据此展示可勾选项。
+
+### `GET /api/dsh-connect-sensenova-token-plan/draw`
+出图工具开关的去密状态：`drawEnabled`（**生效值**）、`drawSource`（`panel` 面板保存过 / `config` 沿用配置默认）。设计见 [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md) §7。
+
+### `POST /api/dsh-connect-sensenova-token-plan/draw`
+`{ "enabled": true|false }` —— 把出图开关写入插件私有状态文件（`$DSH_HOME/state/<plugin>/draw.json`），与 `/provider` 走的是同一套「存私有状态」机制，但**不触发任何即时发布**——agent 工具的实际注册/缺席发生在下一个 Host 启动（或重新安装）时，由 `lifecycle.js` 的 `startSideEffects` 重读生效值。优先级：面板保存的值 > `cordis.patch.yml` 的 `drawEnabled`。非布尔 `enabled` 返回 400；跨域返回 403。
 
 ---
 

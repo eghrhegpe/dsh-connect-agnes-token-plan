@@ -38,6 +38,7 @@ const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
 const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
 const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
 const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
+const DRAW_PATH = "/api/dsh-connect-sensenova-token-plan/draw";
 const RECORD_KEY = credentialKey("dsh-connect-sensenova-token-plan", "sensenova-console");
 
 const POOL_BODY = {
@@ -730,6 +731,12 @@ async function withNetwork(stub, body) {
       JSON.stringify(llm.models));
     check("the provider stays unregistered with the switch off",
       llm.registerProvider === false && llm.providerRegistered === false, JSON.stringify(llm));
+    // 0.4.2: the llm block now also carries the draw-tool switch's effective
+    // value and source. Without a saved panel value they are the config
+    // defaults.
+    check("the llm block carries the draw switch state",
+      llm.drawEnabled === false && llm.drawSource === "config",
+      JSON.stringify({ drawEnabled: llm.drawEnabled, drawSource: llm.drawSource }));
     check("the llm block never carries the key",
       !JSON.stringify(llm).includes("sk-test-key-for-routing-only"));
   }).catch((error) => fail("M: vision publish without settings service", error));
@@ -1188,6 +1195,73 @@ async function withNetwork(stub, body) {
         JSON.stringify(after.payload.llm?.enabledModelIds));
     });
   } catch (error) { fail("Q: the model roster route", error); }
+}
+
+// === R. the draw switch route: the panel value beats the config default ====
+// Same discipline as group P (the provider switch): a value saved from the
+// panel lives in the plugin's own state file and wins over the patch's
+// `drawEnabled`; a POST lands without a restart. The draw tool itself still
+// needs the Host's tools service, but the SWITCH state is plain state — this
+// group proves the round trip and the persistence across remounts.
+{
+  try {
+    const credentials = makeCredentials(null);
+    const call = await mount(credentials);
+
+    const initial = await call(DRAW_PATH, makeRequest());
+    check("R1 GET reports the config default with source config",
+      initial.payload.ok === true && initial.payload.drawEnabled === false &&
+        initial.payload.drawSource === "config", JSON.stringify(initial.payload));
+
+    const bad = await call(DRAW_PATH, makePost({ enabled: "yes" }));
+    check("R2 a non-boolean enabled is refused",
+      bad.statusCode === 400 && bad.payload.ok === false, JSON.stringify(bad.payload));
+
+    const on = await call(DRAW_PATH, makePost({ enabled: true }));
+    check("R3 POST saves the panel value and reports it as source panel",
+      on.payload.ok === true && on.payload.drawEnabled === true &&
+        on.payload.drawSource === "panel", JSON.stringify(on.payload));
+
+    // A second mount (fresh plugin instance, same state file) must read the
+    // persisted switch — the value outlives one Host process.
+    const call2 = await mount(credentials);
+    const again = await call2(DRAW_PATH, makeRequest());
+    check("R4 the panel value survives a remount",
+      again.payload.drawEnabled === true && again.payload.drawSource === "panel",
+      JSON.stringify(again.payload));
+
+    const off = await call2(DRAW_PATH, makePost({ enabled: false }));
+    check("R5 switching off reports the off state with source panel",
+      off.payload.ok === true && off.payload.drawEnabled === false &&
+        off.payload.drawSource === "panel", JSON.stringify(off.payload));
+
+    // Forget the panel value so R6 can exercise the "untouched state file"
+    // path: without this, R3's save would still be sitting in the shared
+    // state file and R6 would read source "panel" instead of "config".
+    const forget = await call2(DRAW_PATH, makePost({ forget: true }));
+    check("R5b forgetting the panel value returns to the config default",
+      forget.payload.ok === true && forget.payload.drawSource === "config",
+      JSON.stringify(forget.payload));
+
+    // A config-driven deployment keeps its operator decision when the panel
+    // has never written a value: mount with `drawEnabled: true` in the patch
+    // and GET the /draw route — source must say "config".
+    const call3 = await mount(credentials, { drawEnabled: true });
+    const configBacked = await call3(DRAW_PATH, makeRequest());
+    check("R6 an untouched state file falls back to the config value",
+      configBacked.payload.drawEnabled === true && configBacked.payload.drawSource === "config",
+      JSON.stringify(configBacked.payload));
+    // A panel-saved value still beats the config in the same room.
+    const flipped = await call3(DRAW_PATH, makePost({ enabled: false }));
+    check("R7 a panel save overrides the config default",
+      flipped.payload.drawEnabled === false && flipped.payload.drawSource === "panel",
+      JSON.stringify(flipped.payload));
+
+    // The trust fence: a foreign page cannot flip the switch.
+    const foreign = await call(DRAW_PATH, makePost({ enabled: true }, { origin: "https://evil.test" }));
+    check("R8 a cross-origin draw POST is refused",
+      foreign.statusCode === 403 && foreign.payload.ok === false, JSON.stringify(foreign.payload));
+  } catch (error) { fail("R: the draw switch route", error); }
 }
 
 // The Host routes are exercised against a stubbed console; nothing here may

@@ -29,6 +29,8 @@ const API_KEY_PATH = `/api/${name}/api-key`;
 const PROVIDER_PATH = `/api/${name}/provider`;
 /** The model-roster route (docs/API.md). */
 const MODELS_PATH = `/api/${name}/models`;
+/** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
+const DRAW_PATH = `/api/${name}/draw`;
 /** Ceiling on a submitted account, so a hostile page cannot stream a body. */
 const MAX_ACCOUNT_BODY_BYTES = 4096;
 /** Ceiling on the curated allow-list: a catalogue this large is a posting accident. */
@@ -173,7 +175,7 @@ function failureCode(error) {
  *   order — `teardown` runs them last.
  */
 export function registerRoutes(ctx, wiring) {
-  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, publisher, providerState, publishProvider, visionPublish, logger } = wiring;
+  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, drawStore, publisher, providerState, publishProvider, visionPublish, logger } = wiring;
 
   const offRoute = ctx.webServer.register({
     kind: "exact",
@@ -212,7 +214,8 @@ export function registerRoutes(ctx, wiring) {
           apiKeyStore,
           publisher,
           catalogStore,
-          panelSwitch: () => providerStore.enabled().catch(() => null)
+          panelSwitch: () => providerStore.enabled().catch(() => null),
+          drawSwitch: () => (drawStore ? drawStore.enabled().catch(() => null) : null)
         });
         if (body.visionModels !== undefined) {
           // A write failure here is silent otherwise: the vision list fails to
@@ -501,5 +504,78 @@ export function registerRoutes(ctx, wiring) {
     }
   });
 
-  return [offRoute, offAccount, offApiKey, offProvider, offModels];
+  const offDraw = ctx.webServer.register({
+    kind: "exact",
+    path: DRAW_PATH,
+    handler: async (request, response) => {
+      // Same trust fence as the other routes: a foreign page must not be able
+      // to turn an agent image tool on or off.
+      if (!isAdmitted(request, settings.allowedHosts)) {
+        refuseOrigin(response);
+        return;
+      }
+      const method = request.method === undefined ? "GET" : request.method;
+      const answer = async (extra = {}) => {
+        const panelDraw = await (drawStore ? drawStore.enabled() : null).catch(() => null);
+        // The effective value: a saved panel value always wins, otherwise the
+        // config default. The source tells the panel which side is in charge.
+        const effectiveDraw = panelDraw ?? settings.drawEnabled;
+        writeJson(
+          response,
+          200,
+          {
+            ok: true,
+            drawEnabled: effectiveDraw === true,
+            drawSource: panelDraw === null ? "config" : "panel",
+            ...extra
+          },
+          { "cache-control": "no-store" }
+        );
+      };
+      if (method === "GET") {
+        await answer();
+        return;
+      }
+      if (method !== "POST") {
+        refuseMethod(response);
+        return;
+      }
+      const body = await readJsonBodyOr400(request, response);
+      if (body === null) return;
+      // Two purposes, distinguished by the body — the same shape the account
+      // and api-key routes use: a saved boolean or a forget request that
+      // returns the switch to the config default.
+      if (body.value.forget === true) {
+        if (!drawStore) {
+          await answer({ ok: false, error: "draw store is unavailable" });
+          return;
+        }
+        try {
+          await drawStore.forget();
+        } catch (error) {
+          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+        await answer();
+        return;
+      }
+      if (typeof body.value.enabled !== "boolean") {
+        writeJson(response, 400, { ok: false, error: "expected { enabled: boolean } or { forget: true }" }, { "cache-control": "no-store" });
+        return;
+      }
+      if (!drawStore) {
+        await answer({ ok: false, error: "draw store is unavailable" });
+        return;
+      }
+      try {
+        await drawStore.save(body.value.enabled);
+      } catch (error) {
+        await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      await answer();
+    }
+  });
+
+  return [offRoute, offAccount, offApiKey, offProvider, offModels, offDraw];
 }

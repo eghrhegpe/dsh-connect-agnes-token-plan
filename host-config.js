@@ -94,6 +94,10 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * default like every execution module: a tool the agent can call is a
    * Host-wide change, and a Host without the tools service must simply never
    * see it rather than fail.
+   *
+   * 0.4.2: this value is now the DEPLOYMENT DEFAULT only. The panel's draw
+   * tool switch (`POST /api/<name>/draw`, stored in `draw-store.js`)
+   * overrides it live with no restart. See `docs/PROVIDER-HOT-RELOAD.md` §7.
    */
   drawEnabled: false,
   /** Preferred draw model id; empty means "first image-gen model of the catalog". */

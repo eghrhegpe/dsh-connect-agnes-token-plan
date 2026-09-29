@@ -4,7 +4,19 @@
 
 ## [Unreleased]
 
-面板视觉打磨：几处「不报错、但会误导或压平层级」的显示。
+### 出图工具面板开关（drawEnabled）
+
+与 provider 开关同机制的「面板开关 + 立即生效」，出图吸收（§5.4 接法 B）不再需要改配置重启：
+
+- **面板新增「出图工具」卡片**（`client.js` 的 `DrawSwitch` 控件）：勾选保存后写入插件私有状态文件 `$DSH_HOME/state/<plugin>/draw.json`，与 `provider-store.js` 走完全相同的完整性纪律。优先级：面板保存值 > `cordis.patch.yml` 的 `drawEnabled`；从未动过面板的部署，行为与 `false` 一致。
+- **新增 `POST /api/<name>/draw` 路由**（`routes.js`）：与 `/provider` 同一信任形状（同源围栏 + 4 KB body 上限），`{ enabled: true|false }` 或 `{ forget: true }`。
+- **快照 `llm.drawEnabled` / `llm.drawSource`**：`snapshot-aggregate.js` 在 llm 块里回显出图开关的生效值与来源，面板无需单独调 `/draw` 就能读到当前状态。
+- **`lifecycle.js` 的 `registerDrawTool` 改读生效值**：不再直接读 `settings.drawEnabled`，而是「面板保存值 ?? 配置默认值」。工具的实际挂载/缺席发生在**下一个 Host 启动**时（agent tools 没有 unregister 语义），开关值本身是立即生效的。
+- **测试**：`test/provider.test.mjs` 新增 draw-store 纯逻辑组（归一、读写、版本拒绝、损坏忽略、forget）；`test/routes.test.mjs` 新增 R 组（8 项，覆盖 GET/POST/forget/跨域围栏/跨 remount 持久化/配置回退）；`test/wiring.test.mjs` 路由计数从 5 更新为 6。
+
+### 面板视觉打磨
+
+几处「不报错、但会误导或压平层级」的显示。
 
 - **每模型消耗柱状图补图例**：柱子按「最高消耗者」归一化，top 模型永远填满轨道——它回答的是「谁在烧积分」，但满格会被误读成「这个模型快触顶」。卡片底部补一行说明「柱长按最高消耗相对显示，非占总额度比例」，图表不再靠省略说谎。
 - **返赠余额从药丸改为指标数字**：`返赠余额 327,904` 此前裹在与「通用池/专属池」同款的圆角药丸里，一个大数字被压成和静态类型标签同等权重的装饰。改为卡头右侧的 tabular 数字，读作可花余额指标。

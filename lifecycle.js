@@ -37,9 +37,11 @@ import { name } from "./host-config.js";
  * @returns {Promise<void>}
  */
 export async function registerDrawTool(ctx, wiring, side) {
-  const { settings, configError, providerState, catalogStore, resolveApiKey, publisher } = wiring;
+  const { settings, configError, providerState, catalogStore, resolveApiKey, publisher, drawStore } = wiring;
   const { loadToolsModule, drawFetch } = side;
-  if (configError !== null || settings.drawEnabled !== true) return;
+  if (configError !== null) return;
+  const effectiveDrawEnabled = (drawStore ? await drawStore.enabled().catch(() => null) : null) ?? settings.drawEnabled;
+  if (effectiveDrawEnabled !== true) return;
   const tools = ctx.get("tools") ?? ctx.tools ?? null;
   if (tools === null || typeof tools.register !== "function") return;
   let defineTool;
@@ -110,6 +112,9 @@ export function startSideEffects(ctx, wiring, side) {
   );
 
   // Draw absorption: opt-in, doubly degraded (no tools service / no peer).
+  // The effective value is panel-saved > config default (draw-store.js),
+  // read at mount time — the actual tool mount/unmount only happens on the
+  // next Host start, since the tools registry has no unregister call.
   void registerDrawTool(ctx, wiring, side);
 
   // ------------------------------------------------------------------

@@ -32,6 +32,7 @@ import { createTokenStore } from "./token-store.js";
 import { createFileThrottleStore } from "./throttle-store.js";
 import { createFileCatalogStore } from "./catalog-store.js";
 import { createFileProviderStore } from "./provider-store.js";
+import { createFileDrawStore } from "./draw-store.js";
 import { createApiKeyStore } from "./api-key-store.js";
 import { createProviderPublisher } from "./provider-publish.js";
 import { registerRoutes } from "./routes.js";
@@ -133,6 +134,11 @@ function apply(ctx, config = {}, deps = {}) {
   // state file falls back to it, so configuration-driven deployments keep
   // working unchanged.
   const providerStore = createFileProviderStore();
+  // The panel's live draw-tool switch (docs/PROVIDER-HOT-RELOAD.md, same
+  // "own state file beats the config default" discipline as the provider
+  // switch). A value saved from the panel overrides the patch's
+  // `drawEnabled`; an untouched state file falls back to it.
+  const drawStore = createFileDrawStore();
 
   /** Read an optional service without throwing on a Host that lacks it. */
   const getService = (service) => {
@@ -220,6 +226,7 @@ function apply(ctx, config = {}, deps = {}) {
     apiKeyStore,
     catalogStore,
     providerStore,
+    drawStore,
     publisher,
     providerState,
     publishProvider,
@@ -229,7 +236,7 @@ function apply(ctx, config = {}, deps = {}) {
     logger: ctx.logger
   };
 
-  // The five route handlers (trust fence, method allowances, body ceilings,
+  // The six route handlers (trust fence, method allowances, body ceilings,
   // trace writes, publish-after-save) — see routes.js.
   const offs = registerRoutes(ctx, wiring);
   // Mount-time side effects (persisted-catalog seed, draw tool, vision

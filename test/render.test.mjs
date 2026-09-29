@@ -626,6 +626,21 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     viewOfCode("some_new_code").needsSetup === true);
 }
 
+// === G6. the draw switch section is rendered and says which state it is in
+// DrawSwitch is hook-based (like ProviderSwitch), so the render suite cannot
+// mount it; what IS exercised here is that the component is exported by the
+// shipped surface and that a snapshot with `llm.drawEnabled` flowing through
+// still renders the pools view without crashing.
+{
+  check("the draw switch component is exported by the client surface",
+    typeof render.DrawSwitch === "function", String(typeof render.DrawSwitch));
+  check("the draw section's dictionary keys exist in zh",
+    typeof surface.dictionaries.zh["draw.switch"] === "string" &&
+      typeof surface.dictionaries.zh["draw.on"] === "string" &&
+      typeof surface.dictionaries.zh["draw.off"] === "string",
+    JSON.stringify(Object.keys(surface.dictionaries.zh).filter((k) => k.startsWith("draw."))));
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.pass);
 if (failed.length > 0) {

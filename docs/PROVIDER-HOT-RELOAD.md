@@ -63,3 +63,20 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 4. **POST 只改清单，不改目录**，并在同一请求内 `publishProvider(当前目录, 新清单)`。同时把 `providerState.signature` 设成新清单的签名——否则每次轮询都会看到「签名变了」而重复发布一次，把一次点击变成每 30 秒一次的注册抖动。
 5. **只推勾选的，目录仍全量可见**。`snapshot.llm.models` 是整份目录（不受过滤影响），`modelCount` / `visionCount` 才是**实际注册**的数量（按清单过滤后）。两者分开，面板才能一边说「注册了 1 个」一边让用户看到还能勾选哪 6 个。
 
+## 7. 0.4.2 增量：出图工具开关（drawEnabled）
+
+出图吸收（§5.4 接法 B）的 agent 工具 `sensenova_draw_image` 也走同一套「存插件私有状态 + 面板开关」的机制：
+
+| 文件 | 改动 |
+|---|---|
+| `draw-store.js`（新增） | 出图开关状态文件 `$DSH_HOME/state/<plugin>/draw.json`；完整性纪律与 `provider-store.js` 完全一致 |
+| `index.js` | wiring 里增补 `drawStore`；传给 `registerRoutes` 与 `startSideEffects` |
+| `lifecycle.js` | `registerDrawTool` 改为读「面板保存值 > 配置默认值」的生效值，而不是直接读 `settings.drawEnabled` |
+| `routes.js` | 新增 `POST /api/<name>/draw`，与 `/provider` 同一信任形状 |
+| `snapshot-aggregate.js` | 快照 `llm.drawEnabled` / `llm.drawSource` 回显生效值与来源 |
+| `client.js` | `ApiKeyForm` 区新增「出图工具」卡片，含 `DrawSwitch` 控件 |
+
+与 provider 开关的一个**语义差异**需要说明：provider 开关改的是「当前请求立刻重新发布注册对」，改完立即生效；draw 开关改的是「挂载时是否注册 agent 工具」，**当前 Host 进程里已经注册的工具不会因为改开关而消失或出现**——要真正生效需要在**下一个 Host (re)mount**（即重启 `dsh web` 或重新安装插件）时，`lifecycle.js` 的 `startSideEffects` 重新读生效值。面板开关本身是「立即生效、无需重启」的**状态读写**；工具的实际挂载/卸载要等到下次 Host 启动。面板文案里「立即生效」指的是**开关值**本身，不是 agent 工具的实时性。
+
+**已知边界**：两个 Host 进程共享同一状态目录时，后写者胜（与 provider / throttle / catalog 文件语义一致）。`POST /draw` 只改开关值，不直接操作 tools registry——这是有意的：tools registry 没有 `unregister` 语义（见 `lifecycle.js` 注释），强行卸载要等 Host 生命周期自然结束。
+

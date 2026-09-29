@@ -41,6 +41,7 @@ import {
 } from "../catalog-store.js";
 import { createApiKeyStore, API_KEY_REF } from "../api-key-store.js";
 import { PROVIDER_VERSION, createFileProviderStore } from "../provider-store.js";
+import { DRAW_STORE_VERSION, createFileDrawStore, normalizeDrawEnabled } from "../draw-store.js";
 import { redactSecrets } from "../util.js";
 import { surface as clientSurface } from "../client-surface.js";
 
@@ -572,6 +573,68 @@ const BASE_URL = "https://token.sensenova.cn/v1";
       (await reopened.enabled()) === null && (await reopened.isSet()) === false);
   } catch (error) {
     fail("provider switch store", error);
+  } finally {
+    restoreHome();
+    restoreEnv();
+  }
+}
+
+// --- 10b. draw switch store: the panel value beats the config default ------
+// Same shape as group 10 for the provider switch: versioned payload, atomic
+// round trip, corruption reads unset, forget returns to the config default.
+{
+  const restoreEnv = isolateHostEnv();
+  const restoreHome = isolateStateDir();
+  try {
+    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-sensenova-token-plan");
+    const file = join(dir, "draw.json");
+    const store = createFileDrawStore({ dir });
+
+    check("an untouched draw switch reads as unset",
+      (await store.enabled()) === null && (await store.isSet()) === false);
+    check("normalizeDrawEnabled accepts booleans only",
+      normalizeDrawEnabled(true) === true && normalizeDrawEnabled(false) === false &&
+      normalizeDrawEnabled("yes") === null && normalizeDrawEnabled(1) === null);
+
+    await store.save(true);
+    check("save(true) persists a boolean",
+      (await store.enabled()) === true && (await store.isSet()) === true);
+    const persisted = JSON.parse(readFileSync(file, "utf8"));
+    check("the payload carries the format version",
+      persisted.version === DRAW_STORE_VERSION && persisted.enabled === true);
+
+    const reopened = createFileDrawStore({ dir });
+    check("a fresh store reads the persisted draw switch", (await reopened.enabled()) === true);
+
+    await reopened.save(false);
+    check("save(false) flips the draw switch", (await reopened.enabled()) === false);
+
+    writeFileSync(file, "{ this is not json", "utf8");
+    const corrupted = createFileDrawStore({ dir });
+    check("a corrupted draw file reads as unset (never true by accident)",
+      (await corrupted.enabled()) === null);
+
+    writeFileSync(file, JSON.stringify({ version: 999, enabled: true }), "utf8");
+    const foreign = createFileDrawStore({ dir });
+    check("a foreign draw format version reads as unset", (await foreign.enabled()) === null);
+
+    writeFileSync(file, JSON.stringify({ version: DRAW_STORE_VERSION, enabled: "yes" }), "utf8");
+    const junk = createFileDrawStore({ dir });
+    check("a non-boolean draw enabled reads as unset", (await junk.enabled()) === null);
+
+    let threw = false;
+    try {
+      await store.save("yes");
+      check("draw save refuses non-boolean input", false);
+    } catch {
+      check("draw save refuses non-boolean input", true);
+    }
+
+    await reopened.forget();
+    check("draw forget returns to the config default",
+      (await reopened.enabled()) === null && (await reopened.isSet()) === false);
+  } catch (error) {
+    fail("draw switch store", error);
   } finally {
     restoreHome();
     restoreEnv();

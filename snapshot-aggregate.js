@@ -57,7 +57,8 @@ export async function buildSnapshotBody({
   apiKeyStore,
   publisher,
   catalogStore,
-  panelSwitch
+  panelSwitch,
+  drawSwitch
 }) {
   const providerState = publisher.state;
   const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
@@ -193,6 +194,8 @@ export async function buildSnapshotBody({
     models: rosterWithAvailability(offered, pools),
     enabledModelIds: enabledIds,
     quotaBlockedModelIds: unavailableModelIds,
+    drawEnabled: (await drawSwitch?.().catch(() => null) ?? settings.drawEnabled) === true,
+    drawSource: await drawSwitch?.().catch(() => null) === null ? "config" : "panel",
     ...(providerState.error !== null ? { providerError: providerState.error } : {})
   };
 
