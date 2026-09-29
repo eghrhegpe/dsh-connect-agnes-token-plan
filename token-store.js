@@ -71,6 +71,14 @@ import {
   MAX_LOGIN_BACKOFF_MS,
   THROTTLE_MARKER
 } from "./token-store/throttle.js";
+import {
+  readUsername as readUsernameImpl,
+  readAccount as readAccountImpl,
+  loginFromAccount as loginFromAccountImpl,
+  forgetAccount as forgetAccountImpl,
+  USERNAME_REF,
+  PASSWORD_REF
+} from "./token-store/account.js";
 
 /** Record address: this plugin's own namespace, so a stranger cannot collide. */
 const RECORD_ID = "sensenova-console";
@@ -97,25 +105,6 @@ const LEGACY_SCOPE = "dsh-llm-rate-panel";
  * @returns {string} the reference.
  */
 const credentialRef = (name) => name;
-
-/**
- * Where the account lives.
- *
- * The USERNAME is a credential REFERENCE — an environment-variable name, not
- * a value. Storing it this way (rather than as another record) is what lets
- * the panel accept a username typed into the panel and have the very next
- * state read find it: the service re-resolves per operation, writes it
- * owner-only into `~/.dsh/.credentials.yaml`, and needs no restart.
- *
- * The PASSWORD is NEVER persisted by this store. It rides each sign-in call
- * in memory and is gone when the attempt ends; `SENSENOVA_PASSWORD` in the
- * environment is its only durable source, and that is an explicit opt-in for
- * auto-recovery (a dead refresh token re-logs-in by itself only when it is
- * set). A previous version did store the password in the credentials service;
- * `readAccount` sweeps any such legacy value on first contact.
- */
-const USERNAME_REF = "SENSENOVA_USERNAME";
-const PASSWORD_REF = "SENSENOVA_PASSWORD";
 
 /**
  * Where the throttle used to live, as a record in the credentials service.
@@ -279,13 +268,7 @@ export function createTokenStore(options) {
    * @returns {Promise<string>} the username, or `""` when none is known.
    */
   const readUsername = async () => {
-    const fromStore = async (ref) => {
-      // `resolve` is per-call by contract: a value written a moment ago is
-      // visible to the next read, with no restart in between.
-      const resolved = await backend().resolve(credentialRef(ref)).catch(() => undefined);
-      return verbatim(resolved?.value, "");
-    };
-    return str(await fromStore(USERNAME_REF), "") || str(env[USERNAME_REF], "");
+    return readUsernameImpl(wiring, state);
   };
 
   /**
@@ -298,19 +281,7 @@ export function createTokenStore(options) {
    * @returns {Promise<{username: string, password: string, source: string}|undefined>}
    */
   async function readAccount() {
-    const username = await readUsername();
-    // One-time sweep: a previous version stored the password in the
-    // credentials service. The new policy keeps no password at rest, so a
-    // legacy value is removed on first contact (the environment remains the
-    // opt-in path). Best-effort: a read-only service keeps the old value
-    // until the user re-saves, which still cannot leak it anywhere new.
-    if (!state.passwordSwept) {
-      state.passwordSwept = true;
-      await backend().unset(credentialRef(PASSWORD_REF)).catch(() => {});
-    }
-    const password = verbatim(env[PASSWORD_REF], "");
-    if (username === "" || password.trim() === "") return undefined;
-    return { username, password, source: "env" };
+    return readAccountImpl(wiring, state);
   }
 
   /**
@@ -334,13 +305,7 @@ export function createTokenStore(options) {
    * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
    */
   async function loginFromAccount(explicit) {
-    const account = explicit ?? await readAccount();
-    if (account === undefined) {
-      throw pluginError(CODE.NOT_CONFIGURED, "no console account is configured");
-    }
-    const previous = await readStored();
-    const result = await auth.login({ username: account.username, password: account.password }, { onTrace });
-    return store(result.accessToken, result.refreshToken, result.expiresIn, previous?.accessToken);
+    return loginFromAccountImpl(wiring, state, explicit, readStored, store);
   }
 
   /** Whether a token is still good for at least `skewMs`. */
@@ -603,9 +568,7 @@ export function createTokenStore(options) {
      * @returns {Promise<void>}
      */
     async forgetAccount() {
-      await backend().unset(credentialRef(USERNAME_REF));
-      await backend().unset(credentialRef(PASSWORD_REF));
-      state.cached = null;
+      return forgetAccountImpl(wiring, state);
     },
 
     /**

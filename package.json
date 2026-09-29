@@ -49,6 +49,7 @@
     "token-store/state.js",
     "token-store/grant.js",
     "token-store/throttle.js",
+    "token-store/account.js",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
