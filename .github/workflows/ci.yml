@@ -59,6 +59,7 @@ jobs:
           node test/wiring.test.mjs
           node test/contract.test.mjs
           node test/retry.test.mjs
+          node test/error-fix.test.mjs
           node test/draw.test.mjs
 
   e2e:
