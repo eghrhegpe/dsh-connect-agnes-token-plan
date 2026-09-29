@@ -27,6 +27,7 @@ import { resolveRetryPolicy, resolveImageAttachmentAccess } from "@deepseek-ai/d
 import { name } from "./host-config.js";
 import { buildDescriptors, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.js";
 import { buildRetryPolicyConfig } from "./llm-retry.js";
+import { reclassifyStream } from "./llm-error-fix.js";
 
 /** Idle ceiling while one stream read is outstanding (dsh-llm-pi-ai default). */
 const STREAM_IDLE_TIMEOUT_MS = 300_000;
@@ -146,7 +147,7 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
     ]
   ]);
 
-  const adapter = new PiAiAdapter({
+  const inner = new PiAiAdapter({
     profiles: () => profiles,
     auth: INERT_AUTH,
     // The stored API-key reference is the only credential this route presents;
@@ -163,6 +164,35 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
         (hostPath) => get?.("fs")?.processPathFromHostPath?.(hostPath),
         ref
       )
+  });
+
+  // 429 误判纠正层：peer 的 `classifyPiAiError` 会把带 "budget/credits" 字眼的
+  // 限频 429 抢判成 QUOTA（不重试），本 Proxy 把这类误判体在出流前纠正回
+  // RATE_LIMIT，使 `llm-retry.js` 的退避重试真正生效。只拦截流出口，不触碰
+  // peer 内部逻辑，也不影响任何正常数据 chunk。详见 `llm-error-fix.js`。
+  const adapter = new Proxy(inner, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      // `stream(...)` 与 `prepareCall(...).stream` 都返回一个 async iterable；
+      // 二者据此包裹重判流。其它成员（含 image/resolveApiKey 等）原样放行。
+      if (prop === "stream") {
+        return (options) => reclassifyStream(target.stream(options));
+      }
+      if (typeof value === "function" && prop === "prepareCall") {
+        return (...args) => {
+          const prepared = value.apply(target, args);
+          if (prepared && typeof prepared.then === "function") {
+            return prepared.then((p) => p && typeof p.stream === "function"
+              ? { ...p, stream: (o) => reclassifyStream(p.stream(o)) }
+              : p);
+          }
+          return prepared && typeof prepared.stream === "function"
+            ? { ...prepared, stream: (o) => reclassifyStream(prepared.stream(o)) }
+            : prepared;
+        };
+      }
+      return value;
+    }
   });
 
   return { adapter, providerIds: [LLM_PROVIDER_ID] };

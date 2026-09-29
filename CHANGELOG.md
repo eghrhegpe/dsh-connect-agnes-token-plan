@@ -9,6 +9,7 @@
 - **新增 agent 工具 `sensenova_draw_image`**（opt-in，配置 `drawEnabled: false` 默认关）：POST `{apiBase}/images/generations`，鉴权用面板「模型接入」保存的 `SENSENOVA_API_KEY` 引用（每次调用现取，轮换 Key 无需重启）。
 - **出图模型识别用结构化字段，不用名字正则**：从 catalog 的 `output_modalities` 判定（与 chat 清单的排除逻辑互为反向，两份清单不可能矛盾）。社区同类 `dsh-draw-router` 的名字正则会漏掉 `sensenova-u1.5-lite`，本实现不会（对照见 `docs/ARCHITECTURE.md` §5.4）。
 - **429 分诊与失败冷却**：出图失败时区分「配额不足（别盲重试）」与「限频（等再试）」；失败后 30s 冷却，防止 agent 在耗尽的共享池上打转。
+- **修复 429 误判纠正（chat 路径）**：peer 的 `classifyPiAiError` 先跑 `isQuotaExceededError`，命中面过宽——商汤限频 429 体里带 `rate budget` / `credits` 字眼时会被抢判成 `QUOTA`，导致本应退避重试的限频被按"配额耗尽"快速失败、且模型被面板静默下线（呈现"额度已用尽"）。新增 `llm-error-fix.js`：在 `llm-adapter.js` 用 Proxy 包裹 `PiAiAdapter` 的流出口，把这类"误判的限频 QUOTA"在出流前纠正回 `RATE_LIMIT`（保留原 message），真配额耗尽与已限频原样放行。`test/error-fix.test.mjs`（24 项，peer-free）覆盖。详见 ROADMAP §3 的纠偏注记。
 - **降级同型**：无 tools 服务的 Host、peer 加载失败、注册被拒——工具静默缺席，面板与 provider 不受影响；快照契约零改动（14 键不变）。
 - 配套：`drawModelId`（首选模型）与 `drawTimeoutMs`（默认 120s）两个配置；`test/draw.test.mjs`（56 项，peer-free）。
 

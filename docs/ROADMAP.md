@@ -103,6 +103,15 @@ per-model 可用性标记即用户要的「清单自带识别」——但它是 
 > `QUOTA_EXCEEDED_CODE`（`isQuotaExceededError`）与 `RATE_LIMIT`（正则 `\b429\b|rate.?limit`）。
 > 因此我们的工作只剩两件：**(a) 决定这两类错误的重试策略**；**(b) 把 pool 状态转成模型可用性**。
 
+> ⚠️ **纠偏（2026-09-30 实测）**：上述 spike 假设"peer 分类正确"，但实际 `isQuotaExceededError`
+> （`dsh-llm/lib/index.js:181`）命中面过宽——含 `out of ... budget`、`balance/credits exhausted`、
+> `usage limit (exceeded|exhausted|reached)` 等。商汤限频 429 体常带 `rate limit budget` /
+> `out of rate budget` 这类字眼，于是被**抢判为 `QUOTA`**（而纯 `RATE_LIMIT` 正则因排在 `isQuotaExceededError`
+> 之后成了死代码）。后果：本应退避重试的限频被按"配额耗尽"快速失败、且模型被面板静默下线呈现"额度已用尽"。
+> → 新增 `llm-error-fix.js` 在 host 侧 Proxy 包裹 `PiAiAdapter` 流出口，把"误判的限频 QUOTA"纠正回
+> `RATE_LIMIT`（保留 message）；真配额耗尽与已限频原样放行。即：peer 分类**仍用作主路径**，但我们加了一层
+> 保守的"宁重勿杀"纠正，不重写、不依赖 peer 解析（peer-free 可测）。
+
 - **重试策略（全局，1 行 peer 改动）— 已实现**：`llm-retry.js` 导出 peer-free 的
   `buildRetryPolicyConfig()`（显式 `mode:"normal"`、`retryableCodes` 排除 `QUOTA`/`ACCOUNT_QUOTA`、保留
   `RATE_LIMIT` 并略调 backoff 对共享池更温和），`llm-adapter.js:127` 改为
