@@ -145,9 +145,10 @@ export const S = {
   modelName: { flex: "0 1 auto", minWidth: 0, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   modelRate: { flex: "none", fontSize: 11, color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums" },
   modelBadge: { flex: "none", fontSize: 11, padding: "1px 7px", borderRadius: 999, background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-secondary)" },
-  // The WorkBuddy-style parameter line: the figures the platform declares
-  // (window, output ceiling) plus the profile's pinned thinking default,
-  // indented under the model name (15px checkbox + 10px gap = 25).
+  // The WorkBuddy-style parameter line: only per-model facts — the figures the
+  // platform declares (window, output ceiling) and the levels the selector
+  // offers. Provider-wide constants live in the header once, never here.
+  // Indented under the model name (15px checkbox + 10px gap = 25).
   modelMeta: { paddingLeft: 25, fontSize: 11, lineHeight: "15px", color: "var(--dsw-alias-label-secondary)" },
   rosterFoot: { display: "flex", gap: 8, alignItems: "center", marginTop: 10 }
 };

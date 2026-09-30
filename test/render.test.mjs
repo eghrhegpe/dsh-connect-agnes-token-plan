@@ -403,16 +403,19 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   // decimal rounding drew, so it stays pinned here and in tokenSize below.
   const rich = [{
     id: "glm-5.2", name: "glm-5.2", vision: false, available: false, quotaExhausted: true,
-    contextWindow: 1048576, maxOutputLength: 65536, multiplier: 10
+    contextWindow: 1048576, maxOutputLength: 65536, multiplier: 10,
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"]
   }];
-  const richTree = treeOf(render.ModelRoster, { models: rich, enabledIds: [], tt: ttZh, thinkingDefault: "high" });
+  const richTree = treeOf(render.ModelRoster, { models: rich, enabledIds: [], tt: ttZh });
   const richText = texts(richTree).join("\n");
   check("1048576 tokens reads as 1M — never the decimal 1049k",
     richText.includes("1M 上下文") && !richText.includes("1049k"), richText);
   check("the platform-declared output ceiling lands in the parameter line",
     richText.includes("最大输出 64K"), richText);
-  check("the profile's pinned thinking default is surfaced",
-    richText.includes("默认思考强度 high"), richText);
+  check("the row quotes THIS model's selectable levels, localized like the picker",
+    richText.includes("思考 关闭/低/中/高/极高/最高"), richText);
+  check("the provider-wide default never repeats per row (it lives in the header)",
+    !richText.includes("默认思考强度") && !richText.includes(zh["llm.rosterThinkingDefault"]), richText);
   check("the pseudo multiplier labels the row ×N", richText.includes("×10"), richText);
   check("a quota-exhausted row names why it cannot answer",
     richText.includes(zh["llm.rosterExhausted"]), richText);

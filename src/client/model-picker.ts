@@ -18,19 +18,20 @@ import type { LlmData, ModelData } from "./wire.ts";
  * Each row is two lines in the WorkBuddy shape: a head line (checkbox, the
  * model name, an optional `×N` pseudo rate, badges for NOTABLE states only)
  * and an indented parameter line quoting the figures the platform declares -
- * window and output ceiling - plus the profile's pinned thinking default.
+ * window, output ceiling, and the thinking levels DSH's selector will really
+ * offer for THIS model. A provider-wide constant (the default effort) never
+ * repeats per row - it is stated once in the header, because a fact that
+ * never varies between rows is noise, not information.
  * The rows come only from the Host's roster, so a curated id that no longer
  * exists can never become a checkbox: curation is a filter over the catalogue,
  * never a catalogue of its own. A default ("text only") earns no badge, and a
  * figure the catalogue does not declare draws no segment - the list quotes
  * facts, never guesses.
  */
-export function ModelRoster({ models, enabledIds, busy, thinkingDefault, tt, onToggle }: {
+export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
   models: ModelData[];
   enabledIds: unknown;
   busy: boolean | undefined;
-  /** The provider-level default thinking effort, as the snapshot quotes it. */
-  thinkingDefault?: unknown;
   tt: Tt;
   onToggle?: (id: string) => void;
 }): unknown {
@@ -48,10 +49,15 @@ export function ModelRoster({ models, enabledIds, busy, thinkingDefault, tt, onT
       const out = typeof model?.maxOutputLength === "number" && model.maxOutputLength > 0
         ? format(tt("llm.metaOutput"), { out: tokenSize(model.maxOutputLength) })
         : null;
-      const thinking = typeof thinkingDefault === "string" && thinkingDefault !== ""
-        ? format(tt("llm.metaThinking"), { level: thinkingDefault })
+      // The selectable ladder, projected Host-side with pi-ai's own filter over
+      // the descriptor map - so this list IS what the DSH selector offers.
+      // Localized per level (关闭/低/中/高/极高/最高), joined compactly.
+      const levels = Array.isArray(model?.thinkingLevels) && model.thinkingLevels.length > 0
+        ? format(tt("llm.metaLevels"), {
+          levels: model.thinkingLevels.map((level) => tt(`llm.level.${level}`)).join("/")
+        })
         : null;
-      const meta = [ctx, out, thinking].filter(Boolean).join(" · ");
+      const meta = [ctx, out, levels].filter(Boolean).join(" · ");
       const rate = typeof model?.multiplier === "number" ? model.multiplier : null;
       return h(
         "li",
@@ -194,10 +200,16 @@ export function ModelPicker({ llm, onDone, tt }: {
     "div",
     { style: { marginBottom: 14 } },
     // Title and rule share one line — the rule is the tail of the same
-    // sentence, not a second notice competing for attention.
+    // sentence, not a second notice competing for attention. The provider-wide
+    // thinking default rides here too: it is one constant for every row, so
+    // the roster says it ONCE instead of repeating it seven times.
     h("p", { style: { margin: "0 0 10px" } },
       h("span", { style: S.sectionTitle }, tt("llm.roster"), " — "),
-      h("span", { style: { ...S.muted, fontSize: 12 } }, tt("llm.rosterHint"))),
+      h("span", { style: { ...S.muted, fontSize: 12 } }, tt("llm.rosterHint")),
+      typeof llm?.thinkingDefault === "string" && llm.thinkingDefault !== ""
+        ? h("span", { style: { ...S.muted, fontSize: 12 } },
+          ` · ${format(tt("llm.rosterThinkingDefault"), { level: tt(`llm.level.${llm.thinkingDefault}`) })}`)
+        : null),
     models.length === 0
       ? h("p", { style: S.empty }, tt("llm.rosterEmpty"))
       : h(
@@ -242,10 +254,6 @@ export function ModelPicker({ llm, onDone, tt }: {
                 enabledIds: ids,
                 busy,
                 tt,
-                // The profile's pinned thinking default, quoted from the same
-                // constant the adapter dispatches - the parameter line shows
-                // it only when the Host actually says so.
-                thinkingDefault: llm?.thinkingDefault,
                 // One row is toggled against the WHOLE roster, not the
                 // filtered view, so an edit survives a later change of the
                 // search box.

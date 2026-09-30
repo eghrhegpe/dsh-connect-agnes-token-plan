@@ -209,6 +209,32 @@ export function thinkingLevelMapFor(entry) {
   };
 }
 
+/** pi-ai's escalation ladder (`EXTENDED_THINKING_LEVELS`, dist/models.js:550). */
+const THINKING_LADDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * The thinking levels DSH's selector will actually offer for one model.
+ *
+ * This mirrors pi-ai's `getSupportedThinkingLevels` (dist/models.js:551)
+ * against OUR map: walk the ladder, drop levels the map pins to `null`, and
+ * treat `xhigh`/`max` as opt-in (they must be present and non-null). DSH
+ * builds the model-settings effort list through exactly that function, so a
+ * roster row quoting this list cannot disagree with what the picker lets the
+ * user select — one contract, both ends. If pi-ai's rule ever changes, this
+ * filter changes with it (pinned by test/render + routes).
+ * @param {object} entry - one normalized catalog entry.
+ * @returns {string[]} level ids in escalation order, e.g. ["off","low",...].
+ */
+export function supportedThinkingLevels(entry) {
+  const map = thinkingLevelMapFor(entry);
+  return THINKING_LADDER.filter((level) => {
+    const mapped = map[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
+}
+
 /**
  * Map one catalog entry onto the pi-ai model descriptor the adapter offers.
  *
@@ -391,7 +417,7 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
  * @param {object[]} entries - the normalized catalog entries.
  * @param {object} pools - the `parsePools` result, or anything without a `pools`
  *   array (in which case every row reads as available).
- * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number, maxOutputLength: number}[]}
+ * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number, maxOutputLength: number, thinkingLevels: string[]}[]}
  */
 export function rosterWithAvailability(entries, pools) {
   const blocked = new Set(exhaustedModelIds(pools));
@@ -414,7 +440,12 @@ export function rosterWithAvailability(entries, pools) {
       // The platform's declared output ceiling (0 = unknown). Widening the
       // projection here is deliberate: the raw entry stays Host-side, and the
       // panel quotes only these two parameter figures plus the vision verdict.
-      maxOutputLength: maxOutputLengthOf(entry)
+      maxOutputLength: maxOutputLengthOf(entry),
+      // What the DSH selector will really offer this model (same rule pi-ai
+      // applies to the registered descriptor) — the per-model fact worth
+      // repeating on a row, unlike the provider-wide default, which the panel
+      // states once in its header.
+      thinkingLevels: supportedThinkingLevels(entry)
     };
     if (position.has(id)) {
       out[position.get(id)] = row;

@@ -20,7 +20,8 @@ import {
 import {
   exhaustedModelIds,
   buildDescriptors,
-  rosterWithAvailability
+  rosterWithAvailability,
+  supportedThinkingLevels
 } from "../src/host/llm-models.ts";
 
 const results = [];
@@ -207,6 +208,16 @@ const BASE_URL = "https://token.sensenova.cn/v1";
       byId.m1.maxOutputLength === 65536, String(byId.m1.maxOutputLength));
     check("an undeclared ceiling projects as 0, not a guessed number",
       byId.m2.maxOutputLength === 0, String(byId.m2.maxOutputLength));
+    // The selectable ladder the row quotes must be EXACTLY what pi-ai's
+    // getSupportedThinkingLevels computes over our map (null drops; xhigh/max
+    // opt-in) — that function is the DSH selector's effort list source.
+    check("the row projects the selectable thinking levels",
+      JSON.stringify(byId.m1.thinkingLevels) === JSON.stringify(["off", "low", "medium", "high", "xhigh"]),
+      JSON.stringify(byId.m1.thinkingLevels));
+    check("only glm-5.2 opts into the top level; minimal is never offered",
+      supportedThinkingLevels({ id: "glm-5.2" }).join(",") === "off,low,medium,high,xhigh,max" &&
+      !supportedThinkingLevels({ id: "anything-else" }).includes("minimal"),
+      supportedThinkingLevels({ id: "glm-5.2" }).join(","));
 
     // No exhausted pools -> everything available.
     const clear = rosterWithAvailability(entries, { pools: [] });

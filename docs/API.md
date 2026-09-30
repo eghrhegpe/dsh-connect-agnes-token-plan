@@ -37,14 +37,17 @@
     "registerProvider": false, "llmAvailable": false,
     "providerRegistered": false, "providerId": "sensenova-token-plan",
     // 实际注册了多少个（已按下面的允许清单过滤），以及其中多少个可看图；
-    // thinkingDefault 是本提供方 profile 钉死的思考强度默认值（与 llm-adapter 同一常量）
+    // thinkingDefault 是本提供方 profile 钉死的思考强度默认值（与 llm-adapter 同一
+    // 常量）——provider 级常数，面板只在花名册头部说一次，不逐行重复
     "modelCount": 2, "visionCount": 1,
     "thinkingDefault": "high",
     // 模型选择器数据：整份可选目录（不受过滤影响）与当前生效的允许清单。
     // 空清单 = 不过滤 = 全部推送；["__hide_all__"] = 一个都不推送。
-    // 每行附目录声明的 contextWindow / maxOutputLength（0 = 平台未声明）；
-    // 命中 trendMultipliers 的行再附 multiplier: number（伪倍率，非官方，与 trend 同一匹配器）。
-    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144, "maxOutputLength": 65536, "multiplier": 1 }],
+    // 每行附目录声明的 contextWindow / maxOutputLength（0 = 平台未声明）、
+    // thinkingLevels（DSH 选择器实际可选档位，与 pi-ai getSupportedThinkingLevels
+    // 同一规则算出）；命中 trendMultipliers 的行再附 multiplier: number
+    // （伪倍率，非官方，与 trend 同一匹配器）。
+    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144, "maxOutputLength": 65536, "multiplier": 1, "thinkingLevels": ["off", "low", "medium", "high", "xhigh"] }],
     "enabledModelIds": [],
     // 出图工具开关生效值与来源（0.4.2）；工具实际挂载在下一个 Host 启动时发生
     "drawEnabled": false, "drawSource": "config",

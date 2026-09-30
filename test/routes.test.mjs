@@ -1102,9 +1102,9 @@ async function withNetwork(stub, body) {
       const snapshot = await call(SNAPSHOT_PATH, makeRequest());
       check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
         JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([
-          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, multiplier: 1 },
-          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, multiplier: 1 },
-          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, multiplier: 1 }
+          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high", "xhigh"], multiplier: 1 },
+          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high", "xhigh"], multiplier: 1 },
+          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high", "xhigh"], multiplier: 1 }
         ]), JSON.stringify(snapshot.payload.llm?.models));
       check("Q2 the snapshot quotes the profile's pinned thinking default",
         snapshot.payload.llm?.thinkingDefault === "high",

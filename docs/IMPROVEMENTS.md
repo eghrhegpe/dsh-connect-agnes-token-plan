@@ -427,10 +427,14 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   且**默认态不发徽章**——「纯文本」是缺省，给缺省发徽章等于给什么都没发
   （`llm.rosterText` 键随之一删，双语同步）。
 - **参数不可见**：用户看不到 LLM 参数与预设上下文。**取舍**：每行加缩进参数行
-  （`llm.metaOutput`/`llm.metaThinking` + 原上下文徽章合并），数字只报**平台声明**的
-  `max_output_length`（`maxOutputLengthOf`，0 = 未声明就不画该段，绝不猜）与
-  profile 钉死的思考默认值（`DEFAULT_REASONING_EFFORT` 单一常量：`llm-adapter`
-  派发它、`snapshot-aggregate` 播报它，展示与行为构造上不可漂移）。
+  （上下文 + `llm.metaOutput` + `llm.metaLevels` 可选档位列表），数字只报**平台声明**的
+  `max_output_length`（`maxOutputLengthOf`，0 = 未声明就不画该段，绝不猜）；
+  档位列表与思考默认值分家——**行内只放会变的**（`supportedThinkingLevels`，按 pi-ai
+  `getSupportedThinkingLevels` 同一规则对本方 map 过滤，即 DSH 选择器实际给出的集合，
+  glm-5.2 独享「最高」档），**不放的**是 provider 级常数：默认档 `DEFAULT_REASONING_EFFORT`
+  单一常量（`llm-adapter` 派发它、快照播报它，展示与行为构造上不可漂移）只在花名册
+  头部说**一次**（`llm.rosterThinkingDefault`）。首版曾把「默认思考强度 high」逐行打印，
+  当日即被指出：七行同样的字是噪音不是信息——**逐行重复恒定量**这个反模式记在此处。
 - **倍率与格式**：`trendMultipliers` 一直存在但只在趋势表露面。**取舍**：抽
   `matchMultiplier` 单一匹配器，趋势行与花名册行共用——同一模型的 `×N` 两处
   是同一计算事实；未命中无字段（不猜 1）。上下文格式修 `1049k` 占位符感 bug
@@ -441,6 +445,6 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   覆盖值不进 `catalogSignature`（`id:vision` 位串），改了不会触发重注册，
   先动签名再动 UI。
 
-验证钉：`render` G4（1M/×N/额度耗尽/无参数行不画线 + `tokenSize` 直测）、
-`routes` Q2（行含 `maxOutputLength`/`multiplier` 与 `llm.thinkingDefault`）、
-`retry` §5（投影层 0=未声明）。
+验证钉：`render` G4（1M/×N/额度耗尽/档位列表本地化/默认值不逐行重复 + `tokenSize` 直测）、
+`routes` Q2（行含 `maxOutputLength`/`multiplier`/`thinkingLevels` 与 `llm.thinkingDefault`）、
+`retry` §5（投影层 0=未声明 + 档位过滤与 pi-ai 规则一致）。

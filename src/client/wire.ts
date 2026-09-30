@@ -70,6 +70,8 @@ export interface ModelData {
   maxOutputLength?: number;
   /** Operator pseudo credit multiplier (×N); absent when no config key matched. */
   multiplier?: number;
+  /** Thinking levels the DSH selector offers for this model, escalation order. */
+  thinkingLevels?: string[];
 }
 
 /** One vision model line: the id, its capability, and the evidence source. */
