@@ -206,8 +206,8 @@ export function RaccoonTab({ tt }: { tt: Tt }): unknown {
         : state.providerError !== undefined && state.providerError !== ""
           ? h("div", { style: S.formError, role: "alert" }, state.providerError)
           : enabled && !loggedIn
-            ? h("div", { style: S.muted, fontSize: 12 }, tt("raccoon.awaitingLogin"))
-            : h("div", { style: S.muted, fontSize: 12 }, tt("raccoon.unregistered"))
+            ? h("div", { style: { ...S.muted, fontSize: 12 } }, tt("raccoon.awaitingLogin"))
+            : h("div", { style: { ...S.muted, fontSize: 12 } }, tt("raccoon.unregistered"))
       : null,
     // The login half: a WeChat QR the tab encodes locally, or the login
     // result line once the walk settles. While a walk is in flight the QR
@@ -216,7 +216,7 @@ export function RaccoonTab({ tt }: { tt: Tt }): unknown {
     // "waiting" line beside it.
     h(
       "div",
-      { style: S.card, marginTop: 4 },
+      { style: { ...S.card, marginTop: 4 } },
       loggedIn
         ? h(
             "div",
