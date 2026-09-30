@@ -16,6 +16,9 @@
 
 > 定位：承接 [ARCHITECTURE.md](./ARCHITECTURE.md) §5（大统一）与 [ROADMAP.md](./ROADMAP.md)
 > §0–§6（路线图），但聚焦"怎么改得更好"，不重复定位。
+> 与 ROADMAP 的分工：本文是**研究档案**——诊断、证据、投入/风险比，结论随时间沉淀，
+> 不再追实现进度；文中「已落地 / ✅」注记只在写下当时成立，**当前执行状态一律以
+> [ROADMAP.md](./ROADMAP.md) 为准**。
 > 实证来源：本机 DSH 运行时（`~/.dsh/dsh-asar-unpacked/dsh/node_modules`，即
 > `test/peer-roots.mjs` 解析到的 peer 根）的 peer 源码、兄弟插件
 > （`~/.dsh/profiles/{web,desktop}` 安装树与 `~/.dsh/fork`）与本插件源码。

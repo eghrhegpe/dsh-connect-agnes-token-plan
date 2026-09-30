@@ -2,6 +2,7 @@
 
 > 本文承接 [ARCHITECTURE.md](./ARCHITECTURE.md) §5「大统一」定位变更，是**执行层面的时间序列与优先级**，不是重复定位。§5 负责「我们是谁、边界在哪」，本文负责「下一步做什么、按什么顺序、侵入性如何、门禁怎么过」。
 > 依据：[AGENTS.md](../AGENTS.md)（验证裁剪、红线）、[TESTING.md](./TESTING.md)（docs.test.mjs 防孤儿文件 / 防跨文件重复表）、[PITFALLS.md](./PITFALLS.md)。
+> 研究档案：[IMPROVEMENTS.md](./IMPROVEMENTS.md) 是设计问题的**研究上游**（诊断 + 证据 + 投入/风险比）；本文只记**执行状态**——标 ✅ 章节的实施进展以本文为准，研究文件里残留的「已落地」注记只是写下当时的历史时间点，不随实现继续更新。
 
 ## 0. 已锁死的前提（来自 §5，这里不复制其表）
 
@@ -19,7 +20,7 @@
 
 ## 2. P0：`index.js` 控制面解耦 + 商汤契约自动化回归 ✅ 已实现（2026-09）
 
-> 来源：2026-09 锐评结论。两个 P0 先于任何「继续吸收」——ROADMAP §0 已承认本插件
+> 来源：2026-09 锐评结论，研究论证见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §2（接线复杂度诊断的完整证据链）。两个 P0 先于任何「继续吸收」——ROADMAP §0 已承认本插件
 > 是双 profile 的 `agent-default-model`（默认推理通道），`index.js` 1187 行里同时挂着
 > 5 条路由 + `providerState` 状态机 + `publishChain` 串行化 + 两个 fire-and-forget IIFE
 > （catalog seed、draw 注册），复杂度已溢出：注释越解释越拆不动。再谈下一块吸收之前，
@@ -89,6 +90,8 @@ live 档在 `package.json` 加 `test:live:contract` 脚本（与 `test:live` 并
   只在作者机器有护栏，这一层保护随大统一分发而变薄，吸收新模块前先记住这一点。
 
 ## 3. 旗舰刀口：429 自愈（全局级，低侵入）✅ 已实现
+
+> 研究论证：[IMPROVEMENTS.md](./IMPROVEMENTS.md) §3（peer 语义耦合的诊断与契约护栏选项）。
 
 ### 3.1 配置粒度结论（已查证代码）
 
