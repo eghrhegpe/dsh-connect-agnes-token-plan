@@ -242,7 +242,7 @@ function startHost(home, port) {
     // and both are invisible on a machine that happens to have no key set.
     // Same three names the offline suites hide (see peer-roots.mjs).
     const env = { ...process.env, DSH_HOME: home };
-    for (const key of ["SENSENOVA_API_KEY", "SENSENOVA_USERNAME", "SENSENOVA_PASSWORD"]) delete env[key];
+    for (const key of ["SENSENOVA_API_KEY", "AGNES_USERNAME", "AGNES_PASSWORD"]) delete env[key];
     const child = spawn(DSH, ["--profile", "web", "--no-open", "--port", String(port)], {
       env,
       shell: true,

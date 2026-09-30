@@ -16,8 +16,7 @@
  *
  * @module dsh-connect-sensenova-token-plan/throttle-store
  */
-import { readFile, rename, rm } from "node:fs/promises";
-import { homedir } from "node:os";
+import { rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { str, num } from "./util.ts";
 import { name } from "./host-config.ts";
@@ -41,20 +40,6 @@ const THROTTLE_VERSION = 1;
  */
 export function throttleDir() {
   return pluginStateDir(name);
-}
-
-/**
- * The throttle file this plugin wrote before its rename.
- *
- * Read for MIGRATION ONLY: a parked refusal — a wrong password the user has
- * not yet corrected — must survive the rename, or the next Host start would
- * retry that password automatically and walk into a lock. The old file is
- * moved into place on first contact and never written again.
- * @returns {string} the legacy file path.
- */
-function legacyThrottleFile() {
-  const home = str(process.env.DSH_HOME, join(homedir(), ".dsh"));
-  return join(home, "state", "dsh-llm-rate-panel", "throttle.json");
 }
 
 /**
@@ -96,43 +81,20 @@ function parse(raw, now) {
 export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } = {}) {
   const file = join(dir, "throttle.json");
 
-  /**
-   * Move a throttle written before the rename into the current location.
-   *
-   * Runs once: a state already at the new address wins over one at the old. The
-   * old directory then holds nothing and is left to be swept with the Home.
-   * @returns {Promise<void>} resolves once any legacy state is in place.
-   */
-  let legacyAdopted = false;
-  async function adoptLegacyFile() {
-    if (legacyAdopted) return;
-    legacyAdopted = true;
-    try {
-      await ensureStateDir(dir);
-    } catch {
-      // A read-only Home: nothing can be moved, the current store stands.
-    }
-    try {
-      await readFile(file, "utf8");
-    } catch {
-      // The current file is absent — adopt the legacy one, if there is any.
-      try {
-        await rename(legacyThrottleFile(), file);
-      } catch {
-        // No legacy file, or the move failed: the current store stands.
-      }
-    }
-  }
+  // There is deliberately no adoption of the pre-rename state directory. That
+  // directory (`state/dsh-llm-rate-panel/`) belongs to the SenseNova plugin,
+  // and adopting it would be a `rename` — a MOVE. It would strip the other
+  // plugin of a parked refusal it is still waiting out, which is precisely the
+  // state that stops a wrong password from being retried into an account lock.
+  // A brand-new plugin has no predecessor; it starts with no throttle.
 
   return {
     async read() {
-      await adoptLegacyFile();
       // Absent, unreadable, or not JSON reads as "no throttle" (`readStateJson`
       // returns null): the safe direction for a time window.
       return parse(await readStateJson(file), now);
     },
     async write(state) {
-      await adoptLegacyFile();
       const temporary = temporaryOf(dir, "throttle.json");
       try {
         await ensureStateDir(dir);
@@ -155,13 +117,9 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
       } catch {
         // Nothing to do: an absent file is already a cleared throttle.
       }
-      // A legacy file that never got adopted must not resurrect the refusal it
-      // holds: a cleared throttle is cleared under both names.
-      try {
-        await rm(legacyThrottleFile(), { force: true });
-      } catch {
-        // Nothing to do.
-      }
+      // The pre-rename file is deliberately left alone: it belongs to the
+      // SenseNova plugin, and deleting it would clear an account lock that
+      // plugin is still waiting out. See the note at the top of this factory.
     }
   };
 }

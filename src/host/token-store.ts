@@ -55,7 +55,6 @@ import { name as RECORD_SCOPE } from "./host-config.ts";
 import { createStoreContext } from "./token-store/state.ts";
 import {
   readStored as readStoredImpl,
-  adoptLegacyGrant as adoptLegacyGrantImpl,
   storeGrant,
   purgeGrant as purgeGrantImpl,
   isFresh as isFreshImpl
@@ -82,17 +81,7 @@ import { renewWithRefresh as renewWithRefreshImpl } from "./token-store/renewal.
 import { acquire as acquireImpl } from "./token-store/acquire.ts";
 
 /** Record address: this plugin's own namespace, so a stranger cannot collide. */
-const RECORD_ID = "sensenova-console";
-
-/**
- * The namespace this plugin used before the rename.
- *
- * Read for MIGRATION ONLY: an account and grant saved under the old name must
- * survive the rename, or the panel would demand a fresh login and abandon a
- * refresh token that is still good. Nothing is ever written here again; each
- * legacy record is adopted once and deleted.
- */
-const LEGACY_SCOPE = "dsh-llm-rate-panel";
+const RECORD_ID = "agnes-console";
 
 /**
  * The reference form of a credential name.
@@ -114,7 +103,7 @@ const credentialRef = (name) => name;
  * lives in `token-store/throttle.ts`; this constant stays here as the public
  * export surface (`THROTTLE_ID`).
  */
-const THROTTLE_ID = "sensenova-console-throttle";
+const THROTTLE_ID = "agnes-console-throttle";
 
 /**
  * Build the token store.
@@ -328,7 +317,6 @@ export function createTokenStore(options) {
 export {
   RECORD_SCOPE,
   RECORD_ID,
-  LEGACY_SCOPE,
   USERNAME_REF,
   PASSWORD_REF,
   THROTTLE_ID,

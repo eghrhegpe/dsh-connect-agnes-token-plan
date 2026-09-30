@@ -39,7 +39,7 @@ const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
 const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
 const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
 const DRAW_PATH = "/api/dsh-connect-sensenova-token-plan/draw";
-const RECORD_KEY = credentialKey("dsh-connect-sensenova-token-plan", "sensenova-console");
+const RECORD_KEY = credentialKey("dsh-connect-sensenova-token-plan", "agnes-console");
 
 const POOL_BODY = {
   plan: { id: "p1", name: "TokenPlan", type: "token_plan" },
@@ -562,7 +562,7 @@ async function withNetwork(stub, body) {
 // === J. forget keeps the grant ==========================================
 {
   const credentials = makeCredentials(storedGrant(jwtExpiring(120), "keep-me", 7200), {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" }
+    refs: { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" }
   });
   const call = await mount(credentials);
   const response = await call(ACCOUNT_PATH, makePost({ forget: true }));

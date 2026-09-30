@@ -32,8 +32,8 @@ import { str, verbatim, pluginError } from "../util.ts";
 const credentialRef = (name) => name;
 
 /** Where the account lives. The password is NEVER persisted. */
-export const USERNAME_REF = "SENSENOVA_USERNAME";
-export const PASSWORD_REF = "SENSENOVA_PASSWORD";
+export const USERNAME_REF = "AGNES_USERNAME";
+export const PASSWORD_REF = "AGNES_PASSWORD";
 
 /**
  * The account's identity: the stored username, with the environment as a
@@ -57,9 +57,9 @@ export async function readUsername(wiring, state) {
  * The account to log in with: a stored (or environment) username and an
  * ENVIRONMENT password.
  *
- * The password is never persisted. `SENSENOVA_PASSWORD` in the environment
+ * The password is never persisted. `AGNES_PASSWORD` in the environment
  * is its only durable source, and that is an explicit opt-in: without an env
- * password the panel simply asks again when the refresh token dies.
+ * password the panel simply asks again when the access token dies.
  * @returns {Promise<{username: string, password: string, source: string}|undefined>}
  */
 export async function readAccount(wiring, state) {
@@ -85,8 +85,8 @@ export async function readAccount(wiring, state) {
  * The account is taken EXPLICITLY when the caller just typed it (the panel
  * save path: the password lives in that call's closure and is never
  * written anywhere), and read back from the environment otherwise (the
- * auto-recovery path after a dead refresh token, opt-in via
- * `SENSENOVA_PASSWORD`).
+ * auto-recovery path after the access token expires, opt-in via
+ * `AGNES_PASSWORD`).
  *
  * The grant read BEFORE the sign-in is named as the one this login
  * supersedes. It has to be read first: the token pair only arrives after the

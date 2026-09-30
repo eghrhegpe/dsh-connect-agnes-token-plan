@@ -16,7 +16,7 @@
  */
 
 import { isCredentialRefusal, CODE } from "../codes.ts";
-import { str, obj, num, numOrNull } from "../util.ts";
+import { str, num, numOrNull } from "../util.ts";
 
 /**
  * The first wait imposed on a refusal the platform gave no window for.
@@ -33,16 +33,6 @@ export const DEFAULT_LOGIN_BACKOFF_MS = 60_000;
  * exactly what walks back into a lock that is still in force.
  */
 export const MAX_LOGIN_BACKOFF_MS = 30 * 60_000;
-
-/**
- * Where the throttle used to live, as a record in the credentials service.
- *
- * Read for MIGRATION ONLY; the marker identifies the old record.
- */
-export const THROTTLE_MARKER = "signin-throttle";
-
-/** Store version, bumped when the throttle's persisted shape changes. */
-const THROTTLE_VERSION = 1;
 
 /**
  * The refusal an in-force throttle stands for.
@@ -94,55 +84,7 @@ export function localBackoffMs(attempt) {
  */
 export async function readThrottle(wiring, state) {
   const { throttleStore } = wiring;
-  const held = await throttleStore.read().catch(() => null);
-  if (held !== null) return held;
-  return adoptLegacyThrottle(wiring, state);
-}
-
-/**
- * Take over a throttle a previous version parked in the credentials service.
- *
- * Only ever reads. It matters because a parked refusal has no deadline: lose
- * it across a restart and the next poll retries a password the user has not
- * changed, which is how one wrong password becomes a locked account. So the
- * old record is adopted rather than dropped, then deleted so this runs once.
- * Both the current address and the pre-rename one are consulted, so a parked
- * state left under either name survives.
- * @returns {Promise<object|null>} the adopted throttle, or null.
- */
-export async function adoptLegacyThrottle(wiring, state) {
-  const { backend, THROTTLE_KEY, credentialKey, throttleStore, now } = wiring;
-  const LEGACY_SCOPE = "dsh-llm-rate-panel";
-  const THROTTLE_ID = "sensenova-console-throttle";
-  const candidates = [THROTTLE_KEY, credentialKey(LEGACY_SCOPE, THROTTLE_ID)];
-  for (const legacyKey of candidates) {
-    try {
-      // The record must be OURS: a grant, carrying the throttle marker. A
-      // record that is anything else — a console grant at this address, a
-      // hand-edited file, another plugin's data — reads as absent rather than
-      // being interpreted.
-      const record = obj(await backend().readRecord(legacyKey));
-      if (record.kind !== "grant") continue;
-      const payload = obj(record.payload);
-      if (payload.marker !== THROTTLE_MARKER) continue;
-      if (num(payload.version) !== THROTTLE_VERSION) continue;
-      const code = str(payload.code, "");
-      if (code === "") continue;
-      const attempt = num(payload.attempt, 1);
-      const until = numOrNull(payload.until);
-      const adopted = payload.parked === true
-        ? { code, parked: true, until: null, attempt }
-        : { code, parked: false, until, attempt };
-      // A window that has closed is no longer a reason to refuse.
-      if (adopted.parked !== true && (until === null || until <= now())) continue;
-      await throttleStore.write(adopted).catch(() => {});
-      await backend().deleteRecord(legacyKey).catch(() => {});
-      return adopted;
-    } catch {
-      continue;
-    }
-  }
-  return null;
+  return await throttleStore.read().catch(() => null);
 }
 
 /**
@@ -182,20 +124,17 @@ export async function writeThrottle(wiring, state, error, previousAttempt) {
  * @returns {Promise<void>}
  */
 export async function clearThrottle(wiring, state) {
-  const { throttleStore, backend, THROTTLE_KEY, credentialKey } = wiring;
-  const LEGACY_SCOPE = "dsh-llm-rate-panel";
-  const THROTTLE_ID = "sensenova-console-throttle";
+  const { throttleStore, backend, THROTTLE_KEY } = wiring;
   state.throttle = null;
   await throttleStore.clear().catch(() => {
     // Nothing to do: the in-memory clear above already took effect.
   });
-  // Discarded records from a previous version, if any are still around. They
-  // are never written again, so this is housekeeping rather than a state
-  // change. Both the current address and the pre-rename one are swept.
-  await Promise.all([
-    backend().deleteRecord(THROTTLE_KEY).catch(() => {}),
-    backend().deleteRecord(credentialKey(LEGACY_SCOPE, THROTTLE_ID)).catch(() => {})
-  ]);
+  // A record left at the credentials-service address by an earlier version of
+  // THIS plugin is swept here. The equivalent sweep of the SenseNova plugin's
+  // own legacy address is deliberately NOT performed: that record belongs to a
+  // different plugin, and clearing an account lock it is waiting out would be
+  // this plugin reaching into state it does not own.
+  await backend().deleteRecord(THROTTLE_KEY).catch(() => {});
 }
 
 /**

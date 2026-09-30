@@ -127,7 +127,7 @@ export { ROOT };
  * @param {string[]} [keys] - the variables to hide.
  * @returns {() => void} restore.
  */
-export function isolateHostEnv(keys = ["SENSENOVA_API_KEY", "SENSENOVA_USERNAME", "SENSENOVA_PASSWORD"]) {
+export function isolateHostEnv(keys = ["SENSENOVA_API_KEY", "AGNES_USERNAME", "AGNES_PASSWORD"]) {
   const saved = keys.map((key) => [key, process.env[key]]);
   for (const key of keys) delete process.env[key];
   return () => {

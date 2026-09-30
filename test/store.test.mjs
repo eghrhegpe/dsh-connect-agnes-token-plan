@@ -34,7 +34,7 @@ function fail(name, error) {
   results.push({ name, pass: false, detail: String(error?.message ?? error) });
 }
 
-const KEY = credentialKey("dsh-connect-sensenova-token-plan", "sensenova-console");
+const KEY = credentialKey("dsh-connect-sensenova-token-plan", "agnes-console");
 /** The sign-in throttle lives beside the grant, in its own record. */
 const THROTTLE_KEY = credentialKey("dsh-connect-sensenova-token-plan", THROTTLE_ID);
 const credentialKeyFn = (scope, id) => credentialKey(scope, id);
@@ -89,46 +89,25 @@ function fakeCredentials(initial, opts = {}) {
   };
 }
 
-/** A token-endpoint stub issuing a distinct pair per exchange. */
-/** The state the last authorization request issued, echoed into a success redirect. */
+/**
+ * An Agnes console-login stub.
+ *
+ * This is the WHOLE protocol. Agnes has no OIDC discovery, no authorization
+ * redirect, no token exchange and no refresh token, so the five-hop SenseNova
+ * walk this replaces collapses into one POST. There is no JWKS to serve, no
+ * state to echo and no key pair to generate.
+ *
+ * `onLogin` lets each check choose the answer (accept, refuse, fault).
+ */
 let issuedState = "";
 async function makeTokenStub(onLogin) {
-  const pair = await crypto.subtle.generateKey(
-    { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-1" },
-    true, ["encrypt", "decrypt"]
-  );
-  const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
-  const log = { logins: 0, tokens: 0 };
-  const stub = async (url) => {
+  const log = { logins: 0, lastBody: null };
+  const stub = async (url, init) => {
     const target = String(url);
-    if (target.includes("jwks.json")) {
-      return new Response(JSON.stringify({ keys: [{ ...jwk, kid: "public:hydra.openid.id-token", use: "sig" }] }),
-        { status: 200, headers: { "content-type": "application/json" } });
-    }
-    if (target.includes("/oauth2/auth")) {
-      issuedState = new URL(target).searchParams.get("state") ?? "";
-      return new Response("", {
-        status: 302,
-        headers: {
-          location: "https://platform.sensenova.cn/login?login_challenge=chal",
-          "set-cookie": "oauth2_authentication_csrf=abc; Path=/"
-        }
-      });
-    }
-    if (target.includes("iam.sensecoreapi.cn")) {
+    if (target.includes("/api/user/login")) {
       log.logins += 1;
+      log.lastBody = init?.body ?? null;
       return onLogin();
-    }
-    if (target.includes("oauth2/token")) {
-      log.tokens += 1;
-      return new Response(
-        JSON.stringify({
-          access_token: `${jwtExpiring(180)}${`#${log.tokens}`}`,
-          refresh_token: `rotated-${log.tokens}`,
-          expires_in: 10800
-        }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      );
     }
     return new Response("{}", { status: 404 });
   };
@@ -136,20 +115,22 @@ async function makeTokenStub(onLogin) {
   return stub;
 }
 
-const accepted = () => new Response(JSON.stringify({
-  redirect: `https://platform.sensenova.cn/cb?code=c${issuedState !== "" ? `&state=${encodeURIComponent(issuedState)}` : ""}`
-}), {
-  status: 200, headers: { "content-type": "application/json" }
-});
-// The real IAM refusal envelope: the cause is in details[].reason, not the
-// generic top-level status string.
-const refused = () => new Response(JSON.stringify({
-  code: 3, message: "InvalidArgument",
-  details: [
-    { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "invalidAccountOrPassword", domain: "iam" },
-    { "@type": "type.googleapis.com/google.rpc.LocalizedMessage", locale: "en", message: "invalid account or password" }
-  ]
-}), { status: 400, headers: { "content-type": "application/json" } });
+/** A successful Agnes sign-in: one access token, no refresh token. */
+const accepted = () => new Response(
+  JSON.stringify({ code: 200, message: "ok", data: { access_token: jwtExpiring(180), user: { id: 1 } } }),
+  { status: 200, headers: { "content-type": "application/json" } }
+);
+
+/**
+ * Agnes's own refusal, verbatim — the live console answers exactly this to a
+ * bad email/password pair. `classifyLoginFailure` maps its wording onto
+ * `login_rejected`, which the store PARKS rather than retrying: waiting cannot
+ * fix a wrong password, and a retry spends an attempt toward a lockout.
+ */
+const refused = () => new Response(
+  JSON.stringify({ code: 401, message: "Invalid username or password", data: null }),
+  { status: 401, headers: { "content-type": "application/json" } }
+);
 
 /** Run `body` with a stubbed network, restoring the real fetch afterwards. */
 async function withNetwork(stub, body) {
@@ -292,18 +273,18 @@ async function withNetwork(stub, body) {
   try {
     const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
     await store.saveAccount({ username: "  user@x  ", password: "  secret  " });
-    check("the username is trimmed", credentials.refs.get("SENSENOVA_USERNAME") === "user@x",
-      String(credentials.refs.get("SENSENOVA_USERNAME")));
+    check("the username is trimmed", credentials.refs.get("AGNES_USERNAME") === "user@x",
+      String(credentials.refs.get("AGNES_USERNAME")));
     // The password is NEVER persisted: only the username (an identifier) goes
     // into the credentials service. The password itself must still reach IAM
     // exactly as typed — the panel's "show" lets a trailing space be checked
     // by eye, and trimming it behind the user's back would make that check a
     // lie — but it rides this call in memory and is gone when it ends.
     check("the password is NOT written to the credentials service",
-      credentials.refs.get("SENSENOVA_PASSWORD") === undefined,
-      JSON.stringify(credentials.refs.get("SENSENOVA_PASSWORD")));
+      credentials.refs.get("AGNES_PASSWORD") === undefined,
+      JSON.stringify(credentials.refs.get("AGNES_PASSWORD")));
     check("the username is the only ref stored",
-      [...credentials.refs.keys()].join(",") === "SENSENOVA_USERNAME",
+      [...credentials.refs.keys()].join(",") === "AGNES_USERNAME",
       [...credentials.refs.keys()].join(","));
     check("a login was attempted", stub.log.logins === 1, `logins=${stub.log.logins}`);
     // The password must reach IAM sealed, never in the clear. RFC 7516 §3:
@@ -327,7 +308,7 @@ async function withNetwork(stub, body) {
 {
   // The account arrives through the ENVIRONMENT — the only durable password
   // source; the store never reads a password from the credentials refs.
-  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" };
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" };
   const credentials = fakeCredentials(null);
   // IAM answers with the exact envelope the platform sends for a lock.
   const locked = () => new Response(JSON.stringify({
@@ -385,7 +366,7 @@ async function withNetwork(stub, body) {
 // case that used to produce a steady one-minute trickle of attempts for as
 // long as the panel stayed open.
 {
-  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" };
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" };
   const credentials = fakeCredentials(null);
   const vague = () => new Response(JSON.stringify({
     code: 3, message: "InvalidArgument",
@@ -425,7 +406,7 @@ async function withNetwork(stub, body) {
 // nothing proved what happens after it expires. A backoff that re-probes on
 // every poll after expiry is the same bug wearing a delay.
 {
-  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" };
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" };
   const credentials = fakeCredentials(null);
   // A lock with no stated window, so the local backoff governs.
   const vagueLock = () => new Response(JSON.stringify({
@@ -474,7 +455,7 @@ async function withNetwork(stub, body) {
 // The other gap: the old cap truncated a platform-stated window, so a
 // two-hour lock was re-probed after thirty minutes — while still locked.
 {
-  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" };
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" };
   const credentials = fakeCredentials(null);
   const twoHours = () => new Response(JSON.stringify({
     code: 9, message: "The account has been locked, please try again after 2 hours",
@@ -510,7 +491,7 @@ async function withNetwork(stub, body) {
 // second one knock straight through it — which is how a wait turns back into
 // a lockout.
 {
-  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" };
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" };
   const credentials = fakeCredentials(null);
   const locked = () => new Response(JSON.stringify({
     code: 9, message: "The account has been locked, please try again after 8 minutes",
@@ -584,7 +565,7 @@ async function withNetwork(stub, body) {
   });
   // The account rides the ENVIRONMENT (the only durable password source):
   // without an env password a dead refresh would simply reap the grant.
-  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" };
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" };
   const refused = () => new Response(JSON.stringify({ error: "invalid_grant" }),
     { status: 400, headers: { "content-type": "application/json" } });
   const stub = await makeTokenStub(refused);
@@ -689,26 +670,26 @@ async function withNetwork(stub, body) {
     // The remediation's sharpest claim: a rejected password must leave nothing
     // at rest — only the username (an identifier) was persisted.
     check("a rejected password leaves nothing secret at rest",
-      credentials.refs.get("SENSENOVA_PASSWORD") === undefined,
-      JSON.stringify(credentials.refs.get("SENSENOVA_PASSWORD")));
+      credentials.refs.get("AGNES_PASSWORD") === undefined,
+      JSON.stringify(credentials.refs.get("AGNES_PASSWORD")));
   }).catch((error) => fail("a rejected password leaves no grant", error));
 }
 
 // --- 10c. a password left by a previous version is swept, not kept --------
-// The remediation: earlier builds stored SENSENOVA_PASSWORD in the credentials
+// The remediation: earlier builds stored AGNES_PASSWORD in the credentials
 // service, so a plaintext password sat at rest in `~/.dsh/.credentials.yaml`.
 // On first contact the store removes a legacy value; the environment remains
 // the only durable password source.
 {
   const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "legacy-secret" }
+    refs: { AGNES_USERNAME: "u", AGNES_PASSWORD: "legacy-secret" }
   });
   const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
   const state = await store.state();
   check("a legacy stored password is swept on first contact",
-    credentials.refs.get("SENSENOVA_PASSWORD") === undefined,
-    JSON.stringify(credentials.refs.get("SENSENOVA_PASSWORD")));
-  check("the username survives the sweep", credentials.refs.get("SENSENOVA_USERNAME") === "u");
+    credentials.refs.get("AGNES_PASSWORD") === undefined,
+    JSON.stringify(credentials.refs.get("AGNES_PASSWORD")));
+  check("the username survives the sweep", credentials.refs.get("AGNES_USERNAME") === "u");
   check("with no env password the store cannot auto-recover",
     state.configured === false && state.hasAccount === true && state.needsAccount === true,
     JSON.stringify(state));
@@ -739,7 +720,7 @@ async function withNetwork(stub, body) {
       record.payload.refreshToken === "rotated-1",
       String(record.payload.refreshToken));
     check("the new username is the one stored",
-      credentials.refs.get("SENSENOVA_USERNAME") === "account-b");
+      credentials.refs.get("AGNES_USERNAME") === "account-b");
 
     // The served token must be the new account's, reached from the cache with
     // no second sign-in — the old grant must not linger in this process either.
@@ -755,11 +736,11 @@ async function withNetwork(stub, body) {
 // --- 11. forgetAccount clears the refs but keeps the grant --------------
 {
   const credentials = fakeCredentials(grant(jwtExpiring(120), "keep", 7200), {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "p" }
+    refs: { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" }
   });
   const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
   await store.forgetAccount();
-  check("the username ref is gone", credentials.refs.get("SENSENOVA_USERNAME") === undefined);
+  check("the username ref is gone", credentials.refs.get("AGNES_USERNAME") === undefined);
   const state = await store.state();
   check("the account is forgotten", state.hasAccount === false);
   check("the grant survives the forget", state.hasRefreshToken === true);
@@ -768,7 +749,7 @@ async function withNetwork(stub, body) {
 
 // --- 12. the environment alone still configures the account -------------
 {
-  const env = { SENSENOVA_USERNAME: "env-user", SENSENOVA_PASSWORD: "env-pass" };
+  const env = { AGNES_USERNAME: "env-user", AGNES_PASSWORD: "env-pass" };
   const credentials = fakeCredentials(null, { env });
   const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env });
   const state = await store.state();
@@ -812,8 +793,8 @@ async function withNetwork(stub, body) {
   const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
   const state = await store.state();
   check("a store with the service is not ephemeral", state.ephemeral === false, String(state.ephemeral));
-  check("credentialRef yields the plain name", credentialRef("SENSENOVA_USERNAME") === "SENSENOVA_USERNAME");
-  check("the record key is the namespaced pair", KEY === "dsh-connect-sensenova-token-plan/sensenova-console", KEY);
+  check("credentialRef yields the plain name", credentialRef("AGNES_USERNAME") === "AGNES_USERNAME");
+  check("the record key is the namespaced pair", KEY === "dsh-connect-sensenova-token-plan/agnes-console", KEY);
 }
 
 // --- 15. what this store writes must parse under the REAL credentials service
@@ -829,7 +810,7 @@ async function withNetwork(stub, body) {
 {
   // The account arrives through the ENVIRONMENT (the only durable password
   // source), so the refusal actually happens and lands in the throttle.
-  const accountEnv = { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" };
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" };
   const credentials = fakeCredentials(null);
   const locked = () => new Response(JSON.stringify({
     code: 9, message: "The account has been locked, please try again after 8 minutes",
@@ -853,7 +834,7 @@ async function withNetwork(stub, body) {
     const document = {
       version: 1,
       records: { [KEY]: grant(jwtExpiring(120), "keep-me", 7200) },
-      refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" }
+      refs: { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" }
     };
     let parsed = null;
     let error = null;
@@ -906,7 +887,7 @@ async function withNetwork(stub, body) {
     }
   };
   const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" }
+    refs: { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" }
   });
   // Planted by hand: this is the shape the PREVIOUS version left on disk, and
   // no code path writes it any more.
@@ -922,94 +903,17 @@ async function withNetwork(stub, body) {
     (await credentials.readRecord(THROTTLE_KEY)) === undefined);
 }
 
-// --- 16b. a grant saved under the pre-rename namespace is adopted ----------
-// Renaming the plugin must not log the user out: a console grant (and its
-// refresh token) saved under the old namespace is moved to the current one
-// exactly once, and the old record deleted.
-{
-  const legacyKey = credentialKey("dsh-llm-rate-panel", "sensenova-console");
-  const credentials = fakeCredentials(null);
-  credentials.records.set(legacyKey, grant(jwtExpiring(120), "keep-me", 7200));
-  const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
-  const state = await store.state();
-  check("a grant from the pre-rename namespace still configures the panel",
-    state.configured === true && state.hasRefreshToken === true, JSON.stringify(state));
-  check("it was moved to the current namespace",
-    (await credentials.readRecord(KEY))?.payload?.refreshToken === "keep-me",
-    JSON.stringify(await credentials.readRecord(KEY)));
-  check("the legacy record is deleted, so this runs once",
-    (await credentials.readRecord(legacyKey)) === undefined);
-  // The adopted grant is live, not just visible: a fresh grant is returned
-  // without any network call, so this needs no stub.
-  const token = await store.getToken();
-  check("the adopted grant serves tokens",
-    typeof token === "string" && token !== "", String(token).slice(0, 20));
-}
-
-// --- 16c. a parked refusal under the pre-rename namespace is adopted --------
-// Same guarantee as 16, for a record a previous version left under the OLD
-// namespace: the rename must not turn a parked wrong-password into a timer
-// that retries it.
-{
-  const legacyKey = credentialKey("dsh-llm-rate-panel", THROTTLE_ID);
-  const credentials = fakeCredentials(null, {
-    refs: { SENSENOVA_USERNAME: "u", SENSENOVA_PASSWORD: "wrong" }
-  });
-  credentials.records.set(legacyKey, {
-    kind: "grant",
-    payload: {
-      version: 1, marker: "signin-throttle", code: "login_rejected",
-      parked: true, until: null, attempt: 1
-    }
-  });
-  const own = createMemoryThrottleStore();
-  const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, throttleStore: own });
-  const state = await store.state();
-  check("a parked refusal from the pre-rename namespace still holds",
-    state.needsUserAction === true, JSON.stringify(state));
-  check("it is adopted into the plugin's own store",
-    (await own.read())?.parked === true, JSON.stringify(await own.read()));
-  check("the legacy record is deleted, so this happens once",
-    (await credentials.readRecord(legacyKey)) === undefined);
-}
-
-// --- 16d. a throttle file under the pre-rename state directory is adopted ---
-// The file-backed store moved directories with the rename. A parked refusal in
-// the OLD directory must be moved over on first contact — and a cleared
-// throttle must stay cleared under both names.
-{
-  const home = mkdtempSync(join(tmpdir(), "dsh-rename-home-"));
-  const saved = process.env.DSH_HOME;
-  process.env.DSH_HOME = home;
-  try {
-    const legacyDir = join(home, "state", "dsh-llm-rate-panel");
-    mkdirSync(legacyDir, { recursive: true });
-    writeFileSync(join(legacyDir, "throttle.json"),
-      JSON.stringify({ version: 1, code: "login_rejected", parked: true, until: null, attempt: 1 }) + "\n",
-      { encoding: "utf8" });
-    // Default dir resolves under the (temporarily re-pointed) Home.
-    const store = createFileThrottleStore();
-    check("a parked refusal from the pre-rename state dir still holds",
-      (await store.read())?.parked === true, JSON.stringify(await store.read()));
-    const newFile = join(home, "state", "dsh-connect-sensenova-token-plan", "throttle.json");
-    check("it was moved to the current state dir", existsSync(newFile), newFile);
-    check("the legacy file is gone", !existsSync(join(legacyDir, "throttle.json")));
-    // clear() must also sweep a legacy file that was never adopted: a cleared
-    // throttle under the new name must not resurrect under the old one.
-    mkdirSync(legacyDir, { recursive: true });
-    writeFileSync(join(legacyDir, "throttle.json"),
-      JSON.stringify({ version: 1, code: "account_locked", parked: false, until: 9_999_999_999, attempt: 1 }) + "\n",
-      { encoding: "utf8" });
-    const clearing = createFileThrottleStore();
-    await clearing.clear();
-    check("clear() sweeps an unadopted legacy file",
-      !existsSync(join(legacyDir, "throttle.json")));
-  } finally {
-    if (saved === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = saved;
-    rmSync(home, { recursive: true, force: true });
-  }
-}
+// --- 16b/16c/16d REMOVED: there is no pre-rename namespace to adopt ------
+// These three blocks pinned the SenseNova plugin's migration behaviour: a
+// console grant, a parked refusal and a throttle file left under the old
+// addresses were taken over on first contact. The Agnes plugin has no such
+// predecessor — and adopting one would be actively wrong. The grant carries a
+// SenseNova console token (a different platform, so the panel would read
+// "signed in" and 401 forever), and the throttle file adoption was a MOVE,
+// which would strip the SenseNova plugin of a parked refusal it is still
+// waiting out — the one piece of state that stops a wrong password from being
+// retried into an account lock. See src/host/token-store/grant.ts (readStored)
+// and src/host/throttle-store.ts (createFileThrottleStore) for the reasoning.
 
 // --- 17. the file-backed store survives a second process -----------------
 // The throttle exists so that another Host process sees a lock this one is
@@ -1039,9 +943,9 @@ async function withNetwork(stub, body) {
 {
   const { credentialKey: shim } = await import("../src/host/index.ts");
   for (const [scope, id] of [
-    ["dsh-connect-sensenova-token-plan", "sensenova-console"],
+    ["dsh-connect-sensenova-token-plan", "agnes-console"],
     ["dsh-connect-sensenova-token-plan", THROTTLE_ID],
-    ["dsh-llm-rate-panel", "sensenova-console"]
+    ["dsh-llm-rate-panel", "agnes-console"]
   ]) {
     check(`the shim matches the peer credentialKey for ${scope}/${id}`,
       shim(scope, id) === credentialKey(scope, id),
@@ -1050,7 +954,7 @@ async function withNetwork(stub, body) {
 }
 
 // --- 19. autoRecoverArmed: 只报布尔，不回显值 -------------------------------
-// `state()` 报告环境里有没有自动恢复密码（`SENSENOVA_PASSWORD`），供面板显示
+// `state()` 报告环境里有没有自动恢复密码（`AGNES_PASSWORD`），供面板显示
 // "refresh 失效后自动重登 / 需手动重登"。红线：值本身绝不能出 store——
 // 断言序列化后的 state 不含密码文本，也没有 password/secret 键。
 {
@@ -1058,12 +962,12 @@ async function withNetwork(stub, body) {
   const armedStore = createTokenStore({
     credentials: fakeCredentials(null),
     credentialKey: credentialKeyFn,
-    env: { SENSENOVA_PASSWORD: "hunter2-秘密" }
+    env: { AGNES_PASSWORD: "hunter2-秘密" }
   });
   const blankStore = createTokenStore({
     credentials: fakeCredentials(null),
     credentialKey: credentialKeyFn,
-    env: { SENSENOVA_PASSWORD: "   " }
+    env: { AGNES_PASSWORD: "   " }
   });
 
   const plain = await plainStore.state();
@@ -1076,7 +980,7 @@ async function withNetwork(stub, body) {
   const keys = Object.keys(armed);
   check("the password value is never echoed (boolean only)",
     !serialized.includes("hunter2") && !serialized.includes("秘密") &&
-      !serialized.includes("SENSENOVA_PASSWORD") && !keys.some((k) => /password|secret/i.test(k)),
+      !serialized.includes("AGNES_PASSWORD") && !keys.some((k) => /password|secret/i.test(k)),
     `${serialized.slice(0, 100)} keys=${keys.join(",")}`);
 }
 

@@ -90,8 +90,8 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
   // scope or the id is a breaking change to stored grants, so the exact strings
   // are worth a line here even though they are assembled elsewhere.
   check("credentialKey builds the record address the plugin reads back",
-    credentialKey("dsh-connect-sensenova-token-plan", "sensenova-console") ===
-      "dsh-connect-sensenova-token-plan/sensenova-console");
+    credentialKey("dsh-connect-sensenova-token-plan", "agnes-console") ===
+      "dsh-connect-sensenova-token-plan/agnes-console");
   check("credentialKey does not trim or transform its parts",
     credentialKey("a b", "c/d") === "a b/c/d", credentialKey("a b", "c/d"));
 }
@@ -180,7 +180,7 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
   // The scope the grant is actually stored under must be this same slug, so the
   // two checks above are really guarding the stored credential's address.
   check("the credential scope derives from the same slug",
-    credentialKey(name, "sensenova-console") === `${name}/sensenova-console`);
+    credentialKey(name, "agnes-console") === `${name}/agnes-console`);
 }
 
 // --- 7. trendMultipliers sanitization ----------------------------------

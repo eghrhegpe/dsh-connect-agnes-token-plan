@@ -12,7 +12,7 @@
  * @module dsh-connect-sensenova-token-plan/token-store/grant
  */
 
-import { readJwtExpiry } from "../sensenova-auth.ts";
+import { readJwtExpiry } from "../agnes-auth.ts";
 import { str, obj, num, numOrNull } from "../util.ts";
 
 /** Bumped if the stored payload shape ever changes incompatibly. */
@@ -44,48 +44,21 @@ export function parseGrant(record) {
 
 /**
  * Read the durable grant through the credentials service.
+ *
+ * There is deliberately NO legacy-namespace adoption here, unlike the plugin
+ * this one was forked from. That plugin's predecessor held a SenseNova console
+ * grant; adopting it as an Agnes session would hand the console a token from a
+ * different platform — the panel would read "signed in" and 401 forever — and
+ * the adoption also DELETES the record it reads, which would destroy a grant
+ * the SenseNova plugin is still using. Two platforms, two credential sets: the
+ * only correct predecessor state for a brand-new plugin is none.
  * @param {object} wiring - the store context wiring.
  * @param {object} state - the store context state.
  */
 export async function readStored(wiring, state) {
   const { backend, key } = wiring;
   try {
-    const current = parseGrant(await backend().readRecord(key));
-    if (current !== undefined) return current;
-    return await adoptLegacyGrant(wiring, state);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Take over a grant a previous version saved under the old namespace.
- *
- * Runs once, when the record under the current name is absent. The legacy
- * record is re-written at the current address and deleted, so the next read
- * is a plain lookup; a grant that is still good must not be abandoned to the
- * "please log in again" path just because this plugin was renamed.
- * @returns {Promise<object|undefined>} the adopted grant, or undefined.
- */
-export async function adoptLegacyGrant(wiring, state) {
-  const { backend, key, credentialKey } = wiring;
-  const LEGACY_SCOPE = "dsh-llm-rate-panel";
-  const RECORD_ID = "sensenova-console";
-  try {
-    const legacyKey = credentialKey(LEGACY_SCOPE, RECORD_ID);
-    const grant = parseGrant(await backend().readRecord(legacyKey));
-    if (grant === undefined) return undefined;
-    await backend().modifyRecord(key, () => Promise.resolve({
-      kind: "grant",
-      payload: {
-        version: GRANT_VERSION,
-        accessToken: grant.accessToken,
-        refreshToken: grant.refreshToken,
-        expiresAt: grant.expiresAt ?? null
-      }
-    }));
-    await backend().deleteRecord(legacyKey).catch(() => {});
-    return grant;
+    return parseGrant(await backend().readRecord(key));
   } catch {
     return undefined;
   }

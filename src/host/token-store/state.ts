@@ -25,13 +25,13 @@
  * @module dsh-connect-sensenova-token-plan/token-store/state
  */
 
-import { createAuth } from "../sensenova-auth.ts";
+import { createAuth } from "../agnes-auth.ts";
 import { createMemoryThrottleStore } from "../throttle-store.ts";
 import { name as RECORD_SCOPE } from "../host-config.ts";
 
 /** Record address: this plugin's own namespace, so a stranger cannot collide. */
-const RECORD_ID = "sensenova-console";
-const THROTTLE_ID = "sensenova-console-throttle";
+const RECORD_ID = "agnes-console";
+const THROTTLE_ID = "agnes-console-throttle";
 const DEFAULT_SKEW_MS = 120_000;
 
 /**
