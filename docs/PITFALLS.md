@@ -65,10 +65,10 @@
 
 ## 8. 改 Host 半边不重启，跑的一直是旧代码
 
-- **现象**：改了 `index.js`/`token-store.js`/`sensenova-auth.js`，刷新面板没变化。
+- **现象**：改了 `src/host/*.ts` 但没重新构建（或构建了没重启），刷新面板没变化。
 - **根因**：Host 半边只在启动时加载一次，`dsh web` 不热重载。
 - **修法**：**完全退出 DSH（含托盘）再启动**。自查：`(Invoke-RestMethod .../snapshot).auth` 有 `auth` 字段 = 新代码；没有 = 旧代码。注意桌面版(19387)与 `dsh web`(常 3080) 是不同 profile。
-- 只改 `client.js` 则浏览器刷新即可。
+- 只改 `src/client/*.ts` 则 `npm run build:client` 重建 `client.js` 后浏览器刷新即可。
 
 ---
 

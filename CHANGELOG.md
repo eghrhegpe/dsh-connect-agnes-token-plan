@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### 仓库结构规范化：src/ 全源码，lib/ 纯产物
+
+- 全部源码收敛到 `src/`（`src/host/*.ts` 27 个 Host 模块 + `src/client/*.ts` Client 半边）；`lib/` 与根 `client.js` 降为纯构建产物并加入 `.gitignore`——删掉后 `npm run build` 一条命令从源码完整重建。
+- 对外行为无变化：`main`/`exports` 指向不变（`./lib/index.js`、`./client: ./client.js`），`files` 白名单同步，`npm publish` 经 `prepack` 自动构建；`exports` 收敛为 `.` 与 `./client` 两个子路径。
+
 ### 出图工具面板开关（drawEnabled）
 
 与 provider 开关同机制的「面板开关 + 立即生效」，出图吸收（§5.4 接法 B）不再需要改配置重启：

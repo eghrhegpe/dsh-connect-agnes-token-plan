@@ -33,8 +33,8 @@
 
 | 半边 | 文件 | 加载时机 | 改动后如何生效 |
 |---|---|---|---|
-| **Host（服务端）** | `index.js`、`host-config.js`、`codes.js`、`token-store.js`、`throttle-store.js`、`sensenova-auth.js`、`sensenova-crypto.js`、`console-client.js`、`parsers.js`、`trace.js`、`util.js`、`provider-publish.js`、`snapshot-aggregate.js` | 启动时加载一次 | **必须完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
-| **Client（前端）** | `client.js` | 浏览器侧，随页面加载 | 浏览器刷新页面即可 |
+| **Host（服务端）** | `src/host/*.ts`（27 个模块，经 `npm run build` 构建为 `lib/`） | 启动时加载一次 | **重新构建 + 完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
+| **Client（前端）** | `src/client/*.ts`（构建为根 `client.js`） | 浏览器侧，随页面加载 | `npm run build:client` 重建后浏览器刷新即可 |
 
 - `index.js`：注册只读路由 `/api/dsh-connect-sensenova-token-plan/snapshot`（聚合控制台数据，401 自动续期重试一次）+ 账号配置路由。
 - `host-config.js`：配置契约——`CONFIG_DEFAULTS`、`resolveSettings` / `resolveAuthOverrides`（含嵌套 `auth:` 块拒绝）、`isAdmitted` 同源闸、`hostName` 解析。
