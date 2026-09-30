@@ -151,11 +151,11 @@ export function AccountForm({ auth, onDone, tt, bare }: {
     // `bare` drops the inner card and title: the caller (the account
     // section card) already supplies both.
     bare ? null : h("div", { style: S.sectionTitle }, tt("auth.title")),
-    // A first-time visitor has neither account nor key: point them at the
-    // official sign-up page BEFORE they hunt for one. Only in the standalone
-    // card — the bare embed (account section with a token already working)
-    // is not the place to advertise registration.
-    !bare && !auth?.hasAccount
+    // The official entry, visible in BOTH states: no account yet → the
+    // sign-up page; account present → quota management / API keys. Only in
+    // the standalone card — the bare embed (account section inside a
+    // working panel) stays quiet.
+    !bare
       ? h("a", {
           href: SENSENOVA_SIGNUP_URL,
           target: "_blank",
@@ -163,7 +163,7 @@ export function AccountForm({ auth, onDone, tt, bare }: {
           // Inline: the shared `styles.ts` is under a concurrent rewrite
           // (roster/model-row restyle), so this one-off link skin lives here.
           style: { color: "var(--dsw-alias-label-primary)", fontSize: 12, marginTop: 10, display: "inline-block", textDecoration: "underline", cursor: "pointer" }
-        }, tt("auth.registerHint"))
+        }, tt(auth?.hasAccount ? "auth.portalHint" : "auth.registerHint"))
       : null,
     h(
       "form",
