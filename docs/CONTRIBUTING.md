@@ -133,12 +133,21 @@ description:
 **市场收录状态（2026-10-01 实测）**：投稿 PR 已提且**仍处于 open、未合并**——
 [awesome-dsh-plugin#6139](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6139)
 （2026-09-29 提交，`merged_at: null`，0 评论）；`data/plugins/` 目录下尚无
-`eghrhegpe__dsh-connect-sensenova-token-plan.yml`，与实际一致。**该 PR 的正文描述已过期**：
-原文写的是 "for the Harness Web sidebar"，且只提额度面板，未提 provider 注册 / 出图 / 第二上游；
-正文还点名引用了两张**旧 UI** 截图。收录后市场按 `screenshots.json` 取图，所以**推送后截图自动生效**——
-前提是清单里的路径指向真实存在的文件（**改名就必须同步清单**，见检查 11 与 PITFALLS §26；重截时换名而漏改清单，
-是 2026-10-01 实际踩过的一次）。PR 正文里那段旧描述仍需人工用 `gh pr edit` 更新——
-这是对外公开动作，动手前先确认。
+`eghrhegpe__dsh-connect-sensenova-token-plan.yml`，与实际一致。**该 PR 的正文与条目文件已于 2026-10-01 更新**（原先两处都停在旧形态）：原文写的是 "for the Harness Web sidebar"，原文引用 yml 里的 "sidebar panel" 与「侧边栏面板」；两处现都改为 Plugins 页的配置卡，并补上三个默认关闭的可选开关（provider 注册 / 出图工具 / 第二上游）。**原文其实提过 provider 注册**——但只提了它一个，且未提第二上游（此前本节误写为「未提 provider 注册」，2026-10-01 读到 PR 原文后更正）。**yml 才是市场条目的实际描述**：只改正文不改 yml，是另一种「分头走路」。收录后市场按 `screenshots.json` 取图，动图只需更新清单与资产（**改名就必须同步清单**，见检查 11 与 PITFALLS §26）。
+
+**更新一个已投稿的条目**（2026-10-01 实操，两处都要改）：条目文件在 **PR 的 head fork** 上（`eghrhegpe/awesome-dsh-plugin`，分支 `add-sensenova-token-plan`），既不在本仓、也不在 base 仓。
+
+```bash
+# 1) 条目文件本身——市场条目的实际描述由它决定
+SHA=$(gh api "repos/eghrhegpe/awesome-dsh-plugin/contents/data/plugins/eghrhegpe__dsh-connect-sensenova-token-plan.yml?ref=add-sensenova-token-plan" --jq .sha)
+#    请求体 {message, content: <新内容的 base64>, sha: $SHA, branch: "add-sensenova-token-plan"}
+gh api repos/eghrhegpe/awesome-dsh-plugin/contents/data/plugins/eghrhegpe__dsh-connect-sensenova-token-plan.yml \
+  --method PUT --input <body.json>
+# 2) PR 正文——人读的说明，用 --body-file 避免 shell 转义踩坑
+gh pr edit 6139 -R awesome-dsh-plugin/awesome-dsh-plugin --body-file <body.md>
+```
+
+两个坑：① 访问该 PR **必须带 `-R awesome-dsh-plugin/awesome-dsh-plugin`**，否则 `gh pr view 6139` 会按本仓的 PR 号去解析，直接报 `Could not resolve to a PullRequest`；② `gh pr edit` 会改 PR 的更新时间（在按更新时间排序的队列里位置会变），但不会引入 review，属可接受代价。
 
 其余可选增强：根目录放 `screenshots.json` 声明 1–8 张截图；或在 GitHub Release 挂版本无关文件名的
 `.tgz`（yml 的 `tarball:` 字段）。本仓可从源码安装，tarball 不需要。
