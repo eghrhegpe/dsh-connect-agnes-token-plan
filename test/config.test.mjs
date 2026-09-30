@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey, hostName, isAdmitted, name } from "../src/host/index.ts";
+import { resolveTrendMultipliers } from "../src/host/host-config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const patch = readFileSync(join(here, "..", "cordis.patch.yml"), "utf8");
@@ -182,7 +183,34 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
     credentialKey(name, "sensenova-console") === `${name}/sensenova-console`);
 }
 
-// --- 7. numeric field clamping boundaries ----------------------------
+// --- 7. trendMultipliers sanitization ----------------------------------
+// The pseudo-multiplier map reaches the panel as ×N labels, so a malformed
+// entry must be dropped (not thrown — one typo must not take the panel down)
+// while insertion order survives, because matching is first-key-wins.
+{
+  // resolveSettings routes through the same sanitizer.
+  const viaSettings = resolveSettings({ trendMultipliers: { "glm-5.2": 10, bad: 0 } }).settings.trendMultipliers;
+  check("resolveSettings keeps only positive entries", JSON.stringify(viaSettings) === JSON.stringify({ "glm-5.2": 10 }), JSON.stringify(viaSettings));
+
+  const dropped = resolveTrendMultipliers({ "": 5, zero: 0, negative: -2, nan: NaN, inf: Infinity, text: "10", "kimi-k3": 20 });
+  check("invalid entries are silently dropped",
+    JSON.stringify(dropped) === JSON.stringify({ "kimi-k3": 20 }), JSON.stringify(dropped));
+
+  const order = resolveTrendMultipliers({ z: 1, a: 2 });
+  check("insertion order survives (first match wins)", Object.keys(order).join(",") === "z,a", Object.keys(order).join(","));
+
+  check("an explicit {} disables all multipliers",
+    Object.keys(resolveTrendMultipliers({})).length === 0, JSON.stringify(resolveTrendMultipliers({})));
+
+  check("undefined falls back to the shipped defaults",
+    JSON.stringify(resolveTrendMultipliers(undefined)) === JSON.stringify(CONFIG_DEFAULTS.trendMultipliers), "");
+  check("a non-object falls back to the shipped defaults",
+    JSON.stringify(resolveTrendMultipliers("glm-5.2=10")) === JSON.stringify(CONFIG_DEFAULTS.trendMultipliers), "");
+  check("an array falls back to the shipped defaults",
+    JSON.stringify(resolveTrendMultipliers([10])) === JSON.stringify(CONFIG_DEFAULTS.trendMultipliers), "");
+}
+
+// --- 8. numeric field clamping boundaries ----------------------------
 // Every numeric field flows through `clampInt(raw, def, min, max?)` in
 // `resolveSettings`: floor, then clamp low, then clamp high; a non-positive or
 // NaN `raw` falls back to `def`. Pin each bound so a future edit to the clamp

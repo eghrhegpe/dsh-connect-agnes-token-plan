@@ -362,7 +362,7 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
  * @param {object[]} entries - the normalized catalog entries.
  * @param {object} pools - the `parsePools` result, or anything without a `pools`
  *   array (in which case every row reads as available).
- * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean}[]}
+ * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number}[]}
  */
 export function rosterWithAvailability(entries, pools) {
   const blocked = new Set(exhaustedModelIds(pools));
@@ -377,7 +377,11 @@ export function rosterWithAvailability(entries, pools) {
       name: str(entry.name, id),
       vision: identifyVisionModel(entry).vision === true,
       available: !blocked.has(id),
-      quotaExhausted: blocked.has(id)
+      quotaExhausted: blocked.has(id),
+      // The window the descriptor itself will use: a declared `context_length`
+      // when the catalog has one, else the same 128k fallback pi-ai gets —
+      // so the badge never contradicts the effective behavior.
+      contextWindow: contextWindowOf(entry)
     };
     if (position.has(id)) {
       out[position.get(id)] = row;

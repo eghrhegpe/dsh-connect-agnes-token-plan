@@ -4,16 +4,12 @@
  */
 import { MODELS_PATH } from "./const.ts";
 import { format } from "./format.ts";
+import { postJsonOrThrow } from "./http.ts";
 import { bulkModelsIn, modelIsOn, toggleModelIn } from "./models.ts";
 import { h, useCallback, useEffect, useMemo, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
-
-interface ModelRow {
-  id?: unknown;
-  name?: unknown;
-  vision?: unknown;
-}
+import type { LlmData, ModelData } from "./wire.ts";
 
 /**
  * The model picker's row list - hook-free, so the Node render suite
@@ -25,7 +21,7 @@ interface ModelRow {
  * never a catalogue of its own.
  */
 export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
-  models: ModelRow[];
+  models: ModelData[];
   enabledIds: unknown;
   busy: boolean | undefined;
   tt: Tt;
@@ -63,7 +59,12 @@ export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
           }),
           h("span", { style: S.modelName, title: id }, label)
         ),
-        h("span", { style: S.modelBadge, title: id }, model?.vision === true ? tt("llm.rosterVision") : tt("llm.rosterText"))
+        h("span", { style: S.modelBadge, title: id }, model?.vision === true ? tt("llm.rosterVision") : tt("llm.rosterText")),
+        // Context window the Host resolved for this row (declared value or
+        // the 128k fallback), shown as a compact k figure.
+        typeof model?.contextWindow === "number" && model.contextWindow > 0
+          ? h("span", { style: S.modelBadge }, format(tt("llm.contextBadge"), { ctx: `${Math.round(model.contextWindow / 1000)}k` }))
+          : null
       );
     })
   );
@@ -83,7 +84,7 @@ export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
  * up identical to the Host's value shows neither button.
  */
 export function ModelPicker({ llm, onDone, tt }: {
-  llm?: Record<string, any> | null;
+  llm?: LlmData | null;
   onDone?: () => void;
   tt: Tt;
 }): unknown {
@@ -125,16 +126,7 @@ export function ModelPicker({ llm, onDone, tt }: {
     setNotice(null);
     const posted = JSON.stringify(ids);
     try {
-      const response = await fetch(MODELS_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ enabledModelIds: ids })
-      });
-      const payload = await response.json().catch(() => null);
-      if (payload?.ok !== true) {
-        throw new Error(typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`);
-      }
+      const payload = await postJsonOrThrow(MODELS_PATH, { enabledModelIds: ids });
       // Matches hostKey as soon as the poll after onDone() echoes it.
       setSavedKey(posted);
       onDone?.();

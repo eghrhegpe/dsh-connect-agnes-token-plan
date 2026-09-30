@@ -5,8 +5,10 @@
  */
 import { DRAW_PATH, PROVIDER_PATH } from "./const.ts";
 import { count, format } from "./format.ts";
+import { postJsonOrThrow } from "./http.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
+import type { LlmData } from "./wire.ts";
 import { S } from "./styles.ts";
 
 /**
@@ -22,7 +24,7 @@ import { S } from "./styles.ts";
  * renders ONLY from the snapshot's `llm` block, which never carries the
  * key itself — booleans and a source tag.
  */
-export function ProviderStatus({ llm, tt }: { llm?: Record<string, any> | null; tt: Tt }): unknown {
+export function ProviderStatus({ llm, tt }: { llm?: LlmData | null; tt: Tt }): unknown {
   if (!llm || typeof llm !== "object") return null;
   const rows: unknown[] = [];
   // Where the key came from. `memory` and `env` are both real answers;
@@ -43,7 +45,7 @@ export function ProviderStatus({ llm, tt }: { llm?: Record<string, any> | null; 
  * below say "registration" already, so this is pure state + counts: the
  * id rides inside whichever line is showing, never as its own row.
  */
-export function ProviderRegStatus({ llm, tt }: { llm?: Record<string, any> | null; tt: Tt }): unknown {
+export function ProviderRegStatus({ llm, tt }: { llm?: LlmData | null; tt: Tt }): unknown {
   if (!llm || typeof llm !== "object") return null;
   if (llm.registerProvider === true && llm.providerRegistered === true) {
     return h("div", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" }, role: "status" },
@@ -76,7 +78,7 @@ export function ProviderRegStatus({ llm, tt }: { llm?: Record<string, any> | nul
  * `onDone` repaints whatever the Host actually reports.
  */
 export function ProviderSwitch({ llm, onDone, tt }: {
-  llm?: Record<string, any> | null;
+  llm?: LlmData | null;
   onDone?: () => void;
   tt: Tt;
 }): unknown {
@@ -87,16 +89,7 @@ export function ProviderSwitch({ llm, onDone, tt }: {
     setBusy(true);
     setSwitchError(null);
     try {
-      const response = await fetch(PROVIDER_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ enabled: !enabled })
-      });
-      const payload = await response.json().catch(() => null);
-      if (payload?.ok !== true) {
-        throw new Error(typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`);
-      }
+      await postJsonOrThrow(PROVIDER_PATH, { enabled: !enabled });
       onDone?.();
     } catch (error) {
       setSwitchError(format(tt("llm.switchError"), { error: error instanceof Error ? error.message : String(error) }));
@@ -125,7 +118,7 @@ export function ProviderSwitch({ llm, onDone, tt }: {
  * instead; the route itself is covered by `routes.test.mjs`.
  */
 export function DrawSwitch({ llm, onDone, tt }: {
-  llm?: Record<string, any> | null;
+  llm?: LlmData | null;
   onDone?: () => void;
   tt: Tt;
 }): unknown {
@@ -136,16 +129,7 @@ export function DrawSwitch({ llm, onDone, tt }: {
     setBusy(true);
     setSwitchError(null);
     try {
-      const response = await fetch(DRAW_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ enabled: !enabled })
-      });
-      const payload = await response.json().catch(() => null);
-      if (payload?.ok !== true) {
-        throw new Error(typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`);
-      }
+      await postJsonOrThrow(DRAW_PATH, { enabled: !enabled });
       onDone?.();
     } catch (error) {
       setSwitchError(format(tt("draw.switchError"), { error: error instanceof Error ? error.message : String(error) }));
@@ -169,16 +153,7 @@ export function DrawSwitch({ llm, onDone, tt }: {
     setBusy(true);
     setSwitchError(null);
     try {
-      const response = await fetch(DRAW_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ drawModelId: id })
-      });
-      const payload = await response.json().catch(() => null);
-      if (payload?.ok !== true) {
-        throw new Error(typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`);
-      }
+      await postJsonOrThrow(DRAW_PATH, { drawModelId: id });
       onDone?.();
     } catch (error) {
       setSwitchError(format(tt("draw.switchError"), { error: error instanceof Error ? error.message : String(error) }));

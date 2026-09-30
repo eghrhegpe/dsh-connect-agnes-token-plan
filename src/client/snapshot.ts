@@ -5,28 +5,29 @@
  */
 import { format } from "./format.ts";
 import type { Tt } from "./runtime.ts";
+import type { AuthData, ShapeWarningData, SnapshotData } from "./wire.ts";
 
 /** A structured failure: what the Host answered besides the numbers. */
 export interface SnapshotFailure {
   message: unknown;
   code?: unknown;
-  auth?: unknown;
+  auth?: AuthData | null;
 }
 
 /** The (data, error) pair the panel renders; exactly one side is non-null. */
 export interface SnapshotRead {
-  data: Record<string, unknown> | null;
+  data: SnapshotData | null;
   error: SnapshotFailure | string | null;
 }
 
 /** `viewOf`'s verdict: what this snapshot means for what to show. */
 export interface SnapshotView {
   failure: SnapshotFailure | null;
-  auth: Record<string, unknown> | null;
+  auth: AuthData | null;
   needsSetup: boolean;
   guidanceKey: string | null;
   guidance: string | null;
-  shapeWarnings: Array<Record<string, unknown>>;
+  shapeWarnings: ShapeWarningData[];
 }
 
 /**
@@ -53,7 +54,7 @@ export function interpretSnapshot(body: unknown): SnapshotRead {
     return { data: null, error: { message: payload.error || "unexpected payload", code: payload.code, auth: payload.auth ?? null } };
   }
   if (!payload || payload.ok !== true) return { data: null, error: "unexpected payload" };
-  return { data: payload as Record<string, unknown>, error: null };
+  return { data: payload as unknown as SnapshotData, error: null };
 }
 
 /**
@@ -130,7 +131,7 @@ export const REFUSAL_TEXT: Readonly<Record<string, string>> = Object.freeze({
  * tested logic and the running logic cannot drift apart.
  */
 export function viewOf(
-  data: Record<string, unknown> | null,
+  data: SnapshotData | null,
   error: SnapshotFailure | string | null,
   tt: Tt
 ): SnapshotView {
@@ -140,7 +141,7 @@ export function viewOf(
   const failure: SnapshotFailure | null = error === null || error === undefined
     ? null
     : typeof error === "string" ? { message: error, code: null, auth: null } : error;
-  const auth = (data?.auth ?? failure?.auth ?? null) as Record<string, unknown> | null;
+  const auth: AuthData | null = (data?.auth ?? failure?.auth ?? null) as AuthData | null;
   // With no data the form is the answer whenever the fix is the ACCOUNT:
   // nothing has been entered yet, or no token can be obtained — except for
   // the codes no login can fix. `data === null, error === null` also reads
@@ -160,7 +161,7 @@ export function viewOf(
   // The Host's own contract check: a renamed upstream field would otherwise
   // look identical to "no usage yet".
   const shapeWarnings = Array.isArray(data?.shapeWarnings)
-    ? (data.shapeWarnings as Array<Record<string, unknown>>)
+    ? (data.shapeWarnings as ShapeWarningData[])
     : [];
   return { failure, auth, needsSetup, guidanceKey, guidance, shapeWarnings };
 }

@@ -223,6 +223,7 @@ export function TrendTable({ trend, tt }: { trend?: { models?: Array<Record<stri
   // data) is the empty case, not a crash: the empty note is honest.
   if (!trend || !Array.isArray(trend.models) || trend.models.length === 0) return h("div", { style: S.card }, h("div", { style: S.empty }, tt("trend.none")));
   const max = Math.max(0, ...trend.models.map((row) => Math.max(0, Number(row.credits) || 0)));
+  const anyMultiplier = trend.models.some((row) => typeof row.multiplier === "number");
   return h(
     "div",
     { style: S.card },
@@ -241,8 +242,10 @@ export function TrendTable({ trend, tt }: { trend?: { models?: Array<Record<stri
         h(
           "div",
           { style: S.trendRowHead },
-          // Long model ids truncate; the full name is one hover away.
-          h("span", { style: S.trendModel, title: row.model }, row.model),
+          // Long model ids truncate; the full name is one hover away. A
+          // configured pseudo multiplier (×N) rides beside the name: the
+          // raw credits stay verbatim, the factor is a comparison aid only.
+          h("span", { style: S.trendModel, title: row.model }, row.model, typeof row.multiplier === "number" && row.multiplier !== 1 ? h("span", { style: S.chip, title: tt("trend.multiplierLegend") }, `×${row.multiplier}`) : null),
           h("span", { style: S.trendCredits }, count(credits))
         ),
         h(
@@ -256,7 +259,10 @@ export function TrendTable({ trend, tt }: { trend?: { models?: Array<Record<stri
     // always fills the track — that answers "who is burning credits", but
     // the eye misreads a full track as "this model is at its limit". The
     // legend names the convention so the chart never lies by omission.
-    h("div", { style: S.trendLegend }, tt("trend.legend"))
+    h("div", { style: S.trendLegend }, tt("trend.legend")),
+    // The honesty line: the ×N factors are the operator's own config, not
+    // platform pricing — only shown when at least one row carries one.
+    anyMultiplier ? h("div", { style: S.trendLegend }, tt("trend.multiplierLegend")) : null
   );
 }
 

@@ -40,6 +40,15 @@ export const CONFIG_DEFAULTS = Object.freeze({
   consoleBase: "https://platform.sensenova.cn",
   apiBase: "https://token.sensenova.cn/v1",
   trendHours: 24,
+  /**
+   * Pseudo multipliers for the trend table, keyed by a case-insensitive
+   * SUBSTRING of a model id (first matching key wins, in insertion order).
+   * The platform returns raw credits with no official per-model rate, so
+   * these numbers are the operator's own comparison aid — the panel labels
+   * them as custom/non-official and rows without a match stay unmultiplied.
+   * Shipped defaults reflect the operator's rough current rates.
+   */
+  trendMultipliers: { "glm-5.2": 10, "kimi-k3": 20, "sensenova": 1, "deepseek": 1 },
   cacheSeconds: 60,
   pollSeconds: 30,
   consoleTimeoutMs: 15_000,
@@ -106,6 +115,28 @@ export const CONFIG_DEFAULTS = Object.freeze({
 });
 
 /**
+ * Sanitize the operator's pseudo-multiplier map: keep only string keys and
+ * finite positive numbers, preserving insertion order (matching is
+ * first-key-wins). A non-object or empty input falls back to the shipped
+ * defaults; the operator sets `{}` explicitly to disable all multipliers.
+ * Exported so `test/config.test.mjs` drives the same sanitizer the resolve
+ * path uses, instead of a copy that could drift.
+ * @param {unknown} raw - the raw `trendMultipliers` config value.
+ * @returns {Record<string, number>} the sanitized map.
+ */
+export function resolveTrendMultipliers(raw) {
+  const source = raw === undefined || raw === null ? CONFIG_DEFAULTS.trendMultipliers : raw;
+  if (source === null || typeof source !== "object" || Array.isArray(source)) return { ...CONFIG_DEFAULTS.trendMultipliers };
+  const out = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof key === "string" && key !== "" && typeof value === "number" && Number.isFinite(value) && value > 0) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/**
  * Clamp a raw numeric setting to its effective integer.
  *
  * Every numeric field in {@link resolveSettings} follows the same shape: floor
@@ -145,6 +176,10 @@ export function resolveSettings(config) {
         consoleBase,
         apiBase,
         trendHours: clampInt(source.trendHours, CONFIG_DEFAULTS.trendHours, 1, 168),
+        // Pseudo trend multipliers: only well-formed entries travel (string
+        // key, finite positive number); anything else is dropped rather than
+        // throwing — a typo in one row must not take the panel down.
+        trendMultipliers: resolveTrendMultipliers(source.trendMultipliers),
         cacheSeconds: clampInt(source.cacheSeconds, CONFIG_DEFAULTS.cacheSeconds, 5),
         // How often the panel asks again. The Host states it rather than the
         // panel assuming one, so the two cannot disagree about how fresh the
@@ -197,6 +232,7 @@ export function resolveSettings(config) {
         consoleBase,
         apiBase,
         trendHours: CONFIG_DEFAULTS.trendHours,
+        trendMultipliers: CONFIG_DEFAULTS.trendMultipliers,
         cacheSeconds: CONFIG_DEFAULTS.cacheSeconds,
         pollSeconds: CONFIG_DEFAULTS.pollSeconds,
         consoleTimeoutMs: CONFIG_DEFAULTS.consoleTimeoutMs,

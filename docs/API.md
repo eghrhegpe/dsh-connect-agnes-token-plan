@@ -28,7 +28,7 @@
   "catalogModels": ["sensenova-6.8-flash-lite", "..."],
   "visionModels": [/* 可看图模型（仅 catalogAvailable 时返回，否则省略） */],
   "pools": { "plan": {...}, "pools": [/* 每池 5h/7d 窗口、返赠、callableModels / lockedModels */] },
-  "trend": { "hours": 24, "models": [/* 每模型消耗 */] },
+  "trend": { "hours": 24, "models": [/* 每模型消耗；命中 trendMultipliers 配置的行附 multiplier: number（伪倍率，非官方） */] },
   "uncountedModels": [/* 在模型目录但不在任何池中的模型 */],
   "llm": {
     // 推理 Key 状态（永远不回显 Key 本身）
@@ -40,7 +40,7 @@
     "modelCount": 2, "visionCount": 1,
     // 模型选择器数据：整份可选目录（不受过滤影响）与当前生效的允许清单。
     // 空清单 = 不过滤 = 全部推送；["__hide_all__"] = 一个都不推送。
-    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false }],
+    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144 }],
     "enabledModelIds": [],
     // 出图工具开关生效值与来源（0.4.2）；工具实际挂载在下一个 Host 启动时发生
     "drawEnabled": false, "drawSource": "config",

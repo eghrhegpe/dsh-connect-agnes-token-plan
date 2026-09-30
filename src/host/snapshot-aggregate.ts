@@ -28,6 +28,30 @@ import { imageGenModelIds, pickDrawModel } from "./draw.ts";
 import { str } from "./util.ts";
 
 /**
+ * Attach the operator's pseudo multipliers to the parsed trend rows.
+ *
+ * Matching is a case-insensitive SUBSTRING of the model id, first configured
+ * key wins (insertion order — `resolveTrendMultipliers` preserves it). A row
+ * without a match keeps no `multiplier` field — the panel shows no factor for
+ * it rather than guessing 1. The math lives here as one exported seam so the
+ * tests drive the exact function `buildSnapshotBody` calls, not a copy.
+ *
+ * @param {{models: Array<{model: string, credits: number, multiplier?: number}>}} trend
+ *   the `parseTrend` result; rows are replaced in place on the object.
+ * @param {Record<string, number>} multipliers - the sanitized config map.
+ * @returns {object} the same trend object with `multiplier` on matching rows.
+ */
+export function applyTrendMultipliers(trend, multipliers) {
+  const lowercased = Object.entries(multipliers || {}).map(([key, value]) => [key.toLowerCase(), value]);
+  trend.models = trend.models.map((row) => {
+    const id = row.model.toLowerCase();
+    const hit = lowercased.find(([key]) => id.includes(key));
+    return hit ? { ...row, multiplier: hit[1] } : row;
+  });
+  return trend;
+}
+
+/**
  * Fetch the three console sources in parallel and aggregate them into the
  * snapshot body the route writes.
  *
@@ -99,6 +123,9 @@ export async function buildSnapshotBody({
   ]);
   const pools = parsePools(poolBody);
   const trend = parseTrend(trendBody, settings.trendHours);
+  // Pseudo multipliers ride on the rows the Host computes, so the client
+  // never re-implements the matching (and the tests drive the same math).
+  applyTrendMultipliers(trend, settings.trendMultipliers);
   // A shape drift does not fail the poll — the parsers still return what they
   // understood — but it must reach the panel, or a renamed field would read
   // as "no usage" forever.

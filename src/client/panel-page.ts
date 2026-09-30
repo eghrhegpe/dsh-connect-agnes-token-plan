@@ -11,6 +11,7 @@ import { clock, format } from "./format.ts";
 import { errorOfStatus, interpretSnapshot, viewOf } from "./snapshot.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
+import type { PoolData, SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PoolCard, PoolExhaustionNotice, SectionCard, TrendTable } from "./cards.ts";
 import { DrawSwitch } from "./provider-controls.ts";
@@ -20,7 +21,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   tt: Tt;
   localeSubscribe?: unknown;
 }): unknown {
-  const [data, setData] = useState<Record<string, any> | null>(null);
+  const [data, setData] = useState<SnapshotData | null>(null);
   const [error, setError] = useState<string | { message: unknown } | null>(null);
   // Has the FIRST load attempt reached a conclusion? Until it has, the
   // panel must show "loading", not the account form: `viewOf` reads
@@ -236,7 +237,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                 h(
                   "div",
                   { style: S.poolsGrid },
-                  (pools?.pools || []).map((pool: Record<string, any>) => h(PoolCard, { key: pool.id, pool, tt }))
+                  (pools?.pools || []).map((pool: PoolData) => h(PoolCard, { key: pool.id, pool, tt }))
                 ),
                 Array.isArray(data.uncountedModels) && data.uncountedModels.length > 0
                   ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
@@ -248,7 +249,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                 Array.isArray(data.visionModels) && data.visionModels.length > 0
                   ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
                       format(tt("pool.vision"), {
-                        models: data.visionModels.map((entry: { id: unknown }) => entry.id).join(" · ") + (data.visionModels.every((entry: { source: unknown }) => entry.source === "name") ? tt("pool.visionInferred") : "")
+                        models: data.visionModels.map((entry: VisionModelData) => entry.id).join(" · ") + (data.visionModels.every((entry: VisionModelData) => entry.source === "name") ? tt("pool.visionInferred") : "")
                       }))
                   : null
               ),

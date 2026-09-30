@@ -1094,12 +1094,14 @@ async function withNetwork(stub, body) {
       // Rows carry the per-model availability markers (ROADMAP §2.2): the
       // panel shows every chat model, greyed with the reason when its pool
       // is exhausted, so `available`/`quotaExhausted` travel even when true.
+      // `contextWindow` rides too: the catalog stub declares no context
+      // field, so every row carries `contextWindowOf`'s 128k fallback.
       const snapshot = await call(SNAPSHOT_PATH, makeRequest());
       check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
         JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([
-          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false },
-          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false },
-          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false }
+          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000 },
+          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000 },
+          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000 }
         ]), JSON.stringify(snapshot.payload.llm?.models));
       check("Q2 an uncurated install reports an empty allow-list",
         JSON.stringify(snapshot.payload.llm?.enabledModelIds) === JSON.stringify([]),

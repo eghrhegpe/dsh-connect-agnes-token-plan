@@ -8,14 +8,16 @@
  * exists.
  */
 import { API_KEY_PATH } from "./const.ts";
+import { postJson } from "./http.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
+import type { LlmData } from "./wire.ts";
 import { ProviderRegStatus, ProviderStatus, ProviderSwitch } from "./provider-controls.ts";
 import { ModelPicker } from "./model-picker.ts";
 import { S } from "./styles.ts";
 
 export function ApiKeyForm({ llm, onDone, tt }: {
-  llm?: Record<string, any> | null;
+  llm?: LlmData | null;
   onDone?: () => void;
   tt: Tt;
 }): unknown {
@@ -26,15 +28,7 @@ export function ApiKeyForm({ llm, onDone, tt }: {
   const [saved, setSaved] = useState(false);
   const [forgotten, setForgotten] = useState(false);
 
-  const post = useCallback(async (payload: Record<string, unknown>) => {
-    const response = await fetch(API_KEY_PATH, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      cache: "no-store",
-      body: JSON.stringify(payload)
-    });
-    return response.json().catch(() => null);
-  }, []);
+  const post = useCallback((payload: Record<string, unknown>) => postJson(API_KEY_PATH, payload), []);
 
   const submit = useCallback(async (event?: { preventDefault?: () => void }) => {
     event?.preventDefault?.();
@@ -154,7 +148,7 @@ export function ApiKeyForm({ llm, onDone, tt }: {
  * three different functions and no longer share a card.
  */
 export function ProviderForm({ llm, onDone, tt }: {
-  llm?: Record<string, any> | null;
+  llm?: LlmData | null;
   onDone?: () => void;
   tt: Tt;
 }): unknown {

@@ -20,6 +20,9 @@ import {
   identifyVisionModel,
   EXPECTED_SHAPES
 } from "../src/host/parsers.ts";
+// Imported here (not a new file) because the multiplier math sits on top of
+// parseTrend's rows: same layer of the pipeline, same suite.
+import { applyTrendMultipliers } from "../src/host/snapshot-aggregate.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -191,6 +194,48 @@ function fail(name, error) {
       parseTrend({ series: [{ model_id: "Z", points: [{}, { credits: 4 }] }] }, 24).models[0].credits === 4);
   } catch (error) {
     fail("parseTrend survives malformed input", error);
+  }
+}
+
+// --- 5b. applyTrendMultipliers(): the ×N labels the panel renders ----------
+// The pseudo-multiplier matching runs Host-side on the parsed rows, so its
+// semantics are part of the wire contract: substring match, case-insensitive,
+// first configured key wins, and NO match means NO field (never a guessed 1).
+{
+  const row = (model) => ({ model, credits: 1 });
+  try {
+    const out = applyTrendMultipliers(
+      { hours: 24, models: [row("GLM-5.2-Pro"), row("kimi-k3"), row("sensenova-6.8"), row("unmatched")] },
+      { "glm-5.2": 10, "kimi-k3": 20, sensenova: 1, deepseek: 1 }
+    );
+    const byModel = new Map(out.models.map((r) => [r.model, r]));
+    check("a substring match attaches the multiplier", byModel.get("GLM-5.2-Pro").multiplier === 10, JSON.stringify(byModel.get("GLM-5.2-Pro")));
+    check("matching is case-insensitive", byModel.get("kimi-k3").multiplier === 20, String(byModel.get("kimi-k3").multiplier));
+    check("a value of 1 still labels the row", byModel.get("sensenova-6.8").multiplier === 1, String(byModel.get("sensenova-6.8").multiplier));
+    check("an unmatched row gets NO multiplier field (not 1)",
+      !("multiplier" in byModel.get("unmatched")), JSON.stringify(byModel.get("unmatched")));
+    check("credits stay verbatim under a multiplier", byModel.get("GLM-5.2-Pro").credits === 1, String(byModel.get("GLM-5.2-Pro").credits));
+  } catch (error) {
+    fail("applyTrendMultipliers matches rows", error);
+  }
+
+  // First-key-wins in insertion order: a model matching two keys takes the
+  // one written first, not the "better" one.
+  try {
+    const out = applyTrendMultipliers({ models: [row("deepseek-sensenova")] }, { sensenova: 1, deepseek: 4 });
+    check("first configured key wins on overlap", out.models[0].multiplier === 1, String(out.models[0].multiplier));
+  } catch (error) {
+    fail("applyTrendMultipliers first-key-wins", error);
+  }
+
+  // An empty/absent map (the operator set `{}`) leaves every row bare.
+  try {
+    const out = applyTrendMultipliers({ models: [row("glm-5.2")] }, {});
+    check("an empty map disables all labels", !("multiplier" in out.models[0]), JSON.stringify(out.models[0]));
+    const missing = applyTrendMultipliers({ models: [row("glm-5.2")] }, undefined);
+    check("an absent map reads as disabled too", !("multiplier" in missing.models[0]), JSON.stringify(missing.models[0]));
+  } catch (error) {
+    fail("applyTrendMultipliers handles an empty map", error);
   }
 }
 

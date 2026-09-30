@@ -14,13 +14,15 @@
  */
 import { ACCOUNT_PATH } from "./const.ts";
 import { format } from "./format.ts";
+import { postJson } from "./http.ts";
 import { h, useCallback, useEffect, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { REFUSAL_TEXT } from "./snapshot.ts";
 import { S } from "./styles.ts";
+import type { AuthData } from "./wire.ts";
 
 export function AccountForm({ auth, onDone, tt, bare }: {
-  auth?: Record<string, any> | null;
+  auth?: AuthData | null;
   onDone?: () => void;
   tt: Tt;
   bare?: boolean;
@@ -80,13 +82,7 @@ export function AccountForm({ auth, onDone, tt, bare }: {
     setFormError(null);
     setFormDetail(null);
     try {
-      const response = await fetch(ACCOUNT_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ username: username.trim(), password })
-      });
-      const body = await response.json().catch(() => null);
+      const body = await postJson(ACCOUNT_PATH, { username: username.trim(), password });
       if (body && body.ok === true) {
         // Clear the password from component state the moment it is no
         // longer needed: it lives on in the Host's credentials, not here.
@@ -130,13 +126,7 @@ export function AccountForm({ auth, onDone, tt, bare }: {
     setFormError(null);
     setFormDetail(null);
     try {
-      const response = await fetch(ACCOUNT_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ forget: true })
-      });
-      const body = await response.json().catch(() => null);
+      const body = await postJson(ACCOUNT_PATH, { forget: true });
       if (body?.ok !== true) {
         setFormError(body?.error ?? tt("auth.network"));
         return;
