@@ -23,3 +23,11 @@ export const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
 
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
 export const DRAW_PATH = "/api/dsh-connect-sensenova-token-plan/draw";
+
+/**
+ * The official sign-up / Token Plan console entry. The panel points new
+ * users here to register and obtain their free quota (account + API key).
+ * A plain public URL — the client only ever opens it in a new tab, never
+ * sends it in a credentialed request.
+ */
+export const SENSENOVA_SIGNUP_URL = "https://www.sensenova.cn/token-plan";

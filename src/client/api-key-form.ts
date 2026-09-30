@@ -7,7 +7,7 @@
  * is NEVER populated from the snapshot — the Host only reports whether one
  * exists.
  */
-import { API_KEY_PATH } from "./const.ts";
+import { API_KEY_PATH, SENSENOVA_SIGNUP_URL } from "./const.ts";
 import { postJson } from "./http.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
@@ -128,7 +128,12 @@ export function ApiKeyForm({ llm, onDone, tt }: {
         ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("llm.saved"))
         : null,
     formError ? h("p", { style: S.formError, role: "alert" }, formError) : null,
-    h("p", { style: S.formNote }, tt("llm.footnote"))
+    h("p", { style: S.formNote }, tt("llm.footnote")),
+    // No key yet is exactly when the official site is useful; a configured
+    // key needs no sign-up nudge.
+    llm?.hasApiKey !== true
+      ? h("a", { href: SENSENOVA_SIGNUP_URL, target: "_blank", rel: "noreferrer", style: { color: "var(--dsw-alias-label-primary)", fontSize: 12, marginTop: 10, display: "inline-block", textDecoration: "underline", cursor: "pointer" } }, tt("llm.keyRegisterHint"))
+      : null
   );
   // The SectionCard wrapping this form is the collapse: one fold, not
   // two. An inner `<details>` around the editor meant opening the card

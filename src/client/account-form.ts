@@ -12,7 +12,7 @@
  * Hook-based, so the Node render suite does not mount this form; its
  * secret-free halves are covered via `ProviderStatus` and the route tests.
  */
-import { ACCOUNT_PATH } from "./const.ts";
+import { ACCOUNT_PATH, SENSENOVA_SIGNUP_URL } from "./const.ts";
 import { format } from "./format.ts";
 import { postJson } from "./http.ts";
 import { h, useCallback, useEffect, useState } from "./runtime.ts";
@@ -151,6 +151,20 @@ export function AccountForm({ auth, onDone, tt, bare }: {
     // `bare` drops the inner card and title: the caller (the account
     // section card) already supplies both.
     bare ? null : h("div", { style: S.sectionTitle }, tt("auth.title")),
+    // A first-time visitor has neither account nor key: point them at the
+    // official sign-up page BEFORE they hunt for one. Only in the standalone
+    // card — the bare embed (account section with a token already working)
+    // is not the place to advertise registration.
+    !bare && !auth?.hasAccount
+      ? h("a", {
+          href: SENSENOVA_SIGNUP_URL,
+          target: "_blank",
+          rel: "noreferrer",
+          // Inline: the shared `styles.ts` is under a concurrent rewrite
+          // (roster/model-row restyle), so this one-off link skin lives here.
+          style: { color: "var(--dsw-alias-label-primary)", fontSize: 12, marginTop: 10, display: "inline-block", textDecoration: "underline", cursor: "pointer" }
+        }, tt("auth.registerHint"))
+      : null,
     h(
       "form",
       { onSubmit: submit },
