@@ -142,6 +142,18 @@ export function RaccoonTab({ tt }: { tt: Tt }): unknown {
   const startLogin = useCallback(async () => {
     setLoginBusy(true);
     setLoginNote(null);
+    // The scan URL is issued by the POST walk but delivered by the GET: fire
+    // ONE immediate fetch so the QR appears within ~100 ms of the click
+    // (the 60 s cadence would leave a full minute of "nothing happened"),
+    // then keep a fast poll while the walk is waiting, because that GET is
+    // also how the tab learns the login has settled early.
+    const quick = async () => {
+      for (let i = 0; i < 150; i++) {
+        await load();
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    };
+    void quick();
     // The route answers only when the walk settles (success / timeout), so
     // the button stays "waiting" the whole time and the result repicks the
     // card from the fresh state.
