@@ -127,8 +127,12 @@ description:
 > 0.4.3 与 tag 内容不符。`v0.4.3` 之后落地的改动（e2e 进程树修复、`.gitignore`、
 > 以及自述面文档追平）**只能随下一个版本（0.4.4）到达用户**——该版本已于 2026-10-01 发布，上述改动随即到达用户。
 >
-> 实测证据：`npm view dsh-connect-sensenova-token-plan readme --registry=https://registry.npmjs.org`
-> 抓下来的 README 仍含 3 处「侧边栏」、0 处「小浣熊」——**修好的 README 在发新版前对用户不存在**。
+> **实测证据（同一条命令、发版前后两个读数）**：
+> `npm view dsh-connect-sensenova-token-plan readme --registry=https://registry.npmjs.org`
+> 在 **0.4.4 发布前**抓下来，旧版（0.4.3）README 含 3 处「侧边栏」、0 处「小浣熊」——那正是用户当时读到的内容；
+> **发布后**再抓为 1 处、4 处，且与仓库 `README.md` **逐字相同**。剩下的那 1 处是刻意写的否定句
+> （「面板是页内的内联卡片，**不在侧边栏**」），不是残留。**修好的 README 在发新版前对用户不存在**；
+> 这条命令是唯一能证实「用户此刻读到的到底是哪一版」的手段。
 
 **市场收录状态（2026-10-01 实测）**：投稿 PR 已提且**仍处于 open、未合并**——
 [awesome-dsh-plugin#6139](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6139)
