@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 运维诊断 doctor（PITFALLS §22 的欠账）
+
+回答「这台机器的 provider / 出图开关到底开没开」——此前唯一答案在一个 JSON 状态文件里，不在任何配置文件、任何路由、任何 CLI。
+
+- **新增 `src/host/doctor.ts`（peer-free 纯读层）+ `tools/doctor.mjs` CLI**：读 `$DSH_HOME/state/<name>/` 与每个 `<profile>/<name>/` 下的 `provider.json` / `draw.json` / `catalog.json`，报「面板保存值 > 部署默认值」的生效开关、模型允许清单、以及「文件存在但读不成」时**点名**是哪个文件（损坏/外来版本不会静默变空）。`npm run doctor`（人读）/ `npm run doctor:json`（机器读）。
+- 与「大统一」定位对齐：单点入口必须可查，doctor 是第一条查询通道；它不写任何文件、不碰凭据，只在磁盘上读，Host 没起也能跑。
+- **测试**：`test/doctor.test.mjs`（23 项，离线门禁）——三套 payload 解析器的「损坏/外来版本读作未设」方向、profile 分段与 shared 布局互不误认、干净机器/损坏文件的人读文案；进 `npm test` 与 CI offline 档。
+
+### 文档修正：撤销 ROADMAP §0 被证伪的前提
+
+- [ROADMAP.md](docs/ROADMAP.md) §0 与 §2 引言原写「本插件已是双 profile 的 `agent-default-model`——即这台机器的**默认推理通道**，故障域已升级为推理可用性」。该论断 2026-09-29 已被 [IMPROVEMENTS.md](docs/IMPROVEMENTS.md) §1.2 撤销（`agent-default-model` 是宿主的选择记录服务，原引用不可复现），但 ROADMAP 未同步。现改为「**能力事实**：可注册 provider `sensenova-token-plan`；是否默认通道由 profile 与用户模型选择决定；一旦某 profile 选它作默认，故障域才从面板升级为推理可用性（条件性爆炸半径）」。两份文档不再正面矛盾。
+
 ### 仓库结构规范化：src/ 全源码，lib/ 纯产物
 
 - 全部源码收敛到 `src/`（`src/host/*.ts` 27 个 Host 模块 + `src/client/*.ts` Client 半边）；`lib/` 与根 `client.js` 降为纯构建产物并加入 `.gitignore`——删掉后 `npm run build` 一条命令从源码完整重建。

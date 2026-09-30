@@ -42,6 +42,15 @@
 
 在面板「模型接入（API Key）」区粘贴 `sk-` Key 保存：Host 即以 `sensenova-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入，还能勾选具体要推送哪些模型。Key 只进 DSH 凭据、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
 
+## 运维诊断：这台机器现在挂没挂 provider？
+
+provider / 出图开关的生效值存在插件私有状态文件里（`$DSH_HOME/state/<name>/`），不在任何配置或路由上——查"到底开没开"用 doctor，它只读状态文件、不碰凭据，Host 没起也能跑：
+
+```powershell
+npm run doctor          # 人读：每个 profile 的 provider / draw 开关与模型清单
+npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本）
+```
+
 ## 文档
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 架构与数据流

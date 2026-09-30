@@ -7,7 +7,7 @@
 ## 0. 已锁死的前提（来自 §5，这里不复制其表）
 
 - **三条不变量**：每个新模块 opt-in 默认关；凭据红线不动；只吸与商汤 Key / 账号线强相关的能力。
-- **实测事实**：本插件已是双 profile（`desktop` / `web`）的 `agent-default-model`——即这台机器的**默认推理通道**，故障域已从「侧边栏面板」升级为「推理可用性」。
+- **能力事实**：本插件**可**向 DSH 注册推理 provider（`sensenova-token-plan`）。它是否成为某台机器的默认推理通道，由该机的 profile 与用户模型选择决定，**不随插件注册自动成立**（`agent-default-model` 是宿主的选择记录服务，见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §1.2 的撤销注记）；一旦某 profile 真的把它选作默认模型，故障域就从「侧边栏面板」升级为「推理可用性」，这是**条件性**的爆炸半径，不是既成事实。
 - **角色**：从「只下发信息」升级为「信息 + 执行」，但每块执行都挂在三条不变量下。
 
 ## 1. 对 §5 的一处纠偏：429 不做多 Key 池
@@ -20,8 +20,8 @@
 
 ## 2. P0：`index.js` 控制面解耦 + 商汤契约自动化回归 ✅ 已实现（2026-09）
 
-> 来源：2026-09 锐评结论，研究论证见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §2（接线复杂度诊断的完整证据链）。两个 P0 先于任何「继续吸收」——ROADMAP §0 已承认本插件
-> 是双 profile 的 `agent-default-model`（默认推理通道），`index.js` 1187 行里同时挂着
+> 来源：2026-09 锐评结论，研究论证见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §2（接线复杂度诊断的完整证据链）。两个 P0 先于任何「继续吸收」——§0 已承认本插件
+> 可注册推理 provider（是否默认通道由 profile 决定），`index.js` 1187 行里同时挂着
 > 5 条路由 + `providerState` 状态机 + `publishChain` 串行化 + 两个 fire-and-forget IIFE
 > （catalog seed、draw 注册），复杂度已溢出：注释越解释越拆不动。再谈下一块吸收之前，
 > 先把「控制面」和「契约护栏」立住，否则吸收越快、爆炸半径越大。
