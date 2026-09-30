@@ -188,7 +188,12 @@ export function isChatModel(entry) {
  * none`). So:
  *
  * - `off: "none"` — the picker's "关闭" must send `none`, not `off`;
- * - `minimal: null` — not offered (unverified on this gateway);
+ *   - `low`/`medium` — per-model, gated on the PROBED_EFFORT table. The
+ *     2026-09-29 probe round exercised `none`/`high`/`max`/`xhigh` only;
+ *     these two levels have not yet been probed, so they default closed
+ *     (the roster line must not quote a level the platform may reject).
+ *     The live-contract replay (`test/live-contract.mjs`) probes them and
+ *     flips the table cells once a model's 200 is recorded.
  * - `max` — `"max"` on glm-5.2 only, `null` elsewhere.
  *
  * A value of `null` means "the picker must not offer this level"; a string is
@@ -197,39 +202,52 @@ export function isChatModel(entry) {
  * @returns {object} the thinkingLevelMap.
  */
 /**
- * Per-model extended thinking levels, probed against the platform (frozen
- * 2026-09-29, mirrored from `test/baselines/sensenova-contract.json`).
+ * Per-model 思考档位 probe table (frozen 2026-09-29, mirrored from
+ * `test/baselines/sensenova-contract.json` §reasoningEffort).
  *
- * The baseline records which of the two EXTENDED levels each model actually
- * accepts: `xhigh` was only probed 200 on `deepseek-v4-flash`, `max` only on
- * `glm-5.2`. Every other model's extended levels were NOT probed, so the map
- * must not offer them — the picker quoting a level the platform 400s on is
- * exactly the class of silent failure the roster line exists to prevent.
+ * The baseline records which `reasoning_effort` values the platform
+ * answered 200 for per model:
+ *   - `high` — the platform default for every chat model;
+ *   - `none` — 关思考, probed 200 on every model;
+ *   - `xhigh` — ONLY probed 200 on deepseek-v4-flash;
+ *   - `max`   — ONLY probed 200 on glm-5.2;
+ *   - `low` / `medium` — NEVER probed (the live-contract replay does not
+ *     currently exercise these two cells).
  *
- * A model absent from this table gets neither extended level: the safe
- * default is "proven" not "assumed". A new model that turns out to accept
- * `xhigh`/`max` is added here WITH its probe evidence (see the baseline's
- * `driftLog` discipline), never assumed.
+ * The panel roster line must not quote a level the platform may 400 on,
+ * so a model absent from this table gets `low`/`medium`/`xhigh`/`max` all
+ * closed: only `off` (the `none` wire spelling) and `high` stay open —
+ * the two values proven on every chat model by the same 2026-09-29 probe
+ * round. A new model that turns out to accept an extra level is added
+ * here WITH its probe evidence (see the baseline's `driftLog` discipline),
+ * never assumed.
  */
-const EXTENDED_THINKING = Object.freeze({
-  "deepseek-v4-flash": { xhigh: true, max: false },
-  "glm-5.2": { xhigh: false, max: true }
+const PROBED_EFFORT = Object.freeze({
+  "deepseek-v4-flash": { low: false, medium: false, high: true, xhigh: true, max: false },
+  "glm-5.2":           { low: false, medium: false, high: true, xhigh: false, max: true },
+  "sensenova-6.8-flash-lite": { low: false, medium: false, high: true, xhigh: false, max: false },
+  "deepseek-v4-pro":   { low: false, medium: false, high: true, xhigh: false, max: false },
+  "deepseek-flash":    { low: false, medium: false, high: true, xhigh: false, max: false },
+  "kimi-k3":           { low: false, medium: false, high: true, xhigh: false, max: false }
 });
 
 export function thinkingLevelMapFor(entry) {
   const id = str(entry?.id, "");
-  const ext = EXTENDED_THINKING[id];
+  const probed = PROBED_EFFORT[id];
   return {
     off: "none",
     minimal: null,
-    low: "low",
-    medium: "medium",
+    // low/medium: per-model, gated on the probe table. A model NOT in the
+    // table keeps the safe default (both closed) — the panel does not quote
+    // a level the platform may reject, and the live-contract replay will
+    // flip these cells once it probes them.
+    low: probed?.low === true ? "low" : null,
+    medium: probed?.medium === true ? "medium" : null,
+    // high: the platform default on every chat model; always offered.
     high: "high",
-    // Extended levels are per-model, gated on the frozen probe table: only a
-    // level the platform answered 200 for THIS model is offered. An absent
-    // entry means "proven on nothing" -> both stay closed.
-    xhigh: ext?.xhigh === true ? "xhigh" : null,
-    max: ext?.max === true ? "max" : null
+    // Extended levels: only a 200 probe for THIS model opens the level.
+    xhigh: probed?.xhigh === true ? "xhigh" : null,
+    max: probed?.max === true ? "max" : null
   };
 }
 

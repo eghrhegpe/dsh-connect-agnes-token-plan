@@ -4,9 +4,25 @@
 
 ## [Unreleased]
 
-### 思考档位只对「实测过 200 的模型」开放（面板不再过度承诺 xhigh）
+### 思考档位收敛到「实测过 200 才画」（面板不再过度承诺 low/medium/xhigh）
 
-此前 `thinkingLevelMapFor` 给**所有**商汤模型都开了 `xhigh` 档（只有 `max` 按 glm-5.2 特判）。但冻结契约表 `test/baselines/sensenova-contract.json` 里 `xhigh` **只实测过 deepseek-v4-flash（200）**，其余 6 家从未测——面板给它们画"极高"是过度承诺，用户点上去可能 400。现把 `xhigh`/`max` 两个扩展档改成**逐模型门控**（新增 `EXTENDED_THINKING` 表，数据抄自同一张冻结契约）：`xhigh` 只对 deepseek-v4-flash 开，`max` 只对 glm-5.2 开，未实测的模型两档都关，面板每行的思考档位从此只引"平台确认过的"。
+面板花名册每行原来把 `low/medium/xhigh` 对**所有**商汤模型都画出来，但冻结契约表
+`test/baselines/sensenova-contract.json` 里 `xhigh` 只实测过 deepseek-v4-flash（200）、
+`max` 只实测过 glm-5.2（200），`low`/`medium` 对任何模型都**从未实测**（代码依据只是
+平台 400 报错文案里出现过这两个词，而 [SENSENOVA-API.md §7.6](docs/SENSENOVA-API.md)
+明说那串列表是**并集**、各模型支持面不同）——用户点了某家不支持的档就可能 400。
+现把 `thinkingLevelMapFor` 改为**逐模型门控**（新常量 `PROBED_EFFORT`，数据抄自同一张
+冻结契约，覆盖 low/medium/high/xhigh/max 五格）：`high`（平台默认，全家族实测过）保持
+开，`xhigh` 只对 deepseek-v4-flash 开，`max` 只对 glm-5.2 开，`low`/`medium` 尚无逐
+模型探针、两格先关；未收录模型默认全关。`test/live-contract.mjs` 已扩探针段（每模型
+各发 1 个 `low`、1 个 `medium` 的 chat 请求，限流友好、不自动改表），跑完按 200/400
+结果翻 `PROBED_EFFORT` 表把该开的档补回来，探针结果人工写回冻结契约（「live 失败
+不是回归」纪律，ROADMAP §2.3）。
+
+测试同步：`retry` §5、`provider` §1、`routes` Q2、`render` G4、`contract` §2 的
+`thinkingLevels` 断言全部改读门控后的值（未实测模型 `["off","high"]`、v4-flash
+`["off","high","xhigh"]`、glm-5.2 `["off","high","max"]`）。文档同步：`API.md` 样例
+行、`IMPROVEMENTS.md` §7 修订注记、本条。
 
 ### 可见性修复三连：登录态常显 + provider 注册 pending 态 + 小浣熊错误不再被开关藏起
 

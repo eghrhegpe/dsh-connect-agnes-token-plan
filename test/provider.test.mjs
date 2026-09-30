@@ -75,7 +75,7 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     check("advertised as a reasoning model", descriptor.reasoning === true);
     check("the thinking map pins picker levels to wire spellings",
       JSON.stringify(descriptor.thinkingLevelMap) === JSON.stringify({
-        off: "none", minimal: null, low: "low", medium: "medium",
+        off: "none", minimal: null, low: null, medium: null,
         high: "high", xhigh: null, max: null
       }), JSON.stringify(descriptor.thinkingLevelMap));
     check("off is the platform's none, not the OpenAI off (which 400s)",

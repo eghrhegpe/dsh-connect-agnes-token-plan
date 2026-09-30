@@ -99,28 +99,41 @@ if (apiKey === "") {
   }
 }
 
-// --- 2. inference probes: one `reasoning_effort:"none"` per untested model -
+// --- 2. inference probes: one `reasoning_effort` per untested model ------
 // Only the families the contract marked `thinkingObject: "untested"` /
 // `"doc-claimed"` get a single live probe; a failure is recorded, never
 // retried (rate-limit friendly against the shared pool). The key is always
 // present here: without one the whole file already SKIPPED above.
+//
+// Each probe answers ONE question per call, and the answer is written back
+// into the baseline by hand afterwards (the "live failure is not a
+// regression, refresh the baseline" rule, ROADMAP §2.3):
+//   - `reasoning_effort: "low"`   -> does the baseline's `low` cell flip?
+//   - `reasoning_effort: "medium"`-> does the baseline's `medium` cell flip?
+// The existing `none` probe (the "thinking object is even accepted"
+// check) stays. 14 requests for 7 models is deliberate: each level costs
+// one chat completion, `max_tokens: 8` keeps the credit bill trivial, and
+// no level is ever probed twice in one run.
+for (const model of contract.models) {
+  if (model.status !== "ok") continue; // 403/404 plans cannot be probed
+  for (const level of ["low", "medium"]) {
+    const response = await fetchProbe(model.id, level);
+    const text = await response?.text?.().catch(() => "") ?? "";
+    check(`${model.id} reasoning_effort:"${level}" probe answered ${response?.status ?? "n/a"}`,
+      response?.ok === true, `HTTP ${response?.status ?? "?"} ${text.slice(0, 120)}`);
+  }
+}
+
+// --- 2b. the untested thinking-object families get their one `none` probe -
+// Same discipline as §2 but keyed on `thinkingObject`, kept separate so a
+// run where every level probe passes can still surface "this family has
+// never had its thinking-object dialect checked".
 for (const model of contract.models) {
   if (model.status !== "ok") continue; // 403/404 plans cannot be probed
   const probeNeeded = model.thinkingObject === "untested" || model.thinkingObject === "doc-claimed";
   if (!probeNeeded) continue;
   try {
-    const response = await fetch(`${BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: model.id,
-        messages: [{ role: "user", content: "ping" }],
-        reasoning_effort: "none",
-        max_tokens: 8,
-        stream: false
-      }),
-      signal: AbortSignal.timeout(60_000)
-    });
+    const response = await fetchProbe(model.id, "none");
     const text = await response.text().catch(() => "");
     check(`${model.id} reasoning_effort:"none" probe answered ${response.status}`,
       response.ok, `HTTP ${response.status} ${text.slice(0, 120)}`);
@@ -128,6 +141,22 @@ for (const model of contract.models) {
     check(`${model.id} reasoning_effort:"none" probe answered`, false,
       String(error?.message ?? error));
   }
+}
+
+/** One chat-completion probe; its result is evidence, not a code fix. */
+async function fetchProbe(modelId, effort) {
+  return fetch(`${BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: modelId,
+      messages: [{ role: "user", content: "ping" }],
+      reasoning_effort: effort,
+      max_tokens: 8,
+      stream: false
+    }),
+    signal: AbortSignal.timeout(60_000)
+  }).catch((error) => ({ ok: false, status: 0, text: async () => String(error?.message ?? error) }));
 }
 
 console.log(JSON.stringify(results, null, 2));
