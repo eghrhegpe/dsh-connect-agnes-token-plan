@@ -209,8 +209,8 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
         h(
           "div",
           { style: S.tabBar, role: "tablist" },
-          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: activeTab === "quota" ? S.tabActive : S.tab, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
-          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: activeTab === "api" ? S.tabActive : S.tab, onClick: () => setActiveTab("api") }, tt("tab.api"))
+          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: { ...S.tab, ...(activeTab === "quota" ? S.tabActive : {}) }, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
+          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api"))
         ),
         // The shape-drift banner belongs with the daily reading: it warns
         // about the numbers themselves, not about the wiring below.
