@@ -18,7 +18,7 @@
  * modifier on object/array LITERAL types — so every table below is a plain
  * value. The discipline that matters is the ALGORITHM, not a frozen shape.
  *
- * @module dsh-connect-sensenova-token-plan/client/qr
+ * @module dsh-connect-agnes-token-plan/client/qr
  */
 
 /** The matrix the QR holds: `size` is the module count, `modules` a square of dark flags. */

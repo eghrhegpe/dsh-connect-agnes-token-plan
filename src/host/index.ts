@@ -1,7 +1,7 @@
 /**
- * dsh-connect-sensenova-token-plan — Host half (thin router).
+ * dsh-connect-agnes-token-plan — Host half (thin router).
  *
- * Reads the SenseNova Token Plan quota through the platform's own console API
+ * Reads the Agnes Token Plan quota through the platform's own console API
  * (the same endpoints the web console calls) and serves the result to the
  * Client panel over one read-only `/api` route.
  *
@@ -23,10 +23,10 @@
  * assembly, and the unmount effect — the parts that are about *this* plugin's
  * surface rather than reusable logic.
  *
- * @module dsh-connect-sensenova-token-plan
+ * @module dsh-connect-agnes-token-plan
  */
 
-import { createAuth } from "./sensenova-auth.ts";
+import { createAuth } from "./agnes-auth.ts";
 import { createTokenStore } from "./token-store.ts";
 import { createFileThrottleStore } from "./throttle-store.ts";
 import { createFileCatalogStore } from "./catalog-store.ts";
@@ -111,7 +111,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     }
   }
   // The inference API key (`sk-…`) is shared by the catalog poll and the
-  // directly-registered LLM provider. It is held as the `SENSENOVA_API_KEY`
+  // directly-registered LLM provider. It is held as the `AGNES_TOKEN_PLAN_API_KEY`
   // CREDENTIAL REFERENCE (owner-only credentials service), with the raw
   // process environment as a fallback — the value may live in
   // `~/.dsh/.credentials.yaml` alone, which a sibling shell never sees, so

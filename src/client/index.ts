@@ -1,8 +1,8 @@
 /**
- * dsh-connect-sensenova-token-plan — Client half (entry).
+ * dsh-connect-agnes-token-plan — Client half (entry).
  *
  * Registers a config card inside the Plugins page (`plugins.bundle.config`
- * slot). The card renders the SenseNova Token Plan quota pools (5h / 7d
+ * slot). The card renders the Agnes Token Plan quota pools (5h / 7d
  * windows with used/limit/percent), per-model credit consumption, and the
  * three-tab layout (quota / api / raccoon). The data comes from the Host's
  * read-only snapshot route, polled only while the card is mounted — the
@@ -11,7 +11,7 @@
  * The sources live in `src/client/*.ts` and are bundled into the root
  * `client.js` artifact by tsdown (IIFE, see `tsdown.config.mjs`); the tests
  * load the ARTIFACT, so what they exercise is what the browser runs.
- * @module dsh-connect-sensenova-token-plan/client
+ * @module dsh-connect-agnes-token-plan/client
  */
 
 /**
@@ -136,7 +136,7 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
 }
 
 /** The registration the Host loads: id plus the factory the Host materializes. */
-const REGISTRATION = { id: "dsh-connect-sensenova-token-plan", factory: clientFactory };
+const REGISTRATION = { id: "dsh-connect-agnes-token-plan", factory: clientFactory };
 
 // The bundle must load in three module worlds (the IIFE wrapper keeps the
 // top level free of import/export, so all three see the same statements):

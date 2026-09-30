@@ -8,7 +8,7 @@
  * running. It reports EFFECTIVE values ("panel-saved value beats the
  * deployment default"), never secrets.
  *
- * @module dsh-connect-sensenova-token-plan/doctor
+ * @module dsh-connect-agnes-token-plan/doctor
  */
 import { readdir, stat, readFile } from "node:fs/promises";
 import { join } from "node:path";

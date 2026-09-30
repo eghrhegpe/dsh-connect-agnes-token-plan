@@ -1,5 +1,5 @@
 /**
- * The peer-dependent half of the directly-registered SenseNova provider.
+ * The peer-dependent half of the directly-registered Agnes provider.
  *
  * Everything here runs against Host-shipped peers (`pi-ai`, `dsh-llm`,
  * `dsh-llm-pi-ai`), which is exactly why the descriptor mapping lives in the
@@ -18,7 +18,7 @@
  * - no API key baked into the profile: the picker advertises models without
  *   one and a request fails at resolve time, where the panel status is visible.
  *
- * @module dsh-connect-sensenova-token-plan/llm-adapter
+ * @module dsh-connect-agnes-token-plan/llm-adapter
  */
 import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";

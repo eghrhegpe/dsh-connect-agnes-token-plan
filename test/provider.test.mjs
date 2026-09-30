@@ -474,7 +474,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
   const restoreHome = isolateStateDir();
   let scratch = "";
   try {
-    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-sensenova-token-plan");
+    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-agnes-token-plan");
     const file = join(dir, "catalog.json");
     // 可读当前值的注入时钟：断言用「最后一次 now() 的返回值」而不是硬编码的第
     // N 次调用，免得实现里多读一次时钟就让这条断言红——行为（ stamp 了注入时钟
@@ -539,7 +539,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
   const restoreEnv = isolateHostEnv();
   const restoreHome = isolateStateDir();
   try {
-    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-sensenova-token-plan");
+    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-agnes-token-plan");
     // 手动推进的时钟：一次 tick = 600ms，刚好跨过 1000ms TTL 需要两跳。
     let t = 10_000;
     const clock = () => (t += 600);
@@ -642,7 +642,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
 
     // Seed the pre-§23 shared layout: a provider switch, a draw switch and a
     // catalog allow-list, exactly as an existing install would have them.
-    const legacyDir = join(home, "state", "dsh-connect-sensenova-token-plan");
+    const legacyDir = join(home, "state", "dsh-connect-agnes-token-plan");
     mkdirSync(legacyDir, { recursive: true });
     writeFileSync(join(legacyDir, "provider.json"),
       `${JSON.stringify({ version: PROVIDER_VERSION, enabled: true, updatedAt: "2026-01-01T00:00:00.000Z" })}\n`,
@@ -664,7 +664,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
       JSON.stringify(await webCatalog.listEnabledIds()) === JSON.stringify(["m1"]),
       JSON.stringify(await webCatalog.listEnabledIds()));
 
-    const adoptedDir = join(home, "state", "web", "dsh-connect-sensenova-token-plan");
+    const adoptedDir = join(home, "state", "web", "dsh-connect-agnes-token-plan");
     check("the inherited value was written under the profile",
       existsSync(join(adoptedDir, "provider.json")), join(adoptedDir, "provider.json"));
     // Copy, NOT move — unlike the rename adoption in store.test.mjs §16d. An
@@ -737,7 +737,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
   const restoreEnv = isolateHostEnv();
   const restoreHome = isolateStateDir();
   try {
-    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-sensenova-token-plan");
+    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-agnes-token-plan");
     const file = join(dir, "provider.json");
     const store = createFileProviderStore({ dir });
 
@@ -795,7 +795,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
   const restoreEnv = isolateHostEnv();
   const restoreHome = isolateStateDir();
   try {
-    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-sensenova-token-plan");
+    const dir = join(process.env.DSH_HOME, "state", "dsh-connect-agnes-token-plan");
     const file = join(dir, "draw.json");
     const store = createFileDrawStore({ dir });
 

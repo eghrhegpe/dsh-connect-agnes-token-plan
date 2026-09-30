@@ -9,7 +9,7 @@
  * the behavior baseline (`test/store-baseline.test.mjs`) and the 131 live
  * checks stay green, so no semantics moved, only the file did.
  *
- * @module dsh-connect-sensenova-token-plan/token-store/grant
+ * @module dsh-connect-agnes-token-plan/token-store/grant
  */
 
 import { readJwtExpiry } from "../agnes-auth.ts";

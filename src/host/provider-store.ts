@@ -21,7 +21,7 @@
  * the directory), owner-only modes, and "anything unrecognised reads as not
  * set" — a corrupted or downgraded file costs one re-toggle, never a crash.
  *
- * @module dsh-connect-sensenova-token-plan/provider-store
+ * @module dsh-connect-agnes-token-plan/provider-store
  */
 import { obj } from "./util.ts";
 import { join } from "node:path";

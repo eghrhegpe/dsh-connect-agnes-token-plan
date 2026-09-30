@@ -18,7 +18,7 @@
  *      map (pi-ai merges `model.headers` into the OpenAI client), because the
  *      gateway reads `X-Org-Code` / `X-Raccoon-Language` per request.
  *
- * @module dsh-connect-sensenova-token-plan/raccoon-models
+ * @module dsh-connect-agnes-token-plan/raccoon-models
  */
 
 import { str, num } from "./util.ts";

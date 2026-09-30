@@ -166,7 +166,7 @@ export function createAuth(overrides = {}) {
      * Agnes issues no refresh token, so there is nothing to renew with.
      *
      * Throwing the store's own `NO_REFRESH_TOKEN` code is the intended
-     * behaviour, not a stub: `acquire.ts` catches exactly this code and falls
+     * behaviour, not a stub: `token-store/acquire.ts` catches exactly this code and falls
      * through to a password login, which is the only renewal path Agnes has.
      */
     async refresh() {
@@ -209,6 +209,16 @@ export async function loginWith(
   };
   const finish = (error) => {
     try {
+      // The sanitized hop record rides on the thrown error so the route layer
+      // can persist it under its own filename and hand the panel a pointer
+      // (the same contract the OIDC module kept: `error.trace`).
+      if (error !== undefined && error !== null) {
+        try {
+          error.trace = hops;
+        } catch {
+          /* a frozen error still logs through onTrace */
+        }
+      }
       options.onTrace?.(trace.done(), error);
     } catch {
       /* logging never breaks the login */

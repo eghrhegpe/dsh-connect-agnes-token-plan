@@ -15,7 +15,7 @@
  * modes, and "anything unrecognised reads as no catalog" — a corrupted or
  * downgraded file costs one re-fetch, never a crash.
  *
- * @module dsh-connect-sensenova-token-plan/catalog-store
+ * @module dsh-connect-agnes-token-plan/catalog-store
  */
 import { rm } from "node:fs/promises";
 import { join } from "node:path";

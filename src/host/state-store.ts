@@ -23,7 +23,7 @@
  *     缓存、缓存多久由 {@link createStateReadCache} 决定，不是每个 store 各自的
  *     即兴实现。
  *
- * @module dsh-connect-sensenova-token-plan/state-store
+ * @module dsh-connect-agnes-token-plan/state-store
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";

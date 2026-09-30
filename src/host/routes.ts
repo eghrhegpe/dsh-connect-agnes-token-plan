@@ -8,7 +8,7 @@
  * peer — the only lazy peer loads (the adapter / tools modules) live in
  * `lifecycle.ts` and are injected from `apply` via `deps`.
  *
- * @module dsh-connect-sensenova-token-plan/routes
+ * @module dsh-connect-agnes-token-plan/routes
  */
 import { isAdmitted, name } from "./host-config.ts";
 import { buildSnapshotBody } from "./snapshot-aggregate.ts";

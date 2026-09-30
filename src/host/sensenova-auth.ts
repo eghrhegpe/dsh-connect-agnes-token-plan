@@ -29,7 +29,7 @@
  * - Nothing is written to disk here. The caller persists the grant through
  *   `ctx.credentials`; this module only ever holds secrets in memory.
  *
- * @module dsh-connect-sensenova-token-plan/sensenova-auth
+ * @module dsh-connect-agnes-token-plan/sensenova-auth
  */
 
 import { CODE, IAM_REASON_CODES } from "./codes.ts";

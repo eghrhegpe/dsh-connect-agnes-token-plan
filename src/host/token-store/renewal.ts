@@ -6,7 +6,7 @@
  * any `grant.ts` import (no circular dependency). The function body is
  * **verbatim**; the behavior baseline stays green.
  *
- * @module dsh-connect-sensenova-token-plan/token-store/renewal
+ * @module dsh-connect-agnes-token-plan/token-store/renewal
  */
 
 import { CODE } from "../codes.ts";

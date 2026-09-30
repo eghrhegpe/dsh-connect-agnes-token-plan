@@ -339,7 +339,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
 
   return h(
     "div",
-    { style: S.page, "data-dsh-plugin": "dsh-connect-sensenova-token-plan" },
+    { style: S.page, "data-dsh-plugin": "dsh-connect-agnes-token-plan" },
     // The bar is pinned (flex:none); everything below scrolls inside
     // `S.scroll` instead of being clipped by the shell's center column.
     h(

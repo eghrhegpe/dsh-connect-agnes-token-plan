@@ -4,7 +4,7 @@
  * These are the small "read X or fall back" primitives every module reaches
  * for. Centralising them stops copies from drifting apart the way the error-code
  * taxonomy once did.
- * @module dsh-connect-sensenova-token-plan/util
+ * @module dsh-connect-agnes-token-plan/util
  */
 
 import type { PluginError } from "./types.ts";
@@ -37,10 +37,10 @@ export function str(value: any, fallback?: any): string {
  * error message, or a panel-facing response.
  *
  * AGENTS.md's red line: "凭据不入库" — a credential never reaches a log or a
- * response. The login trace already sanitizes in `sensenova-auth.ts`; this is
+ * response. The login trace already sanitizes in `Agnes-auth.ts`; this is
  * the counterpart for the LLM route, where an HTTP error object's `message`
  * often embeds the request headers it was built from (axios/fetch errors do),
- * and a SenseNova 4xx body may echo the `sk-` key back. Without this gate a
+ * and a Agnes 4xx body may echo the `sk-` key back. Without this gate a
  * registration failure would leak the key through `providerState.error` and
  * `ctx.logger.warn`.
  * @param {string} text - any string that might carry a credential.
@@ -57,7 +57,7 @@ export function redactSecrets(text) {
       .replace(/(["']?[Aa]uthorization["']?\s*[:=]\s*["']?)(?!Bearer\s)[^"',;\s]+/g, "$1[REDACTED]")
       // 2) Bearer / Basic tokens.
       .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [REDACTED]")
-      // 3) Bare SenseNova inference keys, e.g. sk-a1b2c3... (long alnum + - _ .)
+      // 3) Bare Agnes inference keys, e.g. sk-a1b2c3... (long alnum + - _ .)
       .replace(/\bsk-[A-Za-z0-9._-]{8,}/g, "sk-[REDACTED]")
       // 4) Known secret JSON pairs, quoted: {"api_key":"..."}.
       .replace(/(["']?(?:password|access_token|refresh_token|api[_-]?key|token)["']?\s*:\s*["'])[^"']+(?=["'])/gi, "$1[REDACTED]")

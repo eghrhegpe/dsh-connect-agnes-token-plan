@@ -16,14 +16,14 @@
  * Peer-free discipline: no Host peer is imported here. The only lazy peer
  * loads (the adapter / tools modules) are injected from `apply` via `deps`.
  *
- * @module dsh-connect-sensenova-token-plan/lifecycle
+ * @module dsh-connect-agnes-token-plan/lifecycle
  */
 import { defineDrawTool } from "./draw.ts";
 import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.ts";
 import { name } from "./host-config.ts";
 
 /**
- * Register the `sensenova_draw_image` agent tool (ARCHITECTURE.md §5.4,
+ * Register the `agnes_draw_image` agent tool (ARCHITECTURE.md §5.4,
  * route B). Opt-in (`drawEnabled`, default off) and doubly degraded — a Host
  * with no tools service never sees it, and a peer that fails to load leaves
  * the panel and the provider untouched. Named as a separate export so a test
@@ -123,7 +123,7 @@ export function startSideEffects(ctx, wiring, side) {
   // ------------------------------------------------------------------
   // Vision step two (ARCHITECTURE.md §5.1): publish which of this key's
   // models take image input into THIS row's own settings namespace, for
-  // a later LLM connect plugin (dsh-provider-sensenova, etc.) to read.
+  // a later LLM connect plugin (dsh-provider-Agnes, etc.) to read.
   //
   // The write goes to this plugin's settings row ONLY - never another
   // provider's `imageModelIds` - so a miscalculated model list can only

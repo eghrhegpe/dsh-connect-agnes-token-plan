@@ -1,6 +1,6 @@
-# dsh-connect-sensenova-token-plan — the bundle's own patch layer.
+# dsh-connect-agnes-token-plan — the bundle's own patch layer.
 #
-# Reads the SenseNova Token Plan quota through the console API and shows it in
+# Reads the Agnes Token Plan quota through the console API and shows it in
 # a config card on the Plugins page (`plugins.bundle.config` slot) — not in the
 # sidebar. Everything below is plain configuration: edit it here (or
 # override the same id in the profile's cordis.patch.yml) and reinstall/reload.
@@ -9,11 +9,13 @@
 # the Host logs in, keeps the account in the DSH credentials, and renews the
 # token on its own from then on. See README.md.
 - insert:
-    - id: dsh-connect-sensenova-token-plan
-      name: dsh-connect-sensenova-token-plan
+    - id: dsh-connect-agnes-token-plan
+      name: dsh-connect-agnes-token-plan
       config:
-        # Console origin. Override if you use a mirror or proxy.
-        consoleBase: https://platform.sensenova.cn
+        # Console origin (the BACKEND host, not the console front-end: the
+        # front-end origin serves /api/* as a Next.js 404 shell). Override if
+        # you use a mirror or proxy.
+        consoleBase: https://platform-backend.agnes-ai.cn
         # The OpenAI-compatible API base, used only for the optional model
         # catalog (which models a pool can call). Leave it alone unless the
         # platform moves the endpoint.

@@ -1,5 +1,5 @@
 /**
- * The directly-registered SenseNova provider's request-retry policy — the
+ * The directly-registered Agnes provider's request-retry policy — the
  * peer-FREE half of the 429 self-healing work.
  *
  * Why a separate, peer-free module: the policy is handed to the Host's
@@ -9,7 +9,7 @@
  * where the peer is not resolvable. Keeping the config here means
  * `test/retry.test.mjs` can pin its shape without importing `@deepseek-ai/dsh-llm`.
  *
- * The peer already classifies a SenseNova 429 into two codes (verified in the
+ * The peer already classifies a Agnes 429 into two codes (verified in the
  * 429 spike, `dsh-llm-pi-ai/lib/indexts` `classifyPiAiError`):
  *
  *   - `QUOTA` / `ACCOUNT_QUOTA` — the Token Plan pool is depleted. Retrying
@@ -20,12 +20,12 @@
  *   - `RATE_LIMIT` — a transient throttle that clears on its own. The peer
  *     retries this by default, and we keep doing so, with a backoff biased
  *     longer than default so an immediate re-hit against the one shared pool
- *     is less likely. SenseNova's daytime rate ceiling (rpm/tpm) is aggressive
+ *     is less likely. Agnes's daytime rate ceiling (rpm/tpm) is aggressive
  *     (see `llm-error-fix.ts`: its `quota_exceeded_error` code 8 is actually a
  *     per-minute rate cap), so we ride it out with more attempts and a gentler
  *     initial step than the peer default.
  *
- * @module dsh-connect-sensenova-token-plan/llm-retry
+ * @module dsh-connect-agnes-token-plan/llm-retry
  */
 
 /**
@@ -83,7 +83,7 @@ export function retryableCodes() {
  * We pin it explicitly rather than passing `undefined` so a future change to
  * the peer's default policy cannot silently alter this provider's behaviour.
  *
- * Tuned for SenseNova's daytime rate ceiling (rpm/tpm), which the peer mislabels
+ * Tuned for Agnes's daytime rate ceiling (rpm/tpm), which the peer mislabels
  * as `QUOTA` — `llm-error-fix.ts` pulls those back to `RATE_LIMIT` so they
  * reach this policy. The numbers: more attempts (8) and a gentler, longer
  * backoff than the peer default (initial 1.5s → cap 20s, jitter 0.25) so a

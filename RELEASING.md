@@ -1,6 +1,6 @@
 # 发布流程（Release Flow）
 
-> 本文档是 `dsh-connect-sensenova-token-plan` 的**唯一权威发布流程**。发布前请通读一遍。
+> 本文档是 `dsh-connect-agnes-token-plan` 的**唯一权威发布流程**。发布前请通读一遍。
 >
 > **先讲清一个常见误解**：本仓库**没有 release 自动化**——`.github/workflows/` 里只有 `ci.yml`（跑测试）。
 > 你在 GitHub Releases 页面看到的「更新日记框」是**手动** `gh release create` 出来的，CI 不会、npm 成功也不会自动建。
@@ -10,7 +10,7 @@
 
 - `gh` 已登录且带 `repo` 权限：`gh auth status` 应显示 `Logged in to github.com account eghrhegpe`、scope 含 `repo`。
 - npm 已登录：**本机默认 registry 是 npmmirror 镜像**，发布与登录都必须显式带 `--registry=https://registry.npmjs.org`（见 `docs/CONTRIBUTING.md` §8）。先 `npm whoami --registry=https://registry.npmjs.org` 确认账号已登录。
-- 仓库：`https://github.com/eghrhegpe/dsh-connect-sensenova-token-plan`（默认分支 `main`）。
+- 仓库：`https://github.com/eghrhegpe/dsh-connect-agnes-token-plan`（默认分支 `main`）。
 - 本地 `main` 与远端同步，且**工作树处于干净、可发布状态**（见下方「并行会话纪律」）。
 
 ## 每次发布的完整步骤
@@ -84,21 +84,21 @@ git push origin vX.Y.Z
 
 ### 5. 发布到 npm
 
-> 本插件经 npm 分发（DSH 插件页从 npm 拉取 `dsh-connect-sensenova-token-plan`），**npm 发布是发版的必走步骤**，不是可选项。GitHub Release（第 6 步）与 npm 包是两条独立通道，任一成功都不会自动触发另一条。
+> 本插件经 npm 分发（DSH 插件页从 npm 拉取 `dsh-connect-agnes-token-plan`），**npm 发布是发版的必走步骤**，不是可选项。GitHub Release（第 6 步）与 npm 包是两条独立通道，任一成功都不会自动触发另一条。
 
 ```bash
 # 本机默认 registry 是 npmmirror 镜像，发布必须显式指向 npmjs，否则发到镜像或读缓存旧版
 npm publish --registry=https://registry.npmjs.org
 
 # 验证（必须带同样的 --registry，否则读到的是镜像缓存的旧版）
-npm view dsh-connect-sensenova-token-plan version --registry=https://registry.npmjs.org
+npm view dsh-connect-agnes-token-plan version --registry=https://registry.npmjs.org
 # 应显示 X.Y.Z，且与第 2 步 package.json 升的版本一致
 ```
 
 - **已发布版本不可覆盖**：发新版前必须在第 2 步先升 `package.json` 的 `version`，再 `npm publish`；直接对已有版本号发布会报错。
 - `package.json` 的 `files` 字段已限定发布内容，测试与 `node_modules/` 不会进包。
 - 发布前可用 `npm pack --dry-run` 预览 tarball 内容。
-- **（可选，与发版解耦）收录到插件市场**：向 `awesome-dsh-plugin/awesome-dsh-plugin` 提 PR 增加 `data/plugins/eghrhegpe__dsh-connect-sensenova-token-plan.yml`（描述只能陈述功能、不带营销词），详情见 `docs/CONTRIBUTING.md` §8。列表会按下载量自动关联本仓库，yml 里无需任何 npm 字段。
+- **（可选，与发版解耦）收录到插件市场**：向 `awesome-dsh-plugin/awesome-dsh-plugin` 提 PR 增加 `data/plugins/eghrhegpe__dsh-connect-agnes-token-plan.yml`（描述只能陈述功能、不带营销词），详情见 `docs/CONTRIBUTING.md` §8。列表会按下载量自动关联本仓库，yml 里无需任何 npm 字段。
 
 ### 6. 创建 GitHub Release（**最容易漏，务必做**）
 
@@ -156,7 +156,7 @@ gh release view vX.Y.Z --json name,tagName,isDraft,isPrerelease,assets
 - **`gh` 报 `HTTP 403` / `Resource not accessible`**：token 缺 `repo` scope。`gh auth status` 确认 scopes；需要时 `gh auth refresh -s repo`。
 - **发布后才发现 tag 落后于 HEAD**（`git log --oneline vX.Y.Z..HEAD` 有输出）：**不要**动 tag。既然该版本已在 npm / Release 上，正确动作是**开下一个版本**（升 `package.json` → 新 CHANGELOG 节 → 提交 → 打新 tag → publish → 建 Release），让漏掉的提交随新版到达用户。已发布版本的内容是既成事实，改 tag 只会制造「tag 说什么 ≠ npm 装到什么」的错位。
 - **修好的文档用户看不到**：README / `cordis.patch.yml` 都在 `files` 白名单里，随包发布。改完仓库里的 README **不代表**用户读到的是新版——验证方式：
-  `npm view dsh-connect-sensenova-token-plan readme --registry=https://registry.npmjs.org | grep -c '<你刚加的关键词>'`
+  `npm view dsh-connect-agnes-token-plan readme --registry=https://registry.npmjs.org | grep -c '<你刚加的关键词>'`
   返回 0 就说明还停在上一版，需要发新版才会生效。
 - **发布提交不小心卷走了别人的改动**：回退用 `git reset --soft HEAD~1`（仅撤提交保留文件改动），重新按「1.5 并行会话纪律」只 `git add` 自己的文件再提交；已 push 的先用 `git push --force-with-lease` 谨慎修正（仅限自己未与他人共享的分支/tag）。
-- **npm 包 / `dsh plugin add` 还没刷到新版本**：确认第 5 步 `npm publish --registry=https://registry.npmjs.org` 已成功，且 `npm view dsh-connect-sensenova-token-plan version --registry=https://registry.npmjs.org` 已显示 X.Y.Z（带同样的 `--registry`，否则读到镜像缓存旧版）。GitHub Release 与 npm 包是两条独立通道，建了 Release 不等于发了包。
+- **npm 包 / `dsh plugin add` 还没刷到新版本**：确认第 5 步 `npm publish --registry=https://registry.npmjs.org` 已成功，且 `npm view dsh-connect-agnes-token-plan version --registry=https://registry.npmjs.org` 已显示 X.Y.Z（带同样的 `--registry`，否则读到镜像缓存旧版）。GitHub Release 与 npm 包是两条独立通道，建了 Release 不等于发了包。

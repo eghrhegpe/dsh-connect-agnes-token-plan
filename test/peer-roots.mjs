@@ -152,7 +152,7 @@ export function isolateHostEnv(keys = ["SENSENOVA_API_KEY", "AGNES_USERNAME", "A
  */
 export function isolateStateDir() {
   const saved = process.env.DSH_HOME;
-  const dir = mkdtempSync(join(tmpdir(), "dsh-connect-sensenova-token-plan-state-"));
+  const dir = mkdtempSync(join(tmpdir(), "dsh-connect-agnes-token-plan-state-"));
   process.env.DSH_HOME = dir;
   return () => {
     if (saved === undefined) delete process.env.DSH_HOME;

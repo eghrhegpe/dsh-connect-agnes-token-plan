@@ -21,7 +21,7 @@
  * (a Host with no credentials service). A `null` credentials service leaves
  * the credential in-memory only, so it is `ephemeral` (mirrors token-store).
  *
- * @module dsh-connect-sensenova-token-plan/raccoon-store
+ * @module dsh-connect-agnes-token-plan/raccoon-store
  */
 
 import { obj, str, verbatim } from "./util.ts";

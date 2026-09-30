@@ -18,12 +18,12 @@
 
 | target 形态 | 值 | 适用场景 |
 |---|---|---|
-| npm 包名（推荐） | `dsh-connect-sensenova-token-plan`（可钉版本，如 `dsh-connect-sensenova-token-plan@0.2.0`） | 普通用户，无需 clone |
-| git 地址 | `https://github.com/eghrhegpe/dsh-connect-sensenova-token-plan` | 不经 registry 直接装 |
-| 本地路径 | 本检出目录的绝对路径（如 `~\.dsh\plugins\dsh-connect-sensenova-token-plan`） | 开发调试 |
+| npm 包名（推荐） | `dsh-connect-agnes-token-plan`（可钉版本，如 `dsh-connect-agnes-token-plan@0.2.0`） | 普通用户，无需 clone |
+| git 地址 | `https://github.com/eghrhegpe/dsh-connect-agnes-token-plan` | 不经 registry 直接装 |
+| 本地路径 | 本检出目录的绝对路径（如 `~\.dsh\plugins\dsh-connect-agnes-token-plan`） | 开发调试 |
 
 ```powershell
-plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-plan" }
+plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan" }
 ```
 
 - npm 形态装的是预构建 tarball：本包无安装脚本、无打包依赖（DSH 运行时走 peer，由 Host 提供），不需要 `allowBuilds` 构建授权；
@@ -39,7 +39,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 
 ## 3. 配置
 
-配置面就是本目录的 **`cordis.patch.yml`**，改完重新安装 / 重载生效；也可在 profile 的 `cordis.patch.yml` 里用 `- id: dsh-connect-sensenova-token-plan` 覆盖同名字段。
+配置面就是本目录的 **`cordis.patch.yml`**，改完重新安装 / 重载生效；也可在 profile 的 `cordis.patch.yml` 里用 `- id: dsh-connect-agnes-token-plan` 覆盖同名字段。
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
@@ -80,7 +80,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 自查是否跑的是新代码——看快照接口的返回：
 
 ```powershell
-(Invoke-RestMethod http://127.0.0.1:19387/api/dsh-connect-sensenova-token-plan/snapshot).auth
+(Invoke-RestMethod http://127.0.0.1:19387/api/dsh-connect-agnes-token-plan/snapshot).auth
 ```
 
 - 有 `auth` 字段 → 新代码在跑；

@@ -125,6 +125,24 @@ const server = createServer(async (req, res) => {
   // instead of guessed at.
   process.stdout.write(`fake: ${req.method} ${path}\n`);
 
+  if (path === "/api/user/login") {
+    // Agnes's whole login flow: one email + password POST answering with a
+    // single access_token (no OIDC walk, no refresh token). The password
+    // travels in the clear over TLS, so the fake reads it straight off the
+    // body — there is no JWE to open on this platform.
+    log.iam += 1;
+    let parsed = {};
+    try { parsed = JSON.parse(body); } catch { /* refusal below */ }
+    seen.username = typeof parsed.username === "string" ? parsed.username : null;
+    seen.password = typeof parsed.password === "string" ? parsed.password : null;
+    process.stdout.write(`fake: login username=${seen.username} password=${JSON.stringify(seen.password)}\n`);
+    if (seen.password !== PASSWORD) {
+      log.badPassword += 1;
+      // Agnes's own refusal, verbatim: a bad pair answers exactly this.
+      return json(res, 401, { code: 401, message: "Invalid username or password", data: null });
+    }
+    return json(res, 200, { code: 200, message: "ok", data: { access_token: freshJwt(), user: { id: 1 } } });
+  }
   if (path === "/.well-known/jwks.json") {
     log.jwks += 1;
     return json(res, 200, { keys: [{ ...jwk, kid: "public:hydra.openid.id-token", use: "sig" }] });

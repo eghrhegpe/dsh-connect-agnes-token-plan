@@ -15,7 +15,7 @@
  * so the offline suites can substitute a fake factory without touching the
  * Host's node_modules.
  *
- * @module dsh-connect-sensenova-token-plan/provider-publish
+ * @module dsh-connect-agnes-token-plan/provider-publish
  */
 
 import { LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.ts";

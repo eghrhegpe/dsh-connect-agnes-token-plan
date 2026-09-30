@@ -6,7 +6,7 @@
  * also how the Host stays off the platform's own rate limiter. Cached responses
  * age out on their own TTL, and a safety sweep drops anything older than the
  * longest TTL so the map never grows without bound.
- * @module dsh-connect-sensenova-token-plan/console-client
+ * @module dsh-connect-agnes-token-plan/console-client
  */
 
 import { CODE } from "./codes.ts";
@@ -108,7 +108,7 @@ export async function fetchConsole(settings, path, params, cacheMs, cache, infli
  * @param cacheMs - how long to keep the response (long: the catalog is stable).
  * @param cache - the cache map to use.
  * @param inflight - the in-flight map to share requests through.
- * @param apiKey - the SenseNova API key.
+ * @param apiKey - the Agnes API key.
  */
 export async function fetchModelCatalog(settings, cacheMs, cache, inflight, apiKey) {
   const url = `${settings.apiBase}/models`;

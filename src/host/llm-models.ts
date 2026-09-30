@@ -1,6 +1,6 @@
 /**
  * Catalog entry -> pi-ai model descriptor mapping — the pure half of the
- * directly-registered SenseNova LLM provider ("one-stop service", step three).
+ * directly-registered Agnes LLM provider ("one-stop service", step three).
  *
  * This module deliberately imports NO runtime peer (`@earendil-works/pi-ai`,
  * `@deepseek-ai/dsh-llm-pi-ai`): it builds plain objects only, so the mapping
@@ -13,13 +13,13 @@
  * 1. `compat.supportsDeveloperRole: false`. pi-ai picks the system-prompt role
  *    as `reasoning && supportsDeveloperRole ? "developer" : "system"`, and when
  *    the flag is unset it AUTO-DETECTS, returning true for anything that does
- *    not look like a known non-standard provider. SenseNova's direct endpoint
+ *    not look like a known non-standard provider. Agnes's direct endpoint
  *    does not speak the developer role, so an unset flag makes every request
  *    403 forever. Setting it false is the fix the qoder route proved necessary.
  * 2. No `maxTokens` VALUE is declared. A declared value becomes the output
  *    ceiling and pi-ai sends it as `max_tokens`, truncating long replies with
  *    `finish: max-tokens`. Only the field NAME (`max_tokens`) is pinned.
- * 3. `reasoning: true` + a `thinkingLevelMap`. Every SenseNova chat model
+ * 3. `reasoning: true` + a `thinkingLevelMap`. Every Agnes chat model
  *    advertises `supported_features: ["reasoning"]` and thinks by default
  *    (verified 2026-09-29: default reasoning_effort high, thinking text
  *    returned as `reasoning` on flash-lite and `reasoning_content` on
@@ -30,7 +30,7 @@
  *    `minimal: null` (unverified on this gateway), and `max` only on glm-5.2
  *    (probed 200; rejected 400 on flash-lite / deepseek-v4-flash).
  *
- * @module dsh-connect-sensenova-token-plan/llm-models
+ * @module dsh-connect-agnes-token-plan/llm-models
  */
 
 import { str, num } from "./util.ts";
@@ -71,7 +71,7 @@ export function exhaustedModelIds(pools) {
 /**
  * The provider id this plugin registers under.
  *
- * It must NOT be the bare `"sensenova"`: a hand-written `llm-pi-ai` row using
+ * It must NOT be the bare `"Agnes"`: a hand-written `llm-pi-ai` row using
  * that id can already exist in an operator's profile (apiKeyEnv
  * `AGNES_TOKEN_PLAN_API_KEY`, base `https://api.agnes-ai.cn/v1`), and
  * `registerAdapter` with a colliding id is refused as a duplicate. This own
@@ -95,7 +95,7 @@ export const DEFAULT_REASONING_EFFORT = "high";
 /**
  * Per-token prices are unknowable for a quota plan; report zero everywhere.
  *
- * ⚠️ The zeros are a SENTINEL, not "free". SenseNova Token Plan is a credit
+ * ⚠️ The zeros are a SENTINEL, not "free". Agnes Token Plan is a credit
  * pool billed by pool usage, so a per-token USD price simply does not exist on
  * this route — but the model still burns credits. A panel row showing
  * "$0.00" is describing "no per-token price known", never "this model costs
@@ -111,7 +111,7 @@ export const NO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheW
  * pi-ai's options builder does arithmetic on `model.contextWindow`, so an
  * undefined value behaves like zero rather than "unknown" and breaks max-token
  * calculation; the qoder route therefore always supplies a positive number.
- * 128k is the conservative SenseNova-family default; a catalog field that
+ * 128k is the conservative Agnes-family default; a catalog field that
  * states a real window always wins.
  */
 export const FALLBACK_CONTEXT_WINDOW = 128_000;
@@ -121,7 +121,7 @@ export const FALLBACK_CONTEXT_WINDOW = 128_000;
  *
  * `context_length` is the field the platform actually emits (verified against
  * the live catalog, 2026-09); the other spellings are kept as fallbacks in
- * case the platform ever reverts to a different name. SenseNova's `/v1/models`
+ * case the platform ever reverts to a different name. Agnes's `/v1/models`
  * entries are kept whole by `console-client.ts`, so a field the platform adds
  * later needs no parser change here — only its name has to be added to this
  * list.
@@ -159,8 +159,8 @@ export function maxOutputLengthOf(entry) {
  * Whether a catalog entry can be addressed as a CHAT model on this provider's
  * OpenAI-compatible endpoint.
  *
- * The catalog also lists image GENERATION models (`sensenova-u1-fast`,
- * `sensenova-u1.5-lite`): their `output_modalities` includes `"image"` (or `"video"`) and they
+ * The catalog also lists image GENERATION models (`Agnes-u1-fast`,
+ * `Agnes-u1.5-lite`): their `output_modalities` includes `"image"` (or `"video"`) and they
  * answer 404 "model is not found" on `/v1/chat/completions` (verified
  * 2026-09-29), so offering them as chat models only produces errors in DSH.
  * A missing/unknown `output_modalities` is treated as chat (permissive): the
@@ -181,7 +181,7 @@ export function isChatModel(entry) {
  * DSH's picker offers levels from `getSupportedThinkingLevels(model)`
  * (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`), and pi-ai's
  * openai-completions dispatch sends `reasoning_effort = map[level] ?? level`.
- * SenseNova's OpenAI-compat gateway accepts `none`/`low`/`medium`/`high`/
+ * Agnes's OpenAI-compat gateway accepts `none`/`low`/`medium`/`high`/
  * `xhigh` on every chat model, rejects `off` (the OpenAI spelling) and
  * `minimal`, and rejects `max` everywhere except glm-5.2 (all probed
  * 2026-09-29; the platform's own error lists `low, medium, high, xhigh,
@@ -203,7 +203,7 @@ export function isChatModel(entry) {
  */
 /**
  * Per-model 思考档位 probe table (frozen 2026-09-29, mirrored from
- * `test/baselines/sensenova-contract.json` §reasoningEffort).
+ * `test/baselines/Agnes-contract.json` §reasoningEffort).
  *
  * The baseline records which `reasoning_effort` values the platform
  * answered 200 for per model:
@@ -212,7 +212,7 @@ export function isChatModel(entry) {
  *   - `xhigh` — ONLY probed 200 on deepseek-v4-flash;
  *   - `max`   — ONLY probed 200 on glm-5.2;
  *   - `low` / `medium` — 2026-09-30 live-contract replay probed 200 on
- *     sensenova-6.8-flash-lite / deepseek-v4-flash / glm-5.2 (both) and on
+ *     Agnes-6.8-flash-lite / deepseek-v4-flash / glm-5.2 (both) and on
  *     deepseek-flash's `medium` (its `low` cell is still INDEFINITE — the
  *     probe hit a 429 rpm window, not a 400, so it is "not measured" not
  *     "unsupported"); deepseek-v4-pro's low/medium are also INDEFINITE for
@@ -233,7 +233,7 @@ export function isChatModel(entry) {
 const PROBED_EFFORT = Object.freeze({
   "deepseek-v4-flash": { low: true, medium: true, high: true, xhigh: true, max: false },
   "glm-5.2":           { low: true, medium: true, high: true, xhigh: false, max: true },
-  "sensenova-6.8-flash-lite": { low: true, medium: true, high: true, xhigh: false, max: false },
+  "Agnes-6.8-flash-lite": { low: true, medium: true, high: true, xhigh: false, max: false },
   "deepseek-v4-pro":   { low: false, medium: false, high: true, xhigh: false, max: false },
   // deepseek-flash: medium probed 200; low is INDEFINITE (429, re-run
   // pending) so it stays closed — "not measured" is not "supported".
@@ -325,7 +325,7 @@ export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
     // Vision is automatic: the catalog's modality field decides, the user does
     // not configure it per model.
     input: vision ? ["text", "image"] : ["text"],
-    // Every SenseNova chat model thinks by default and advertises
+    // Every Agnes chat model thinks by default and advertises
     // `supported_features: ["reasoning"]`; see the module header (decision 3)
     // for why the flag is true and what the map pins.
     reasoning: true,

@@ -25,7 +25,6 @@ import { fileURLToPath } from "node:url";
 import {
   createTokenStore,
   RECORD_SCOPE,
-  LEGACY_SCOPE,
   RECORD_ID,
   THROTTLE_ID,
   USERNAME_REF,
@@ -43,9 +42,7 @@ const T0 = 1_000_000_000_000;
 const SKEW_MS = 120_000;
 
 const GRANT_KEY = `${RECORD_SCOPE}/${RECORD_ID}`;
-const LEGACY_GRANT_KEY = `${LEGACY_SCOPE}/${RECORD_ID}`;
 const THROTTLE_KEY_RAW = `${RECORD_SCOPE}/${THROTTLE_ID}`;
-const LEGACY_THROTTLE_KEY_RAW = `${LEGACY_SCOPE}/${THROTTLE_ID}`;
 
 // ---------------------------------------------------------------- fixtures
 
@@ -130,7 +127,6 @@ function makeAuth(script, events) {
 
 function normKey(k) {
   return String(k)
-    .split(LEGACY_SCOPE).join("$LEGACY")
     .split(RECORD_SCOPE).join("$SCOPE")
     // THROTTLE_ID contains RECORD_ID as a prefix, so replace it first.
     .split(THROTTLE_ID).join("$THROTTLE")
@@ -235,9 +231,7 @@ async function runScenario(def) {
     advance,
     frame,
     GRANT_KEY,
-    LEGACY_GRANT_KEY,
     THROTTLE_KEY: THROTTLE_KEY_RAW,
-    LEGACY_THROTTLE_KEY: LEGACY_THROTTLE_KEY_RAW,
     grant,
     legacyThrottleRecord,
     failure,
@@ -437,36 +431,6 @@ define("S8 invalidated token is renewed once, never replayed", async ({ frame, s
   await frame("invalidate marks that token refused", () => s.invalidate("AT1"), deps);
   await frame("next getToken renews instead of replaying it", () => s.getToken(), deps);
   await frame("following getToken is served from cache", () => s.getToken(), deps);
-});
-
-// S9a — [migration] a grant saved under the pre-rename namespace is adopted
-// once: rewritten at the current address, deleted at the old one.
-define("S9a legacy grant is adopted and the old record deleted", async ({ frame, service, throttle, auth, store, grant, LEGACY_GRANT_KEY, T0 }) => {
-  const svc = service({ [LEGACY_GRANT_KEY]: grant("AT1", "RT1", T0 + 10_000_000) });
-  const thr = throttle();
-  const a = auth({});
-  const s = store({ service: svc, auth: a, env: {}, throttleStore: thr });
-  const deps = { service: svc, throttleStore: thr };
-  await frame("state adopts the legacy grant on first read", () => s.state(), deps);
-  await frame("getToken serves the adopted grant with no auth call", () => s.getToken(), deps);
-});
-
-// S9b — [migration] a parked throttle smuggled into the credentials service
-// is adopted into the throttle store. The first matching candidate wins;
-// the other address is swept later by clearThrottle on resubmit.
-define("S9b legacy parked throttle is adopted then swept on resubmit", async ({ frame, service, throttle, auth, store, legacyThrottleRecord, THROTTLE_KEY, LEGACY_THROTTLE_KEY }) => {
-  const svc = service({
-    [THROTTLE_KEY]: legacyThrottleRecord("login_rejected", true, 3),
-    [LEGACY_THROTTLE_KEY]: legacyThrottleRecord("verification_required", true, 2)
-  });
-  const thr = throttle();
-  const a = auth({ login: async () => ({ accessToken: "AT1", refreshToken: "RT1", expiresIn: 10800 }) });
-  const s = store({ service: svc, auth: a, env: {}, throttleStore: thr });
-  const deps = { service: svc, throttleStore: thr };
-  await frame("getToken adopts the current-address park and refuses", () => s.getToken(), deps);
-  await frame("state keeps the park; the other legacy record waits for sweep", () => s.state(), deps);
-  await frame("saveAccount with the correct password sweeps both legacy records", () => s.saveAccount({ username: "alice", password: "pw" }), deps);
-  await frame("state after resubmit", () => s.state(), deps);
 });
 
 // S9c — [migration] a password a previous version persisted in the

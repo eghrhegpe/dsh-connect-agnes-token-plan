@@ -4,7 +4,7 @@
  * Before this module the same codes were spelled out in three places, and the
  * three copies disagreed:
  *
- * - `sensenova-auth.ts` PRODUCED them (its `IAM_REASON_CODES` table);
+ * - `Agnes-auth.ts` PRODUCED them (its `IAM_REASON_CODES` table);
  * - `token-store.ts` kept its own list of the ones that describe a bad
  *   credential (`CREDENTIAL_REFUSALS`);
  * - `index.ts` kept a third list of the ones that mean "we never got a token"
@@ -20,7 +20,7 @@
  * it is a credential refusal or it is not, and it is an auth failure or it is
  * not, and both are decided in the same place the code is named.
  *
- * @module dsh-connect-sensenova-token-plan/codes
+ * @module dsh-connect-agnes-token-plan/codes
  */
 
 /**
@@ -78,7 +78,7 @@ export const CODE = Object.freeze({
  * IAM answers with a `google.rpc.Status` envelope whose real cause sits in
  * `details[].reason` (`invalidAccountOrPassword`, `accountLocked`,
  * `tooManyAttempts`, …). Matching that code exactly — and treating the
- * substring scan in `sensenova-auth.ts` as a fallback for a reason this table
+ * substring scan in `Agnes-auth.ts` as a fallback for a reason this table
  * has not learned yet — is the difference between a reworded message and a
  * silently reclassified lockout.
  *

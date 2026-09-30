@@ -22,7 +22,7 @@
  * (`test/store-baseline.test.mjs`) and the 131 live checks stay green —
  * no semantics moved, only the names did.
  *
- * @module dsh-connect-sensenova-token-plan/token-store/state
+ * @module dsh-connect-agnes-token-plan/token-store/state
  */
 
 import { createAuth } from "../agnes-auth.ts";

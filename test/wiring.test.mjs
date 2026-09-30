@@ -214,7 +214,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   // `auth.*` overrides are the lower-level ones `createAuth` also accepts.
   const { webServer, stop } = await bootPlugin({ config: { consoleBase: "not-a-url" } });
   const res = response();
-  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/snapshot")(request(), res);
+  await webServer.registered.get("/api/dsh-connect-agnes-token-plan/snapshot")(request(), res);
   // A malformed override must fail loudly: the alternative is a baffling
   // network error on every poll, with nothing saying why.
   check("a malformed endpoint is reported as a config error",
@@ -237,7 +237,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     config: { consoleBase: "http://127.0.0.1:19399", auth: { iamBase: "http://127.0.0.1:19399" } }
   });
   const res = response();
-  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/snapshot")(request(), res);
+  await webServer.registered.get("/api/dsh-connect-agnes-token-plan/snapshot")(request(), res);
   check("a nested auth block is reported as a config error",
     res.payload?.ok === false && res.payload?.code === "config_error",
     JSON.stringify(res.payload ?? {}).slice(0, 140));
@@ -247,7 +247,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   // The panel must still mount and still answer: an operator who misconfigured
   // a key needs to be told, not left with a plugin that vanished.
   check("the plugin still mounts despite the bad row",
-    webServer.registered.has("/api/dsh-connect-sensenova-token-plan/snapshot"));
+    webServer.registered.has("/api/dsh-connect-agnes-token-plan/snapshot"));
   await stop();
 }
 
@@ -257,13 +257,13 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   check("the plugin declares the services it needs", Array.isArray(host.inject) && host.inject.includes("webServer"),
     JSON.stringify(host.inject));
   const routes = [
-    "/api/dsh-connect-sensenova-token-plan/snapshot",
-    "/api/dsh-connect-sensenova-token-plan/account",
-    "/api/dsh-connect-sensenova-token-plan/api-key",
-    "/api/dsh-connect-sensenova-token-plan/provider",
-    "/api/dsh-connect-sensenova-token-plan/models",
-    "/api/dsh-connect-sensenova-token-plan/draw",
-    "/api/dsh-connect-sensenova-token-plan/raccoon"
+    "/api/dsh-connect-agnes-token-plan/snapshot",
+    "/api/dsh-connect-agnes-token-plan/account",
+    "/api/dsh-connect-agnes-token-plan/api-key",
+    "/api/dsh-connect-agnes-token-plan/provider",
+    "/api/dsh-connect-agnes-token-plan/models",
+    "/api/dsh-connect-agnes-token-plan/draw",
+    "/api/dsh-connect-agnes-token-plan/raccoon"
   ];
   check("all seven routes are registered on mount",
     routes.every((path) => webServer.registered.has(path)),
@@ -279,7 +279,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // === B. the routes answer through the container, not a stub ==============
 {
   const { webServer, stop } = await bootPlugin();
-  const handler = webServer.registered.get("/api/dsh-connect-sensenova-token-plan/snapshot");
+  const handler = webServer.registered.get("/api/dsh-connect-agnes-token-plan/snapshot");
   const res = response();
   // No account is configured, so this is the not_configured path — the one
   // that carries the `auth` block the panel needs to reach the form.
@@ -306,7 +306,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // === C. a cross-origin request is refused at the real seam ===============
 {
   const { webServer, stop } = await bootPlugin();
-  const handler = webServer.registered.get("/api/dsh-connect-sensenova-token-plan/account");
+  const handler = webServer.registered.get("/api/dsh-connect-agnes-token-plan/account");
   const res = response();
   await handler({ method: "POST", headers: { host: "127.0.0.1:19387", origin: "https://evil.test" } }, res);
   check("a cross-origin request is refused", res.statusCode === 403, String(res.statusCode));
@@ -329,9 +329,9 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 {
   const { webServer, stop } = await bootPlugin({ withCredentials: false });
   check("the plugin activates without the credentials service",
-    webServer.registered.has("/api/dsh-connect-sensenova-token-plan/snapshot"));
+    webServer.registered.has("/api/dsh-connect-agnes-token-plan/snapshot"));
   const res = response();
-  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/snapshot")(request(), res);
+  await webServer.registered.get("/api/dsh-connect-agnes-token-plan/snapshot")(request(), res);
   check("it reports the account as needed", res.payload?.auth?.needsAccount === true,
     JSON.stringify(res.payload?.auth));
   // With no service to hold it, the account would not survive a restart, and
@@ -363,7 +363,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     Array.isArray(llm.calls.lastIds) && llm.calls.lastIds[0] === "agnes-token-plan",
     JSON.stringify(llm.calls.lastIds));
   check("the directory row names this plugin's settings namespace",
-    llm.calls.lastRows?.[0]?.settingsNs === "dsh-connect-sensenova-token-plan" &&
+    llm.calls.lastRows?.[0]?.settingsNs === "dsh-connect-agnes-token-plan" &&
     llm.calls.lastRows[0]?.declared === false,
     JSON.stringify(llm.calls.lastRows));
   check("the adapter was built for apiBase with the key resolver seam",
@@ -372,7 +372,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     JSON.stringify({ builds: de.builds.length, baseUrl: de.builds[0]?.baseUrl }));
   // The API-key route is served by the same container while registered.
   const keyRes = response();
-  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/api-key")(request(), keyRes);
+  await webServer.registered.get("/api/dsh-connect-agnes-token-plan/api-key")(request(), keyRes);
   check("the api-key route answers inside the container",
     keyRes.statusCode === 200 && keyRes.payload?.ok === true && keyRes.payload?.hasApiKey === false,
     JSON.stringify(keyRes.payload));
@@ -417,7 +417,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 
   // A second publish on top of the parked one, not awaited yet: the provider
   // switch route re-publishes whatever the plugin is currently holding.
-  const switching = webServer.registered.get("/api/dsh-connect-sensenova-token-plan/provider")(
+  const switching = webServer.registered.get("/api/dsh-connect-agnes-token-plan/provider")(
     postRequest({ enabled: true }), response()
   );
   await settle();
@@ -438,7 +438,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     JSON.stringify({ adapter: llm.calls.adapter, released: llm.calls.released }));
 
   const providerRes = response();
-  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/provider")(request(), providerRes);
+  await webServer.registered.get("/api/dsh-connect-agnes-token-plan/provider")(request(), providerRes);
   check("the panel is told a provider is registered",
     providerRes.payload?.providerRegistered === true, JSON.stringify(providerRes.payload));
 
@@ -463,14 +463,14 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   // The switch lives in the shared state dir, so set it the way a panel would
   // rather than assuming the order of the other groups.
   const switchRes = response();
-  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/provider")(
+  await webServer.registered.get("/api/dsh-connect-agnes-token-plan/provider")(
     postRequest({ enabled: true }), switchRes);
   check("the provider switch answers through the container",
     switchRes.statusCode === 200 && switchRes.payload?.ok === true,
     JSON.stringify(switchRes.payload));
 
   const res = response();
-  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/models")(
+  await webServer.registered.get("/api/dsh-connect-agnes-token-plan/models")(
     postRequest({ enabledModelIds: ["__hide_all__"] }), res);
   check("a roster save answers through the container",
     res.statusCode === 200 && res.payload?.ok === true &&

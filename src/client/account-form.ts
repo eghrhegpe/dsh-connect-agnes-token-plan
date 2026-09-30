@@ -12,7 +12,7 @@
  * Hook-based, so the Node render suite does not mount this form; its
  * secret-free halves are covered via `ProviderStatus` and the route tests.
  */
-import { ACCOUNT_PATH, SENSENOVA_SIGNUP_URL } from "./const.ts";
+import { ACCOUNT_PATH, AGNES_SIGNUP_URL } from "./const.ts";
 import { format } from "./format.ts";
 import { postJson } from "./http.ts";
 import { h, useCallback, useEffect, useState } from "./runtime.ts";
@@ -155,7 +155,7 @@ export function AccountForm({ auth, onDone, tt, bare }: {
     // sign-up page; account present → quota management / API keys.
     // Shown in both standalone and bare embed forms.
     h("a", {
-      href: SENSENOVA_SIGNUP_URL,
+      href: AGNES_SIGNUP_URL,
       target: "_blank",
       rel: "noreferrer",
       // Inline: the shared `styles.ts` is under a concurrent rewrite
@@ -242,7 +242,7 @@ export function AccountForm({ auth, onDone, tt, bare }: {
         : null,
       h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved")),
       // The auto-recovery readiness is a boolean from the Host (`state()`):
-      // whether the environment carries `SENSENOVA_PASSWORD`. The value
+      // whether the environment carries `AGNES_PASSWORD`. The value
       // itself never reaches the bundle; the line only tells the user
       // whether a dead refresh token re-signs in by itself or asks again.
       h("p", { style: S.formNote },

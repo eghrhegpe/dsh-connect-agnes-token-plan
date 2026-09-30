@@ -131,7 +131,7 @@
 ## 16. 插件目录解析不到 Host 的 peer 依赖，provider 静默缺席
 
 - **现象**：`registerProvider: true` 之后面板一直显示 provider 未注册，快照 `llm.providerError` 里是
-  `Cannot find package '@earendil-works/pi-ai' imported from …/plugins/dsh-connect-sensenova-token-plan/llm-adapter.js`；
+  `Cannot find package '@earendil-works/pi-ai' imported from …/plugins/dsh-connect-agnes-token-plan/llm-adapter.js`；
   而离线套件（连 `npm test` 全量）**全绿**，因为离线套件通过 `peer-roots.mjs` 从 Host 运行时就地解析 peer，
   走的不是插件自己的解析链。
 - **根因**：`llm-adapter.ts` 要 import Host 发行的三个 peer（`@earendil-works/pi-ai`、

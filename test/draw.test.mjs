@@ -50,10 +50,10 @@ async function rejects(fn) {
 // --- 1. buildDrawEndpoint: every apiBase spelling lands on the same URL ----
 {
   check("v1 base appends the path",
-    buildDrawEndpoint("https://token.sensenova.cn/v1") === "https://token.sensenova.cn/v1/images/generations",
-    buildDrawEndpoint("https://token.sensenova.cn/v1"));
+    buildDrawEndpoint("https://api.agnes-ai.cn/v1") === "https://api.agnes-ai.cn/v1/images/generations",
+    buildDrawEndpoint("https://api.agnes-ai.cn/v1"));
   check("trailing slashes are trimmed first",
-    buildDrawEndpoint("https://token.sensenova.cn/v1///") === "https://token.sensenova.cn/v1/images/generations");
+    buildDrawEndpoint("https://api.agnes-ai.cn/v1///") === "https://api.agnes-ai.cn/v1/images/generations");
   check("an explicit endpoint passes through",
     buildDrawEndpoint("https://x.cn/v1/images/generations") === "https://x.cn/v1/images/generations");
   check("a deeper v1 path is rewound",
@@ -147,7 +147,7 @@ async function rejects(fn) {
   const r = describeDrawFailure(429, "rate limit exceeded");
   check("a rate-limit 429 says wait", /限频/.test(r), r);
   const a = describeDrawFailure(401, "");
-  check("auth failures point at the key, not the endpoint", /SENSENOVA_API_KEY/.test(a), a);
+  check("auth failures point at the key, not the endpoint", /AGNES_TOKEN_PLAN_API_KEY/.test(a), a);
   check("a 404 names the endpoint/model", /endpoint/.test(describeDrawFailure(404, "")));
   check("other statuses carry the raw body (truncated)",
     describeDrawFailure(500, "x".repeat(500)).length < 400);
@@ -155,7 +155,7 @@ async function rejects(fn) {
 
 // --- 7. drawOnce against a fake fetch ----------------------------------------
 {
-  const endpoint = "https://token.sensenova.cn/v1/images/generations";
+  const endpoint = "https://api.agnes-ai.cn/v1/images/generations";
   const okJson = { data: [{ url: "https://img/x.png" }] };
   let seen;
   const okFetch = async (url, options) => {
@@ -239,7 +239,7 @@ async function rejects(fn) {
     { id: "sensenova-u1-fast", output_modalities: ["image"] },
     { id: "sensenova-u1.5-lite", output_modalities: ["image"] }
   ];
-  const settings = { apiBase: "https://token.sensenova.cn/v1", drawModelId: "", drawTimeoutMs: 5000 };
+  const settings = { apiBase: "https://api.agnes-ai.cn/v1", drawModelId: "", drawTimeoutMs: 5000 };
   const makeTool = (overrides = {}) => defineDrawTool({
     defineTool: passthrough,
     resolveApiKey: async () => "sk-live",
@@ -252,12 +252,12 @@ async function rejects(fn) {
   try {
     const tool = makeTool();
     check("the tool is scoped so it cannot collide with dsh-draw-router's draw_image",
-      tool.name === "sensenova_draw_image" && DRAW_TOOL_NAME === "sensenova_draw_image");
+      tool.name === "agnes_draw_image" && DRAW_TOOL_NAME === "agnes_draw_image");
     check("prompt is required",
       (await rejects(() => tool.execute({ prompt: "   " }))) !== null);
     const result = await tool.execute({ prompt: "a cat" });
     check("success renders the markdown-image hint",
-      result.source === "sensenova" && result.url === "https://img/ok.png" &&
+      result.source === "agnes" && result.url === "https://img/ok.png" &&
       /!\[图\]\(https:\/\/img\/ok\.png\)/.test(result.hint), result.hint);
     check("the default model is the first discovered",
       result.model === "sensenova-u1-fast");
@@ -268,7 +268,7 @@ async function rejects(fn) {
   }
   {
     const message = await rejects(() => makeTool({ resolveApiKey: async () => "" }).execute({ prompt: "a cat" }));
-    check("a missing key degrades with the actionable message", /SENSENOVA_API_KEY/.test(message ?? ""), message);
+    check("a missing key degrades with the actionable message", /AGNES_TOKEN_PLAN_API_KEY/.test(message ?? ""), message);
   }
   {
     const message = await rejects(() => makeTool({ getEntries: () => [] }).execute({ prompt: "a cat" }));

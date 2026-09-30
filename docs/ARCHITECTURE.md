@@ -1,16 +1,16 @@
 # 架构（Architecture）
 
-本仓库 `dsh-connect-sensenova-token-plan` 是 DeepSeek Harness 的一个**插件**，在 Harness Web UI 的 **Plugins 页**以插件卡提供商汤（SenseNova）控制台 Token Plan 的实时积分用量面板。它还**不是**一个独立可运行程序，而是挂在 Host（桌面版 / `dsh web`）里的一截逻辑。
+本仓库 `dsh-connect-agnes-token-plan` 是 DeepSeek Harness 的一个**插件**，在 Harness Web UI 的 **Plugins 页**以插件卡提供商汤（SenseNova）控制台 Token Plan 的实时积分用量面板。它还**不是**一个独立可运行程序，而是挂在 Host（桌面版 / `dsh web`）里的一截逻辑。
 
 本文讲清三件事：插件与 `upstream/` 的关系、插件内部的 Host/Client 分流、以及数据如何流动。
 
 ---
 
-## 1. 双仓库关系：`dsh-connect-sensenova-token-plan` 与 `upstream/`
+## 1. 双仓库关系：`dsh-connect-agnes-token-plan` 与 `upstream/`
 
 本仓库根目录下有一个 **被 `.gitignore` 忽略的 `upstream/`** 目录，它是从 `~/.dsh/fork/sensenova-usage-dashboard` 移入的**上游仓库**（独立 git 仓库，线上：[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)；本地副本当前不带 `.git`，恢复方式见下方引用块）。
 
-| 维度 | `dsh-connect-sensenova-token-plan`（本仓库） | `upstream/`（被忽略，独立仓库） |
+| 维度 | `dsh-connect-agnes-token-plan`（本仓库） | `upstream/`（被忽略，独立仓库） |
 |---|---|---|
 | 形态 | DSH 插件（Host 半边 + Client 半边） | 独立 Python 桌面应用（pywebview 原生窗口） |
 | 语言 | Host 半边与 Client 半边均为 **TypeScript 源码**（`src/host/*.ts` + `src/client/*.ts`），经 `npm run build`（tsdown）构建为 `lib/`（Host 单条 ESM bundle + 动态切分 chunk）与根 `client.js`（Client IIFE 产物）；`lib/` 与 `client.js` 均为 `.gitignore` 忽略的纯构建产物，删后可从 `src/` 重建 | Python（`dashboard.py` + `auth_login.py`） |
@@ -36,7 +36,7 @@
 | **Host（服务端）** | `src/host/*.ts`（27 个模块，经 `npm run build` 构建为 `lib/`） | 启动时加载一次 | **重新构建 + 完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
 | **Client（前端）** | `src/client/*.ts`（构建为根 `client.js`） | 浏览器侧，随页面加载 | `npm run build:client` 重建后浏览器刷新即可 |
 
-- `index.ts`：注册只读路由 `/api/dsh-connect-sensenova-token-plan/snapshot`（聚合控制台数据，401 自动续期重试一次）+ 账号配置路由。
+- `index.ts`：注册只读路由 `/api/dsh-connect-agnes-token-plan/snapshot`（聚合控制台数据，401 自动续期重试一次）+ 账号配置路由。
 - `host-config.ts`：配置契约——`CONFIG_DEFAULTS`、`resolveSettings` / `resolveAuthOverrides`（含嵌套 `auth:` 块拒绝）、`isAdmitted` 同源闸、`hostName` 解析。
 - `codes.ts`：全部错误码与 IAM 平台原因码的唯一声明处。`sensenova-auth.ts` 产出、`token-store.ts` 判定是否 parked、`index.ts` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
 - `token-store.ts`：凭据服务里的令牌与账号存取、按期续期、401 拒绝记忆。
@@ -60,7 +60,7 @@
 [面板打开]
    │  每 30s（仅挂载时轮询，关闭即停）
    ▼
-GET /api/dsh-connect-sensenova-token-plan/snapshot   ← Host 半边
+GET /api/dsh-connect-agnes-token-plan/snapshot   ← Host 半边
    │  1) 检查令牌，临近过期或 401 时用 refresh_token 续期
    │  2) 调用控制台 pool-usage / credit-usage-trend / GET /v1/models
    │  3) 按 consoleBase 等配置聚合，Host 缓存 cacheSeconds 秒

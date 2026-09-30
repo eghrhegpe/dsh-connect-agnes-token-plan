@@ -1,5 +1,5 @@
 /**
- * SenseNova console token store — the seam between the credentials service and
+ * Agnes console token store — the seam between the credentials service and
  * the panel's console calls.
  *
  * The console JWT lives 180 minutes; this store keeps it renewed, so the
@@ -35,7 +35,7 @@
  *   nobody has corrected.
  *
  * Account login is a one-time bootstrap: put the account in the environment
- * (`SENSENOVA_USERNAME` / `SENSENOVA_PASSWORD`) and the store logs in on the
+ * (`AGNES_USERNAME` / `AGNES_PASSWORD`) and the store logs in on the
  * first use, then keeps itself alive from the refresh token alone. The
  * password is never persisted by this module.
  *
@@ -46,7 +46,7 @@
  * (`./token-store/acquire.ts`). Public API and export surface are unchanged.
  * The split doc is `docs/TOKEN-STORE-SPLIT.md`.
  *
- * @module dsh-connect-sensenova-token-plan/token-store
+ * @module dsh-connect-agnes-token-plan/token-store
  */
 
 import { CODE } from "./codes.ts";
@@ -131,7 +131,7 @@ const THROTTLE_ID = "agnes-console-throttle";
  * @param {function(?object[], ?(Error & {code?: unknown})): void} [options.onTrace] - called with
  *   the sanitized hop list when a sign-in attempt ENDS, success or failure;
  *   the second argument is `null` on success and the thrown error otherwise
- *   (matching the contract `sensenova-auth.ts` uses).
+ *   (matching the contract `Agnes-auth.ts` uses).
  * @returns the store: `getToken`, `invalidate`, `saveAccount`,
  *   `forgetAccount`, and `state`.
  */
@@ -223,7 +223,7 @@ export function createTokenStore(options) {
       // Persist first, then log in: if the write is rejected (a read-only
       // environment shadows the reference) the user is told before any login
       // attempt, instead of being left with a token that dies at restart.
-      // The password is deliberately NOT part of the write: `SENSENOVA_PASSWORD`
+      // The password is deliberately NOT part of the write: `AGNES_PASSWORD`
       // in the environment is the only durable source (an explicit opt-in for
       // auto-recovery after a dead refresh token), so no plaintext password
       // ever sits in the credentials document.
@@ -288,7 +288,7 @@ export function createTokenStore(options) {
         configured: stored !== undefined || account !== undefined,
         hasAccount: username !== "",
         // Whether the environment carries the auto-recovery password
-        // (`SENSENOVA_PASSWORD`). A boolean ONLY — the value never leaves the
+        // (`AGNES_PASSWORD`). A boolean ONLY — the value never leaves the
         // store: the panel uses this to say "a dead refresh token re-signs in
         // automatically (or needs a manual re-login)". Absent or blank means
         // not armed, and the next dead refresh will surface the account form.

@@ -14,7 +14,7 @@
  * them directly (no circular dependency). The body is **verbatim**; the
  * behavior baseline stays green.
  *
- * @module dsh-connect-sensenova-token-plan/token-store/acquire
+ * @module dsh-connect-agnes-token-plan/token-store/acquire
  */
 
 import { obj } from "../util.ts";

@@ -24,11 +24,11 @@
  *
  * Test-only: never imported by the plugin's own entry graph, so it is absent
  * from `package.json#files` on purpose (pinned by `test/package.test.mjs`).
- * @module dsh-connect-sensenova-token-plan/client-surface
+ * @module dsh-connect-agnes-token-plan/client-surface
  */
 
 /** The registration id the client bundle declares. */
-const CLIENT_ID = "dsh-connect-sensenova-token-plan";
+const CLIENT_ID = "dsh-connect-agnes-token-plan";
 
 /**
  * A recording stand-in for the client's `h`: plain objects instead of React

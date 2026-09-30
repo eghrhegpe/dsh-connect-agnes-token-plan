@@ -24,7 +24,7 @@
  * to `import("./raccoon-llm-adapter.ts")`), so the offline suites substitute a
  * fake factory without touching the Host's node_modules.
  *
- * @module dsh-connect-sensenova-token-plan/raccoon-publish
+ * @module dsh-connect-agnes-token-plan/raccoon-publish
  */
 
 import { RACCOON_PROVIDER_ID, RACCOON_DISPLAY_NAME, raccoonRoster } from "./raccoon-models.ts";

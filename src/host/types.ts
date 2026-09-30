@@ -7,7 +7,7 @@
  * that ship no `.d.ts`, so the single source of truth for "what a dep may
  * carry" lives here rather than in per-file `{}` placeholders (which TS
  * reads as an empty object and then rejects every field access on).
- * @module dsh-connect-sensenova-token-plan/types
+ * @module dsh-connect-agnes-token-plan/types
  */
 
 /** A failure code this plugin can produce or carry (a `CODE` wire value). */

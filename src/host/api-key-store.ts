@@ -1,5 +1,5 @@
 /**
- * The SenseNova inference API key (`sk-…`) store — the credential behind the
+ * The Agnes inference API key (`sk-…`) store — the credential behind the
  * directly-registered LLM provider and the `/v1/models` catalog.
  *
  * It is the SAME reference-value mechanism the console account uses
@@ -14,7 +14,7 @@
  * must win without a restart), then this process's memory (a Host with no
  * credentials service), then the environment.
  *
- * @module dsh-connect-sensenova-token-plan/api-key-store
+ * @module dsh-connect-agnes-token-plan/api-key-store
  */
 
 import { verbatim } from "./util.ts";

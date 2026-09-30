@@ -23,7 +23,7 @@
  * Everything here takes an injected fetcher and pure data, so the offline
  * suites exercise it without a network; no Host peer is imported.
  *
- * @module dsh-connect-sensenova-token-plan/raccoon
+ * @module dsh-connect-agnes-token-plan/raccoon
  */
 
 import { randomBytes } from "node:crypto";

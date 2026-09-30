@@ -1,5 +1,5 @@
 /**
- * The SenseNova image-generation module ("draw absorption", ARCHITECTURE §5.4
+ * The Agnes image-generation module ("draw absorption", ARCHITECTURE §5.4
  * route B) — the PEER-FREE half.
  *
  * Like `llm-models.ts` this module imports no runtime peer: it maps catalog
@@ -15,22 +15,22 @@
  * 1. Model identification is STRUCTURED, not name-regex. `dsh-draw-router`
  *    (the community reference this module absorbs, upstream/dsh-draw-router)
  *    filters its probed model list through name patterns and thereby misses
- *    `sensenova-u1.5-lite` outright (ARCHITECTURE §5.4); this module reads the
+ *    `Agnes-u1.5-lite` outright (ARCHITECTURE §5.4); this module reads the
  *    catalog's own `output_modalities` field instead — the same field
  *    `isChatModel` already uses to keep image models OUT of the chat picker,
  *    so the two lists can never disagree about what exists.
  * 2. The key is resolved per call (`resolveApiKey`), never cached: rotating
- *    the panel-saved `SENSENOVA_API_KEY` reference takes effect on the next
+ *    the panel-saved `AGNES_TOKEN_PLAN_API_KEY` reference takes effect on the next
  *    draw without re-registration, mirroring the LLM adapter.
  *
- * @module dsh-connect-sensenova-token-plan/draw
+ * @module dsh-connect-agnes-token-plan/draw
  */
 
 import { str, num } from "./util.ts";
 import type { DrawRequest } from "./types.ts";
 
 /** The agent tool name. Scoped so it cannot collide with `dsh-draw-router`'s `draw_image`. */
-export const DRAW_TOOL_NAME = "sensenova_draw_image";
+export const DRAW_TOOL_NAME = "agnes_draw_image";
 
 /** How long after a failed draw the next attempt is refused. Borrowed from dsh-draw-router (its probe cooldown). */
 export const DRAW_COOLDOWN_MS = 30_000;
@@ -49,7 +49,7 @@ export const DRAW_MAX_IMAGES = 4;
  * `…/v1` → `…/v1/images/generations`; an URL already ending in
  * `/images/generations` passes through; a deeper `/v1/<something>` is rewound
  * to `/v1`; anything else gets `/v1/images/generations` appended.
- * @param {string} apiBase - the configured base (default `https://token.sensenova.cn/v1`).
+ * @param {string} apiBase - the configured base (default `https://token.Agnes.cn/v1`).
  * @returns {string} the full draw endpoint.
  */
 export function buildDrawEndpoint(apiBase) {
@@ -184,7 +184,7 @@ export function parseDrawResponse(data) {
 export function describeDrawFailure(status, bodyText) {
   const text = str(bodyText, "").slice(0, 300);
   if (status === 401 || status === 403) {
-    return `draw failed: HTTP ${status} — the SENSENOVA_API_KEY is missing, invalid or not authorized for this model. Set it in the panel's 模型接入 area${text === "" ? "" : `; body: ${text}`}`;
+    return `draw failed: HTTP ${status} — the AGNES_TOKEN_PLAN_API_KEY is missing, invalid or not authorized for this model. Set it in the panel's 模型接入 area${text === "" ? "" : `; body: ${text}`}`;
   }
   if (status === 429) {
     if (/insufficient|quota/i.test(text)) {
@@ -277,7 +277,7 @@ export function createDrawCooldown(cooldownMs = DRAW_COOLDOWN_MS) {
  * @param {object} options - wiring.
  * @param {Function} options.defineTool - the peer's tool factory.
  * @param {Function} options.resolveApiKey - async `() => Promise<string>`, the
- *   live `SENSENOVA_API_KEY` value (empty when unset).
+ *   live `AGNES_TOKEN_PLAN_API_KEY` value (empty when unset).
  * @param {Function} options.getEntries - `() => catalog entries` (sync or
  *   async), read at call time so a catalog refresh is picked up without
  *   re-registration. The caller (`index.ts`) hands the FULL persisted catalog,
@@ -302,11 +302,11 @@ export function defineDrawTool({
   return defineTool({
     name: DRAW_TOOL_NAME,
     description:
-      "Generate an image with the SenseNova Token Plan key (e.g. sensenova-u1-fast). " +
+      "Generate an image with the Agnes Token Plan key (e.g. Agnes-u1-fast). " +
       "Models are auto-discovered from this key's catalog; pass `model` only when you specifically need one.",
     parameters: {
       prompt: { type: "string", required: true, description: "Image generation prompt" },
-      model: { type: "string", description: "SenseNova image model id; defaults to the first discovered one" },
+      model: { type: "string", description: "Agnes image model id; defaults to the first discovered one" },
       size: { type: "string", description: "Image size, e.g. 1024x1024" },
       n: { type: "number", description: `Number of images, 1-${DRAW_MAX_IMAGES}, default 1` }
     },
@@ -329,7 +329,7 @@ export function defineDrawTool({
     },
     timeoutMs: timeoutMs + 10_000,
     async execute(params) {
-      if (isDisposed()) throw new Error("sensenova draw tool is no longer mounted");
+      if (isDisposed()) throw new Error("Agnes draw tool is no longer mounted");
       const prompt = str(params?.prompt, "").trim();
       if (prompt === "") throw new Error("prompt is required");
       if (cooldown.blocked()) {
@@ -337,7 +337,7 @@ export function defineDrawTool({
       }
       const apiKey = await resolveApiKey();
       if (typeof apiKey !== "string" || apiKey.trim() === "") {
-        throw new Error("SENSENOVA_API_KEY 未配置：在面板「模型接入」粘贴 sk- Key，或设置该环境变量");
+        throw new Error("AGNES_TOKEN_PLAN_API_KEY 未配置：在面板「模型接入」粘贴 sk- Key，或设置该环境变量");
       }
       let picked;
       try {
@@ -370,7 +370,7 @@ export function defineDrawTool({
         ? `图片已生成!\n模型: ${result.model}\nURL: ${result.url}\n请直接输出 Markdown: ![图](${result.url})`
         : `图片已生成!\n模型: ${result.model}\n(base64 图片数据，请以 data:image/png;base64,… 形式在对话中展示)`;
       return {
-        source: "sensenova",
+        source: "agnes",
         model: result.model,
         url: result.url,
         prompt,

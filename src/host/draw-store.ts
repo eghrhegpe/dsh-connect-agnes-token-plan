@@ -20,7 +20,7 @@
  * an atomic rename, owner-only modes, and "anything unrecognised reads as not
  * set" — a corrupted or downgraded file costs one re-toggle, never a crash.
  *
- * @module dsh-connect-sensenova-token-plan/draw-store
+ * @module dsh-connect-agnes-token-plan/draw-store
  */
 import { obj } from "./util.ts";
 import { join } from "node:path";
@@ -34,7 +34,7 @@ export const DRAW_STORE_VERSION = 1;
 /**
  * The directory this plugin's state lives in — per-profile when the Host names
  * one, shared otherwise (PITFALLS §23). Same reasoning as the provider switch:
- * "does THIS profile route images through SenseNova" is a per-profile opt-in.
+ * "does THIS profile route images through Agnes" is a per-profile opt-in.
  * @param {string|null} [profile] - the profile name; `null` means shared.
  * @returns {string} the directory.
  */

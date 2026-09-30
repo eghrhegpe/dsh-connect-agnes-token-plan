@@ -4,10 +4,10 @@
  * Every sign-in attempt (success included) leaves one sanitized trace file in
  * `$DSH_HOME/logs/`: a "browser works but the panel does not" report is only
  * debuggable by diffing a working trace against a failing one. The sanitizing
- * itself happens in `sensenova-auth.ts` — no password, token, cookie, or
+ * itself happens in `Agnes-auth.ts` — no password, token, cookie, or
  * authorization code ever reaches this module — so the only concern here is
  * I/O failures, which must never break the login response.
- * @module dsh-connect-sensenova-token-plan/trace
+ * @module dsh-connect-agnes-token-plan/trace
  */
 
 import { promises as fs } from "node:fs";
@@ -29,7 +29,7 @@ export function traceDir() {
  *
  * Written on EVERY attempt (success included): a "browser works but the panel
  * does not" report is only debuggable by diffing a working trace against a
- * failing one. The trace itself is already sanitized in sensenova-auth — no
+ * failing one. The trace itself is already sanitized in Agnes-auth — no
  * password, token, cookie, or authorization code ever reaches this file — so
  * the only concerns here are I/O failures, which must never break the login
  * response.
@@ -43,10 +43,10 @@ export async function writeLoginTrace(trace, outcome) {
     const dir = traceDir();
     await fs.mkdir(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const file = join(dir, `sensenova-login-${stamp}-${str(outcome, "unknown").replace(/[^a-z_]/gi, "")}.json`);
+    const file = join(dir, `agnes-login-${stamp}-${str(outcome, "unknown").replace(/[^a-z_]/gi, "")}.json`);
     await fs.writeFile(file, `${JSON.stringify(trace, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     // Keep the directory from growing forever: the last 20 traces are plenty.
-    const files = (await fs.readdir(dir)).filter((name) => name.startsWith("sensenova-login-")).sort();
+    const files = (await fs.readdir(dir)).filter((name) => name.startsWith("agnes-login-")).sort();
     for (const stale of files.slice(0, Math.max(0, files.length - 20))) {
       await fs.rm(join(dir, stale), { force: true }).catch(() => {});
     }

@@ -16,7 +16,7 @@
  * 14-key snapshot contract, the vision-vs-catalog distinction, the
  * quota-flip re-registration) without mounting the full container.
  *
- * @module dsh-connect-sensenova-token-plan/snapshot-aggregate
+ * @module dsh-connect-agnes-token-plan/snapshot-aggregate
  */
 
 import { fetchConsole, fetchModelCatalog } from "./console-client.ts";

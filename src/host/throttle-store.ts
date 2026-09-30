@@ -1,5 +1,5 @@
 /**
- * dsh-connect-sensenova-token-plan — where the sign-in throttle lives.
+ * dsh-connect-agnes-token-plan — where the sign-in throttle lives.
  *
  * It used to live in the credentials service, disguised as a `kind: "grant"`
  * record carrying a marker field. That disguise was not a stylistic choice:
@@ -14,7 +14,7 @@
  * plugin's own file, where a malformed value costs the plugin its throttle
  * and nothing else.
  *
- * @module dsh-connect-sensenova-token-plan/throttle-store
+ * @module dsh-connect-agnes-token-plan/throttle-store
  */
 import { rename, rm } from "node:fs/promises";
 import { join } from "node:path";

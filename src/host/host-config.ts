@@ -6,7 +6,7 @@
  * `test/config.test.mjs` pins `CONFIG_DEFAULTS` and the resolvers against this
  * file and `cordis.patch.yml`, so the code and the documented contract cannot
  * silently drift.
- * @module dsh-connect-sensenova-token-plan/host-config
+ * @module dsh-connect-agnes-token-plan/host-config
  */
 
 import { str, obj, num } from "./util.ts";
@@ -23,7 +23,7 @@ import { str, obj, num } from "./util.ts";
  * constant by `test/config.test.mjs` (it pins `CONFIG_DEFAULTS` only), so a
  * rename must check all three by hand.
  */
-export const name = "dsh-connect-sensenova-token-plan";
+export const name = "dsh-connect-agnes-token-plan";
 /** Cordis services this plugin needs; without `webServer` it stays inactive. */
 export const inject = ["webServer"];
 
@@ -37,7 +37,7 @@ export const inject = ["webServer"];
  * why they default to empty/zero and mean "use the platform default").
  */
 export const CONFIG_DEFAULTS = Object.freeze({
-  consoleBase: "https://platform.sensenova.cn",
+  consoleBase: "https://platform-backend.agnes-ai.cn",
   apiBase: "https://api.agnes-ai.cn/v1",
   trendHours: 24,
   /**
@@ -48,7 +48,7 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * them as custom/non-official and rows without a match stay unmultiplied.
    * Shipped defaults reflect the operator's rough current rates.
    */
-  trendMultipliers: { "glm-5.2": 10, "kimi-k3": 20, "sensenova": 1, "deepseek": 1 },
+  trendMultipliers: { "glm-5.2": 10, "kimi-k3": 20, "Agnes": 1, "deepseek": 1 },
   cacheSeconds: 60,
   pollSeconds: 30,
   consoleTimeoutMs: 15_000,
@@ -95,9 +95,9 @@ export const CONFIG_DEFAULTS = Object.freeze({
   registerProvider: false,
   /**
    * Draw absorption (ARCHITECTURE §5.4 route B): register the
-   * `sensenova_draw_image` agent tool. When true AND the Host exposes a tools
+   * `agnes_draw_image` agent tool. When true AND the Host exposes a tools
    * service, image-generation requests go to `{apiBase}/images/generations`
-   * with the panel-saved `SENSENOVA_API_KEY`, and the model list comes from
+   * with the panel-saved `AGNES_TOKEN_PLAN_API_KEY`, and the model list comes from
    * the catalog's own `output_modalities` (never a name regex). Off by
    * default like every execution module: a tool the agent can call is a
    * Host-wide change, and a Host without the tools service must simply never

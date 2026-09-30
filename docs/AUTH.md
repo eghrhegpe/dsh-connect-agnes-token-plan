@@ -61,7 +61,7 @@
 - 令牌在过期前 `tokenSkewSeconds`（默认 120s）触发续期。
 - 控制台返回 **401** 时，也会用 `refresh_token` 换新并重试一次。
 - 续期失败（refresh_token 被吊销）且环境已无密码时，面板明确提示需要重新登录，而不是静默显示旧数据。
-- 续期状态写入凭据记录 `dsh-connect-sensenova-token-plan/sensenova-console`（含 `hasRefreshToken` / `expiresAt`）。
+- 续期状态写入凭据记录 `dsh-connect-agnes-token-plan/sensenova-console`（含 `hasRefreshToken` / `expiresAt`）。
 
 ---
 

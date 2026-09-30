@@ -1,6 +1,6 @@
 # DSH 插件机制总览（DSH Plugin Mechanics）
 
-这份文档解释「`dsh-connect-sensenova-token-plan` 是一个 **DeepSeek Harness（DSH）插件**，它如何被 Host 加载、bundle 长什么样、和 Host 以及其它插件（如 `dsh-connect-qoder`）是同一套机制」。它是插件层面的总览，内部细节请看 [ARCHITECTURE.md](./ARCHITECTURE.md)。
+这份文档解释「`dsh-connect-agnes-token-plan` 是一个 **DeepSeek Harness（DSH）插件**，它如何被 Host 加载、bundle 长什么样、和 Host 以及其它插件（如 `dsh-connect-qoder`）是同一套机制」。它是插件层面的总览，内部细节请看 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 
 > 范本参照：`~/.dsh/fork/dsh-connect-qoder` 的 README——它把「这是一个 DSH 插件、如何被加载、bundle 结构、测试门禁」写得极完整。本插件与之共用同一套 DSH 插件协议（Loader 条目、`cordis.patch.yml`、客户端注入、`peerDependencies` 由 Host 提供），区别只在功能域。
 
@@ -23,7 +23,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 
 ```jsonc
 {
-  "name": "dsh-connect-sensenova-token-plan",
+  "name": "dsh-connect-agnes-token-plan",
   "version": "0.4.3",
   "main": "./lib/index.js",              // Host 半边入口：src/host/*.ts 经 tsdown 打成的单条 bundle
   "exports": {
@@ -87,8 +87,8 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 
 ```yaml
 - insert:
-    - id: dsh-connect-sensenova-token-plan          # Loader 条目 id；Host 用它在命名空间/设置里定位本插件
-      name: dsh-connect-sensenova-token-plan
+    - id: dsh-connect-agnes-token-plan          # Loader 条目 id；Host 用它在命名空间/设置里定位本插件
+      name: dsh-connect-agnes-token-plan
       config:
         consoleBase: https://platform.sensenova.cn
         trendHours: 24
@@ -97,7 +97,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
         # iamBase / tokenEndpoint / jwksEndpoint / ... 都是可选覆盖，留注释=用平台默认
 ```
 
-- 这里的 `id: dsh-connect-sensenova-token-plan` 至关重要：DSH 的「设置 → 模型」页、命名空间推导都基于这个条目 id（参见 `dsh-connect-qoder` README 里「设置命名空间由宿主决定，不能自选」那条踩坑——本插件同样遵循 `ctx.fiber.entry.options.id` 推导，不硬编码）。
+- 这里的 `id: dsh-connect-agnes-token-plan` 至关重要：DSH 的「设置 → 模型」页、命名空间推导都基于这个条目 id（参见 `dsh-connect-qoder` README 里「设置命名空间由宿主决定，不能自选」那条踩坑——本插件同样遵循 `ctx.fiber.entry.options.id` 推导，不硬编码）。
 - `config` 是插件的配置面，**改完要重装/重载 Host 才生效**；也可以在 profile 的 `cordis.patch.yml` 里用同名 `id` 覆盖。
 - 端点类字段若不是合法 http(s) 绝对地址，挂载时直接报 `config_error`，而不是第一次轮询才炸。
 
@@ -108,7 +108,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 已发布 npm，普通用户直接按包名安装（无需本地检出）：
 
 ```powershell
-plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-plan" }
+plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan" }
 ```
 
 本地开发时装本检出：`dsh plugin --profile web add <本仓库绝对路径>`，或 `plugin_manager` 的 target 填同一路径。target 三种形态（npm 包名 / git 地址 / 本地路径）与镜像源同步注意事项见 [SETUP.md](./SETUP.md) §2。
@@ -128,7 +128,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 ## 6. 与 `dsh-connect-qoder` 等兄弟插件的关系
 
 - 它们**共用同一套 DSH 插件协议**，但**功能域互不相关**：`dsh-connect-qoder` 是把 Qoder 账号接成 DSH 的模型 provider；本插件是商汤控制台的积分用量面板。两者都是「Host 半边 + Client 半边 + cordis.patch.yml + peer 由 Host 提供」这一形态。
-- 它们可以**并存**：各自有独立的 Loader 条目 id（`llm-qoder` / `dsh-connect-sensenova-token-plan`），各自的命名空间、路由前缀（`/api/dsh-connect-sensenova-token-plan/...` vs 各自前缀）互不冲突。
+- 它们可以**并存**：各自有独立的 Loader 条目 id（`llm-qoder` / `dsh-connect-agnes-token-plan`），各自的命名空间、路由前缀（`/api/dsh-connect-agnes-token-plan/...` vs 各自前缀）互不冲突。
 - 都遵循同一套 Host 约定：设置命名空间由 Host 从条目 id 推导、Client 由 Host 注入、`peerDependencies` 由 Host 提供。
 
 ---

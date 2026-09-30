@@ -84,14 +84,14 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
 投稿指南（唯一权威，改规则以它为准）：<https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md>
 
 **不要看错仓库**：投稿是向 `awesome-dsh-plugin/awesome-dsh-plugin` 提 PR，加且仅加一个文件
-`data/plugins/eghrhegpe__dsh-connect-sensenova-token-plan.yml`；不要手工编辑对方仓库生成出来的
+`data/plugins/eghrhegpe__dsh-connect-agnes-token-plan.yml`；不要手工编辑对方仓库生成出来的
 README，也不要把条目文件建在本仓库。一个 PR 最多 3 条。
 
 本插件的拟稿（描述只能陈述功能、不带营销词，每句都会被对照代码核对）：
 
 ```yaml
-url: https://github.com/eghrhegpe/dsh-connect-sensenova-token-plan
-name: eghrhegpe/dsh-connect-sensenova-token-plan
+url: https://github.com/eghrhegpe/dsh-connect-agnes-token-plan
+name: eghrhegpe/dsh-connect-agnes-token-plan
 category: usage
 description:
   en: 'SenseNova Token Plan credit panel rendered as a config card on the Harness Plugins page: per-pool quota windows (5h and weekly), grant balance and per-model consumption from the SenseNova console API, with in-panel login and automatic token renewal. Three opt-in switches, off by default, register SenseNova models and the Xiaohuanxiong upstream as LLM providers and expose an image-generation tool to the agent.'
@@ -115,7 +115,7 @@ description:
 - 仓库创建满 24 小时（CI 按 GitHub `created_at` 自动卡）；本仓 2026-09-28T05:03:11Z 建仓；
 - 真实可用代码、非占位——已满足；仓库需公开且处于活跃维护。
 
-已发布 npm 包 `dsh-connect-sensenova-token-plan`（registry 上最新为 **0.4.3**，2026-09-30 发布；2026-09-28 首发 0.2.0；
+已发布 npm 包 `dsh-connect-agnes-token-plan`（registry 上最新为 **0.4.3**，2026-09-30 发布；2026-09-28 首发 0.2.0；
 0.4.1 与 0.4.2 打了 git tag 但**未发布到 npm**，其内容随 **0.4.3** 一并发布。`repository` 指回本仓，列表会
 自动按下载量关联，yml 里无需任何 npm 字段）。注意本机默认 registry 是 npmmirror 镜像，登录与发布都
 必须显式带 `--registry=https://registry.npmjs.org`；发新版前先在 package.json 升版本号（已发布版本
@@ -127,21 +127,21 @@ description:
 > 0.4.3 与 tag 内容不符。`v0.4.3` 之后落地的改动（e2e 进程树修复、`.gitignore`、
 > 以及自述面文档追平）**只能随下一个版本（0.4.4）到达用户**。
 >
-> 实测证据：`npm view dsh-connect-sensenova-token-plan readme --registry=https://registry.npmjs.org`
+> 实测证据：`npm view dsh-connect-agnes-token-plan readme --registry=https://registry.npmjs.org`
 > 抓下来的 README 仍含 3 处「侧边栏」、0 处「小浣熊」——**修好的 README 在发新版前对用户不存在**。
 
 **市场收录状态（2026-10-01 实测）**：投稿 PR 已提且**仍处于 open、未合并**——
 [awesome-dsh-plugin#6139](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6139)
 （2026-09-29 提交，`merged_at: null`，0 评论）；`data/plugins/` 目录下尚无
-`eghrhegpe__dsh-connect-sensenova-token-plan.yml`，与实际一致。**该 PR 的正文与条目文件已于 2026-10-01 更新**（原先两处都停在旧形态）：原文写的是 "for the Harness Web sidebar"，原文引用 yml 里的 "sidebar panel" 与「侧边栏面板」；两处现都改为 Plugins 页的配置卡，并补上三个默认关闭的可选开关（provider 注册 / 出图工具 / 第二上游）。**原文其实提过 provider 注册**——但只提了它一个，且未提第二上游（此前本节误写为「未提 provider 注册」，2026-10-01 读到 PR 原文后更正）。**yml 才是市场条目的实际描述**：只改正文不改 yml，是另一种「分头走路」。收录后市场按 `screenshots.json` 取图，动图只需更新清单与资产（**改名就必须同步清单**，见检查 11 与 PITFALLS §26）。
+`eghrhegpe__dsh-connect-agnes-token-plan.yml`，与实际一致。**该 PR 的正文与条目文件已于 2026-10-01 更新**（原先两处都停在旧形态）：原文写的是 "for the Harness Web sidebar"，原文引用 yml 里的 "sidebar panel" 与「侧边栏面板」；两处现都改为 Plugins 页的配置卡，并补上三个默认关闭的可选开关（provider 注册 / 出图工具 / 第二上游）。**原文其实提过 provider 注册**——但只提了它一个，且未提第二上游（此前本节误写为「未提 provider 注册」，2026-10-01 读到 PR 原文后更正）。**yml 才是市场条目的实际描述**：只改正文不改 yml，是另一种「分头走路」。收录后市场按 `screenshots.json` 取图，动图只需更新清单与资产（**改名就必须同步清单**，见检查 11 与 PITFALLS §26）。
 
 **更新一个已投稿的条目**（2026-10-01 实操，两处都要改）：条目文件在 **PR 的 head fork** 上（`eghrhegpe/awesome-dsh-plugin`，分支 `add-sensenova-token-plan`），既不在本仓、也不在 base 仓。
 
 ```bash
 # 1) 条目文件本身——市场条目的实际描述由它决定
-SHA=$(gh api "repos/eghrhegpe/awesome-dsh-plugin/contents/data/plugins/eghrhegpe__dsh-connect-sensenova-token-plan.yml?ref=add-sensenova-token-plan" --jq .sha)
+SHA=$(gh api "repos/eghrhegpe/awesome-dsh-plugin/contents/data/plugins/eghrhegpe__dsh-connect-agnes-token-plan.yml?ref=add-sensenova-token-plan" --jq .sha)
 #    请求体 {message, content: <新内容的 base64>, sha: $SHA, branch: "add-sensenova-token-plan"}
-gh api repos/eghrhegpe/awesome-dsh-plugin/contents/data/plugins/eghrhegpe__dsh-connect-sensenova-token-plan.yml \
+gh api repos/eghrhegpe/awesome-dsh-plugin/contents/data/plugins/eghrhegpe__dsh-connect-agnes-token-plan.yml \
   --method PUT --input <body.json>
 # 2) PR 正文——人读的说明，用 --body-file 避免 shell 转义踩坑
 gh pr edit 6139 -R awesome-dsh-plugin/awesome-dsh-plugin --body-file <body.md>

@@ -15,7 +15,7 @@
  * module holds only assembly against the runtime and is exercised by the
  * wiring/e2e checks, exactly as `llm-adapter.ts` is.
  *
- * @module dsh-connect-sensenova-token-plan/raccoon-llm-adapter
+ * @module dsh-connect-agnes-token-plan/raccoon-llm-adapter
  */
 import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";

@@ -33,13 +33,13 @@ function fail(name, error) {
   results.push({ name, pass: false, detail: String(error?.message ?? error) });
 }
 
-const SNAPSHOT_PATH = "/api/dsh-connect-sensenova-token-plan/snapshot";
-const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
-const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
-const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
-const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
-const DRAW_PATH = "/api/dsh-connect-sensenova-token-plan/draw";
-const RECORD_KEY = credentialKey("dsh-connect-sensenova-token-plan", "agnes-console");
+const SNAPSHOT_PATH = "/api/dsh-connect-agnes-token-plan/snapshot";
+const ACCOUNT_PATH = "/api/dsh-connect-agnes-token-plan/account";
+const API_KEY_PATH = "/api/dsh-connect-agnes-token-plan/api-key";
+const PROVIDER_PATH = "/api/dsh-connect-agnes-token-plan/provider";
+const MODELS_PATH = "/api/dsh-connect-agnes-token-plan/models";
+const DRAW_PATH = "/api/dsh-connect-agnes-token-plan/draw";
+const RECORD_KEY = credentialKey("dsh-connect-agnes-token-plan", "agnes-console");
 
 const POOL_BODY = {
   plan: { id: "p1", name: "TokenPlan", type: "token_plan" },
@@ -177,53 +177,21 @@ function consoleStub({ rejectFirstToken = null } = {}) {
   return stub;
 }
 
-/** A full login-flow stub. */
+/** A login-flow stub: Agnes answers ONE POST /api/user/login. */
 async function loginNetwork({ loginOk = true } = {}) {
-  const pair = await crypto.subtle.generateKey(
-    { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-1" },
-    true, ["encrypt", "decrypt"]
-  );
-  const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
   const log = { logins: 0, tokens: 0 };
-  let issuedState = "";
-  const stub = async (url) => {
+  const stub = async (url, init) => {
     const target = String(url);
-    if (target.includes("jwks.json")) {
-      return new Response(JSON.stringify({ keys: [{ ...jwk, kid: "public:hydra.openid.id-token", use: "sig" }] }),
-        { status: 200, headers: { "content-type": "application/json" } });
-    }
-    if (target.includes("/oauth2/auth")) {
-      issuedState = new URL(target).searchParams.get("state") ?? "";
-      return new Response("", {
-        status: 302,
-        headers: {
-          location: "https://platform.sensenova.cn/login?login_challenge=chal-123",
-          "set-cookie": "oauth2_authentication_csrf=abc; Path=/"
-        }
-      });
-    }
-    if (target.includes("iam.sensecoreapi.cn")) {
+    if (target.includes("/api/user/login")) {
       log.logins += 1;
       return loginOk
         ? new Response(JSON.stringify({
-            redirect: `https://platform.sensenova.cn/cb?code=the-code${issuedState !== "" ? `&state=${encodeURIComponent(issuedState)}` : ""}`
-          }),
-            { status: 200, headers: { "content-type": "application/json" } })
-        // The real IAM envelope, not a guess: the cause lives in details[].
+            code: 200, message: "ok", data: { access_token: jwtExpiring(180), user: { id: 1 } }
+          }), { status: 200, headers: { "content-type": "application/json" } })
+        // Agnes's own refusal, verbatim: a bad pair answers exactly this.
         : new Response(JSON.stringify({
-            code: 3, message: "InvalidArgument",
-            details: [
-              { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "invalidAccountOrPassword", domain: "iam" },
-              { "@type": "type.googleapis.com/google.rpc.LocalizedMessage", locale: "en", message: "invalid account or password" }
-            ]
-          }), { status: 400, headers: { "content-type": "application/json" } });
-    }
-    if (target.includes("oauth2/token")) {
-      log.tokens += 1;
-      return new Response(
-        JSON.stringify({ access_token: jwtExpiring(180), refresh_token: `granted-${log.tokens}`, expires_in: 10800 }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      );
+            code: 401, message: "Invalid username or password", data: null
+          }), { status: 401, headers: { "content-type": "application/json" } });
     }
     if (target.includes("pool-usage")) {
       return new Response(JSON.stringify(POOL_BODY), { status: 200, headers: { "content-type": "application/json" } });
@@ -326,56 +294,66 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("A3: single-flight", error));
 }
 
-// === B. a 401 triggers one renewal and a successful retry =================
+// === B. a 401 triggers one fresh sign-in and a successful retry ===========
+// Agnes issues no refresh token, so a refused token is replaced by signing in
+// again with the stored account. The environment is the only durable password
+// source, so this block arms AGNES_PASSWORD for its own run and restores it
+// afterwards (the suite-wide env is otherwise isolated by isolateHostEnv).
 {
   const dead = jwtExpiring(120);
-  const credentials = makeCredentials(storedGrant(dead, "old-refresh", 7200));
-  let refreshed = false;
+  const credentials = makeCredentials(storedGrant(dead, "", 7200), {
+    refs: { AGNES_USERNAME: "u" }
+  });
+  const savedUser = process.env.AGNES_USERNAME;
+  const savedPass = process.env.AGNES_PASSWORD;
+  process.env.AGNES_USERNAME = "u";
+  process.env.AGNES_PASSWORD = "p";
+  let logins = 0;
   const stub = consoleStub({ rejectFirstToken: dead });
-  await withNetwork(async (url, init) => {
-    if (String(url).includes("oauth2/token")) {
-      refreshed = true;
-      return new Response(
-        JSON.stringify({ access_token: jwtExpiring(180), refresh_token: "rotated", expires_in: 10800 }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      );
-    }
-    return stub(url, init);
-  }, async () => {
-    const response = await (await mount(credentials))(SNAPSHOT_PATH, makeRequest());
-    check("401 is recovered", response.payload.ok === true, JSON.stringify(response.payload).slice(0, 160));
-    check("a refresh happened", refreshed === true);
-    check("the rotated refresh token is persisted",
-      (await credentials.readRecord(RECORD_KEY))?.payload?.refreshToken === "rotated");
-    // Two console endpoints; single-flight means only the initial attempts
-    // carry the dead token, and only one renewal happens.
-    check("only the initial attempt uses the dead token",
-      stub.calls.filter((c) => c.auth === `Bearer ${dead}`).length === 2,
-      `rejected=${stub.calls.filter((c) => c.auth === `Bearer ${dead}`).length}`);
-  }).catch((error) => fail("B: 401 recovery", error));
+  try {
+    await withNetwork(async (url, init) => {
+      if (String(url).includes("/api/user/login")) {
+        logins += 1;
+        return new Response(JSON.stringify({
+          code: 200, message: "ok", data: { access_token: jwtExpiring(180), user: { id: 1 } }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return stub(url, init);
+    }, async () => {
+      const response = await (await mount(credentials))(SNAPSHOT_PATH, makeRequest());
+      check("401 is recovered", response.payload.ok === true, JSON.stringify(response.payload).slice(0, 160));
+      check("a fresh sign-in recovered it", logins === 1, `logins=${logins}`);
+      // Two console endpoints; single-flight means only the initial attempts
+      // carry the dead token, and only one fresh sign-in happens.
+      check("only the initial attempt uses the dead token",
+        stub.calls.filter((c) => c.auth === `Bearer ${dead}`).length === 2,
+        `rejected=${stub.calls.filter((c) => c.auth === `Bearer ${dead}`).length}`);
+    }).catch((error) => fail("B: 401 recovery", error));
+  } finally {
+    if (savedUser === undefined) delete process.env.AGNES_USERNAME; else process.env.AGNES_USERNAME = savedUser;
+    if (savedPass === undefined) delete process.env.AGNES_PASSWORD; else process.env.AGNES_PASSWORD = savedPass;
+  }
 }
 
-// === C. a persistent rejection reports jwt_expired =======================
+// === C. a persistent rejection reports auth state, not a refresh storm =====
+// Agnes has no refresh token to storm with: a console that keeps refusing the
+// token, with no account to re-sign-in from, degrades to "needs an account".
 {
   const dead = jwtExpiring(120);
-  const credentials = makeCredentials(storedGrant(dead, "old", 7200));
-  let refreshes = 0;
+  const credentials = makeCredentials(storedGrant(dead, "", 7200));
   await withNetwork(async (url) => {
-    if (String(url).includes("oauth2/token")) {
-      refreshes += 1;
-      return new Response(
-        JSON.stringify({ access_token: jwtExpiring(180), refresh_token: `r${refreshes}`, expires_in: 10800 }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      );
+    if (String(url).includes("/api/user/login")) {
+      return new Response(JSON.stringify({ code: 401, message: "Invalid username or password", data: null }),
+        { status: 401, headers: { "content-type": "application/json" } });
     }
     return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } });
   }, async () => {
     const response = await (await mount(credentials))(SNAPSHOT_PATH, makeRequest());
     check("a persistent rejection fails cleanly", response.payload.ok === false);
-    check("the code is jwt_expired", response.payload.code === "jwt_expired", response.payload.code);
+    check("it reports not_configured (Agnes cannot refresh)",
+      response.payload.code === "not_configured", String(response.payload.code));
     check("the failure carries auth state", response.payload.auth !== undefined);
-    check("no refresh storm", refreshes <= 2, `refreshes=${refreshes}`);
-  }).catch((error) => fail("C: persistent 401", error));
+  }).catch((error) => fail("C: persistent rejection", error));
 }
 
 // === D. a cross-origin request is refused ================================
@@ -485,7 +463,7 @@ async function withNetwork(stub, body) {
     // And the account route must accept a post, so the form can do its job.
     const posted = await call(ACCOUNT_PATH, makePost({ username: "u", password: "p" }));
     check("the account route accepts a post", posted.statusCode === 200, String(posted.statusCode));
-    check("the post produced a grant", posted.payload.hasRefreshToken === true, JSON.stringify(posted.payload).slice(0, 160));
+    check("the post produced a grant", posted.payload.configured === true, JSON.stringify(posted.payload).slice(0, 160));
 
     // A restart-free second read now works off the in-memory grant.
     const second = await call(SNAPSHOT_PATH, makeRequest());
@@ -520,7 +498,7 @@ async function withNetwork(stub, body) {
     const saved = await call(ACCOUNT_PATH, makePost({ username: "u@x", password: "p" }));
     check("a valid account is accepted", saved.payload.ok === true, JSON.stringify(saved.payload).slice(0, 160));
     check("the account is stored", saved.payload.hasAccount === true);
-    check("a refresh token is held", saved.payload.hasRefreshToken === true);
+    check("no refresh token is held (Agnes issues none)", saved.payload.hasRefreshToken === false);
     check("the panel no longer needs setup", saved.payload.needsAccount === false);
   }).catch((error) => fail("G: account route", error));
 }
@@ -536,10 +514,8 @@ async function withNetwork(stub, body) {
     check("the code is login_rejected", response.payload.code === "login_rejected", response.payload.code);
     // The reported reason must survive the state spread, or the panel can
     // never explain itself — and it must be the platform's own words.
-    check("the reason reaches the user", /invalid account or password/i.test(response.payload.error),
+    check("the reason reaches the user", /invalid username or password/i.test(response.payload.error),
       response.payload.error);
-    check("the generic status string is not what the user is shown",
-      !response.payload.error.includes("InvalidArgument"), response.payload.error);
     check("no grant is left behind", credentials.records.has(RECORD_KEY) === false);
   }).catch((error) => fail("H: rejected password", error));
 }
@@ -1119,9 +1095,9 @@ async function withNetwork(stub, body) {
       const snapshot = await call(SNAPSHOT_PATH, makeRequest());
       check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
         JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([
-          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 },
-          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 },
-          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 }
+          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] },
+          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] },
+          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] }
         ]), JSON.stringify(snapshot.payload.llm?.models));
       check("Q2 the snapshot quotes the profile's pinned thinking default",
         snapshot.payload.llm?.thinkingDefault === "high",

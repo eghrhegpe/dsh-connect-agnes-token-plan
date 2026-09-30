@@ -112,7 +112,7 @@ await import(pathToFileURL(ARTIFACT).href);
 check("artifact registers exactly one bundle", captured.length === 1, `got ${captured.length}`);
 if (captured.length === 1) {
   const registration = captured[0];
-  check("registration carries the plugin id", registration.id === "dsh-connect-sensenova-token-plan",
+  check("registration carries the plugin id", registration.id === "dsh-connect-agnes-token-plan",
     String(registration.id));
   let surface = null;
   try {

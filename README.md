@@ -1,4 +1,4 @@
-# dsh-connect-sensenova-token-plan
+# dsh-connect-agnes-token-plan
 
 商汤接入的 DSH **Plugins 页**插件卡**全家桶**（三个 tab）：① **积分额度** tab——登录一次，实时查看积分余额、额度窗口与每模型消耗，令牌自动续期，之后无需再管；② **接入 API** tab——把商汤模型注册为 DSH provider，参与对话与出图；③ **小浣熊** tab（可选、默认关）——微信扫码接入第二个上游 `xiaohuanxiong.com`，与主额度池相互独立。此外 429 自愈在后台生效：限频被误判为"额度耗尽"时在 Host 侧纠正回退避重试，模型不会无端消失。
 
@@ -18,18 +18,18 @@
 
 ## 安装
 
-1. 在 DSH「插件」页搜索 `dsh-connect-sensenova-token-plan` 点击安装，或运行：
+1. 在 DSH「插件」页搜索 `dsh-connect-agnes-token-plan` 点击安装，或运行：
 
    ```powershell
-   dsh plugin --profile web add dsh-connect-sensenova-token-plan       # Web 端
-   dsh plugin --profile desktop add dsh-connect-sensenova-token-plan  # 桌面端
+   dsh plugin --profile web add dsh-connect-agnes-token-plan       # Web 端
+   dsh plugin --profile desktop add dsh-connect-agnes-token-plan  # 桌面端
    ```
 
 2. **完全退出 DSH（含托盘）再启动**。
 
 ## 快速开始
 
-1. 打开 DSH 的 **Plugins 页**，找到 `dsh-connect-sensenova-token-plan` 的插件卡（面板是页内的内联卡片，**不在侧边栏**）。
+1. 打开 DSH 的 **Plugins 页**，找到 `dsh-connect-agnes-token-plan` 的插件卡（面板是页内的内联卡片，**不在侧边栏**）。
 2. 在「积分额度」tab 点「连接商汤控制台」，填一次账号和密码，点登录。
 3. 之后令牌自动续期，无需再操作。
 

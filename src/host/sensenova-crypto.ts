@@ -1,5 +1,5 @@
 /**
- * dsh-connect-sensenova-token-plan — the cryptographic primitives the console login needs.
+ * dsh-connect-agnes-token-plan — the cryptographic primitives the console login needs.
  *
  * Sealing the password into a JWE, deriving a PKCE pair, reading a JWT's own
  * claims. All of it is pure in its inputs: where the login flow reads
@@ -9,7 +9,7 @@
  * two callers with different configurations cannot disturb one another, and a
  * test can exercise any of it without configuring the world first.
  *
- * @module dsh-connect-sensenova-token-plan/sensenova-crypto
+ * @module dsh-connect-agnes-token-plan/sensenova-crypto
  */
 import { CODE } from "./codes.ts";
 import { str, obj, pluginError } from "./util.ts";

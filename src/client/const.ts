@@ -1,31 +1,31 @@
 /** Ids and same-origin routes the client half talks to. */
 
 /** Dictionary namespace this plugin owns. */
-export const NS = "dsh-connect-sensenova-token-plan";
+export const NS = "dsh-connect-agnes-token-plan";
 
 /** Shared id: the sidebar row id and the `main` slot key are the same string. */
-export const PANEL_ID = "dsh-connect-sensenova-token-plan";
+export const PANEL_ID = "dsh-connect-agnes-token-plan";
 
 /** The Host snapshot route. Relative, same-origin. */
-export const SNAPSHOT_PATH = "/api/dsh-connect-sensenova-token-plan/snapshot";
+export const SNAPSHOT_PATH = "/api/dsh-connect-agnes-token-plan/snapshot";
 
 /** The account route: lets the panel configure itself, no `.env` editing. */
-export const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
+export const ACCOUNT_PATH = "/api/dsh-connect-agnes-token-plan/account";
 
 /** The inference API-key route: saves the `sk-` key the provider uses. */
-export const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
+export const API_KEY_PATH = "/api/dsh-connect-agnes-token-plan/api-key";
 
 /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
-export const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
+export const PROVIDER_PATH = "/api/dsh-connect-agnes-token-plan/provider";
 
 /** The model-roster route: which of this key's models get pushed to DSH. */
-export const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
+export const MODELS_PATH = "/api/dsh-connect-agnes-token-plan/models";
 
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
-export const DRAW_PATH = "/api/dsh-connect-sensenova-token-plan/draw";
+export const DRAW_PATH = "/api/dsh-connect-agnes-token-plan/draw";
 
 /** The Raccoon provider route (second upstream provider, ROADMAP §6.1). */
-export const RACCOON_PATH = "/api/dsh-connect-sensenova-token-plan/raccoon";
+export const RACCOON_PATH = "/api/dsh-connect-agnes-token-plan/raccoon";
 
 /**
  * The official sign-up / Token Plan console entry. The panel points new
@@ -33,4 +33,4 @@ export const RACCOON_PATH = "/api/dsh-connect-sensenova-token-plan/raccoon";
  * A plain public URL — the client only ever opens it in a new tab, never
  * sends it in a credentialed request.
  */
-export const SENSENOVA_SIGNUP_URL = "https://www.sensenova.cn/token-plan";
+export const AGNES_SIGNUP_URL = "https://platform.agnes-ai.cn";

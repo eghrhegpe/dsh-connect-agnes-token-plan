@@ -21,7 +21,7 @@ export const S = {
   // so the setup cards stop crowding the numbers the panel exists for.
   tabBar: { display: "flex", gap: 4, borderBottom: "1px solid var(--dsw-alias-border-l1)", marginBottom: 4 },
   tab: { appearance: "none", background: "none", border: "none", borderBottom: "2px solid transparent", padding: "8px 12px", fontSize: 13, color: "var(--dsw-alias-label-secondary)", cursor: "pointer" },
-  tabActive: { color: "var(--dsw-alias-label-primary)", fontWeight: 600, borderBottom: "2px solid var(--sensenova-brand, #6C5CE7)" },
+  tabActive: { color: "var(--dsw-alias-label-primary)", fontWeight: 600, borderBottom: "2px solid var(--agnes-brand, #6C5CE7)" },
   title: { margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "28px" },
   updated: { color: "var(--dsw-alias-label-secondary)", fontSize: 12 },
   spacer: { flex: 1 },
@@ -74,7 +74,7 @@ export const S = {
   // so the figures row never wraps on a narrow twin card).
   quotaUsed: { fontSize: 11, lineHeight: "15px", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums" },
   bar: { height: 6, borderRadius: 3, background: "var(--dsw-alias-bg-layer-1)", overflow: "hidden" },
-  barFill: { height: "100%", borderRadius: 3, background: "var(--sensenova-brand, #6C5CE7)" },
+  barFill: { height: "100%", borderRadius: 3, background: "var(--agnes-brand, #6C5CE7)" },
   barFillWarn: { background: "var(--dsw-alias-state-warn-primary)" },
   barFillError: { background: "var(--dsw-alias-state-error-primary)" },
   // Secondary bookkeeping (grant expiry, model coverage) folds away so a
@@ -139,7 +139,7 @@ export const S = {
   modelRow: { display: "flex", flexDirection: "column", gap: 2, padding: "8px 4px", borderBottom: "1px solid var(--dsw-alias-border-l1)" },
   modelRowHead: { display: "flex", alignItems: "center", gap: 8 },
   modelRowOff: { opacity: 0.55 },
-  modelCheck: { flex: "none", width: 15, height: 15, cursor: "pointer", accentColor: "var(--sensenova-brand, #6C5CE7)", margin: 0 },
+  modelCheck: { flex: "none", width: 15, height: 15, cursor: "pointer", accentColor: "var(--agnes-brand, #6C5CE7)", margin: 0 },
   // `0 1 auto` (not `1 1 auto`): the name hugs the rate chip instead of
   // stretching to the right edge; the label shrinks, so ellipsis still works.
   modelName: { flex: "0 1 auto", minWidth: 0, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },

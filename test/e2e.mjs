@@ -148,20 +148,20 @@ function buildHome(fakePort) {
   const home = mkdtempSync(join(tmpdir(), "dsh-panel-e2e-"));
   const profile = join(home, "profiles", "web");
   mkdirSync(join(profile, "node_modules"), { recursive: true });
-  symlinkSync(PLUGIN_DIR, join(profile, "node_modules", "dsh-connect-sensenova-token-plan"), "junction");
+  symlinkSync(PLUGIN_DIR, join(profile, "node_modules", "dsh-connect-agnes-token-plan"), "junction");
   writeFileSync(join(profile, "package.json"), JSON.stringify({
     name: "dsh-profile-web-e2e",
     private: true,
-    dependencies: { "dsh-connect-sensenova-token-plan": `link:${PLUGIN_DIR}` },
-    dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "dsh-connect-sensenova-token-plan"] } }
+    dependencies: { "dsh-connect-agnes-token-plan": `link:${PLUGIN_DIR}` },
+    dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "dsh-connect-agnes-token-plan"] } }
   }, null, 2));
 
   // The row id is the one the plugin's own patch declares, and the login-flow
   // overrides are TOP-LEVEL keys. A nested `auth:` block is accepted here and
   // ignored by the plugin, which is how the run once reached the real IAM.
   writeFileSync(join(profile, "cordis.patch.yml"), [
-    "- id: dsh-connect-sensenova-token-plan",
-    "  name: dsh-connect-sensenova-token-plan",
+    "- id: dsh-connect-agnes-token-plan",
+    "  name: dsh-connect-agnes-token-plan",
     "  config:",
     `    consoleBase: http://127.0.0.1:${fakePort}`,
     `    apiBase: http://127.0.0.1:${fakePort}/v1`,
@@ -378,7 +378,7 @@ try {
 
   // === the panel is reachable and honest about having no account ==========
   {
-    const res = await call("/api/dsh-connect-sensenova-token-plan/snapshot");
+    const res = await call("/api/dsh-connect-agnes-token-plan/snapshot");
     check("the snapshot route answers through the real webserver", res.status === 200, String(res.status));
     check("an unconfigured panel asks for the account",
       res.body?.ok === false && res.body?.code === "not_configured", JSON.stringify(res.body ?? {}).slice(0, 120));
@@ -391,7 +391,7 @@ try {
   // is reached. (A bare local request with no Origin IS admitted — the Host
   // treats it as same-origin — so the fence is about the Origin header.)
   {
-    const res = await readJson(await fetch(`http://127.0.0.1:${PORT}/api/dsh-connect-sensenova-token-plan/snapshot`, {
+    const res = await readJson(await fetch(`http://127.0.0.1:${PORT}/api/dsh-connect-agnes-token-plan/snapshot`, {
       headers: { origin: "https://evil.test" }
     }));
     check("a foreign origin is refused by the Host", res.status === 401 || res.status === 403, String(res.status));
@@ -399,7 +399,7 @@ try {
 
   // === the cross-origin fence is the plugin's own ========================
   {
-    const res = await readJson(await fetch(`http://127.0.0.1:${PORT}/api/dsh-connect-sensenova-token-plan/account`, {
+    const res = await readJson(await fetch(`http://127.0.0.1:${PORT}/api/dsh-connect-agnes-token-plan/account`, {
       method: "POST",
       headers: { cookie: session.cookie, origin: "https://evil.test", "content-type": "application/json" },
       body: JSON.stringify({ username: "attacker", password: "x" })
@@ -413,7 +413,7 @@ try {
     // read timeout may be shorter than the fake's whole flow, in which case the
     // server answers and then drops the socket. Give the exchange room.
     const before = fake.log.iam;
-    const res = await call("/api/dsh-connect-sensenova-token-plan/account", {
+    const res = await call("/api/dsh-connect-agnes-token-plan/account", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: "e2e-user", password: "e2e-test-password" })
@@ -422,18 +422,13 @@ try {
       // the client reading is a transport hiccup, not a verdict. The fake's
       // own counter decides whether the attempt actually happened.
       note(`sign-in transport hiccup (${error.message}); retrying once`);
-      return call("/api/dsh-connect-sensenova-token-plan/account", {
+      return call("/api/dsh-connect-agnes-token-plan/account", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ username: "e2e-user", password: "e2e-test-password" })
       });
     });
     check("the sign-in succeeded", res.body?.ok === true, JSON.stringify(res.body ?? {}).slice(0, 200));
-    // The state nonce the authorization request issued must have round-tripped
-    // through the callback — the fake now echoes it back and the flow verifies
-    // the round-trip, so a broken echo fails the sign-in itself.
-    check("the callback round-tripped the state nonce",
-      typeof fake.seen.state === "string" && fake.seen.state.length > 0, String(fake.seen.state));
     // Where the request actually went. The fake's own counter is the evidence,
     // and it is what an earlier version of this harness failed to check: a
     // nested `auth:` block was accepted by the loader, ignored by the plugin,
@@ -441,16 +436,18 @@ try {
     // plugin now rejects that shape outright; this asserts the redirect holds.
     check("the request reached the fake, not the platform", fake.log.iam > before,
       `iam calls ${before} -> ${fake.log.iam}`);
-    check("the password arrived sealed and opened to the submitted value",
+    // Agnes ships no JWE walk: the password reaches the backend as typed over
+    // TLS, and the fake records exactly what arrived.
+    check("the password arrived exactly as submitted",
       fake.seen.password === "e2e-test-password", String(fake.seen.password));
     check("no bad-password refusal was produced", fake.log.badPassword === 0, String(fake.log.badPassword));
-    check("a refresh token was obtained", res.body?.hasRefreshToken === true,
+    check("no refresh token is held (Agnes issues none)", res.body?.hasRefreshToken === false,
       JSON.stringify(res.body?.hasRefreshToken));
   }
 
   // === the panel reads real numbers out of a real response ===============
   {
-    const res = await call("/api/dsh-connect-sensenova-token-plan/snapshot");
+    const res = await call("/api/dsh-connect-agnes-token-plan/snapshot");
     check("the snapshot succeeds after signing in", res.body?.ok === true,
       JSON.stringify(res.body ?? {}).slice(0, 160));
     check("the pool came back with its name", res.body?.pools?.pools?.[0]?.name === "E2E 池",
@@ -485,7 +482,7 @@ try {
   // list) when the key is missing — the panel must not claim "no vision
   // models" when it never asked the platform.
   {
-    const res = await call("/api/dsh-connect-sensenova-token-plan/snapshot");
+    const res = await call("/api/dsh-connect-agnes-token-plan/snapshot");
     check("without an API key the catalog is unavailable",
       res.body?.catalogAvailable === false, String(res.body?.catalogAvailable));
     check("no catalog means visionModels is absent, not an empty claim",
@@ -504,7 +501,7 @@ try {
   {
     const KEY = "sk-e2e-not-a-real-key";
     const before = fake.log.catalog;
-    const saved = await call("/api/dsh-connect-sensenova-token-plan/api-key", {
+    const saved = await call("/api/dsh-connect-agnes-token-plan/api-key", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: KEY })
@@ -522,7 +519,7 @@ try {
     check("no route echoes the key back", !saved.text.includes("sk-e2e"),
       saved.text.slice(0, 160));
 
-    const res = await call("/api/dsh-connect-sensenova-token-plan/snapshot");
+    const res = await call("/api/dsh-connect-agnes-token-plan/snapshot");
     check("the key reached the fake's model endpoint", fake.log.catalog > before,
       `catalog calls ${before} -> ${fake.log.catalog}`);
     check("the catalog is available once a key is saved",
@@ -554,25 +551,25 @@ try {
     // that belong to a profile must land UNDER that name. No unit stub can
     // settle this: only a real Host says whether the optional service is truly
     // visible to a plugin that does NOT inject it.
-    const perProfile = join(home, "state", "web", "dsh-connect-sensenova-token-plan");
+    const perProfile = join(home, "state", "web", "dsh-connect-agnes-token-plan");
     check("the catalog landed under this profile's directory",
       existsSync(join(perProfile, "catalog.json")), join(perProfile, "catalog.json"));
     check("nothing was written to the pre-§23 shared state directory",
-      !existsSync(join(home, "state", "dsh-connect-sensenova-token-plan", "catalog.json")),
-      join(home, "state", "dsh-connect-sensenova-token-plan", "catalog.json"));
+      !existsSync(join(home, "state", "dsh-connect-agnes-token-plan", "catalog.json")),
+      join(home, "state", "dsh-connect-agnes-token-plan", "catalog.json"));
   }
 
   // === a wrong password is classified, and the panel explains itself =====
   {
-    const res = await call("/api/dsh-connect-sensenova-token-plan/account", {
+    const res = await call("/api/dsh-connect-agnes-token-plan/account", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: "e2e-user", password: "wrong-one" })
     });
     check("a wrong password is reported as such", res.body?.code === "login_rejected", String(res.body?.code));
     check("the platform's own words reach the user",
-      typeof res.body?.detail === "string" && res.body.detail.includes("invalid account or password"),
-      String(res.body?.detail));
+      typeof res.body?.error === "string" && res.body.error.includes("Invalid username or password"),
+      String(res.body?.error));
     check("a wrong password demands user action, not a countdown",
       res.body?.needsUserAction === true, String(res.body?.needsUserAction));
     check("a wrong password serves no wait", res.body?.retryAfterMs === null, String(res.body?.retryAfterMs));

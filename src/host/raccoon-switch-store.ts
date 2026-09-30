@@ -7,7 +7,7 @@
  * temp file plus an atomic rename, owner-only modes, and "anything
  * unrecognised reads as not set" (PITFALLS §23, per-profile segment).
  *
- * @module dsh-connect-sensenova-token-plan/raccoon-switch-store
+ * @module dsh-connect-agnes-token-plan/raccoon-switch-store
  */
 import { obj } from "./util.ts";
 import { join } from "node:path";

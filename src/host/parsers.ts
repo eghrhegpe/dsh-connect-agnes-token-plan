@@ -5,7 +5,7 @@
  * that forgiveness is also how a platform-side rename becomes a serene "no
  * data yet" screen, so `EXPECTED_SHAPES` + `checkShape` are what let the panel
  * say "the upstream shape changed" instead of "you used nothing".
- * @module dsh-connect-sensenova-token-plan/parsers
+ * @module dsh-connect-agnes-token-plan/parsers
  */
 
 import { str, obj } from "./util.ts";
@@ -121,7 +121,7 @@ export function parseTrend(body, trendHours) {
  *
  * Two signals, in priority order:
  *
- * 1. STRUCTURED — the SenseNova catalog declares `input_modalities` (an
+ * 1. STRUCTURED — the Agnes catalog declares `input_modalities` (an
  *   array, e.g. `["text","image"]`) on every entry. This is CONFIRMED the
  *   platform ships it (2026-09 probe), so it is the authoritative answer:
  *   a model is vision-capable iff `"image"` appears in its input
@@ -146,7 +146,7 @@ export function identifyVisionModel(entry) {
   }
   // Naming conventions only: multimodal/vision suffixes. Anything that
   // matches neither is reported as not-vision — the panel shows the list,
-  // a human can correct. (On SenseNova the platform field above makes this
+  // a human can correct. (On Agnes the platform field above makes this
   // path unreachable; it exists so the plugin degrades sensibly on a
   // provider that exposes no modality metadata at all.)
   const byName = VISION_NAME_PATTERNS.some((pattern) => pattern.test(id));
@@ -155,7 +155,7 @@ export function identifyVisionModel(entry) {
 
 /**
  * Read the first modality-listing field off a catalog entry, or undefined.
- * The SenseNova platform's confirmed field is `input_modalities` (array of
+ * The Agnes platform's confirmed field is `input_modalities` (array of
  * strings, e.g. `["text","image"]`); the others are the spellings other
  * providers are expected to use. Accepts string or array values so whatever
  * the platform ships parses.

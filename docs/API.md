@@ -8,7 +8,7 @@
 
 五条路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号或 Key。请求体上限 **4 KB**。
 
-### `GET /api/dsh-connect-sensenova-token-plan/snapshot`
+### `GET /api/dsh-connect-agnes-token-plan/snapshot`
 面板轮询的聚合结果。返回体（HTTP 恒为 200，成败靠 body 区分）：
 
 ```jsonc
@@ -71,10 +71,10 @@
 - Host 内部：临近过期或收到 401 时自动用 `refresh_token` 续期并重试一次。
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
 
-### `GET /api/dsh-connect-sensenova-token-plan/account`
+### `GET /api/dsh-connect-agnes-token-plan/account`
 返回账号状态（**不含密码**）：`configured` / `hasAccount` / `hasRefreshToken` / `ephemeral` 等。
 
-### `POST /api/dsh-connect-sensenova-token-plan/account`
+### `POST /api/dsh-connect-agnes-token-plan/account`
 两种用途，靠 body 区分：
 
 - 保存账号：`{ "username": "...", "password": "..." }` —— 触发 OIDC 登录并落库。
@@ -82,10 +82,10 @@
 
 非法 body（非对象、JSON 数组、超 4 KB）返回 400；跨域 POST 返回 403 且不写入任何账号。
 
-### `GET /api/dsh-connect-sensenova-token-plan/api-key`
+### `GET /api/dsh-connect-agnes-token-plan/api-key`
 返回推理 Key 的**去密状态**（无 Key 值本身）：`hasApiKey` / `keySource`（`credentials` 凭据服务引用、`env` 环境变量、`memory` 无凭据服务时的进程内存、或 `null`）/ `ephemeral`。
 
-### `POST /api/dsh-connect-sensenova-token-plan/api-key`
+### `POST /api/dsh-connect-agnes-token-plan/api-key`
 两种用途，靠 body 区分：
 
 - 保存 Key：`{ "apiKey": "sk-..." }` —— 以 `SENSENOVA_API_KEY` 引用写入 DSH 凭据服务（与手写 `llm-pi-ai` 行读取的是同一个引用名）；进程环境变量仍是兜底来源。下次轮询用新 Key 拉取模型目录并（开关开启时）重建已注册的 provider。
@@ -93,13 +93,13 @@
 
 响应同样只含去密状态；非法 body 返回 400，跨域 POST 返回 403。任何响应都不会回显 Key 明文。
 
-### `GET /api/dsh-connect-sensenova-token-plan/provider`
+### `GET /api/dsh-connect-agnes-token-plan/provider`
 提供方注册开关的去密状态：`registerProvider`（**生效值**）、`registerSource`（`panel` 面板保存过 / `config` 沿用配置默认）、`providerRegistered`（当前是否真的注册着），注册失败时附 `providerError`。设计见 [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md)。
 
-### `POST /api/dsh-connect-sensenova-token-plan/provider`
+### `POST /api/dsh-connect-agnes-token-plan/provider`
 `{ "enabled": true|false }` —— 把开关写入插件私有状态文件并在**同一请求内**重新发布 provider（立即生效，无需重启）。优先级：面板保存的值 > `cordis.patch.yml` 的 `registerProvider`。非布尔 `enabled` 返回 400；跨域返回 403。
 
-### `POST /api/dsh-connect-sensenova-token-plan/models`
+### `POST /api/dsh-connect-agnes-token-plan/models`
 `{ "enabledModelIds": ["model-a", ...] }` —— 替换本 Key 的**模型允许清单**：勾选后保存到私有 catalog 状态文件，并在**同一请求内**重新发布 provider（面板不需要等下一次轮询）。
 
 清单语义与 `filterByEnabled` 一致：
@@ -110,10 +110,10 @@
 
 返回 `{ ok, enabledModelIds, registerProvider, providerRegistered, providerError? }`，不含模型明文号与 Key。缺字段 / 非数组 / 超过 500 项返回 400 且不写入任何值；跨域返回 403。清单只影响**推送给 DSH 的选择器**，`snapshot` 里的 `catalogModels` / `llm.models` 仍是整份目录，面板据此展示可勾选项。
 
-### `GET /api/dsh-connect-sensenova-token-plan/draw`
+### `GET /api/dsh-connect-agnes-token-plan/draw`
 出图工具开关的去密状态：`drawEnabled`（**生效值**）、`drawSource`（`panel` 面板保存过 / `config` 沿用配置默认）。设计见 [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md) §7。
 
-### `POST /api/dsh-connect-sensenova-token-plan/draw`
+### `POST /api/dsh-connect-agnes-token-plan/draw`
 `{ "enabled": true|false }` —— 把出图开关写入插件私有状态文件（`$DSH_HOME/state/<profile>/<plugin>/draw.json`，按 profile 分段、见 [PITFALLS.md](./PITFALLS.md) §23），与 `/provider` 走的是同一套「存私有状态」机制，但**不触发任何即时发布**——agent 工具的实际注册/缺席发生在下一个 Host 启动（或重新安装）时，由 `lifecycle.js` 的 `startSideEffects` 重读生效值。优先级：面板保存的值 > `cordis.patch.yml` 的 `drawEnabled`。非布尔 `enabled` 返回 400；跨域返回 403。
 
 `{ "drawModelId": "sensenova-u1.5-lite" }`（或 `null` = 自动选择）—— 把出图模型偏好写入同一个 `draw.json`。生效时机与开关相同：`startSideEffects` 在下一次挂载时用它覆盖 `cordis.patch.yml` 的 `drawModelId`（优先级：面板 > 配置；面板清除后回落配置，配置也为空则自动取目录第一个出图模型）。非空字符串之外的非 null 值返回 400；跨域返回 403。`{ "forget": true }` 同时清除开关与模型偏好的面板保存值。

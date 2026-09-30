@@ -34,9 +34,9 @@ function fail(name, error) {
   results.push({ name, pass: false, detail: String(error?.message ?? error) });
 }
 
-const KEY = credentialKey("dsh-connect-sensenova-token-plan", "agnes-console");
+const KEY = credentialKey("dsh-connect-agnes-token-plan", "agnes-console");
 /** The sign-in throttle lives beside the grant, in its own record. */
-const THROTTLE_KEY = credentialKey("dsh-connect-sensenova-token-plan", THROTTLE_ID);
+const THROTTLE_KEY = credentialKey("dsh-connect-agnes-token-plan", THROTTLE_ID);
 const credentialKeyFn = (scope, id) => credentialKey(scope, id);
 
 function jwtExpiring(minutes) {
@@ -152,61 +152,54 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("fresh stored token needs no refresh", error));
 }
 
-// --- 2. a token near expiry is renewed, and the rotation lands ------------
+// --- 2. a token near expiry is re-issued by a fresh sign-in ---------------
+// Agnes issues no refresh token, so a near-expiry grant cannot be renewed —
+// it is replaced by signing in again with the stored account.
 {
-  const credentials = fakeCredentials(grant(jwtExpiring(1), "old-refresh", 60));
+  const credentials = fakeCredentials(grant(jwtExpiring(1), "", 60));
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" };
   const stub = await makeTokenStub(accepted);
   await withNetwork(stub, async () => {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, skewMs: 120_000 });
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv, skewMs: 120_000 });
     const token = await store.getToken();
-    check("near-expiry token is refreshed", stub.log.tokens === 1, `tokens=${stub.log.tokens}`);
-    check("the rotation is persisted",
-      (await credentials.readRecord(KEY)).payload.refreshToken === "rotated-1",
-      (await credentials.readRecord(KEY)).payload.refreshToken);
+    check("a near-expiry token triggers a fresh sign-in", stub.log.logins === 1, `logins=${stub.log.logins}`);
+    check("the new access token is persisted",
+      (await credentials.readRecord(KEY)).payload.accessToken === token,
+      String((await credentials.readRecord(KEY)).payload.accessToken).slice(0, 12));
     check("store returns the new access token", token.startsWith("eyJ"));
-  }).catch((error) => fail("near-expiry token is refreshed", error));
+  }).catch((error) => fail("a near-expiry token triggers a fresh sign-in", error));
 }
 
 // --- 3. concurrent polls share ONE acquisition ---------------------------
 {
-  const credentials = fakeCredentials(grant(jwtExpiring(1), "old-refresh", 60));
+  const credentials = fakeCredentials(grant(jwtExpiring(1), "", 60));
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" };
   const stub = await makeTokenStub(accepted);
   await withNetwork(stub, async () => {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, skewMs: 120_000 });
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv, skewMs: 120_000 });
     const tokens = await Promise.all([store.getToken(), store.getToken(), store.getToken(), store.getToken()]);
-    check("concurrent polls trigger one refresh", stub.log.tokens === 1, `tokens=${stub.log.tokens}`);
+    check("concurrent polls trigger one sign-in", stub.log.logins === 1, `logins=${stub.log.logins}`);
     check("all callers get the same token", new Set(tokens).size === 1);
     check("no overlapping modifyRecord", credentials.calls.concurrentModify === 0,
       `concurrent=${credentials.calls.concurrentModify}`);
   }).catch((error) => fail("concurrent polls share one acquisition", error));
 }
 
-// --- 4. a rejected refresh token surfaces clearly -------------------------
+// --- 4. an expired grant with no account asks for sign-in -----------------
+// Agnes issues no refresh token, so an expired grant cannot be renewed. With
+// no account stored there is no password to re-login with: the store reports
+// not_configured and leaves the grant alone for the user to replace.
 {
-  const credentials = fakeCredentials(grant(jwtExpiring(1), "dead-refresh", 60));
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(
-    JSON.stringify({ error: "invalid_grant", error_description: "refresh token is invalid, expired, revoked" }),
-    { status: 400, headers: { "content-type": "application/json" } }
-  );
-  try {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, skewMs: 120_000 });
-    let caught = null;
-    try { await store.getToken(); } catch (error) { caught = error; }
-    check("a rejected refresh token throws", caught !== null);
-    check("rejection carries refresh_rejected", caught?.code === "refresh_rejected", caught?.code);
-    const state = await store.state();
-    check("state records the failure", typeof state.error === "string" && state.error.length > 0, state.error);
-    // No account is stored to recover this dead refresh with, so the grant is
-    // reaped rather than left ownerless (see 8h for the "hit once, then ask"
-    // guarantee); with an account present it would instead fall back to login.
-    check("a rejected refresh with no account reaps the grant",
-      state.configured === false && state.hasRefreshToken === false, JSON.stringify(state));
-  } catch (error) {
-    fail("rejected refresh token surfaces clearly", error);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  const credentials = fakeCredentials(grant(jwtExpiring(-5), "", -60));
+  const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, skewMs: 120_000 });
+  let caught = null;
+  try { await store.getToken(); } catch (error) { caught = error; }
+  check("an expired grant with no account throws", caught !== null);
+  check("it reports not_configured", caught?.code === "not_configured", caught?.code);
+  const state = await store.state();
+  check("the grant keeps the panel configured", state.configured === true, JSON.stringify(state));
+  check("the grant is left in place for the next sign-in",
+    (await credentials.readRecord(KEY)) !== undefined);
 }
 
 // --- 5. nothing stored and no account -> not_configured -------------------
@@ -233,20 +226,21 @@ async function withNetwork(stub, body) {
 
 // --- 6. a refused token is never served again ----------------------------
 {
-  const credentials = fakeCredentials(grant(jwtExpiring(120), "r1", 7200));
+  const credentials = fakeCredentials(grant(jwtExpiring(120), "", 7200));
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" };
   const stub = await makeTokenStub(accepted);
   await withNetwork(stub, async () => {
-    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
+    const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv });
     const stored = await credentials.readRecord(KEY);
     const first = await store.getToken();
     check("the stored token is served first", first === stored.payload.accessToken);
     store.invalidate(first);
     const second = await store.getToken();
     check("a refused token is never served again", second !== first);
-    check("refusing it triggers a renewal", stub.log.tokens === 1, `tokens=${stub.log.tokens}`);
+    check("refusing it triggers a fresh sign-in", stub.log.logins === 1, `logins=${stub.log.logins}`);
     store.invalidate(first);
     await store.getToken();
-    check("re-refusing the old token does not storm", stub.log.tokens === 1, `tokens=${stub.log.tokens}`);
+    check("re-refusing the old token does not storm", stub.log.logins === 1, `logins=${stub.log.logins}`);
   }).catch((error) => fail("a refused token is never served again", error));
 }
 
@@ -265,7 +259,7 @@ async function withNetwork(stub, body) {
   const stub = await makeTokenStub(accepted);
   let loginBody = null;
   const wrapped = async (url, init) => {
-    if (String(url).includes("iam.sensecoreapi.cn")) loginBody = JSON.parse(String(init?.body ?? "{}"));
+    if (String(url).includes("/api/user/login")) loginBody = JSON.parse(String(init?.body ?? "{}"));
     return stub(url, init);
   };
   const realFetch = globalThis.fetch;
@@ -287,14 +281,13 @@ async function withNetwork(stub, body) {
       [...credentials.refs.keys()].join(",") === "AGNES_USERNAME",
       [...credentials.refs.keys()].join(","));
     check("a login was attempted", stub.log.logins === 1, `logins=${stub.log.logins}`);
-    // The password must reach IAM sealed, never in the clear. RFC 7516 §3:
-    // the compact JWE is five segments (header.encryptedKey.iv.ciphertext.tag).
-    check("the password is sent encrypted", typeof loginBody?.password === "string"
-      && loginBody.password.split(".").length === 5 && !loginBody.password.includes("secret"),
-      String(loginBody?.password).slice(0, 24));
-    check("the IAM call is flagged as encrypted", loginBody?.is_encrypt === true);
+    // Agnes ships no JWE walk: the password reaches the console backend as
+    // typed (TLS is the only protection) and is NEVER persisted — the checks
+    // above already proved nothing is written to the credentials refs.
+    check("the password reaches the Agnes console exactly as typed",
+      loginBody?.password === "  secret  ", JSON.stringify(loginBody?.password));
     const state = await store.state();
-    check("a refresh token is held after saving", state.hasRefreshToken === true);
+    check("no refresh token is held after saving", state.hasRefreshToken === false);
   } catch (error) {
     fail("saveAccount stores and logs in", error);
   } finally {
@@ -325,8 +318,6 @@ async function withNetwork(stub, body) {
     let first = null;
     try { await store.getToken(); } catch (error) { first = error; }
     check("a locked account is classified as such", first?.code === "account_locked", String(first?.code));
-    check("the platform's wait is carried on the error",
-      first?.retryAfterMs === 8 * 60_000, String(first?.retryAfterMs));
 
     const loginsAfterFirst = stub.log.logins;
     // This is the poll loop: without a backoff, every 30 s poll would try
@@ -338,24 +329,17 @@ async function withNetwork(stub, body) {
       `logins went ${loginsAfterFirst} -> ${stub.log.logins}`);
 
     const state = await store.state();
+    // Agnes states no platform window, so the store's own backoff governs.
     check("the state reports the remaining wait", typeof state.retryAfterMs === "number" && state.retryAfterMs > 0,
       String(state.retryAfterMs));
-    // A window the platform stated is taken at its word. Capping it would put
-    // the next probe inside a lock that is still in force, which is the very
-    // thing the wait exists to prevent.
-    check("a stated window is not truncated by the local cap",
-      state.retryAfterMs <= 8 * 60_000 + 1_000, String(state.retryAfterMs));
     check("a lockout asks for the user, not a countdown",
       state.needsUserAction !== true, String(state.needsUserAction));
 
     // A deliberate resubmit is the user acting on the message, so it must be
     // allowed through rather than refused by this store's own timer.
-    const corrected = () => new Response(JSON.stringify({
-      redirect: `https://platform.sensenova.cn/cb?code=c${issuedState !== "" ? `&state=${encodeURIComponent(issuedState)}` : ""}`
-    }), { status: 200, headers: { "content-type": "application/json" } });
-    globalThis.fetch = await makeTokenStub(corrected);
+    globalThis.fetch = await makeTokenStub(accepted);
     await store.saveAccount({ username: "u", password: "right-now" });
-    check("a corrected resubmit is allowed inside the wait", (await store.state()).hasRefreshToken === true,
+    check("a corrected resubmit is allowed inside the wait", (await store.state()).hasRefreshToken === false,
       JSON.stringify(await store.state()));
   }).catch((error) => fail("a locked account is not retried on a timer", error));
 }
@@ -368,11 +352,9 @@ async function withNetwork(stub, body) {
 {
   const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" };
   const credentials = fakeCredentials(null);
-  const vague = () => new Response(JSON.stringify({
-    code: 3, message: "InvalidArgument",
-    details: [{ reason: "invalidAccountOrPassword" }]
-  }), { status: 400, headers: { "content-type": "application/json" } });
-  const stub = await makeTokenStub(vague);
+  // Agnes's own refusal, verbatim: a bad email/password pair answers
+  // `Invalid username or password`, which maps onto login_rejected (parked).
+  const stub = await makeTokenStub(refused);
   await withNetwork(stub, async () => {
     const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: accountEnv });
     let first = null;
@@ -395,7 +377,7 @@ async function withNetwork(stub, body) {
     globalThis.fetch = await makeTokenStub(accepted);
     await store.saveAccount({ username: "u", password: "right-now" });
     const fixed = await store.state();
-    check("a corrected password is accepted", fixed.hasRefreshToken === true, JSON.stringify(fixed));
+    check("a corrected password is accepted", fixed.needsUserAction === false, JSON.stringify(fixed));
     check("the parked flag is cleared once sign-in works", fixed.needsUserAction === false,
       String(fixed.needsUserAction));
   }).catch((error) => fail("a wrong password is parked, not retried", error));
@@ -451,40 +433,11 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("an expired window is probed exactly once", error));
 }
 
-// --- 8e. a long stated window is waited out in full ----------------------
-// The other gap: the old cap truncated a platform-stated window, so a
-// two-hour lock was re-probed after thirty minutes — while still locked.
-{
-  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" };
-  const credentials = fakeCredentials(null);
-  const twoHours = () => new Response(JSON.stringify({
-    code: 9, message: "The account has been locked, please try again after 2 hours",
-    details: [{ reason: "accountLocked" }]
-  }), { status: 400, headers: { "content-type": "application/json" } });
-  const stub = await makeTokenStub(twoHours);
-  let clock = Date.now();
-  await withNetwork(stub, async () => {
-    const store = createTokenStore({
-      credentials, credentialKey: credentialKeyFn, env: accountEnv,
-      throttleStore: createMemoryThrottleStore(() => clock), now: () => clock
-    });
-    let first = null;
-    try { await store.getToken(); } catch (error) { first = error; }
-    check("a two-hour window is read whole", first?.retryAfterMs === 2 * 3_600_000, String(first?.retryAfterMs));
-    const afterFirst = stub.log.logins;
-
-    // Half an hour in — exactly where the old cap used to give up and re-probe.
-    clock += MAX_LOGIN_BACKOFF_MS + 60_000;
-    try { await store.getToken(); } catch { /* expected */ }
-    check("the old half-hour cap no longer truncates a two-hour lock",
-      stub.log.logins === afterFirst, `logins went ${afterFirst} -> ${stub.log.logins}`);
-
-    clock += 2 * 3_600_000 - MAX_LOGIN_BACKOFF_MS;
-    try { await store.getToken(); } catch { /* expected */ }
-    check("the lock is probed again only after it has expired",
-      stub.log.logins === afterFirst + 1, `logins went ${afterFirst} -> ${stub.log.logins}`);
-  }).catch((error) => fail("a long stated window is waited out in full", error));
-}
+// --- 8e. REMOVED: Agnes states no platform window -------------------------
+// The two-hour "try again after" window this block pinned was SenseNova's
+// contract. Agnes's login answers no window, so the store's own doubled
+// backoff (pinned in 8d) is the only wait — there is no stated window to read
+// whole or to refrain from truncating.
 
 // --- 8f. the throttle outlives the process that set it -------------------
 // Two Host processes share one account. A wait kept only in memory lets the
@@ -529,7 +482,7 @@ async function withNetwork(stub, body) {
     await second.saveAccount({ username: "u", password: "right" });
     const state = await second.state();
     check("a corrected password clears the shared throttle",
-      state.hasRefreshToken === true && state.retryAfterMs === null, JSON.stringify(state));
+      state.needsUserAction === false && state.retryAfterMs === null, JSON.stringify(state));
     // The throttle no longer shares the document with the grant at all, so
     // this is now trivially true — and worth keeping, because the pair of
     // addresses is exactly where the old design put a poison risk.
@@ -608,23 +561,19 @@ async function withNetwork(stub, body) {
   const credentials = fakeCredentials({
     kind: "grant",
     payload: { version: 1, accessToken: expiredJwt, refreshToken: "dead-refresh", expiresAt: Date.now() - 1000 }
-    // Deliberately NO refs: no account stored to re-login with.
+    // Deliberately NO refs: no account stored to re-login with. The non-empty
+    // refreshToken is a legacy shape — Agnes never writes one — but a grant
+    // that carries one must still be reaped when it dies with no account.
   });
   const stub = await makeTokenStub(accepted);
-  let tokenCalls = 0;
-  await withNetwork(async (url) => {
-    if (String(url).includes("oauth2/token")) {
-      tokenCalls += 1;
-      return new Response(JSON.stringify({ error: "invalid_grant" }),
-        { status: 400, headers: { "content-type": "application/json" } });
-    }
-    return stub(url);
-  }, async () => {
+  await withNetwork(stub, async () => {
     const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, skewMs: 120_000 });
 
     let first = null;
     try { await store.getToken(); } catch (error) { first = error; }
-    check("the dead refresh is reported", first?.code === "refresh_rejected", String(first?.code));
+    // Agnes issues no refresh token: renewing throws NO_REFRESH_TOKEN, and with
+    // no account the dead grant is reaped rather than left ownerless.
+    check("the unrecoverable grant is reported", first?.code === "no_refresh_token", String(first?.code));
     check("the unrecoverable grant is removed from the credentials service",
       (await credentials.readRecord(KEY)) === undefined,
       JSON.stringify(await credentials.readRecord(KEY)));
@@ -633,14 +582,13 @@ async function withNetwork(stub, body) {
       state.configured === false && state.needsAccount === true && state.hasRefreshToken === false,
       JSON.stringify(state));
 
-    // Further polls must not re-hit the dead token endpoint: the grant is gone,
-    // so the store goes straight to "not configured" instead of refreshing.
+    // Further polls must not re-attempt anything: the grant is gone, so the
+    // store goes straight to "not configured".
     for (let i = 0; i < 3; i += 1) {
       let code = null;
       try { await store.getToken(); } catch (error) { code = error?.code; }
       check(`poll ${i + 1} after the reap asks for an account`, code === "not_configured", String(code));
     }
-    check("the dead refresh is hit exactly once, not once per poll", tokenCalls === 1, `tokenCalls=${tokenCalls}`);
     check("no password login is attempted without an account", stub.log.logins === 0, `logins=${stub.log.logins}`);
   }).catch((error) => fail("a dead refresh with no account reaps the grant", error));
 }
@@ -716,8 +664,8 @@ async function withNetwork(stub, body) {
     check("switching accounts replaces the access token",
       record.payload.accessToken !== tokenA,
       `old=${String(tokenA).slice(0, 12)} new=${String(record.payload.accessToken).slice(0, 12)}`);
-    check("the old account's refresh token is not retained",
-      record.payload.refreshToken === "rotated-1",
+    check("no refresh token is retained (Agnes issues none)",
+      record.payload.refreshToken === "",
       String(record.payload.refreshToken));
     check("the new username is the one stored",
       credentials.refs.get("AGNES_USERNAME") === "account-b");
@@ -735,7 +683,7 @@ async function withNetwork(stub, body) {
 
 // --- 11. forgetAccount clears the refs but keeps the grant --------------
 {
-  const credentials = fakeCredentials(grant(jwtExpiring(120), "keep", 7200), {
+  const credentials = fakeCredentials(grant(jwtExpiring(120), "", 7200), {
     refs: { AGNES_USERNAME: "u", AGNES_PASSWORD: "p" }
   });
   const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {} });
@@ -743,7 +691,7 @@ async function withNetwork(stub, body) {
   check("the username ref is gone", credentials.refs.get("AGNES_USERNAME") === undefined);
   const state = await store.state();
   check("the account is forgotten", state.hasAccount === false);
-  check("the grant survives the forget", state.hasRefreshToken === true);
+  check("the grant survives the forget", state.hasRefreshToken === false);
   check("the panel is not asked for setup", state.needsAccount === false);
 }
 
@@ -763,7 +711,7 @@ async function withNetwork(stub, body) {
 {
   const stub = await makeTokenStub(accepted);
   await withNetwork(stub, async () => {
-    const store = createTokenStore({ credentials: null, credentialKey: credentialKeyFn, env: {} });
+    const store = createTokenStore({ credentials: null, credentialKey: credentialKeyFn, env: { AGNES_PASSWORD: "p" } });
     const before = await store.state();
     check("an in-memory store starts unconfigured", before.configured === false, JSON.stringify(before));
     check("it asks for the account", before.needsAccount === true);
@@ -778,9 +726,10 @@ async function withNetwork(stub, body) {
     const first = await store.getToken();
     store.invalidate(first);
     const second = await store.getToken();
-    check("a refused in-memory token is replaced", second !== first);
-    check("renewal used the refresh token, not a login", stub.log.tokens === 2 && stub.log.logins === 1,
-      `tokens=${stub.log.tokens} logins=${stub.log.logins}`);
+    check("a refused in-memory token is re-issued by a fresh sign-in",
+      typeof second === "string" && second.length > 0, String(second).slice(0, 12));
+    check("the replacement is a fresh sign-in (Agnes has no refresh)",
+      stub.log.logins === 2, `logins=${stub.log.logins}`);
 
     await store.forgetAccount();
     check("forget works in memory", (await store.state()).hasAccount === false);
@@ -794,7 +743,7 @@ async function withNetwork(stub, body) {
   const state = await store.state();
   check("a store with the service is not ephemeral", state.ephemeral === false, String(state.ephemeral));
   check("credentialRef yields the plain name", credentialRef("AGNES_USERNAME") === "AGNES_USERNAME");
-  check("the record key is the namespaced pair", KEY === "dsh-connect-sensenova-token-plan/agnes-console", KEY);
+  check("the record key is the namespaced pair", KEY === "dsh-connect-agnes-token-plan/agnes-console", KEY);
 }
 
 // --- 15. what this store writes must parse under the REAL credentials service
@@ -873,35 +822,13 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("the written records parse under the real service", error));
 }
 
-// --- 16. a throttle parked by the previous version is adopted, not lost ===
-// A parked refusal has no deadline. Losing one across an upgrade means the next
-// poll retries a password the user has not changed, which is how one wrong
-// password becomes a locked account — the exact thing the throttle exists to
-// prevent. So the old record is read once and taken over.
-{
-  const legacy = {
-    kind: "grant",
-    payload: {
-      version: 1, marker: "signin-throttle", code: "login_rejected",
-      parked: true, until: null, attempt: 1
-    }
-  };
-  const credentials = fakeCredentials(null, {
-    refs: { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" }
-  });
-  // Planted by hand: this is the shape the PREVIOUS version left on disk, and
-  // no code path writes it any more.
-  credentials.records.set(THROTTLE_KEY, legacy);
-  const own = createMemoryThrottleStore();
-  const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, throttleStore: own });
-  const state = await store.state();
-  check("a parked refusal from the previous version still holds",
-    state.needsUserAction === true, JSON.stringify(state));
-  check("it is adopted into the plugin's own store",
-    (await own.read())?.parked === true, JSON.stringify(await own.read()));
-  check("the old record is deleted, so this happens once",
-    (await credentials.readRecord(THROTTLE_KEY)) === undefined);
-}
+// --- 16. REMOVED: there is no previous version to adopt from --------------
+// This block pinned the pre-rename migration of a parked refusal stored as a
+// `kind: "grant"` marker in the credentials service. The Agnes plugin has no
+// predecessor: it never writes that marker, and a parked refusal it did not
+// create must not be adopted (it belongs to whichever plugin wrote it). See
+// src/host/token-store/grant.ts and src/host/throttle-store.ts for why the
+// credential-document marker route no longer exists at all.
 
 // --- 16b/16c/16d REMOVED: there is no pre-rename namespace to adopt ------
 // These three blocks pinned the SenseNova plugin's migration behaviour: a
@@ -943,8 +870,8 @@ async function withNetwork(stub, body) {
 {
   const { credentialKey: shim } = await import("../src/host/index.ts");
   for (const [scope, id] of [
-    ["dsh-connect-sensenova-token-plan", "agnes-console"],
-    ["dsh-connect-sensenova-token-plan", THROTTLE_ID],
+    ["dsh-connect-agnes-token-plan", "agnes-console"],
+    ["dsh-connect-agnes-token-plan", THROTTLE_ID],
     ["dsh-llm-rate-panel", "agnes-console"]
   ]) {
     check(`the shim matches the peer credentialKey for ${scope}/${id}`,

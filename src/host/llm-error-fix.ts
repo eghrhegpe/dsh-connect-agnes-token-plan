@@ -20,7 +20,7 @@
  *   - 只重写 `finish` chunk 的 `failure.code`，保留原始 `message` 以便排查，
  *     不触碰任何正常数据流，幂等（已是 RATE_LIMIT / 非 QUOTA 原样放行）。
  *
- * @module dsh-connect-sensenova-token-plan/llm-error-fix
+ * @module dsh-connect-agnes-token-plan/llm-error-fix
  */
 
 /**

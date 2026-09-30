@@ -12,7 +12,7 @@
  * (`test/store-baseline.test.mjs`) stays green, so no semantics moved, only
  * the file did.
  *
- * @module dsh-connect-sensenova-token-plan/token-store/account
+ * @module dsh-connect-agnes-token-plan/token-store/account
  */
 
 import { CODE } from "../codes.ts";

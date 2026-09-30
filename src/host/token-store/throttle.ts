@@ -12,7 +12,7 @@
  * block; they are still re-exported from `token-store.ts` (public surface
  * unchanged).
  *
- * @module dsh-connect-sensenova-token-plan/token-store/throttle
+ * @module dsh-connect-agnes-token-plan/token-store/throttle
  */
 
 import { isCredentialRefusal, CODE } from "../codes.ts";
