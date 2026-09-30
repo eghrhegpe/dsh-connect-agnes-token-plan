@@ -29,11 +29,14 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
   "exports": {
     ".": "./lib/index.js",               // 源码在 src/host/，lib/ 为纯构建产物（git-ignored）
     "./client": "./client.js",           // Client 半边入口（宿主注入用）：src/client/*.ts 打成的 IIFE 产物
+    "./locale/*.json": "./locale/*.json", // Plugins 页的包元数据：缺这条通配，读取端按
+                                        // ERR_PACKAGE_PATH_NOT_EXPORTED 静默跳过（卡片回落到英文 description）
     "./package.json": "./package.json"
   },
   "files": [                            // 发到 registry 时只带这些；必须覆盖构建产物与文档，
                                         // 由 test/package.test.mjs 钉住（src/ 不进包，panel-*.js 是测试基建也不进包）
     "lib", "client.js",
+    "locale",                           // locale/{en,zh}.json：插件卡的标题/简介（en.json 是锚点，缺它 zh.json 永不生效）
     "cordis.patch.yml", "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "screenshots.json"
   ],
   "scripts": {

@@ -16,11 +16,13 @@
   "exports": {
     ".": "./lib/index.js",
     "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
     "client.js",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md",

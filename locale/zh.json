@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "商汤 Token Plan 接入全家桶",
+    "description": "商汤接入的 DSH Plugins 页全家桶：Token Plan 积分额度面板（额度窗口、每模型消耗、令牌自动续期），可选的模型 provider 注册与出图路由，外加 Host 侧 429 自愈。"
+  }
+}
