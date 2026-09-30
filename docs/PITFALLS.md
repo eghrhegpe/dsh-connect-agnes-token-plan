@@ -214,4 +214,26 @@
   - 叠加 `provider-publish.js` 的 `panelValue ?? patch`：没有 patch 行时 `registerProvider` 取默认 `false`，而面板保存的值写在 state 文件里并**压过**默认值——于是「是否注册 provider」在这台机器上唯一的开关，是一个不在 git、不在 patch、CLI 也查不到的 JSON。
 - **已做**（2026-09-30）：四个 store 的读缓存统一到 `state-store.js` 的 `createStateReadCache` —— provider / draw 早有 1s TTL，**catalog 完全没有**（进程内永不失效），同一个共享目录问题修了两个、漏了第三个。现在一个 TTL 三个调用方，只允许在一处调整。钉住这条的是：`test/provider.test.mjs` §8b 用两个共享同一个 dir 的 store 实例模拟两个进程，断言「第二个进程的写入/开关，这边不必重启就看得见」，顺带钉住 `replace` 必须保住磁盘上真实的 allow-list（旧实现里惰性 `held` 会在没读过盘时把别人存好的清单重置成 `[]`）。
 - **按期查**（三层按序，别只翻 patch）：**bundles（装载）→ patch overlay（配置）→ `$DSH_HOME/state/<name>/`（运行时热开关）**。改完源头，desktop 一侧需要重装该 bundle 才会跟上（web 的 symlink 自动跟上）。
-- **未做**（P0）：state 目录按 profile 分段，或加文件级版本协商——现在不同版本的两个进程仍共用同一份 `catalog.json` / `provider.json` / `throttle.json` 与同一条 grant；以及 `doctor --json`，让「这台机器上 provider 到底是开是关」有处可问（现在是唯一的答案在一个 CLI 查不到的 JSON 里）。
+- **未做**（P0）：`doctor --json`，让「这台机器上 provider 到底是开是关」有处可问（唯一的答案仍在一个 CLI 查不到的 JSON 里）。状态目录的分段**已在第 23 条做掉**。
+
+---
+
+## 23. profile 状态：哪些该分、哪些该共享，以及读 `profileContext` 的两个坑
+
+- **现象**：web 面板改了模型允许清单或 provider 开关，desktop 侧跟着变（或干脆不变）；两个 Host 进程（web = 源码 symlink，desktop = 安装副本，见第 22 条）共写同一份 `catalog.json` / `provider.json` / `draw.json`。更糟的是**版本方向**：老进程读不懂新格式时不会报错——每个 store 的 `parse` 对「版本不认识」一律读作「无记录」，于是它重拉一次、再把**旧格式写回去**，覆盖掉新进程刚写的。
+- **根因**：这三份是**配置决策**（「这个 profile 允许哪些模型 / 要不要挂 provider / 要不要出图」），本就该 per-profile；而旧版统一放在 `$DSH_HOME/state/<name>/`，那是按「只做额度面板」的年代设计的。
+- **修法**（2026-09-30 已做）：`state-store.js` 新增 `profileSegment(ctx)` 与 `profileStateDir(name, profile)`；catalog / provider / draw 三个 store 接受 `profile`，目录变成 `$DSH_HOME/state/<profile>/<name>/`。**取不到 profile 名时退回原共享目录**，所以老主机、测试与进程内构造的行为零漂移。
+- **取 profile 名的三个坑**（2026-09-30 运行时实证，非推测）：
+  1. **只能用 `ctx.get("profileContext")`，不能用属性访问。** Cordis 的 Context 是 Proxy：读一个**没在 `inject` 里声明、Host 也没 provide** 的服务，`ctx.get` 安静返回 `undefined`，而 `ctx.profileContext` **抛错** `cannot get property "profileContext" without inject`（`@deepseek-ai/cordis` `lib/index.js:676`）。本插件首次改动就把这个错炸在 `wiring.test.mjs` 上，堆栈指向的正是属性访问那一行。官方两派用法也印证了这条边界：`dsh-app-boot` / `dsh-shell-env` 用 `ctx.get`，`dsh-settings` 则先 `static inject = ["configEditor","profileContext"]` 才敢用属性。
+  2. **不能把 `profileContext` 写进 `inject`。** `inject` 里的是**硬依赖**（缺了插件根本不加载，报错文案就叫 "cannot get required service"），而这个服务是**可选**的——`dshmarket` 的注释直言有 host 会隐藏它，`dsh-better-sidebar` 也为缺席写了分支。写进 `inject`，那些主机上本插件会整个消失（面板、额度、provider 全挂）。
+  3. **不要读 `DSH_PROFILE`。** 它在这个 runtime 里是 **OUTPUT 而非输入**：由 `runProfile()` 经 `dsh-shell-env` 派生给子进程，「no runtime module reads it to choose a profile」。手设或陈旧的值会把状态写进一个这台 Host 根本不读的目录。
+  - 另外，`profileContext.name` 会变成**路径的一段**，所以按外部输入校验（`isProfileSegment`）：字符集 `[A-Za-z0-9._-]`、不以 `.` 开头（顺带排掉 `.` 与 `..`）、长度 ≤ 64。拒绝的代价只是退回共享目录，所以规则宁严勿宽。
+- **故意不分段的两个**（别顺手「统一」掉）：
+  - **`throttle.json`**：它答的是「上游要**这台机器**等多久」。若只有吃到 429 的那个 profile 遵守，另一个 profile 会在同一窗口里继续敲门——**静默废掉节流的意义**，而且只在被限流时才看得见。代码里已写明这条意图（`throttle-store.js` 的目录函数）。
+  - **凭据 grant**：它答的是「你是谁」，与 profile 无关；且按红线 1，token 只进凭据服务。
+- **迁移**：新目录一开始是空的。读穿透发现「自己的文件不存在」时，从旧共享路径**复制**一次旧值并回填（`createStateReadCache` 的 `inheritFrom`），**只尝试一次**，所以不会变成每个 TTL 周期多读一个文件。用**复制而非移动**，与 `store.test.mjs` §16d 的改名迁移（移动、删旧文件）**故意不同**：老版本进程仍在读旧路径，把文件拿走等于把它的开关静默重置。
+- **验证**（三层，缺一层都可能在验证空气）：
+  - `test/provider.test.mjs` §8c：名字的接受/拒绝表（含 `..`、`a/b`、`a\b`、超长、非字符串），以及三种 ctx 形状——没有该服务、`get()` **抛错**、普通对象桩——都不得把错误抛穿。
+  - 同文件 §8d：分段目录、一次性继承（含「旧文件仍在」这条与 §16d 相反的断言）、**两个 profile 互不干扰**、显式 `dir` 不继承。
+  - **`test/e2e.mjs`**：真 Host 用 `--profile web` 启动，断言 catalog 落在 `state/web/<name>/` 且共享目录**没有**新文件。只有真 Host 能回答「这个可选服务对不 inject 它的插件是否真的可见」——单测桩回答不了，而服务不可见时功能会**静默失效**、测试却全绿。
+- **未做**：文件级**版本协商**——分段只隔离了「哪个 profile 的配置」，没有解决「哪个版本的格式」。老进程仍可能把新格式覆盖回旧格式（每个 store 的 `parse` 对认不出的版本一律读作「无记录」，随后写回自己那一版）。以及 `doctor --json`（见第 22 条）。

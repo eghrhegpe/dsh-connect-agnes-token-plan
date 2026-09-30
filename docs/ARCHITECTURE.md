@@ -203,7 +203,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
   false`（不设会自动探测成 true，商汤端点持续 403）；**不声明 maxTokens
   值**（声明了会变成输出上限、截断长回复，只钉字段名 `max_tokens`）。
 - **catalog/勾选清单是插件私有状态，不进 dsh 配置**：
-  `catalog-store.js` 写 `$DSH_HOME/state/<name>/catalog.json`
+  `catalog-store.js` 写 `$DSH_HOME/state/<profile>/<name>/catalog.json`（按 profile 分段，见 [PITFALLS.md](./PITFALLS.md) §23）
   （version 载荷、temp+rename 原子写、0600/0700、损坏即忽略），
   存 catalog entries 与 `enabledModelIds` 允许清单（**空数组=不过滤**，
   全新安装默认提供全部模型）。重启后、首次轮询前就靠这份缓存先注册。

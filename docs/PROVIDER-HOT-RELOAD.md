@@ -27,7 +27,7 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 
 本插件选择更贴合自身架构的路径，与 qoder 的偏好存储同构：
 
-1. **开关状态存插件私有状态文件** `state/<name>/provider.json`（新模块 `provider-store.js`，完整性纪律与 `catalog-store.js`/`throttle-store.js` 一致：版本化、临时文件 + 原子改名、损坏即读作未设置）。
+1. **开关状态存插件私有状态文件** `state/<profile>/<name>/provider.json`（新模块 `provider-store.js`，完整性纪律与 `catalog-store.js`/`throttle-store.js` 一致：版本化、临时文件 + 原子改名、损坏即读作未设置；按 profile 分段，见 [PITFALLS.md](./PITFALLS.md) §23）。
 2. **优先级**：面板保存过的值 > `cordis.patch.yml` 的 `registerProvider`（后者降级为「出厂默认」）。从未动过面板开关的部署，行为与 0.3.0 完全一致。
 3. **面板开关 → `POST /api/<name>/provider`**（同源围栏 + body 上限，与账号/api-key 路由同一信任形状）→ 存状态 → **立即** `publishProvider(当前目录, 当前允许清单)` → 返回去密状态。不用等下一个轮询周期。
 4. 快照 `llm.registerProvider` 回显**生效值**（不再是 patch 直读），新增 `registerSource`（`"panel"` / `"config"`）说明当前值来自哪一侧。
@@ -69,7 +69,7 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 
 | 文件 | 改动 |
 |---|---|
-| `draw-store.js`（新增） | 出图开关状态文件 `$DSH_HOME/state/<plugin>/draw.json`；完整性纪律与 `provider-store.js` 完全一致 |
+| `draw-store.js`（新增） | 出图开关状态文件 `$DSH_HOME/state/<profile>/<plugin>/draw.json`；完整性纪律与 `provider-store.js` 完全一致 |
 | `index.js` | wiring 里增补 `drawStore`；传给 `registerRoutes` 与 `startSideEffects` |
 | `lifecycle.js` | `registerDrawTool` 改为读「面板保存值 > 配置默认值」的生效值，而不是直接读 `settings.drawEnabled` |
 | `routes.js` | 新增 `POST /api/<name>/draw`，与 `/provider` 同一信任形状 |
