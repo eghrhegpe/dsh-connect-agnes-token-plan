@@ -249,6 +249,50 @@ const healthy = {
     (source.match(/cache:[^,}]*cacheSeconds[^)]*\)/g) ?? []).join(" | "));
 }
 
+// === F5. the API tab's card order and its open-by-default set ==============
+// The three cards answer "what did the reader come here for", not "what
+// depends on what": 语言模型 and 出图工具 lead and open, the API key editor
+// trails because it is the PREREQUISITE they point back at. Both halves have
+// drifted before — the cards were reordered once while a hint inside one of
+// them still said 「在上方保存 API Key」, pointing at a card that had moved
+// below it. So: pin the order, pin the defaults, and pin the hint to a CARD
+// NAME rather than a direction (a name survives a reorder, "上方" does not).
+{
+  const source = await readFile(new URL("../src/client/panel-page.ts", import.meta.url), "utf8");
+  const order = [...source.matchAll(/title:\s*tt\("([^"]+)"\)/g)].map((m) => m[1]);
+  const at = (key) => order.indexOf(key);
+  check("the API tab's three cards are all rendered as sections",
+    at("llm.providerTitle") >= 0 && at("draw.title") >= 0 && at("llm.title") >= 0,
+    order.join(" | "));
+  check("语言模型 leads, 出图工具 follows, API Key trails last",
+    at("llm.providerTitle") < at("draw.title") && at("draw.title") < at("llm.title"),
+    `providerTitle@${at("llm.providerTitle")} draw@${at("draw.title")} llm@${at("llm.title")}`);
+
+  // `openSections` is the FIRST half of a destructured pair, so the `=` sits
+  // after `setOpenSections]` — anchoring on `openSections\s*=useState` matches
+  // nothing and silently degrades to "no defaults found" (which reads as a
+  // pass if the empty object is not itself checked).
+  const defaults = Object.fromEntries(
+    [...(source.match(/\[openSections,[^\n]*useState\(\{([^}]*)\}\)/)?.[1] ?? "")
+      .matchAll(/(\w+):\s*(true|false)/g)].map((m) => [m[1], m[2] === "true"])
+  );
+  check("the panel's open-by-default map was actually read (not silently empty)",
+    Object.keys(defaults).length >= 6, JSON.stringify(defaults));
+  check("语言模型 and 出图工具 start expanded, the key editor starts collapsed",
+    defaults.provider === true && defaults.draw === true && defaults.llm === false,
+    JSON.stringify(defaults));
+
+  // A cross-card hint must name the card, never point up or down: the two
+  // cards it connects have already swapped places once.
+  const dict = dictionaries.zh;
+  check("the cross-card hint names the API Key card instead of a direction",
+    /API Key/.test(dict["llm.rosterEmpty"] ?? "") && !/上方|下方/.test(dict["llm.rosterEmpty"] ?? ""),
+    dict["llm.rosterEmpty"]);
+  check("the English hint matches the Chinese one on this point",
+    !/\babove\b|\bbelow\b/.test(dictionaries.en["llm.rosterEmpty"] ?? ""),
+    dictionaries.en["llm.rosterEmpty"]);
+}
+
 // === G. the checks are running the shipped module, not a stale copy ======
 // Reaching here at all means client.js loaded and materialized its factory.
 {

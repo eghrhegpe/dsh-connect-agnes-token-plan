@@ -41,11 +41,13 @@
 
 ## 把商汤模型接进 DSH（可选）
 
-在面板「模型接入（API Key）」区粘贴 `sk-` Key 保存：Host 即以 `sensenova-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入，还能勾选具体要推送哪些模型。Key 只进 DSH 凭据、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
+「接入 API」tab 的三张卡按"你为什么来这"排序，而不是按依赖排序：**语言模型**（注册 provider + 勾选推送哪些模型）、**出图工具**——两张都在最前且默认展开；**API Key** 收在最后（默认收起），它是前两张卡的前置条件，由它们指回来。
+
+在「API Key」卡里粘贴 `sk-` Key 保存：Host 即以 `sensenova-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入，还能在「语言模型」卡勾选具体要推送哪些模型。Key 只进 DSH 凭据、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
 
 ## 出图工具（可选，默认关）
 
-面板「出图工具」区打开开关后，Host 给 agent 注册工具 `sensenova_draw_image`（首选模型由 `drawModelId` 指定），鉴权走同一把 `SENSENOVA_API_KEY`。出图模型由 catalog 的 `output_modalities` 结构化判定，不靠名字正则。注意：工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义），开关值本身立即生效。
+面板「出图工具」卡（在「语言模型」下方，默认展开）打开开关后，Host 给 agent 注册工具 `sensenova_draw_image`（首选模型由 `drawModelId` 指定），鉴权走同一把 `SENSENOVA_API_KEY`。出图模型由 catalog 的 `output_modalities` 结构化判定，不靠名字正则。注意：工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义），开关值本身立即生效。
 
 ## 第二个上游：小浣熊（可选，默认关）
 

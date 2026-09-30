@@ -34,6 +34,18 @@
 - **去掉 `sidebar.panellist` 与 `main` 槽位注册**，只留 `plugins.bundle.config`：面板改为 Plugins 页内的**内联卡片**，不再占侧边栏一行（`src/client/panel-page.ts`、`src/client/index.ts`）。同时摘掉 layout 服务依赖与 onClose 按钮（Plugins 页自己管导航），`PanelPage` 的 `onClose` 改为按传入与否决定渲染。
 - 这解决了「装了 5 个 connect 插件 = 侧边栏 5 行噪音」的问题，与 workbuddy 的形态对齐。
 
+### 「接入 API」tab：卡片改名、重排、默认展开
+
+按「你为什么来这」而不是按依赖排序，三张卡全部改名 / 换位置（`src/client/panel-page.ts`、`src/client/i18n.ts`）：
+
+- **「提供方注册与模型推送」改名「语言模型」**（`llm.providerTitle`，en: `Language models`），并移到**第一位**、默认展开。
+- **「出图工具」第二位**，默认展开。两张功能卡都是用户进这个 tab 的理由；收起的卡把自己的开关藏起来，读起来像「这个功能没反应」。
+- **「API Key」移到最后**并保持默认收起——它是前两张卡的**前置条件**，由它们指回来，而不是被配置的对象；卡内是密钥输入框，也不该是默认铺开的那一屏。
+
+同时修掉一处被这次重排坑到的文案漂移：`llm.rosterEmpty` 原写「在**上方**保存一次 API Key」，而它所指引的 API Key 卡已经换到**下方**——方向词在换序后必然指错，改为直接点名「API Key」卡片（中英两侧同步；`draw.off`、`llm.noKey` 那两处「上方」指的是**同卡片内**的开关与输入框，不跨卡，保持不变）。
+
+`test/panel.test.mjs` 补三条断言把这次的决定钉住：三张卡的渲染顺序、默认展开集合、跨卡指引必须点卡片名而非方向词（均做过「故意改回旧序 / 改回 false → 红 → 还原 → 绿」验证）。
+
 ### 模型花名册重排（WorkBuddy 形态）
 
 - **行去卡内框、改用分隔线**：`modelRow` 由横向 flex 行改为纵向列（头行 + 缩进的参数行），新增 `modelRowHead` 包裹头行；徽章只标 notable 态（删「纯文本」徽章、补「额度耗尽」徽章）。工具行计数成组右置，批量按钮 32px 与搜索框等高。

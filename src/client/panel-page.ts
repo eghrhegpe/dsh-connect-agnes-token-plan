@@ -39,7 +39,13 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // everything — while the account editor starts collapsed: it is a
   // maintenance action, one click away. Remounting on a page switch
   // restores these defaults.
-  const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false, llm: false, provider: false, draw: false });
+  //
+  // The API tab's two feature cards (provider / draw) start OPEN too: they
+  // are the reason someone visits that tab, and a collapsed card hiding its
+  // own switch reads as "this does nothing". Only the API key editor stays
+  // closed — it holds a secret field, and it is a prerequisite the two
+  // cards above point at rather than the thing being configured.
+  const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false, provider: true, draw: true, llm: false });
   // Three fixed perspectives: "quota" is the daily reading (pools, trend,
   // account), "api" is the Token Plan wiring (key, provider push, draw), and
   // "raccoon" is the SECOND upstream provider (ROADMAP §6.1) — an independent
@@ -289,11 +295,13 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                   )
                 : null
             )
-          // One SectionCard per concern, all collapsed by default — these
-          // are setup/maintenance, parked on their own tab so the quota
-          // view stays the panel's first screen. Key, provider+push, and
-          // draw are three different functions; cramming them into one
-          // card is what made the block read as a pile of look-alike notices.
+          // One SectionCard per concern, parked on their own tab so the
+          // quota view stays the panel's first screen. Key, provider+push,
+          // and draw are three different functions; cramming them into one
+          // card is what made the block read as a pile of look-alike
+          // notices. Order is WHAT THE READER CAME FOR, not dependency
+          // order: the two feature cards lead (and open), the key editor
+          // trails because it is the prerequisite they point back at.
           : activeTab === "raccoon"
             // The Raccoon provider (ROADMAP §6.1) is a SECOND upstream, with
             // its own credential and its own data source (the /raccoon route
@@ -311,22 +319,22 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
             : h(
                 "div",
                 null,
-              h(
-                SectionCard,
-                { title: tt("llm.title"), open: openSections.llm, onToggle: () => toggleSection("llm"), tt },
-                h(ApiKeyForm, { llm: data?.llm ?? null, onDone: () => void load(), tt, bare: true })
-              ),
-              h(
-                SectionCard,
-                { title: tt("llm.providerTitle"), open: openSections.provider, onToggle: () => toggleSection("provider"), tt },
-                h(ProviderForm, { llm: data?.llm ?? null, onDone: () => void load(), tt })
-              ),
-              h(
-                SectionCard,
-                { title: tt("draw.title"), open: openSections.draw, onToggle: () => toggleSection("draw"), tt },
-                h(DrawSwitch, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+                h(
+                  SectionCard,
+                  { title: tt("llm.providerTitle"), open: openSections.provider, onToggle: () => toggleSection("provider"), tt },
+                  h(ProviderForm, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+                ),
+                h(
+                  SectionCard,
+                  { title: tt("draw.title"), open: openSections.draw, onToggle: () => toggleSection("draw"), tt },
+                  h(DrawSwitch, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+                ),
+                h(
+                  SectionCard,
+                  { title: tt("llm.title"), open: openSections.llm, onToggle: () => toggleSection("llm"), tt },
+                  h(ApiKeyForm, { llm: data?.llm ?? null, onDone: () => void load(), tt, bare: true })
+                )
               )
-            )
       );
 
   return h(
