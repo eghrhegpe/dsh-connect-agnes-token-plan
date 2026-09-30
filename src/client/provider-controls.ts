@@ -176,7 +176,7 @@ export function DrawSwitch({ llm, onDone, tt }: {
             "label",
             { style: { display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0, cursor: busy ? "default" : "pointer" } },
             h("input", {
-              type: "radio", name: "draw-model", checked: preferred === null, disabled: busy || !enabled,
+              type: "radio", name: "draw-model", checked: preferred === null && enabled, disabled: busy || !enabled,
               onChange: () => void saveModel(null), style: S.modelCheck
             }),
             h("span", { style: S.modelName }, tt("draw.autoOption"))
@@ -199,14 +199,23 @@ export function DrawSwitch({ llm, onDone, tt }: {
             "label",
             { style: { display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0, cursor: busy ? "default" : "pointer" } },
             h("input", {
-              type: "radio", name: "draw-model", checked: preferred === id, disabled: busy || !enabled,
+              type: "radio", name: "draw-model", checked: preferred === id && enabled, disabled: busy || !enabled,
               onChange: () => void saveModel(id), style: S.modelCheck
             }),
             h("span", { style: S.modelName, title: id }, id)
           ),
-          h("span", { style: S.modelBadge }, effective === id ? `${tt("draw.badge")} · ${tt("draw.effective")}` : tt("draw.badge"))
+          h("span", { style: S.modelBadge }, effective === id && enabled ? `${tt("draw.badge")} · ${tt("draw.effective")}` : tt("draw.badge"))
         ))
       )
+    : null;
+  // When the list cannot be drawn (no key, or a key whose catalogue holds no
+  // image model), say so under the switch instead of leaving it blank: an
+  // "on" switch with an empty area reads as "drawing works", which is not
+  // the case. The lead-in `statusText` already carries the needs-key line
+  // when the switch is ON; this hint covers the catalogue-empty case that
+  // it does not name.
+  const noListHint = hasKey && candidates.length === 0
+    ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } }, tt("draw.noCandidates"))
     : null;
   // The switch row is just the control; the status lead-in gets its own
   // line — it introduces the model rows below, and squeezed next to the
@@ -222,6 +231,7 @@ export function DrawSwitch({ llm, onDone, tt }: {
     ),
     h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } }, statusText),
     pickerRows,
+    noListHint,
     switchError ? h("div", { style: S.formError, role: "alert" }, switchError) : null
   );
 }

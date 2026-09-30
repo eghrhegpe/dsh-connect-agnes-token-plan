@@ -148,10 +148,27 @@ export const zh = {
   "draw.off": "未注册——勾选上方开关即可开启。",
   "draw.noTools": "drawEnabled 已开启，但当前 Host 没有提供 agent tools 注册服务，工具静默缺席。",
   "draw.needsKey": "尚未配置 API Key；保存后即可出图。",
+  "draw.noCandidates": "当前 API Key 目录里暂无出图模型；出图不可用。",
   "draw.modelFallback": "第一个可用模型",
   "note": "数据来自商汤控制台 API（pool-usage / credit-usage-trend），Host 侧缓存 {cache} 秒；控制台令牌约 3 小时过期，由 Host 用 refresh_token 静默续期。",
   "tab.quota": "积分额度",
-  "tab.api": "接入 API"
+  "tab.api": "接入 API",
+  "tab.raccoon": "小浣熊",
+  "raccoon.title": "小浣熊（商汤）",
+  "raccoon.desc": "接入 xiaohuanxiong.com 网关：微信扫码登录，模型经 DSH 提供方注册后可对话。与积分池相互独立。",
+  "raccoon.switch": "启用小浣熊提供方（向 DSH 注册模型）",
+  "raccoon.switchBusy": "切换中…",
+  "raccoon.switchError": "切换失败：{error}",
+  "raccoon.login": "微信扫码登录",
+  "raccoon.loggingIn": "等待扫码确认…",
+  "raccoon.logout": "退出登录",
+  "raccoon.loggedIn": "已登录：{nick}",
+  "raccoon.notLogged": "未登录——请先微信扫码。",
+  "raccoon.balance": "积分余额 {balance}",
+  "raccoon.models": "模型（{count}）",
+  "raccoon.registered": "已注册 raccoon 提供方：{count} 个模型。",
+  "raccoon.unregistered": "未注册——勾选上方开关即可开启。",
+  "raccoon.error": "小浣熊操作失败：{error}"
 } satisfies Record<string, string>;
 
 /** English dictionary, mirroring every zh key. */
@@ -295,10 +312,27 @@ export const en: typeof zh = {
   "draw.off": "Not registered — tick the switch above.",
   "draw.noTools": "drawEnabled is on, but this Host exposes no agent tools service; the tool is silently absent.",
   "draw.needsKey": "No API key yet; save one to start generating images.",
+  "draw.noCandidates": "This API key's catalogue has no image model; drawing is unavailable.",
   "draw.modelFallback": "the first available model",
   "note": "Data from the SenseNova console API (pool-usage / credit-usage-trend), cached {cache}s on the Host; the console token lasts ~3h and the Host renews it silently from a refresh token.",
   "tab.quota": "Quota & Usage",
-  "tab.api": "API Integration"
+  "tab.api": "API Integration",
+  "tab.raccoon": "Raccoon",
+  "raccoon.title": "Raccoon (SenseNova)",
+  "raccoon.desc": "Connects the xiaohuanxiong.com gateway: WeChat QR sign-in, models registered with DSH. Independent of the credit pools.",
+  "raccoon.switch": "Register Raccoon with DSH",
+  "raccoon.switchBusy": "Switching…",
+  "raccoon.switchError": "Switch failed: {error}",
+  "raccoon.login": "Sign in with WeChat QR",
+  "raccoon.loggingIn": "Waiting for QR confirmation…",
+  "raccoon.logout": "Sign out",
+  "raccoon.loggedIn": "Signed in: {nick}",
+  "raccoon.notLogged": "Not signed in — scan the QR code first.",
+  "raccoon.balance": "Balance {balance}",
+  "raccoon.models": "Models ({count})",
+  "raccoon.registered": "Raccoon registered with DSH: {count} model(s).",
+  "raccoon.unregistered": "Not registered — tick the switch above.",
+  "raccoon.error": "Raccoon operation failed: {error}"
 };
 
 export type { Tt };
