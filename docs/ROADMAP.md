@@ -82,11 +82,11 @@ live 档在 `package.json` 加 `test:live:contract` 脚本（与 `test:live` 并
   IIFE 时再加模块，会重演 PITFALLS §18「慢者赢」的并发陷阱面。
 - §2.2 的 live 档失败**不是回归**（同 `live-jwks` 纪律）：平台改字段时它红，
   修法是更新 `test/baselines/sensenova-contract.json` + `SENSENOVA-API.md` §7 注释，
-  不是改 `llm-models.js` 逻辑去迁就平台。
+  不是改 `llm-models.ts` 逻辑去迁就平台。
 - §2.2 冻结的事实是**套餐层级相关**的（PITFALLS §20 自认部分模型 403 未实测、
   `reasoning_effort:"max"` 仅 glm 实测通过）：契约基线保的是「本机这把 Key 的世界
   没漂移」，不是「所有套餐都对」。分发到其它套餐的用户首遇方言差异时，修法走
-  `SENSENOVA-API.md` §7 注释层 + 基线增行，不静默改 `llm-models.js`——live 档
+  `SENSENOVA-API.md` §7 注释层 + 基线增行，不静默改 `llm-models.ts`——live 档
   只在作者机器有护栏，这一层保护随大统一分发而变薄，吸收新模块前先记住这一点。
 
 ## 3. 旗舰刀口：429 自愈（全局级，低侵入）✅ 已实现
@@ -98,8 +98,8 @@ live 档在 `package.json` 加 `test:live:contract` 脚本（与 `test:live` 并
 | 检查点 | 结论 |
 |---|---|
 | `retryPolicy` 落点 | `llm-adapter.js:127` 唯一 `profiles` 条目（`LLM_PROVIDER_ID`），**provider 全局级**，非 model 级 |
-| descriptor 是否带 per-model retry | `llm-models.js` `toPiDescriptor` 无 retry/quota 字段，全局策略即全 model 一刀切 |
-| quota 数据源粒度 | `parsers.js` `parsePools` 每个 pool 带 `modelIds`，额度是 **pool 级归组**，model 级差异化无数据支撑 |
+| descriptor 是否带 per-model retry | `llm-models.ts` `toPiDescriptor` 无 retry/quota 字段，全局策略即全 model 一刀切 |
+| quota 数据源粒度 | `parsers.ts` `parsePools` 每个 pool 带 `modelIds`，额度是 **pool 级归组**，model 级差异化无数据支撑 |
 | 推论 | 保持**全局** retry 策略（最低侵入）+ **per-model 可用性标记**（descriptor 重建时按 pool 耗尽打标） |
 
 per-model 可用性标记即用户要的「清单自带识别」——但它是 **availability 信号**，不是 retry 配置，不碰 peer 钩子，随 `publishProvider` 重建即生效。
@@ -116,16 +116,16 @@ per-model 可用性标记即用户要的「清单自带识别」——但它是 
 > `usage limit (exceeded|exhausted|reached)` 等。商汤限频 429 体常带 `rate limit budget` /
 > `out of rate budget` 这类字眼，于是被**抢判为 `QUOTA`**（而纯 `RATE_LIMIT` 正则因排在 `isQuotaExceededError`
 > 之后成了死代码）。后果：本应退避重试的限频被按"配额耗尽"快速失败、且模型被面板静默下线呈现"额度已用尽"。
-> → 新增 `llm-error-fix.js` 在 host 侧 Proxy 包裹 `PiAiAdapter` 流出口，把"误判的限频 QUOTA"纠正回
+> → 新增 `llm-error-fix.ts` 在 host 侧 Proxy 包裹 `PiAiAdapter` 流出口，把"误判的限频 QUOTA"纠正回
 > `RATE_LIMIT`（保留 message）；真配额耗尽与已限频原样放行。即：peer 分类**仍用作主路径**，但我们加了一层
 > 保守的"宁重勿杀"纠正，不重写、不依赖 peer 解析（peer-free 可测）。
 
-- **重试策略（全局，1 行 peer 改动）— 已实现**：`llm-retry.js` 导出 peer-free 的
+- **重试策略（全局，1 行 peer 改动）— 已实现**：`llm-retry.ts` 导出 peer-free 的
   `buildRetryPolicyConfig()`（显式 `mode:"normal"`、`retryableCodes` 排除 `QUOTA`/`ACCOUNT_QUOTA`、保留
-  `RATE_LIMIT` 并略调 backoff 对共享池更温和），`llm-adapter.js:127` 改为
+  `RATE_LIMIT` 并略调 backoff 对共享池更温和），`llm-adapter.ts:127` 改为
   `resolveRetryPolicy(buildRetryPolicyConfig(), ...)`。peer 已默认对 `RATE_LIMIT` 退避、对 `QUOTA` 快速失败，本改动是把意图固定下来并防未来 peer 默认漂移。
-- **quota→provider 桥 — 已实现**：快照处理器用 `exhaustedModelIds(pools)`（`llm-models.js`）算出借尽池覆盖的模型集，经 `publishProvider(entries, enabledIds, unavailableModelIds)` 透传给 `createSensenovaAdapter`，由 `buildDescriptors` 在 picker 侧排除（避免发出必 429 的请求）；另以 `quotaSignature`（`index.js`）去抖，仅在额度跨越零点时触发一次重注册（memoize 约束下唯一生效路径）。
-- **per-model 可用性（「清单自带识别」）— 已实现**：`buildDescriptors`（`llm-models.js`）按 `pool.remaining<=0` 在 picker 侧排除借尽模型；面板则通过 `rosterWithAvailability(entries, pools)` 列出全部 chat 模型并附 `available`/`quotaExhausted` 标记（始终可见、灰色显示原因）。不依赖 peer 钩子，随 `publishProvider` 重建即生效。
+- **quota→provider 桥 — 已实现**：快照处理器用 `exhaustedModelIds(pools)`（`llm-models.ts`）算出借尽池覆盖的模型集，经 `publishProvider(entries, enabledIds, unavailableModelIds)` 透传给 `createSensenovaAdapter`，由 `buildDescriptors` 在 picker 侧排除（避免发出必 429 的请求）；另以 `quotaSignature`（`index.ts`）去抖，仅在额度跨越零点时触发一次重注册（memoize 约束下唯一生效路径）。
+- **per-model 可用性（「清单自带识别」）— 已实现**：`buildDescriptors`（`llm-models.ts`）按 `pool.remaining<=0` 在 picker 侧排除借尽模型；面板则通过 `rosterWithAvailability(entries, pools)` 列出全部 chat 模型并附 `available`/`quotaExhausted` 标记（始终可见、灰色显示原因）。不依赖 peer 钩子，随 `publishProvider` 重建即生效。
 
 ### 3.3 spike 结论（已查证）：memoize → 走 re-registration
 
@@ -293,9 +293,9 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 |---|---|---|---|
 | **P0 ✅** | `index.js` 控制面解耦（§2.1：`provider-publish.js` + `snapshot-aggregate.js` 抽状态机与聚合、`index.js` 1187→778 行、5 路由 + 2 IIFE 收编） | 中（纯重构，快照契约零改动） | `test/wiring.test.mjs` F3 经新模块注入仍全绿 + `routes`/`provider`/`draw` 四套件全绿 + `e2e-gate` |
 | **P0 ✅** | 商汤契约自动化回归（§2.2：`test/contract.test.mjs` 77 项进 `npm test` + `test/live-contract.mjs` live 手动档 + `test/baselines/sensenova-contract.json` 冻结 2026-09-29 实测） | 低（纯测试基建，不碰运行时） | `npm test` 全绿；`package.json` 加 `test:live:contract` 脚本 |
-| **P0 ✅** | 429 spike + 配额联动（全局策略 `llm-retry.js` + per-model 可用性 `llm-models.js` + `index.js` quota 重注册） | 低（1 行 peer + peer-free 分类器 + 状态文件桥） | `e2e-gate`（dsh CLI 在则实跑）；`test/retry.test.mjs` 已落地 |
+| **P0 ✅** | 429 spike + 配额联动（全局策略 `llm-retry.ts` + per-model 可用性 `llm-models.ts` + `index.ts` quota 重注册） | 低（1 行 peer + peer-free 分类器 + 状态文件桥） | `e2e-gate`（dsh CLI 在则实跑）；`test/retry.test.mjs` 已落地 |
 | **P0 文档** | §5 纠偏 + 本文入库 | 无（仅 doc） | `docs.test.mjs` |
-| **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.js`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.js` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs`（56 项）已落地；离线 12 套件全绿 |
+| **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.ts`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.ts` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs`（56 项）已落地；离线 12 套件全绿 |
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
 | **P2（观望）** | 小浣熊 desktop 融合：桌面端登录态 / 第二上游 provider（§6.1.1，**已实测否决**，只留原理与复测判据） | 高（新上游 + 新凭据生命周期） | **等本体稳定后再评估**；开工前先跑 §6.1.1 的 1 次只读复测 |

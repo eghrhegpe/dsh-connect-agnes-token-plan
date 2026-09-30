@@ -36,19 +36,19 @@
 | **Host（服务端）** | `src/host/*.ts`（27 个模块，经 `npm run build` 构建为 `lib/`） | 启动时加载一次 | **重新构建 + 完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
 | **Client（前端）** | `src/client/*.ts`（构建为根 `client.js`） | 浏览器侧，随页面加载 | `npm run build:client` 重建后浏览器刷新即可 |
 
-- `index.js`：注册只读路由 `/api/dsh-connect-sensenova-token-plan/snapshot`（聚合控制台数据，401 自动续期重试一次）+ 账号配置路由。
-- `host-config.js`：配置契约——`CONFIG_DEFAULTS`、`resolveSettings` / `resolveAuthOverrides`（含嵌套 `auth:` 块拒绝）、`isAdmitted` 同源闸、`hostName` 解析。
-- `codes.js`：全部错误码与 IAM 平台原因码的唯一声明处。`sensenova-auth.js` 产出、`token-store.js` 判定是否 parked、`index.js` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
-- `token-store.js`：凭据服务里的令牌与账号存取、按期续期、401 拒绝记忆。
-- `throttle-store.js`：登录节流状态，写在插件自己的状态文件（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），跨进程跨重启生效。
-- `sensenova-auth.js`：OIDC 授权码流登录 + `refresh_token` 静默续期。
-- `sensenova-crypto.js`：密码 JWE 封包（RSA-OAEP(SHA-1) + A256GCM）、PKCE 派生、JWT 解析、JWKS 缓存（由调用方持有、非模块级单例）。
-- `console-client.js`：控制台与模型目录的网络请求，带短生命周期缓存与 single-flight（并发轮询只发一次请求）。
-- `parsers.js`：响应解析层——字符串数值 / epoch 归一、`checkShape` 漂移检测、`parseTrend` 对 points 求和、`identifyVisionModel` 视觉模型识别。
-- `trace.js`：登录 trace 落盘（成功/失败，值级脱敏，仅留最近 20 个，权限 0600）。
-- `util.js`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
-- `provider-publish.js`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` F3（并发 publish「最后发起者最终注册」门控）经此模块注入。
-- `snapshot-aggregate.js`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 可调用-vs-锁定拆分 / 配额耗尽标记 / vision 识别 / `llm` 状态块组装。`index.js` 只保留 HTTP 面（路由注册、同源闸、body 读取、`writeJson`），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
+- `index.ts`：注册只读路由 `/api/dsh-connect-sensenova-token-plan/snapshot`（聚合控制台数据，401 自动续期重试一次）+ 账号配置路由。
+- `host-config.ts`：配置契约——`CONFIG_DEFAULTS`、`resolveSettings` / `resolveAuthOverrides`（含嵌套 `auth:` 块拒绝）、`isAdmitted` 同源闸、`hostName` 解析。
+- `codes.ts`：全部错误码与 IAM 平台原因码的唯一声明处。`sensenova-auth.ts` 产出、`token-store.ts` 判定是否 parked、`index.ts` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
+- `token-store.ts`：凭据服务里的令牌与账号存取、按期续期、401 拒绝记忆。
+- `throttle-store.ts`：登录节流状态，写在插件自己的状态文件（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），跨进程跨重启生效。
+- `sensenova-auth.ts`：OIDC 授权码流登录 + `refresh_token` 静默续期。
+- `sensenova-crypto.ts`：密码 JWE 封包（RSA-OAEP(SHA-1) + A256GCM）、PKCE 派生、JWT 解析、JWKS 缓存（由调用方持有、非模块级单例）。
+- `console-client.ts`：控制台与模型目录的网络请求，带短生命周期缓存与 single-flight（并发轮询只发一次请求）。
+- `parsers.ts`：响应解析层——字符串数值 / epoch 归一、`checkShape` 漂移检测、`parseTrend` 对 points 求和、`identifyVisionModel` 视觉模型识别。
+- `trace.ts`：登录 trace 落盘（成功/失败，值级脱敏，仅留最近 20 个，权限 0600）。
+- `util.ts`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
+- `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` F3（并发 publish「最后发起者最终注册」门控）经此模块注入。
+- `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 可调用-vs-锁定拆分 / 配额耗尽标记 / vision 识别 / `llm` 状态块组装。`index.js` 只保留 HTTP 面（路由注册、同源闸、body 读取、`writeJson`），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
 - `client.js`：侧边栏图标 + `main` 面板页 + 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
 - 测试基建：`client-surface.js` / `panel-decision.js` / `panel-render.js` —— 把 `client.js` 作为模块加载后物化 `panel` 测试面，供 `panel.test.mjs` / `render.test.mjs` 直接调用。不进运行时、不进 `files` 打包清单。
 
@@ -192,18 +192,18 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
   `registerConfigurableProviders`（`settingsNs` 为本插件自己的 row，
   `declared:false`），让模型设置页出现该 provider 的配置入口。
 - **Key 仍是同一个引用**：面板「模型接入」区把 `sk-` Key 以
-  `SENSENOVA_API_KEY` 引用存进 DSH 凭据服务（`api-key-store.js`），
+  `SENSENOVA_API_KEY` 引用存进 DSH 凭据服务（`api-key-store.ts`），
   `process.env` 兜底；与手写行读取的引用名相同，一份值两边都亮。
   Key 在适配器里是**每次请求现取**（`resolveApiKey`），轮换 Key 无需
   重新注册；任何快照/路由响应只回布尔状态与来源标签，永不回显明文。
 - **模型清单来自 catalog，vision 自动识别**：`/v1/models` 的完整 entry
-  经 `llm-models.js`（**无 peer 依赖**，离线可测）映射成 pi-ai descriptor：
+  经 `llm-models.ts`（**无 peer 依赖**，离线可测）映射成 pi-ai descriptor：
   vision 判定复用 §5.1 同一份 `identifyVisionModel`，vision 模型自动带
   `input:["text","image"]`。两个承重字段：`compat.supportsDeveloperRole:
   false`（不设会自动探测成 true，商汤端点持续 403）；**不声明 maxTokens
   值**（声明了会变成输出上限、截断长回复，只钉字段名 `max_tokens`）。
 - **catalog/勾选清单是插件私有状态，不进 dsh 配置**：
-  `catalog-store.js` 写 `$DSH_HOME/state/<profile>/<name>/catalog.json`（按 profile 分段，见 [PITFALLS.md](./PITFALLS.md) §23）
+  `catalog-store.ts` 写 `$DSH_HOME/state/<profile>/<name>/catalog.json`（按 profile 分段，见 [PITFALLS.md](./PITFALLS.md) §23）
   （version 载荷、temp+rename 原子写、0600/0700、损坏即忽略），
   存 catalog entries 与 `enabledModelIds` 允许清单（**空数组=不过滤**，
   全新安装默认提供全部模型）。重启后、首次轮询前就靠这份缓存先注册。
@@ -212,7 +212,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
   `ctx.emit("llm/adapters-updated")`；注册失败回滚旧 pair，不拖垮正在
   服务的模型。快照用「id+vision 位+允许清单」签名去抖，catalog 一小时
   缓存、面板 30 秒轮询也不会反复重注册。
-- **peer 依赖懒加载**：`llm-adapter.js` import Host 发行的
+- **peer 依赖懒加载**：`llm-adapter.ts` import Host 发行的
   `@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm-pi-ai` /
   `@deepseek-ai/dsh-llm`，干净检出解析不到，所以 index.js 只在开关开启
   且 `ctx.get("llm")` 存在时动态 `import("./llm-adapter.js")`；无 llm
@@ -267,7 +267,7 @@ draw-router 的多源能力时才有意义。
 顺手可借的小件：probe 失败 30 秒 cooldown（line 196）；
 lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115）。
 
-**接法 B 已落地（2026-09-29，`draw.js` + `index.js` 接线）**：
+**接法 B 已落地（2026-09-29，`draw.ts` + `index.ts` 接线）**：
 
 - 工具名 `sensenova_draw_image`（带前缀，避免与 dsh-draw-router 的
   `draw_image` 撞名），配置开关 `drawEnabled`（默认关）+ `drawModelId` +

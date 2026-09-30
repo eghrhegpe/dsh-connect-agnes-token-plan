@@ -7,7 +7,7 @@
 ## 1. 前置条件
 
 - **Node.js ≥ 22**：仅用于跑测试（`npm test`），运行时由 Host 提供运行时，无需本机装 Node 来跑插件本身。
-- **DSH 运行时**：插件装在某个 DSH profile 下，由 Host 在启动时加载 `index.js` 等 Host 半边文件。
+- **DSH 运行时**：插件装在某个 DSH profile 下，由 Host 在启动时加载 `index.ts` 等 Host 半边文件。
 - **凭据服务**：Host 需具备 `@deepseek-ai/dsh-credentials` 能力，账号密码与令牌才能落库。没有它时面板仍可打开，但账号只存内存（重启需重登，见 [AUTH.md](./AUTH.md)）。
 
 ---
@@ -69,13 +69,13 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 
 端点类字段仅在企业镜像 / 预发环境指向别的主机时才需要动；全部不配即等于平台默认值。任意端点覆盖若不是合法的 http(s) 绝对地址，插件在**挂载时**就报 `config_error`（面板顶部显示），而不是等到第一次轮询才变成莫名其妙的网络错误。
 
-> 上表主机层字段的默认值（含 `allowedHosts` 的 `localhost`/`127.0.0.1`/`::1`）统一定义在 `index.js` 的 `CONFIG_DEFAULTS`，并由 `test/config.test.mjs` 与 `cordis.patch.yml` 双向钉住；auth 类字段留空即表示"使用平台默认"，其生效值定义在 `sensenova-auth.js` 的 `AUTH_DEFAULTS`，不在此重复。
+> 上表主机层字段的默认值（含 `allowedHosts` 的 `localhost`/`127.0.0.1`/`::1`）统一定义在 `index.ts` 的 `CONFIG_DEFAULTS`，并由 `test/config.test.mjs` 与 `cordis.patch.yml` 双向钉住；auth 类字段留空即表示"使用平台默认"，其生效值定义在 `sensenova-auth.js` 的 `AUTH_DEFAULTS`，不在此重复。
 
 ---
 
 ## 4. 改动后必须重启 Host
 
-**Host 半边（`index.js` / `token-store.js` / `sensenova-auth.js`）在启动时加载一次。** 改完这些文件，运行中的 `dsh web` 不会自动重载，必须完全退出 DSH 再启动（**托盘也要退**）。只改 `client.js` 时，浏览器刷新页面即可。
+**Host 半边（`index.ts` / `token-store.ts` / `sensenova-auth.ts`）在启动时加载一次。** 改完这些文件，运行中的 `dsh web` 不会自动重载，必须完全退出 DSH 再启动（**托盘也要退**）。只改 `client.js` 时，浏览器刷新页面即可。
 
 自查是否跑的是新代码——看快照接口的返回：
 

@@ -55,12 +55,12 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 
 1. **凭据不入库**：账号与 access/refresh token 只进 DSH 凭据服务（`~/.dsh/.credentials.yaml`，owner-only），
    永不写入插件目录、永不进 git、永不进日志；**密码不落盘**——仅登录瞬间内存使用，`SENSENOVA_PASSWORD`
-   环境变量是它唯一的持久来源（显式 opt-in，勿把密码写回凭据服务）。登录 trace 已在 `sensenova-auth.js`
+   环境变量是它唯一的持久来源（显式 opt-in，勿把密码写回凭据服务）。登录 trace 已在 `sensenova-auth.ts`
    内做值级脱敏（`code`/`code_verifier`/token/cookie），新增输出点必须过同一套
    `sanitize*`。
 2. **credentials 记录只能是 `kind: "grant"`**。发明私有 kind 会让凭据文件对
    整个 Host 不可解析，而该服务是 required —— **Host 直接起不来**。私有状态
-   **不进凭据服务**（节流等已迁到插件状态文件 `throttle-store.js`）；历史上寄
+   **不进凭据服务**（节流等已迁到插件状态文件 `throttle-store.ts`）；历史上寄
    存在凭据记录里的节流仅按 marker（`THROTTLE_MARKER`）做一次性迁移读取，别把
    它变回常驻地址。
 3. **auth overrides 是 patch 行的顶层键**（`iamBase`、`tokenEndpoint`…），

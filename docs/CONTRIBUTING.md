@@ -71,10 +71,10 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
 ## 7. 已知取舍
 
 - **API key 的持久化与跨进程**
-  `index.js` 的 `resolveApiKey()` 已优先走 `ctx.credentials.resolve("SENSENOVA_API_KEY")`、回退 `process.env`，
+  `index.ts` 的 `resolveApiKey()` 已优先走 `ctx.credentials.resolve("SENSENOVA_API_KEY")`、回退 `process.env`，
   与账号/密码腿（走 `ctx.credentials.modifyRecord`、kind=grant、跨重启、跨进程）的不对称已收口——
   凭据服务里的 key 与 env 里的 key 都能被读到。仍不对称的部分：API key 无写路径（不通过本插件修改），
-  所以不给 `token-store.js` 加 `modifyRecord`；`fetchModelCatalog` 只接字符串参数，不关心供方是谁。
+  所以不给 `token-store.ts` 加 `modifyRecord`；`fetchModelCatalog` 只接字符串参数，不关心供方是谁。
   读 key 必须每次轮询时调用（凭据服务可能晚于插件挂载注册），不能在 `apply` 开头缓存。
 
 ---

@@ -51,7 +51,7 @@
 - **修法**：两类拒绝区别对待——
   - **时间型**（锁定/限频/故障）：等窗口；**平台声明窗口照单全收、绝不截断**（哪怕 2 小时），无窗口才本地指数退避 60s→2m→4m… 上限 30 分钟；窗口一到恰好探测一次。
   - **凭据型**（错密码/验证码）：**完全不自动重试**，面板请用户重填，只有用户主动提交才试。
-  - 节流曾写进凭据服务（伪装成 `grant` 记录 + marker 字段），但凭据服务只认两种 kind，私有状态寄存在那里一条 typo 就会炸掉整台机器——现已迁到插件自己的状态文件（`throttle-store.js`，原子写），**跨进程跨重启**生效：另一个 Host 进程不会在等待期继续敲门。旧凭据记录地址仅作一次性迁移读取。
+  - 节流曾写进凭据服务（伪装成 `grant` 记录 + marker 字段），但凭据服务只认两种 kind，私有状态寄存在那里一条 typo 就会炸掉整台机器——现已迁到插件自己的状态文件（`throttle-store.ts`，原子写），**跨进程跨重启**生效：另一个 Host 进程不会在等待期继续敲门。旧凭据记录地址仅作一次性迁移读取。
 
 ---
 
@@ -116,7 +116,7 @@
 
 - **现象**：切到企业镜像/预发后密码封包用错公钥。
 - **根因**：JWKS 缓存了上一个租户的密钥，新平台却用不同 key。
-- **修法**：JWKS 缓存已从 `sensenova-auth.js` 迁到 `sensenova-crypto.js`，且**由调用方持有、非模块级单例**。`createAuth(overrides)` 每次在自带配置里挂一份独立缓存（`cfg.jwksCache = createJwksCache()`），`sealPassword(..., { cache })` 用它——所以两个实例即便指向**同一个** endpoint 也不共享密钥项；缓存内部再按 `jwksEndpoint` URL 分键，一个实例配多镜像也各归各。这一层之前只做了一半：auth 侧已 per-instance，crypto 侧仍是模块级 `Map`，跨实例照样串味，测试只能靠 `import("...?shape=…")` 重载整个模块来强制干净缓存。补全后该 hack 退休，`test/auth.test.mjs` §2b 直接钉住"复用/隔离/分键/两实例各自持有"四条语义。`forgetJwks()` 随模块级缓存一并删除（此前全仓零调用）。
+- **修法**：JWKS 缓存已从 `sensenova-auth.ts` 迁到 `sensenova-crypto.ts`，且**由调用方持有、非模块级单例**。`createAuth(overrides)` 每次在自带配置里挂一份独立缓存（`cfg.jwksCache = createJwksCache()`），`sealPassword(..., { cache })` 用它——所以两个实例即便指向**同一个** endpoint 也不共享密钥项；缓存内部再按 `jwksEndpoint` URL 分键，一个实例配多镜像也各归各。这一层之前只做了一半：auth 侧已 per-instance，crypto 侧仍是模块级 `Map`，跨实例照样串味，测试只能靠 `import("...?shape=…")` 重载整个模块来强制干净缓存。补全后该 hack 退休，`test/auth.test.mjs` §2b 直接钉住"复用/隔离/分键/两实例各自持有"四条语义。`forgetJwks()` 随模块级缓存一并删除（此前全仓零调用）。
 
 ---
 
@@ -134,7 +134,7 @@
   `Cannot find package '@earendil-works/pi-ai' imported from …/plugins/dsh-connect-sensenova-token-plan/llm-adapter.js`；
   而离线套件（连 `npm test` 全量）**全绿**，因为离线套件通过 `peer-roots.mjs` 从 Host 运行时就地解析 peer，
   走的不是插件自己的解析链。
-- **根因**：`llm-adapter.js` 要 import Host 发行的三个 peer（`@earendil-works/pi-ai`、
+- **根因**：`llm-adapter.ts` 要 import Host 发行的三个 peer（`@earendil-works/pi-ai`、
   `@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-llm-pi-ai`），而 Node 的裸模块解析是从**该文件所在目录**逐级向上找
   `node_modules`。npm 装进 profile 的插件（`profiles/web/node_modules/<name>` 是**真实目录**）会向上走到
   `profiles/node_modules`，那里有 Host 的 peer；开发期的 `~/.dsh/plugins/<name>` 是**符号链接/junction** 进
@@ -166,15 +166,15 @@
 
 - **现象**：面板显示 N 个模型、provider 已注册，但模型路由里真正可用的是另一份——常是重启后 state 缓存里那份空/旧列表。日志无异常，重试也自愈不了（要等下一次 catalog 变化）。
 - **根因**：挂载时从 `catalog.json` 播种的那次发布是 fire-and-forget，可能还在飞；此时首次轮询、开关切换或 Key 清除又各发布一次。每次发布都是「先 `releaseProvider()` 再 `registerAdapter()`」，两次交错时**先发起、后完成**的那次会摘掉对方刚注册的 pair，再把自己那份旧 catalog 注册上去。更糟的是插件已经 dispose 之后，播种那次仍会完成注册——留下一个没人拥有、没人能摘掉的 provider。
-- **修法**：`publishProvider` 走 promise 链串行（`publishChain`，与 `token-store.js` 的 `getToken` 同一手法），seed / 轮询 / 开关 / Key 清除四个入口都进同一临界区；`disposed` 标志在 dispose 时置位，之后的发布直接跳过。注册那一对调用抽成 `registerPair()` 只定义一次——发布路径与回滚路径共用，否则两份迟早漂移（回滚只在已经出错时才跑，是最坏的发现时机）。钉住它的是 `test/wiring.test.mjs` F3：用可控 gate 让第一次 build 停住，断言「最后发起的那次是最终注册的」。
-- **注意**：`index.js` 里 signature 去抖是同步块（赋值与比较之间没有 await），单线程下它自己不会漏；漏的是 `publishProvider` 内部的 await。别以为有 signature 就够了。
+- **修法**：`publishProvider` 走 promise 链串行（`publishChain`，与 `token-store.ts` 的 `getToken` 同一手法），seed / 轮询 / 开关 / Key 清除四个入口都进同一临界区；`disposed` 标志在 dispose 时置位，之后的发布直接跳过。注册那一对调用抽成 `registerPair()` 只定义一次——发布路径与回滚路径共用，否则两份迟早漂移（回滚只在已经出错时才跑，是最坏的发现时机）。钉住它的是 `test/wiring.test.mjs` F3：用可控 gate 让第一次 build 停住，断言「最后发起的那次是最终注册的」。
+- **注意**：`index.ts` 里 signature 去抖是同步块（赋值与比较之间没有 await），单线程下它自己不会漏；漏的是 `publishProvider` 内部的 await。别以为有 signature 就够了。
 
 ---
 
 ## 19. adapter 工厂一旦返回 Promise，就会注册一个 undefined adapter
 
 - **现象**：潜在——面板说 provider 已注册，快照 `llm.providerError` 为空，但真正调模型时报完全不像原因的路由错误。
-- **根因**：`createSensenovaAdapter()` 现在是同步函数，`index.js` 把它的返回值直接交给 `registerAdapter`。哪天它内部改成动态 import peer 而变成 async，`built` 就是 Promise，`built.adapter` / `built.providerIds` 全为 `undefined`——而 Host 照单注册。故障出现在模型路由，离原因很远。
+- **根因**：`createSensenovaAdapter()` 现在是同步函数，`index.ts` 把它的返回值直接交给 `registerAdapter`。哪天它内部改成动态 import peer 而变成 async，`built` 就是 Promise，`built.adapter` / `built.providerIds` 全为 `undefined`——而 Host 照单注册。故障出现在模型路由，离原因很远。
 - **修法**：`await` 工厂的返回值（对同步函数零副作用），并校验形状必须是 `{ adapter, providerIds }`；不符就在发布前抛错，进快照的 `llm.providerError`，而不是注册一个空壳。
 
 ---
@@ -210,9 +210,9 @@
 - **根因**（2026-09-30 本机实测，三处超出直觉的事实）：
   - **装载面不是 patch，是 bundle**：插件在 profile 的 `package.json#dsh.profile.bundles` 里注册，`cordis.patch.yml` 只是 overlay，**缺省合法**（`cordis.yml` 头注即写明：不要编辑该文件，树由 bundles → patch → overlays 合成）。所以「patch 里没有本插件的行」什么都不证明。
   - **两个 profile 装的不是同一份**：本机 `profiles/web/node_modules/<name>` 是 `symlink → ~/.dsh/plugins/<name>`（跑源码 HEAD），而 `profiles/desktop/node_modules/<name>` 是**真目录**（安装副本，pin 在依赖里声明的版本号）。改了源头，web 立即生效，desktop 停在旧版本。
-  - **状态面却是全局的**：`state-store.js` 的 `$DSH_HOME/state/<name>/`（`catalog.json` / `provider.json` / `throttle.json`）与凭据服务里的同一条 grant 都不按 profile 分段，被两个 Host 进程共写，且载荷除各自的 `version` 外**没有跨版本协商**。
-  - 叠加 `provider-publish.js` 的 `panelValue ?? patch`：没有 patch 行时 `registerProvider` 取默认 `false`，而面板保存的值写在 state 文件里并**压过**默认值——于是「是否注册 provider」在这台机器上唯一的开关，是一个不在 git、不在 patch、CLI 也查不到的 JSON。
-- **已做**（2026-09-30）：四个 store 的读缓存统一到 `state-store.js` 的 `createStateReadCache` —— provider / draw 早有 1s TTL，**catalog 完全没有**（进程内永不失效），同一个共享目录问题修了两个、漏了第三个。现在一个 TTL 三个调用方，只允许在一处调整。钉住这条的是：`test/provider.test.mjs` §8b 用两个共享同一个 dir 的 store 实例模拟两个进程，断言「第二个进程的写入/开关，这边不必重启就看得见」，顺带钉住 `replace` 必须保住磁盘上真实的 allow-list（旧实现里惰性 `held` 会在没读过盘时把别人存好的清单重置成 `[]`）。
+  - **状态面却是全局的**：`state-store.ts` 的 `$DSH_HOME/state/<name>/`（`catalog.json` / `provider.json` / `throttle.json`）与凭据服务里的同一条 grant 都不按 profile 分段，被两个 Host 进程共写，且载荷除各自的 `version` 外**没有跨版本协商**。
+  - 叠加 `provider-publish.ts` 的 `panelValue ?? patch`：没有 patch 行时 `registerProvider` 取默认 `false`，而面板保存的值写在 state 文件里并**压过**默认值——于是「是否注册 provider」在这台机器上唯一的开关，是一个不在 git、不在 patch、CLI 也查不到的 JSON。
+- **已做**（2026-09-30）：四个 store 的读缓存统一到 `state-store.ts` 的 `createStateReadCache` —— provider / draw 早有 1s TTL，**catalog 完全没有**（进程内永不失效），同一个共享目录问题修了两个、漏了第三个。现在一个 TTL 三个调用方，只允许在一处调整。钉住这条的是：`test/provider.test.mjs` §8b 用两个共享同一个 dir 的 store 实例模拟两个进程，断言「第二个进程的写入/开关，这边不必重启就看得见」，顺带钉住 `replace` 必须保住磁盘上真实的 allow-list（旧实现里惰性 `held` 会在没读过盘时把别人存好的清单重置成 `[]`）。
 - **按期查**（三层按序，别只翻 patch）：**bundles（装载）→ patch overlay（配置）→ `$DSH_HOME/state/<name>/`（运行时热开关）**。改完源头，desktop 一侧需要重装该 bundle 才会跟上（web 的 symlink 自动跟上）。
 - **未做**（P0）：`doctor --json`，让「这台机器上 provider 到底是开是关」有处可问（唯一的答案仍在一个 CLI 查不到的 JSON 里）。状态目录的分段**已在第 23 条做掉**。
 
@@ -222,14 +222,14 @@
 
 - **现象**：web 面板改了模型允许清单或 provider 开关，desktop 侧跟着变（或干脆不变）；两个 Host 进程（web = 源码 symlink，desktop = 安装副本，见第 22 条）共写同一份 `catalog.json` / `provider.json` / `draw.json`。更糟的是**版本方向**：老进程读不懂新格式时不会报错——每个 store 的 `parse` 对「版本不认识」一律读作「无记录」，于是它重拉一次、再把**旧格式写回去**，覆盖掉新进程刚写的。
 - **根因**：这三份是**配置决策**（「这个 profile 允许哪些模型 / 要不要挂 provider / 要不要出图」），本就该 per-profile；而旧版统一放在 `$DSH_HOME/state/<name>/`，那是按「只做额度面板」的年代设计的。
-- **修法**（2026-09-30 已做）：`state-store.js` 新增 `profileSegment(ctx)` 与 `profileStateDir(name, profile)`；catalog / provider / draw 三个 store 接受 `profile`，目录变成 `$DSH_HOME/state/<profile>/<name>/`。**取不到 profile 名时退回原共享目录**，所以老主机、测试与进程内构造的行为零漂移。
+- **修法**（2026-09-30 已做）：`state-store.ts` 新增 `profileSegment(ctx)` 与 `profileStateDir(name, profile)`；catalog / provider / draw 三个 store 接受 `profile`，目录变成 `$DSH_HOME/state/<profile>/<name>/`。**取不到 profile 名时退回原共享目录**，所以老主机、测试与进程内构造的行为零漂移。
 - **取 profile 名的三个坑**（2026-09-30 运行时实证，非推测）：
   1. **只能用 `ctx.get("profileContext")`，不能用属性访问。** Cordis 的 Context 是 Proxy：读一个**没在 `inject` 里声明、Host 也没 provide** 的服务，`ctx.get` 安静返回 `undefined`，而 `ctx.profileContext` **抛错** `cannot get property "profileContext" without inject`（`@deepseek-ai/cordis` `lib/index.js:676`）。本插件首次改动就把这个错炸在 `wiring.test.mjs` 上，堆栈指向的正是属性访问那一行。官方两派用法也印证了这条边界：`dsh-app-boot` / `dsh-shell-env` 用 `ctx.get`，`dsh-settings` 则先 `static inject = ["configEditor","profileContext"]` 才敢用属性。
   2. **不能把 `profileContext` 写进 `inject`。** `inject` 里的是**硬依赖**（缺了插件根本不加载，报错文案就叫 "cannot get required service"），而这个服务是**可选**的——`dshmarket` 的注释直言有 host 会隐藏它，`dsh-better-sidebar` 也为缺席写了分支。写进 `inject`，那些主机上本插件会整个消失（面板、额度、provider 全挂）。
   3. **不要读 `DSH_PROFILE`。** 它在这个 runtime 里是 **OUTPUT 而非输入**：由 `runProfile()` 经 `dsh-shell-env` 派生给子进程，「no runtime module reads it to choose a profile」。手设或陈旧的值会把状态写进一个这台 Host 根本不读的目录。
   - 另外，`profileContext.name` 会变成**路径的一段**，所以按外部输入校验（`isProfileSegment`）：字符集 `[A-Za-z0-9._-]`、不以 `.` 开头（顺带排掉 `.` 与 `..`）、长度 ≤ 64。拒绝的代价只是退回共享目录，所以规则宁严勿宽。
 - **故意不分段的两个**（别顺手「统一」掉）：
-  - **`throttle.json`**：它答的是「上游要**这台机器**等多久」。若只有吃到 429 的那个 profile 遵守，另一个 profile 会在同一窗口里继续敲门——**静默废掉节流的意义**，而且只在被限流时才看得见。代码里已写明这条意图（`throttle-store.js` 的目录函数）。
+  - **`throttle.json`**：它答的是「上游要**这台机器**等多久」。若只有吃到 429 的那个 profile 遵守，另一个 profile 会在同一窗口里继续敲门——**静默废掉节流的意义**，而且只在被限流时才看得见。代码里已写明这条意图（`throttle-store.ts` 的目录函数）。
   - **凭据 grant**：它答的是「你是谁」，与 profile 无关；且按红线 1，token 只进凭据服务。
 - **迁移**：新目录一开始是空的。读穿透发现「自己的文件不存在」时，从旧共享路径**复制**一次旧值并回填（`createStateReadCache` 的 `inheritFrom`），**只尝试一次**，所以不会变成每个 TTL 周期多读一个文件。用**复制而非移动**，与 `store.test.mjs` §16d 的改名迁移（移动、删旧文件）**故意不同**：老版本进程仍在读旧路径，把文件拿走等于把它的开关静默重置。
 - **验证**（三层，缺一层都可能在验证空气）：
