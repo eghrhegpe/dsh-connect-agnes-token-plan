@@ -169,6 +169,7 @@ export const zh = {
   "raccoon.models": "模型（{count}）",
   "raccoon.registered": "已注册 raccoon 提供方：{count} 个模型。",
   "raccoon.unregistered": "未注册——勾选上方开关即可开启。",
+  "raccoon.awaitingLogin": "已启用——登录后即可注册模型。",
   "raccoon.error": "小浣熊操作失败：{error}"
 } satisfies Record<string, string>;
 
@@ -334,6 +335,7 @@ export const en: typeof zh = {
   "raccoon.models": "Models ({count})",
   "raccoon.registered": "Raccoon registered with DSH: {count} model(s).",
   "raccoon.unregistered": "Not registered — tick the switch above.",
+  "raccoon.awaitingLogin": "Enabled — log in to register the models.",
   "raccoon.error": "Raccoon operation failed: {error}"
 };
 

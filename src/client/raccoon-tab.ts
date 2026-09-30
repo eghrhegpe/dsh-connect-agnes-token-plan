@@ -196,16 +196,24 @@ export function RaccoonTab({ tt }: { tt: Tt }): unknown {
     // A registration failure stays visible even while the switch is OFF —
     // hiding it behind `enabled` is the same dead-end as the account editor
     // used to be: a failed state with no visible affordance to act on it.
+    // When the switch is on but no login exists yet, the unregistered line
+    // must say THAT (a "tick the switch" nudge at an already-ticked switch
+    // is the same lie `llm.registeredPending` used to tell).
     state !== null
       ? state.providerRegistered === true
         ? h("div", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" }, role: "status" },
             format(tt("raccoon.registered"), { count: count(models.length) }))
         : state.providerError !== undefined && state.providerError !== ""
           ? h("div", { style: S.formError, role: "alert" }, state.providerError)
-          : h("div", { style: S.muted, fontSize: 12 }, tt("raccoon.unregistered"))
+          : enabled && !loggedIn
+            ? h("div", { style: S.muted, fontSize: 12 }, tt("raccoon.awaitingLogin"))
+            : h("div", { style: S.muted, fontSize: 12 }, tt("raccoon.unregistered"))
       : null,
     // The login half: a WeChat QR the tab encodes locally, or the login
-    // result line once the walk settles.
+    // result line once the walk settles. While a walk is in flight the QR
+    // (from the route's shared in-flight scan) IS the waiting indicator —
+    // the button alone already shows the busy state, so there is no second
+    // "waiting" line beside it.
     h(
       "div",
       { style: S.card, marginTop: 4 },
@@ -221,9 +229,6 @@ export function RaccoonTab({ tt }: { tt: Tt }): unknown {
             "div",
             null,
             h("div", { style: { fontSize: 13 } }, tt("raccoon.notLogged")),
-            loginBusy
-              ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 6 }, role: "status" }, tt("raccoon.loggingIn"))
-              : null,
             // The QR encodes the scan URL the route is CURRENTLY waiting on
             // (it re-issues one per login; the tab's poll picks it up in
             // `state.scanUrl`), or the login button when no walk is in flight.

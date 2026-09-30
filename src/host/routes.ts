@@ -629,6 +629,13 @@ export function registerRoutes(ctx, wiring) {
   // and answers with the scan URL to display the moment it is issued. The
   // credential never touches this plugin's directory, git, or logs — it goes
   // straight to the DSH credentials service through `raccoonStore`.
+  // The in-flight QR login state lives OUTSIDE the handler: a handler-local
+  // would be re-initialized to null on EVERY request (each call re-runs the
+  // function body), so a GET arriving while the POST login walk is waiting
+  // could never see the scan — the tab would poll forever with no QR to
+  // render. One scan per process (the single long-poll owns it); cleared when
+  // the walk settles.
+  let raccoonScan: { code: string; url: string } | null = null;
   const offRaccoon = ctx.webServer.register({
     kind: "exact",
     path: RACCOON_PATH,
@@ -637,10 +644,6 @@ export function registerRoutes(ctx, wiring) {
         refuseOrigin(response);
         return;
       }
-      // The in-flight QR login: one scan per process (the route's single
-      // long-poll owns it), so the tab can re-render the QR from a GET while
-      // a login is waiting. Cleared when the walk settles.
-      let raccoonScan: { code: string; url: string } | null = null;
       // The GET's secret-free state, reused by every POST branch so a mutation
       // always re-reports the same facts a GET would. The `scanUrl`/`code` it
       // carries are the scan the pending login walk last issued.
