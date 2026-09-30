@@ -350,7 +350,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
           ? h("span", { style: S.error, role: "status", title: failure.message }, format(tt("panel.error"), { error: failure.message }))
           : null,
         h("button", { type: "button", style: S.button, onClick: () => void load() }, tt("panel.refresh")),
-        h("button", { type: "button", style: S.button, onClick: () => onClose?.() }, tt("panel.back"))
+        onClose ? h("button", { type: "button", style: S.button, onClick: () => onClose() }, tt("panel.back")) : null
       )
     ),
     h(

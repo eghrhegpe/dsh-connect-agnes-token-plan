@@ -1,12 +1,12 @@
 /**
  * dsh-connect-sensenova-token-plan — Client half (entry).
  *
- * Registers one global sidebar row (`sidebar.panellist`) whose id addresses
- * the matching root-scoped `main` keyed page, then renders that page: the
- * SenseNova Token Plan quota pools (5h / 7d windows with used/limit/percent)
- * and per-model credit consumption. The data comes from the Host's read-only
- * snapshot route, polled only while the page is mounted — the Client folds no
- * session events of its own.
+ * Registers a config card inside the Plugins page (`plugins.bundle.config`
+ * slot). The card renders the SenseNova Token Plan quota pools (5h / 7d
+ * windows with used/limit/percent), per-model credit consumption, and the
+ * three-tab layout (quota / api / raccoon). The data comes from the Host's
+ * read-only snapshot route, polled only while the card is mounted — the
+ * Client folds no session events of its own.
  *
  * The sources live in `src/client/*.ts` and are bundled into the root
  * `client.js` artifact by tsdown (IIFE, see `tsdown.config.mjs`); the tests

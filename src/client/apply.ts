@@ -1,20 +1,23 @@
 /**
- * The Host-facing mount: dictionary registration, the sidebar row, and the
- * main-slot page. Verbatim logic from the pre-split `client.js`.
+ * The Host-facing mount: dictionary registration and the plugin config card.
+ *
+ * The panel lives inside the Plugins page (`plugins.bundle.config` slot) —
+ * it appears as an inline card between the bundle description and the Loader
+ * row, always expanded (`view: "page"` only, no summary state). There is no
+ * sidebar entry and no standalone `main` page; the user reaches it by
+ * opening the Plugins panel and navigating to this bundle.
  */
-import { PanelIcon } from "./cards.ts";
-import { NS, PANEL_ID } from "./const.ts";
+import { NS } from "./const.ts";
 import { en, zh } from "./i18n.ts";
 import { PanelPage } from "./panel-page.ts";
 import type { Tt } from "./runtime.ts";
 
-/** Required services: the slot system, the locale registry, the layout face. */
+/** Required services: the slot system, the locale registry. */
 export const inject = ["slots", "locale"];
 
 /** The minimal client-root face `apply` touches; the rest of ctx is opaque. */
 export interface ClientCtx {
   effect: (fn: () => unknown, name?: string) => unknown;
-  get: (id: string) => unknown;
   locale: {
     register: (ns: string, dicts: { zh: typeof zh; en: typeof en }) => unknown;
     bind: (ns: string) => (key: string) => string;
@@ -27,7 +30,11 @@ export interface ClientCtx {
 }
 
 /**
- * Register the dictionaries, the sidebar row, and the main-slot page.
+ * Register the dictionaries and the plugin config card.
+ *
+ * The card is rendered inside the Plugins page by the Host's
+ * `renderSlot("plugins.bundle.config", …)` call. No `onClose` is passed —
+ * the Plugins page owns navigation; the card has no close button.
  */
 export function apply(ctx: ClientCtx): void {
   ctx.effect(() => {
@@ -52,38 +59,23 @@ export function apply(ctx: ClientCtx): void {
     }
   };
 
-  const close = () => {
-    try {
-      (ctx.get("layout") as { selectPanel?: (id: null) => void } | undefined)?.selectPanel?.(null);
-    } catch {
-      // A shell without the layout face has nothing to close.
-    }
-  };
-
   const disposers: Array<() => void> = [];
   try {
     disposers.push(
-      ctx.slots.inject("sidebar.panellist", () =>
+      ctx.slots.inject("plugins.bundle.config", () =>
         ctx.slots.register(
-          { name: "sidebar.panellist", id: PANEL_ID, label: () => tt("entry.label") },
-          PanelIcon
-        )
-      ) as () => void
-    );
-  } catch (error) {
-    console.warn("[dsh-connect-sensenova-token-plan] sidebar row registration failed:", error);
-  }
-  try {
-    disposers.push(
-      ctx.slots.inject("main", () =>
-        ctx.slots.register(
-          { name: "main", key: PANEL_ID, locale: NS, inject: () => ({ onClose: close, tt, localeSubscribe: ctx.locale.subscribe.bind(ctx.locale) }) },
+          {
+            name: "plugins.bundle.config",
+            key: NS,
+            locale: NS,
+            inject: () => ({ tt, localeSubscribe: ctx.locale.subscribe.bind(ctx.locale) })
+          },
           PanelPage
         )
       ) as () => void
     );
   } catch (error) {
-    console.warn("[dsh-connect-sensenova-token-plan] panel page registration failed:", error);
+    console.warn("[dsh-connect-sensenova-token-plan] config card registration failed:", error);
   }
 
   ctx.effect(() => () => {
