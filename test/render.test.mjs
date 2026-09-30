@@ -705,18 +705,94 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 }
 
 // === G6. the draw switch section is rendered and says which state it is in
-// DrawSwitch is hook-based (like ProviderSwitch), so the render suite cannot
-// mount it; what IS exercised here is that the component is exported by the
-// shipped surface and that a snapshot with `llm.drawEnabled` flowing through
-// still renders the pools view without crashing.
+// DrawSwitch IS mountable: `client-surface.js` installs a stand-in React whose
+// `useState` returns the initial value and whose `useCallback` returns the
+// callback, so the first frame renders exactly as it would in the browser.
+// (The old note here claimed it could not be mounted, which is why the row
+// regression below shipped green.)
 {
   check("the draw switch component is exported by the client surface",
     typeof render.DrawSwitch === "function", String(typeof render.DrawSwitch));
+
+  const drawLlm = {
+    drawEnabled: true,
+    hasApiKey: true,
+    drawModel: "sensenova-u1.5-lite",
+    drawCandidateIds: ["sensenova-u1-fast", "sensenova-u1.5-lite"],
+    drawPreferredModel: "sensenova-u1.5-lite"
+  };
+  const drawTree = treeOf(render.DrawSwitch, { llm: drawLlm, tt });
+  const drawText = texts(drawTree);
+
+  // The auto row plus one row per candidate, and the status lead-in above them.
+  const rows = findAll(drawTree, (props) => props.style?.borderBottom !== undefined);
+  check("the draw picker draws the auto row plus every candidate",
+    rows.length === 3, `rows=${rows.length}`);
+  check("the draw section says it is on and names the list it introduces",
+    drawText.includes("draw.onList"), drawText.join("\n"));
+  check("the auto row offers the auto option",
+    drawText.includes("draw.autoOption"), drawText.join("\n"));
+  check("the pinned candidate is the one marked effective",
+    drawText.join("").includes("draw.badge · draw.effective"), drawText.join("\n"));
+  check("the auto row names the model the auto-pick addresses",
+    drawText.join("").includes("draw.badge · sensenova-u1.5-lite"), drawText.join("\n"));
   check("the draw section's dictionary keys exist in zh",
     typeof surface.dictionaries.zh["draw.switch"] === "string" &&
-      typeof surface.dictionaries.zh["draw.on"] === "string" &&
       typeof surface.dictionaries.zh["draw.off"] === "string",
     JSON.stringify(Object.keys(surface.dictionaries.zh).filter((k) => k.startsWith("draw."))));
+
+  // The row SHAPE is a contract, not a detail: `modelRow` is a column (a head
+  // line over an optional parameter line), so the name and its badge must be
+  // wrapped in `modelRowHead`. Left as bare siblings they stack, `modelName`'s
+  // `flex: 0 1 auto` collapses to zero width, and the row renders as a mangled
+  // two-line smear — which is exactly what shipped when `modelRow` became a
+  // column and only `ModelRoster` was migrated.
+  {
+    const columnRows = findAll(drawTree, (props) => props.style?.flexDirection === "column"
+      && props.style?.borderBottom !== undefined);
+    check("the draw rows are the roster's column shape",
+      columnRows.length === 3, `column rows=${columnRows.length}`);
+    const bare = columnRows.filter((row) => {
+      const kids = (Array.isArray(row.children) ? row.children.flat(Infinity) : [row.children ?? []])
+        .filter((child) => child && typeof child === "object");
+      return kids.some((child) => child.props?.style === S.modelName || child.props?.style === S.modelBadge);
+    });
+    check("no draw row leaves its name or badge outside modelRowHead",
+      bare.length === 0, `${bare.length} row(s) stack their name/badge`);
+    const heads = findAll(drawTree, (props) => props.style === S.modelRowHead);
+    check("every draw row wraps its head in modelRowHead",
+      heads.length === 3, `heads=${heads.length}`);
+  }
+
+  // The same contract for the two other `modelRow` consumers, so the next
+  // change to the row shape cannot migrate one and forget the rest.
+  {
+    const rosterTree = treeOf(render.ModelRoster, {
+      models: [{ id: "sensenova-6.8-flash-lite", name: "SenseNova 6.8 Flash Lite", contextWindow: 262144, maxOutputLength: 65536 }],
+      enabledIds: [], busy: false, tt
+    });
+    const raccoonTree = treeOf(render.RaccoonRoster, {
+      models: [{ id: "raccoon-v1", name: "Raccoon v1", multiplier: 0, vision: true }], tt
+    });
+    for (const [name, tree] of [["ModelRoster", rosterTree], ["RaccoonRoster", raccoonTree]]) {
+      const rowList = findAll(tree, (props) => props.style?.flexDirection === "column"
+        && props.style?.borderBottom !== undefined);
+      // Non-vacuity first: an empty tree would satisfy "no offenders" while
+      // asserting nothing, which is how the draw regression shipped.
+      check(`${name} renders its rows at all`,
+        rowList.length === 1, `${name} rows=${rowList.length}`);
+      const offenders = rowList.filter((row) => {
+        const kids = (Array.isArray(row.children) ? row.children.flat(Infinity) : [row.children ?? []])
+          .filter((child) => child && typeof child === "object");
+        return kids.some((child) => child.props?.style === S.modelName || child.props?.style === S.modelBadge);
+      });
+      check(`${name} wraps every row's name/badge in modelRowHead`,
+        offenders.length === 0, `${offenders.length} row(s) stack their name/badge`);
+      check(`${name} names its model in the head line`,
+        findAll(tree, (props) => props.style === S.modelName).length === 1,
+        `${name} name spans=${findAll(tree, (props) => props.style === S.modelName).length}`);
+    }
+  }
 }
 
 console.log(JSON.stringify(results, null, 2));

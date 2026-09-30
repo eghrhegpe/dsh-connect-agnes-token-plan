@@ -6,12 +6,12 @@
  *  buttons sit level with the 32px roster search box. */
 const BUTTON = { height: 30, padding: "0 12px", borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-primary)", fontSize: 13, cursor: "pointer" };
 export const S = {
-  // The shell's center column is `display:flex; flex-direction:column;
-  // overflow:hidden` — it never scrolls itself; every main-slot panel owns
-  // its own scroll body. This root fills the column and clips; the pinned
+  // The config card is embedded inside the Plugins page
+  // (`plugins.bundle.config` slot). The host page provides outer margins,
+  // so this root only needs flex layout and overflow clipping: the pinned
   // header stays flex-none and `scroll` (flex:1, min-height:0) takes the
-  // overflow. Without this chain the page grows past the column and the
-  // shell silently truncates everything below the fold.
+  // overflow. Without this chain the card grows past its container and
+  // the host silently truncates everything below the fold.
   page: { flex: "1 1 auto", height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", color: "var(--dsw-alias-label-primary)", fontSize: 14, lineHeight: "22px" },
   headerBar: { flex: "none", background: "var(--dsw-alias-bg-base)", position: "relative", zIndex: 1 },
   header: { display: "flex", alignItems: "center", gap: 12, padding: "16px 0 12px" },

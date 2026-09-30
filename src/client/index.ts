@@ -65,7 +65,7 @@ import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch } from ".
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage } from "./panel-page.ts";
-import { RaccoonTab } from "./raccoon-tab.ts";
+import { RaccoonRoster, RaccoonTab } from "./raccoon-tab.ts";
 import { buildQrMatrix, qrDataUrl } from "./qr.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
@@ -122,7 +122,8 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       ModelRoster,
       ModelPicker,
       PanelPage,
-      RaccoonTab
+      RaccoonTab,
+      RaccoonRoster
     }),
     // The Raccoon QR encoder lives on the test surface too: the suite
     // differential-tests it against the upstream zero-dep reference (the

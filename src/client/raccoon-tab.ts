@@ -11,9 +11,11 @@
  * offers. Nothing here touches the Token Plan pool semantics — the two tabs
  * are two providers, deliberately independent.
  *
- * Hook-based like `ApiKeyForm`/`ProviderSwitch`: the render suite (which
- * cannot mount hooks) exercises the secret-free status lines of the other
- * tabs; this tab's route is covered by `test/raccoon.test.mjs`.
+ * Hook-based like `ApiKeyForm`/`ProviderSwitch`. The tab's own frame is
+ * unreachable from the render suite (its data is internal state, so it always
+ * renders the logged-out view); the roster it draws is therefore split into
+ * the hook-free {@link RaccoonRoster}, which the suite CAN mount and pin, and
+ * this tab's route is covered by `test/raccoon.test.mjs`.
  */
 import { RACCOON_PATH } from "./const.ts";
 import { count, format } from "./format.ts";
@@ -269,26 +271,53 @@ export function RaccoonTab({ tt }: { tt: Tt }): unknown {
             format(tt("raccoon.balance"), { balance: count(state?.balance ?? 0) })
           ),
           models.length > 0
-            ? h(
-                "div",
-                null,
-                h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 6 } }, format(tt("raccoon.models"), { count: count(models.length) })),
-                h(
-                  "ul",
-                  { style: S.modelList },
-                  models.map((row) => h(
-                    "li",
-                    { key: row.id, style: S.modelRow },
-                    h("span", { style: S.modelName, title: String(row.id ?? "") }, row.name ?? row.id),
-                    h("span", { style: S.modelBadge },
-                      (typeof row.multiplier === "number" && row.multiplier !== 0 && row.multiplier !== 1 ? `×${row.multiplier}` : row.multiplier === 0 ? "free" : "×1"),
-                      row.vision === true ? " · vision" : ""
-                    )
-                  ))
-                )
-              )
+            ? h(RaccoonRoster, { models, tt })
             : null
         )
       : null
+  );
+}
+
+/**
+ * The model roster the Raccoon adapter offers, as a hook-free component.
+ *
+ * Split out of {@link RaccoonTab} for the same reason `ModelRoster` is its own
+ * component: the tab's data is internal state, so the render suite can only
+ * ever reach the logged-out frame — a roster inlined there is unassertable,
+ * and the row-shape regression that broke the draw card would sail through
+ * again. Both rosters now share `S.modelRow`'s contract and are pinned by the
+ * same check.
+ * @param {object} props
+ * @param {RaccoonModel[]} props.models - the rows the route reported.
+ * @param {import("./runtime.ts").Tt} props.tt - the dictionary.
+ * @returns {unknown} the roster list element.
+ */
+export function RaccoonRoster({ models, tt }: { models: RaccoonModel[]; tt: Tt }): unknown {
+  const rows = Array.isArray(models) ? models : [];
+  return h(
+    "div",
+    null,
+    h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 6 } }, format(tt("raccoon.models"), { count: count(rows.length) })),
+    h(
+      "ul",
+      { style: S.modelList },
+      rows.map((row) => h(
+        "li",
+        { key: row.id, style: S.modelRow },
+        // `modelRow` is a COLUMN (a head line over an optional parameter line,
+        // the roster's shape), so the name and its badge must sit inside one
+        // `modelRowHead` row — as bare siblings they stack, the badge drops to
+        // its own line and the whole row reads as a broken two-column attempt.
+        h(
+          "div",
+          { style: S.modelRowHead },
+          h("span", { style: S.modelName, title: String(row.id ?? "") }, row.name ?? row.id),
+          h("span", { style: S.modelBadge },
+            (typeof row.multiplier === "number" && row.multiplier !== 0 && row.multiplier !== 1 ? `×${row.multiplier}` : row.multiplier === 0 ? "free" : "×1"),
+            row.vision === true ? " · vision" : ""
+          )
+        )
+      ))
+    )
   );
 }
