@@ -10,7 +10,7 @@
 import { API_KEY_PATH } from "./const.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
-import { DrawSwitch, ProviderStatus, ProviderSwitch } from "./provider-controls.ts";
+import { ProviderRegStatus, ProviderStatus, ProviderSwitch } from "./provider-controls.ts";
 import { ModelPicker } from "./model-picker.ts";
 import { S } from "./styles.ts";
 
@@ -86,13 +86,13 @@ export function ApiKeyForm({ llm, onDone, tt }: {
   // Only a REFERENCE the panel stored can be forgotten: an environment
   // value has no panel-saved copy to clear, so the button would mislead.
   const canForget = llm?.hasApiKey === true && llm?.keySource === "credentials";
-  return h(
-    "form",
-    { onSubmit: submit },
-    h(ProviderStatus, { llm, tt }),
-    h(ProviderSwitch, { llm, onDone, tt }),
-    h(DrawSwitch, { llm, onDone, tt }),
-    h(ModelPicker, { llm, onDone, tt }),
+  // A configured key's editor folds into one `<details>` row: the status
+  // block is what a working setup needs daily, while the paste-a-key form
+  // is a maintenance action — one click away, not on screen. Without a
+  // key the editor is the entry point and shows open.
+  const keyEditor = h(
+    "div",
+    null,
     h(
       "label",
       { style: S.field },
@@ -135,5 +135,38 @@ export function ApiKeyForm({ llm, onDone, tt }: {
         : null,
     formError ? h("p", { style: S.formError, role: "alert" }, formError) : null,
     h("p", { style: S.formNote }, tt("llm.footnote"))
+  );
+  // The SectionCard wrapping this form is the collapse: one fold, not
+  // two. An inner `<details>` around the editor meant opening the card
+  // revealed only a status line and hid the very input the card is for.
+  return h(
+    "form",
+    { onSubmit: submit },
+    keyEditor,
+    h(ProviderStatus, { llm, tt })
+  );
+}
+
+/**
+ * The provider-registration half — the live switch plus its "which models
+ * get pushed" roster — as ONE card body. Split from `ApiKeyForm` when the
+ * panel grew one SectionCard per concern: key, provider+push, draw are
+ * three different functions and no longer share a card.
+ */
+export function ProviderForm({ llm, onDone, tt }: {
+  llm?: Record<string, any> | null;
+  onDone?: () => void;
+  tt: Tt;
+}): unknown {
+  return h(
+    "div",
+    null,
+    // The controls read first (switch, then the roster it feeds); the
+    // registration status — a diagnostic echo of what the Host reports —
+    // closes the card. At the top it competed with the title and
+    // duplicated the roster's own counts out of reading order.
+    h(ProviderSwitch, { llm, onDone, tt }),
+    h(ModelPicker, { llm, onDone, tt }),
+    h(ProviderRegStatus, { llm, tt })
   );
 }

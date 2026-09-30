@@ -24,6 +24,8 @@ import { fetchConsole, fetchModelCatalog } from "./console-client.ts";
 import { parsePools, parseTrend, checkShape, identifyVisionModel } from "./parsers.ts";
 import { summarizeCatalog, filterByEnabled, rosterWithAvailability, exhaustedModelIds, LLM_PROVIDER_ID } from "./llm-models.ts";
 import { catalogSignature } from "./provider-publish.ts";
+import { imageGenModelIds, pickDrawModel } from "./draw.ts";
+import { str } from "./util.ts";
 
 /**
  * Fetch the three console sources in parallel and aggregate them into the
@@ -59,7 +61,8 @@ export async function buildSnapshotBody({
   publisher,
   catalogStore,
   panelSwitch,
-  drawSwitch
+  drawSwitch,
+  drawModelId
 }) {
   const providerState = publisher.state;
   const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
@@ -142,6 +145,10 @@ export async function buildSnapshotBody({
   // reported model counts come from the fresh catalog when one arrived, else
   // from whatever the mount seed had stored.
   const keyState = await apiKeyStore.state().catch(() => ({ hasApiKey: false, keySource: null, ephemeral: false }));
+  // The draw-model preference with the same precedence the tool resolves at
+  // mount: panel-saved beats the patch default; "" = auto-pick. Resolved once
+  // here so the llm block's three draw fields cannot disagree.
+  const effectiveDrawModelId = (await drawModelId?.().catch(() => null)) ?? str(settings.drawModelId, "");
   // The effective switch: a panel-saved value beats the patch default. Both
   // are reported so the panel can say which side is in charge.
   const effectivePanelSwitch = await panelSwitch().catch(() => null);
@@ -197,6 +204,27 @@ export async function buildSnapshotBody({
     quotaBlockedModelIds: unavailableModelIds,
     drawEnabled: (await drawSwitch?.().catch(() => null) ?? settings.drawEnabled) === true,
     drawSource: await drawSwitch?.().catch(() => null) === null ? "config" : "panel",
+    // A draw call's actual target model, picked by the same precedence the
+    // tool itself uses (`pickDrawModel`) over the same normalized catalog —
+    // so the panel's line and the tool's behavior cannot disagree. Absent
+    // (not null) when there is no catalog at all. `drawPreferredModel` is
+    // the operator's configured pick; its absence is what the panel renders
+    // as "auto-picked". `drawCandidateCount` exposes how many image-capable
+    // models the catalog holds, so an auto-pick hiding a newer sibling is
+    // visible instead of silent.
+    ...(Array.isArray(catalog) && effectiveDrawModelId !== ""
+      ? (() => {
+          const candidates = imageGenModelIds(catalog);
+          return {
+            drawModel: pickDrawModel(catalog, "", effectiveDrawModelId) ?? undefined,
+            drawCandidateCount: candidates.length,
+            drawCandidateIds: candidates,
+            // Presence of a preference (panel or config) is what the panel
+            // renders as "pinned"; its absence is "auto-picked".
+            ...(effectiveDrawModelId !== "" ? { drawPreferredModel: effectiveDrawModelId } : {})
+          };
+        })()
+      : {}),
     ...(providerState.error !== null ? { providerError: providerState.error } : {})
   };
 

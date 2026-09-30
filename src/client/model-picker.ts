@@ -171,7 +171,11 @@ export function ModelPicker({ llm, onDone, tt }: {
   return h(
     "div",
     { style: { marginBottom: 14 } },
-    h("p", { style: { ...S.muted, fontSize: 12, margin: "0 0 10px" } }, tt("llm.rosterHint")),
+    // Title and rule share one line — the rule is the tail of the same
+    // sentence, not a second notice competing for attention.
+    h("p", { style: { margin: "0 0 10px" } },
+      h("span", { style: S.sectionTitle }, tt("llm.roster"), " — "),
+      h("span", { style: { ...S.muted, fontSize: 12 } }, tt("llm.rosterHint"))),
     models.length === 0
       ? h("p", { style: S.empty }, tt("llm.rosterEmpty"))
       : h(

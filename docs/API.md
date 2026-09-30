@@ -43,7 +43,14 @@
     "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false }],
     "enabledModelIds": [],
     // 出图工具开关生效值与来源（0.4.2）；工具实际挂载在下一个 Host 启动时发生
-    "drawEnabled": false, "drawSource": "config"
+    "drawEnabled": false, "drawSource": "config",
+    // 一次出图调用实际会寻址的模型 id：用与工具本身相同的 pickDrawModel
+    // 优先级（调用参数 > 配置的 drawModelId > 目录首个出图模型）从同一份
+    // 目录算出，面板展示与工具行为不会分叉。目录缺席（无 Key）时整个字段缺席
+    "drawModel": "sensenova-u1-fast",
+    // 目录里 output_modalities 含 image 的条目：自动选择藏掉同侪时，候选让它可见
+    "drawCandidateCount": 2,
+    "drawCandidateIds": ["sensenova-u1-fast", "sensenova-u1.5-lite"]
   },
   "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
 }
@@ -97,6 +104,8 @@
 
 ### `POST /api/dsh-connect-sensenova-token-plan/draw`
 `{ "enabled": true|false }` —— 把出图开关写入插件私有状态文件（`$DSH_HOME/state/<profile>/<plugin>/draw.json`，按 profile 分段、见 [PITFALLS.md](./PITFALLS.md) §23），与 `/provider` 走的是同一套「存私有状态」机制，但**不触发任何即时发布**——agent 工具的实际注册/缺席发生在下一个 Host 启动（或重新安装）时，由 `lifecycle.js` 的 `startSideEffects` 重读生效值。优先级：面板保存的值 > `cordis.patch.yml` 的 `drawEnabled`。非布尔 `enabled` 返回 400；跨域返回 403。
+
+`{ "drawModelId": "sensenova-u1.5-lite" }`（或 `null` = 自动选择）—— 把出图模型偏好写入同一个 `draw.json`。生效时机与开关相同：`startSideEffects` 在下一次挂载时用它覆盖 `cordis.patch.yml` 的 `drawModelId`（优先级：面板 > 配置；面板清除后回落配置，配置也为空则自动取目录第一个出图模型）。非空字符串之外的非 null 值返回 400；跨域返回 403。`{ "forget": true }` 同时清除开关与模型偏好的面板保存值。
 
 ---
 

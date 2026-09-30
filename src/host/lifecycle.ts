@@ -41,6 +41,10 @@ export async function registerDrawTool(ctx, wiring, side) {
   if (configError !== null) return;
   const effectiveDrawEnabled = (drawStore ? await drawStore.enabled().catch(() => null) : null) ?? settings.drawEnabled;
   if (effectiveDrawEnabled !== true) return;
+  // Same precedence as the switch: a panel-saved model preference beats the
+  // patch's `drawModelId` (empty string = auto-pick from the catalog).
+  const panelModelId = drawStore ? await drawStore.modelId().catch(() => null) : null;
+  const effectiveSettings = panelModelId !== null ? { ...settings, drawModelId: panelModelId } : settings;
   const tools = ctx.get("tools") ?? ctx.tools ?? null;
   if (tools === null || typeof tools.register !== "function") return;
   let defineTool;
@@ -70,7 +74,7 @@ export async function registerDrawTool(ctx, wiring, side) {
             : await catalogStore.list().catch(() => []);
           return Array.isArray(live) ? live : [];
         },
-        settings,
+        settings: effectiveSettings,
         fetchImpl: drawFetch,
         isDisposed: () => publisher.isDisposed()
       })

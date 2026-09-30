@@ -52,6 +52,16 @@ export function normalizeDrawEnabled(raw) {
 }
 
 /**
+ * Normalize a panel-saved draw-model preference: a non-empty string id, or
+ * `null` when nothing usable (absent / wrong type / blank).
+ * @param {unknown} raw - the persisted or posted value.
+ * @returns {string|null}
+ */
+export function normalizeDrawModelId(raw) {
+  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+}
+
+/**
  * The file-backed draw switch.
  * @param {object} [options]
  * @param {string} [options.dir] - override the state directory (tests).
@@ -83,7 +93,11 @@ export function createFileDrawStore(options: StoreOptions = {}) {
   const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "draw.json") : null;
   const parseSwitch = (raw) => {
     const source = obj(raw);
-    return source.version === DRAW_STORE_VERSION ? normalizeDrawEnabled(source.enabled) : null;
+    // One read, two answers: the switch AND the model preference live in the
+    // same file (they are the same operator decision — "how this profile
+    // draws"), so a single parse keeps them from drifting apart.
+    if (source.version !== DRAW_STORE_VERSION) return null;
+    return { enabled: normalizeDrawEnabled(source.enabled), modelId: normalizeDrawModelId(source.drawModelId) };
   };
 
   // Short-TTL read cache, shared with the provider switch and the catalog
@@ -104,6 +118,7 @@ export function createFileDrawStore(options: StoreOptions = {}) {
     }
   });
   const read = () => cache.read();
+  const saved = async () => (await read()) ?? { enabled: null, modelId: null };
 
   return {
     /**
@@ -111,14 +126,23 @@ export function createFileDrawStore(options: StoreOptions = {}) {
      * @returns {Promise<boolean|null>} `null` = not set, fall back to config.
      */
     async enabled() {
-      return read();
+      return (await saved()).enabled;
     },
     /**
-     * Whether the panel has ever saved a value here.
+     * The saved draw-model preference.
+     * @returns {Promise<string|null>} `null` = not set, fall back to config.
+     */
+    async modelId() {
+      return (await saved()).modelId;
+    },
+    /**
+     * Whether the panel has ever saved a value here. A file that exists but
+     * carries no answers (post-forget) still reads as "not set".
      * @returns {Promise<boolean>}
      */
     async isSet() {
-      return (await read()) !== null;
+      const value = await read();
+      return value !== null && (value.enabled !== null || value.modelId !== null);
     },
     /**
      * Persist a switch value. The write is atomic (temp file + rename) so a
@@ -131,17 +155,38 @@ export function createFileDrawStore(options: StoreOptions = {}) {
       if (enabled === null) throw new TypeError("draw switch expects a boolean");
       // Write failures PROPAGATE on purpose: a switch the panel ordered must
       // not silently stay off because the state file could not be written.
-      await writePayload({ version: DRAW_STORE_VERSION, enabled, updatedAt: new Date().toISOString() });
-      cache.remember(enabled);
+      await writePayload({ version: DRAW_STORE_VERSION, enabled, drawModelId: (await saved()).modelId ?? undefined, updatedAt: new Date().toISOString() });
+      cache.remember({ enabled, modelId: (await saved()).modelId });
     },
     /**
      * Forget the panel-saved value: the config default rules again.
      * @returns {Promise<void>}
      */
     async forget() {
-      cache.remember(null);
+      cache.remember({ enabled: null, modelId: (await saved()).modelId });
       // No `enabled` key: "not set" is the absence of an answer, not `false`.
-      await writePayload({ version: DRAW_STORE_VERSION, updatedAt: new Date().toISOString() });
+      await writePayload({ version: DRAW_STORE_VERSION, drawModelId: (await saved()).modelId ?? undefined, updatedAt: new Date().toISOString() });
+    },
+    /**
+     * Persist a draw-model preference (the panel's picker). `null` clears it.
+     * @param {string|null} value - the preferred catalog id, or null for auto.
+     * @returns {Promise<void>}
+     */
+    async saveModel(value) {
+      const modelId = normalizeDrawModelId(value);
+      if (modelId === null && value != null) throw new TypeError("draw model expects a non-empty string or null");
+      const enabled = (await saved()).enabled;
+      await writePayload({ version: DRAW_STORE_VERSION, ...(enabled !== null ? { enabled } : {}), ...(modelId !== null ? { drawModelId: modelId } : {}), updatedAt: new Date().toISOString() });
+      cache.remember({ enabled, modelId });
+    },
+    /**
+     * Forget the draw-model preference: the config default (usually auto) rules again.
+     * @returns {Promise<void>}
+     */
+    async forgetModel() {
+      const enabled = (await saved()).enabled;
+      cache.remember({ enabled, modelId: null });
+      await writePayload({ version: DRAW_STORE_VERSION, ...(enabled !== null ? { enabled } : {}), updatedAt: new Date().toISOString() });
     }
   };
 }

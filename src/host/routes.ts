@@ -216,7 +216,8 @@ export function registerRoutes(ctx, wiring) {
           publisher,
           catalogStore,
           panelSwitch: () => providerStore.enabled().catch(() => null),
-          drawSwitch: () => (drawStore ? drawStore.enabled().catch(() => null) : null)
+          drawSwitch: () => (drawStore ? drawStore.enabled().catch(() => null) : null),
+          drawModelId: () => (drawStore ? drawStore.modelId().catch(() => null) : null)
         });
         if (body.visionModels !== undefined) {
           // A write failure here is silent otherwise: the vision list fails to
@@ -518,9 +519,11 @@ export function registerRoutes(ctx, wiring) {
       const method = request.method === undefined ? "GET" : request.method;
       const answer = async (extra = {}) => {
         const panelDraw = await (drawStore ? drawStore.enabled() : null).catch(() => null);
+        const panelModel = await (drawStore ? drawStore.modelId() : null).catch(() => null);
         // The effective value: a saved panel value always wins, otherwise the
         // config default. The source tells the panel which side is in charge.
         const effectiveDraw = panelDraw ?? settings.drawEnabled;
+        const effectiveModel = panelModel ?? settings.drawModelId;
         writeJson(
           response,
           200,
@@ -528,6 +531,8 @@ export function registerRoutes(ctx, wiring) {
             ok: true,
             drawEnabled: effectiveDraw === true,
             drawSource: panelDraw === null ? "config" : "panel",
+            drawModelId: effectiveModel,
+            drawModelSource: panelModel === null ? "config" : "panel",
             ...extra
           },
           { "cache-control": "no-store" }
@@ -543,9 +548,10 @@ export function registerRoutes(ctx, wiring) {
       }
       const body = await readJsonBodyOr400(request, response);
       if (body === null) return;
-      // Two purposes, distinguished by the body — the same shape the account
-      // and api-key routes use: a saved boolean or a forget request that
-      // returns the switch to the config default.
+      // Three purposes, distinguished by the body — the same shape the
+      // account and api-key routes use: a saved boolean, a saved model
+      // preference (`null` = auto), or a forget that returns the saved
+      // values to the config default.
       if (body.value.forget === true) {
         if (!drawStore) {
           await answer({ ok: false, error: "draw store is unavailable" });
@@ -560,8 +566,27 @@ export function registerRoutes(ctx, wiring) {
         await answer();
         return;
       }
+      if (body.value.drawModelId !== undefined) {
+        const raw = body.value.drawModelId;
+        if (raw !== null && (typeof raw !== "string" || raw.trim() === "")) {
+          writeJson(response, 400, { ok: false, error: "drawModelId expects a non-empty string or null" }, { "cache-control": "no-store" });
+          return;
+        }
+        if (!drawStore) {
+          await answer({ ok: false, error: "draw store is unavailable" });
+          return;
+        }
+        try {
+          await drawStore.saveModel(raw);
+        } catch (error) {
+          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+        await answer();
+        return;
+      }
       if (typeof body.value.enabled !== "boolean") {
-        writeJson(response, 400, { ok: false, error: "expected { enabled: boolean } or { forget: true }" }, { "cache-control": "no-store" });
+        writeJson(response, 400, { ok: false, error: "expected { enabled: boolean }, { drawModelId }, or { forget: true }" }, { "cache-control": "no-store" });
         return;
       }
       if (!drawStore) {

@@ -61,8 +61,8 @@ import {
   SectionCard,
   TrendTable
 } from "./cards.ts";
-import { ProviderStatus, ProviderSwitch, DrawSwitch } from "./provider-controls.ts";
-import { ApiKeyForm } from "./api-key-form.ts";
+import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch } from "./provider-controls.ts";
+import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage } from "./panel-page.ts";
 
@@ -111,7 +111,9 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       SectionCard,
       AccountForm,
       ApiKeyForm,
+      ProviderForm,
       ProviderStatus,
+      ProviderRegStatus,
       ProviderSwitch,
       DrawSwitch,
       ModelRoster,

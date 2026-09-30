@@ -46,9 +46,11 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const meta = texts(tree).join("\n");
   check("the used figure is the USED count against the limit",
     meta.includes("pool.used 12,345 / 60,000"), meta);
-  check("the headline figure is the REMAINING count, labelled as such",
-    meta.includes("47,655") && meta.includes("pool.remaining"), meta);
-  check("the percentage is used over limit", meta.includes("20.6%"), meta);
+  check("the raw remaining count is still on the card",
+    meta.includes("47,655"), meta);
+  check("the headline is the REMAINING percentage, labelled as such",
+    meta.includes("79.4%") && meta.includes("pool.remaining"), meta);
+  check("the used percentage is not shown as the headline", !meta.includes("20.6%"), meta);
 
   const fill = bar(tree);
   check("the bar reports the same percentage to assistive tech",
@@ -229,19 +231,21 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 }
 
 // === G3. the step-three provider status is secret-free and stateful ======
-// ProviderStatus is the hook-free half of the API-key section: it must say
-// where the key came from WITHOUT carrying the key, and distinguish the four
-// registration states (off / registered / no llm service / failed). These
-// render with the REAL zh dictionary: the identity `tt` returns the key
-// itself, which carries no `{placeholder}` to expand, so composition (the
-// counts, the id, the source) could not be checked through it.
+// ProviderStatus (key card) says ONLY where the key came from; the
+// registration states live in ProviderRegStatus (provider card) since the
+// panel grew one card per concern. These render with the REAL zh
+// dictionary: the identity `tt` returns the key itself, which carries no
+// `{placeholder}` to expand, so composition (the counts, the id, the
+// source) could not be checked through it.
 {
   const zh = surface.dictionaries.zh;
   const ttZh = (key) => zh[key] ?? key;
 
   check("no llm block renders nothing",
     rendered(render.ProviderStatus, { llm: null, tt }).length === 0
-      && rendered(render.ProviderStatus, { llm: "x", tt }).length === 0);
+      && rendered(render.ProviderStatus, { llm: "x", tt }).length === 0
+      && rendered(render.ProviderRegStatus, { llm: null, tt }).length === 0
+      && rendered(render.ProviderRegStatus, { llm: "x", tt }).length === 0);
 
   const off = rendered(render.ProviderStatus, {
     llm: { hasApiKey: false, keySource: null, ephemeral: false, registerProvider: false,
@@ -249,10 +253,18 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     tt: ttZh
   });
   check("no key asks for one", off.some((line) => line.includes(zh["llm.noKey"])), off.join("\n"));
+  check("the key card does NOT speak for the provider card",
+    !off.some((line) => line.includes("未向 DSH 注册")), off.join("\n"));
+
+  const regOff = rendered(render.ProviderRegStatus, {
+    llm: { hasApiKey: false, keySource: null, ephemeral: false, registerProvider: false,
+      llmAvailable: false, providerRegistered: false, providerId: "sensenova-token-plan" },
+    tt: ttZh
+  });
   check("the opt-in being off is stated",
-    off.some((line) => line.includes("未向 DSH 注册") && line.includes("开关")), off.join("\n"));
+    regOff.some((line) => line.includes("未向 DSH 注册") && line.includes("开关")), regOff.join("\n"));
   check("the provider id is shown",
-    off.some((line) => line.includes("sensenova-token-plan")), off.join("\n"));
+    regOff.some((line) => line.includes("sensenova-token-plan")), regOff.join("\n"));
 
   const registered = rendered(render.ProviderStatus, {
     llm: { hasApiKey: true, keySource: "credentials", ephemeral: false, registerProvider: true,
@@ -262,13 +274,20 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
       value: "sk-secret-value" },
     tt: ttZh
   });
+  const regOn = rendered(render.ProviderRegStatus, {
+    llm: { hasApiKey: true, keySource: "credentials", ephemeral: false, registerProvider: true,
+      llmAvailable: true, providerRegistered: true, providerId: "sensenova-token-plan",
+      modelCount: 3, visionCount: 1, value: "sk-secret-value" },
+    tt: ttZh
+  });
   check("a stored key reports the credentials source",
     registered.some((line) => line.includes(zh["llm.src.credentials"])), registered.join("\n"));
   check("the registered line carries both counts and the id",
-    registered.some((line) => line.includes("3") && line.includes("1")
-      && line.includes("sensenova-token-plan")), registered.join("\n"));
+    regOn.some((line) => line.includes("3") && line.includes("1")
+      && line.includes("sensenova-token-plan")), regOn.join("\n"));
   check("the key value itself never renders",
-    !registered.some((line) => line.includes("sk-secret-value")), registered.join("\n"));
+    !registered.some((line) => line.includes("sk-secret-value"))
+      && !regOn.some((line) => line.includes("sk-secret-value")), regOn.join("\n"));
   check("ephemeral is quiet when a credentials service exists",
     !registered.some((line) => line.includes(zh["llm.ephemeral"])));
 
@@ -282,7 +301,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("an ephemeral host says so",
     fromEnv.some((line) => line.includes(zh["llm.ephemeral"])), fromEnv.join("\n"));
 
-  const noService = rendered(render.ProviderStatus, {
+  const noService = rendered(render.ProviderRegStatus, {
     llm: { hasApiKey: true, keySource: "credentials", registerProvider: true,
       llmAvailable: false, providerRegistered: false, providerId: "p" },
     tt: ttZh
@@ -290,7 +309,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("enabled without an llm service says so",
     noService.some((line) => line.includes(zh["llm.noService"])), noService.join("\n"));
 
-  const failed = rendered(render.ProviderStatus, {
+  const failed = rendered(render.ProviderRegStatus, {
     llm: { hasApiKey: true, keySource: "credentials", registerProvider: true,
       llmAvailable: true, providerRegistered: false, providerId: "p", providerError: "DUPLICATE_ADAPTER" },
     tt: ttZh

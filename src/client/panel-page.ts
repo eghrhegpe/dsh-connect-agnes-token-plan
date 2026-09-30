@@ -5,7 +5,7 @@
 import {
   AccountForm
 } from "./account-form.ts";
-import { ApiKeyForm } from "./api-key-form.ts";
+import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { SNAPSHOT_PATH } from "./const.ts";
 import { clock, format } from "./format.ts";
 import { errorOfStatus, interpretSnapshot, viewOf } from "./snapshot.ts";
@@ -13,6 +13,7 @@ import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
 import { PoolCard, PoolExhaustionNotice, SectionCard, TrendTable } from "./cards.ts";
+import { DrawSwitch } from "./provider-controls.ts";
 
 export function PanelPage({ onClose, tt, localeSubscribe }: {
   onClose?: () => void;
@@ -36,7 +37,12 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // everything — while the account editor starts collapsed: it is a
   // maintenance action, one click away. Remounting on a page switch
   // restores these defaults.
-  const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false, llm: false });
+  const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false, llm: false, provider: false, draw: false });
+  // Two fixed perspectives: "quota" is the daily reading (pools, trend,
+  // account), "api" is one-off wiring (key, provider push, draw). The tab
+  // bar itself only renders once a snapshot has landed — the loading,
+  // error and setup views are full-screen and know no tabs.
+  const [activeTab, setActiveTab] = useState<"quota" | "api">("quota");
 
   // The Host half registers the dictionaries, but a runtime language switch
   // only reaches this page through the locale face's subscribe: without it a
@@ -199,70 +205,97 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     : h(
         "div",
         null,
-        shapeWarnings.length > 0
+        h(
+          "div",
+          { style: S.tabBar, role: "tablist" },
+          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: activeTab === "quota" ? S.tabActive : S.tab, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
+          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: activeTab === "api" ? S.tabActive : S.tab, onClick: () => setActiveTab("api") }, tt("tab.api"))
+        ),
+        // The shape-drift banner belongs with the daily reading: it warns
+        // about the numbers themselves, not about the wiring below.
+        activeTab === "quota" && shapeWarnings.length > 0
           ? h("div", { style: S.formError, role: "status" },
               format(tt("panel.shapeDrift"), {
                 detail: shapeWarnings.map((entry) => `${tt("shape.api")} ${entry.api} ${tt("shape.missing")} ${entry.missing}`).join("; ")
               }))
           : null,
-        // Both content sections are collapsible card headers, auto-expanded
-        // by default: the panel opens showing everything, and the reader
-        // can tuck the chart or the pools away to focus on the other.
-        h(
-          SectionCard,
-          { title: tt("section.pools"), open: openSections.pools, onToggle: () => toggleSection("pools"), tt },
-          pools?.plan?.name
-            ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 10 } }, pools.plan.name)
-            : null,
-          h(PoolExhaustionNotice, { pools, tt }),
-          h(
-            "div",
-            { style: S.poolsGrid },
-            (pools?.pools || []).map((pool: Record<string, any>) => h(PoolCard, { key: pool.id, pool, tt }))
-          ),
-          Array.isArray(data.uncountedModels) && data.uncountedModels.length > 0
-            ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
-                format(tt("pool.uncounted"), { models: data.uncountedModels.join(" · ") }))
-            : null,
-          // Step one of the vision plan: which of THIS key's models take
-          // image input. Only shown when the Host actually had a catalog to
-          // ask (no API key → the field is absent → no claim either way).
-          Array.isArray(data.visionModels) && data.visionModels.length > 0
-            ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
-                format(tt("pool.vision"), {
-                  models: data.visionModels.map((entry: { id: unknown }) => entry.id).join(" · ") + (data.visionModels.every((entry: { source: unknown }) => entry.source === "name") ? tt("pool.visionInferred") : "")
-                }))
-            : null
-        ),
-        h(
-          SectionCard,
-          { title: format(tt("section.trend"), { hours: trend?.hours ?? 24 }), open: openSections.trend, onToggle: () => toggleSection("trend"), tt },
-          h(TrendTable, { trend, tt })
-        ),
-        // Step three: save the inference `sk-` key here (DSH credentials
-        // reference, env fallback) and see the direct provider
-        // registration status. Collapsed by default — it is setup, like
-        // the account editor; shown whenever a snapshot exists, since the
-        // key is independent of the console login.
-        h(
-          SectionCard,
-          { title: tt("llm.title"), open: openSections.llm, onToggle: () => toggleSection("llm"), tt },
-          h(ApiKeyForm, { llm: data?.llm ?? null, onDone: () => void load(), tt, bare: true })
-        ),
-        // The cache age is quoted from the snapshot, not written down here:
-        // a note that says 60 while the Host caches for 300 is a lie the
-        // reader has no way to catch.
-        h("div", { style: S.note }, format(tt("note"), { cache: data?.cacheSeconds ?? 60 })),
-        // The stored account stays manageable while everything works:
-        // a collapsed section (unlike the content sections) keeps the
-        // editor one click away without cluttering the quota view.
-        authManage
+        activeTab === "quota"
           ? h(
-              SectionCard,
-              { title: tt("auth.title"), open: openSections.account, onToggle: () => toggleSection("account"), tt },
-              h(AccountForm, { auth, onDone: () => void load(), tt, bare: true })
+              "div",
+              null,
+              // Both content sections are collapsible card headers, auto-expanded
+              // by default: the panel opens showing everything, and the reader
+              // can tuck the chart or the pools away to focus on the other.
+              h(
+                SectionCard,
+                { title: tt("section.pools"), open: openSections.pools, onToggle: () => toggleSection("pools"), tt },
+                pools?.plan?.name
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 10 } }, pools.plan.name)
+                  : null,
+                h(PoolExhaustionNotice, { pools, tt }),
+                h(
+                  "div",
+                  { style: S.poolsGrid },
+                  (pools?.pools || []).map((pool: Record<string, any>) => h(PoolCard, { key: pool.id, pool, tt }))
+                ),
+                Array.isArray(data.uncountedModels) && data.uncountedModels.length > 0
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
+                      format(tt("pool.uncounted"), { models: data.uncountedModels.join(" · ") }))
+                  : null,
+                // Step one of the vision plan: which of THIS key's models take
+                // image input. Only shown when the Host actually had a catalog to
+                // ask (no API key → the field is absent → no claim either way).
+                Array.isArray(data.visionModels) && data.visionModels.length > 0
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
+                      format(tt("pool.vision"), {
+                        models: data.visionModels.map((entry: { id: unknown }) => entry.id).join(" · ") + (data.visionModels.every((entry: { source: unknown }) => entry.source === "name") ? tt("pool.visionInferred") : "")
+                      }))
+                  : null
+              ),
+              h(
+                SectionCard,
+                { title: format(tt("section.trend"), { hours: trend?.hours ?? 24 }), open: openSections.trend, onToggle: () => toggleSection("trend"), tt },
+                h(TrendTable, { trend, tt })
+              ),
+              // The cache age is quoted from the snapshot, not written down here:
+              // a note that says 60 while the Host caches for 300 is a lie the
+              // reader has no way to catch.
+              h("div", { style: S.note }, format(tt("note"), { cache: data?.cacheSeconds ?? 60 })),
+              // The stored account stays manageable while everything works:
+              // a collapsed section (unlike the content sections) keeps the
+              // editor one click away without cluttering the quota view.
+              authManage
+                ? h(
+                    SectionCard,
+                    { title: tt("auth.title"), open: openSections.account, onToggle: () => toggleSection("account"), tt },
+                    h(AccountForm, { auth, onDone: () => void load(), tt, bare: true })
+                  )
+                : null
             )
-          : null
+          // One SectionCard per concern, all collapsed by default — these
+          // are setup/maintenance, parked on their own tab so the quota
+          // view stays the panel's first screen. Key, provider+push, and
+          // draw are three different functions; cramming them into one
+          // card is what made the block read as a pile of look-alike notices.
+          : h(
+              "div",
+              null,
+              h(
+                SectionCard,
+                { title: tt("llm.title"), open: openSections.llm, onToggle: () => toggleSection("llm"), tt },
+                h(ApiKeyForm, { llm: data?.llm ?? null, onDone: () => void load(), tt, bare: true })
+              ),
+              h(
+                SectionCard,
+                { title: tt("llm.providerTitle"), open: openSections.provider, onToggle: () => toggleSection("provider"), tt },
+                h(ProviderForm, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+              ),
+              h(
+                SectionCard,
+                { title: tt("draw.title"), open: openSections.draw, onToggle: () => toggleSection("draw"), tt },
+                h(DrawSwitch, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+              )
+            )
       );
 
   return h(

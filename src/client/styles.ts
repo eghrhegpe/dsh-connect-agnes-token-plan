@@ -14,6 +14,11 @@ export const S = {
   header: { display: "flex", alignItems: "center", gap: 12, maxWidth: 1040, margin: "0 auto", padding: "16px 32px 12px" },
   scroll: { flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" },
   content: { padding: "6px 32px 56px", maxWidth: 1040, margin: "0 auto" },
+  // Two fixed perspectives — daily quota reading vs. one-off API wiring —
+  // so the setup cards stop crowding the numbers the panel exists for.
+  tabBar: { display: "flex", gap: 4, borderBottom: "1px solid var(--dsw-alias-border-l1)", marginBottom: 4 },
+  tab: { appearance: "none", background: "none", border: "none", borderBottom: "2px solid transparent", padding: "8px 12px", fontSize: 13, color: "var(--dsw-alias-label-secondary)", cursor: "pointer" },
+  tabActive: { color: "var(--dsw-alias-label-primary)", fontWeight: 600, borderBottom: "2px solid var(--dsw-alias-brand, var(--dsw-alias-label-primary))" },
   title: { margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "28px" },
   updated: { color: "var(--dsw-alias-label-secondary)", fontSize: 12 },
   spacer: { flex: 1 },
