@@ -116,10 +116,12 @@ if (apiKey === "") {
 //      rhythm answer. 2s between probes keeps the run inside the window.
 //   2. A 429 is NOT a "level unsupported" answer: the platform rejects the
 //      request BEFORE it validates `reasoning_effort`, so a rate-limit
-//      response proves nothing about the level. It is recorded as `indefinite`
-//      (evidence to re-run later, not a negative conclusion) and excluded
-//      from the failure count — only a 4xx parameter refusal is a real "the
-//      platform does not accept this level" signal.
+//      response proves nothing about the level. It is recorded as
+//      INDEFINITE (evidence to re-run later, not a negative conclusion) and
+//      excluded from the failure count — only a 4xx parameter refusal is a
+//      real "the platform does not accept this level" signal.
+// `probeOnce` / `sleep` / `fetchProbe` are function declarations below:
+// they hoist to module top, so calling them from here is legal.
 const PROBE_BACKOFF_MS = 2000;
 
 for (const model of contract.models) {
@@ -175,8 +177,12 @@ async function probeOnce(modelId, effort) {
   return { response, text, status: response.status };
 }
 
-/** Backoff between probes: keeps the run inside the platform's rpm/rps window. */
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Backoff between probes: keeps the run inside the platform's rpm/rps window.
+ *  A function declaration (hoisted, no top-level `const` TDZ) because §2
+ *  and §2b call it BEFORE the place it physically lives in this file. */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** One chat-completion probe; its result is evidence, not a code fix. */
 async function fetchProbe(modelId, effort) {
