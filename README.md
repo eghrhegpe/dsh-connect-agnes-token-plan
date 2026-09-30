@@ -51,7 +51,7 @@
 
 ## 第二个上游：小浣熊（可选，默认关）
 
-面板「小浣熊」tab 用微信扫码登录 `xiaohuanxiong.com`，并以 provider id `sensenova-raccoon`（显示名 SenseNova Raccoon）注册**独立** provider。它与 Token Plan 同属**商汤（SenseTime）旗下**的两条产品线，所以放在同一个 `sensenova` 插件里顺理成章；但两者的**认证域与积分口径互不相通**（那边是独立余额，这边是 5 小时 / 每周额度池），凭据也各走一套——它不是 Token Plan 的第二条登录路径，实测依据见 [docs/ROADMAP.md](docs/ROADMAP.md) §6.1.1。
+面板「小浣熊」tab 用微信扫码登录 `xiaohuanxiong.com`，并以 provider id `sensenova-raccoon`（显示名 SenseNova Raccoon）注册**独立** provider。登录后显示积分余额与模型清单，每个模型带**上下文窗口 / 最大输出**与积分倍率（`free` / `×0.75` 这类，由网关目录声明；目录没给就不显示，不猜）。它与 Token Plan 同属**商汤（SenseTime）旗下**的两条产品线，所以放在同一个 `sensenova` 插件里顺理成章；但两者的**认证域与积分口径互不相通**（那边是独立余额，这边是 5 小时 / 每周额度池），凭据也各走一套——它不是 Token Plan 的第二条登录路径，实测依据见 [docs/ROADMAP.md](docs/ROADMAP.md) §6.1.1。
 
 ## 运维诊断：这台机器现在挂没挂 provider？
 

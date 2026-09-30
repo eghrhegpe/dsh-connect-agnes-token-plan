@@ -18,7 +18,7 @@
  * this tab's route is covered by `test/raccoon.test.mjs`.
  */
 import { RACCOON_PATH } from "./const.ts";
-import { count, format } from "./format.ts";
+import { count, format, tokenSize } from "./format.ts";
 import { postJson, postJsonOrThrow } from "./http.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
@@ -287,6 +287,14 @@ export function RaccoonTab({ tt }: { tt: Tt }): unknown {
  * and the row-shape regression that broke the draw card would sail through
  * again. Both rosters now share `S.modelRow`'s contract and are pinned by the
  * same check.
+ *
+ * The row is the SAME two-line shape as the Token Plan roster's (head line
+ * over an indented parameter line), because the data was already there: the
+ * gateway's catalogue row carries `context_window` / `max_output_tokens`, the
+ * Host has normalized them all along, and only this component was dropping
+ * them — a name-only row reads as a stub beside the sibling list, not as a
+ * deliberate minimalism. What it does NOT carry is the thinking ladder (see
+ * the note in the row builder): that would be inventing a fact.
  * @param {object} props
  * @param {RaccoonModel[]} props.models - the rows the route reported.
  * @param {import("./runtime.ts").Tt} props.tt - the dictionary.
@@ -296,28 +304,58 @@ export function RaccoonRoster({ models, tt }: { models: RaccoonModel[]; tt: Tt }
   const rows = Array.isArray(models) ? models : [];
   return h(
     "div",
-    null,
+    { style: S.modelPanel },
     h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 6 } }, format(tt("raccoon.models"), { count: count(rows.length) })),
     h(
       "ul",
-      { style: S.modelList },
-      rows.map((row) => h(
-        "li",
-        { key: row.id, style: S.modelRow },
-        // `modelRow` is a COLUMN (a head line over an optional parameter line,
-        // the roster's shape), so the name and its badge must sit inside one
-        // `modelRowHead` row — as bare siblings they stack, the badge drops to
-        // its own line and the whole row reads as a broken two-column attempt.
-        h(
-          "div",
-          { style: S.modelRowHead },
-          h("span", { style: S.modelName, title: String(row.id ?? "") }, row.name ?? row.id),
-          h("span", { style: S.modelBadge },
-            (typeof row.multiplier === "number" && row.multiplier !== 0 && row.multiplier !== 1 ? `×${row.multiplier}` : row.multiplier === 0 ? "free" : "×1"),
-            row.vision === true ? " · vision" : ""
-          )
-        )
-      ))
+      { style: S.modelList, role: "list" },
+      rows.map((row) => {
+        const id = String(row?.id ?? "");
+        const label = String(row?.name ?? id);
+        // The credit rate reads as its own chip, drawn exactly like the Token
+        // Plan roster's `×N` (0 is "free", not "×0" — a zero multiplier is a
+        // fact about the model, not a rate of zero).
+        const rate = typeof row?.multiplier === "number" ? row.multiplier : null;
+        // Only figures the platform actually declares draw a segment, and the
+        // THINKING LADDER is deliberately absent: this provider registers
+        // `reasoning: false` (pi-ai cannot emit `extra_body.thinking`, the
+        // gateway's only working channel), so quoting levels here would
+        // promise a selector the DSH picker will never offer. An unsupported
+        // fact is left out, never guessed at.
+        const ctx = typeof row?.contextWindow === "number" && row.contextWindow > 0
+          ? format(tt("llm.contextBadge"), { ctx: tokenSize(row.contextWindow) })
+          : null;
+        const out = typeof row?.maxOutputLength === "number" && row.maxOutputLength > 0
+          ? format(tt("llm.metaOutput"), { out: tokenSize(row.maxOutputLength) })
+          : null;
+        const meta = [ctx, out].filter(Boolean).join(" · ");
+        return h(
+          "li",
+          { key: id, style: S.modelRow },
+          // `modelRow` is a COLUMN (a head line over an optional parameter line,
+          // the roster's shape), so the name and its badge must sit inside one
+          // `modelRowHead` row — as bare siblings they stack, the badge drops to
+          // its own line and the whole row reads as a broken two-column attempt.
+          h(
+            "div",
+            { style: S.modelRowHead },
+            h("span", { style: S.modelName, title: id }, label),
+            // `raccoon.rateTitle`, never `llm.rosterRateTitle`: the Token Plan
+            // roster's rate is the operator's own pseudo figure and says so,
+            // while this one is the gateway catalogue's declared field —
+            // borrowing that tooltip would label real data as invented.
+            rate !== null
+              ? h("span", { style: S.modelRate, title: tt("raccoon.rateTitle") }, rate === 0 ? tt("raccoon.free") : `×${rate}`)
+              : null,
+            // The name hugs its rate chip (as in the Token Plan roster), so a
+            // flexible spacer is what puts the badge on the right edge where
+            // the eye looks for a state marker.
+            h("span", { style: S.spacer }),
+            row.vision === true ? h("span", { style: S.modelBadge }, tt("llm.rosterVision")) : null
+          ),
+          meta === "" ? null : h("div", { style: S.modelMeta }, meta)
+        );
+      })
     )
   );
 }

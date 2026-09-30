@@ -170,6 +170,12 @@ export const zh = {
   "raccoon.notLogged": "未登录——请先微信扫码。",
   "raccoon.balance": "积分余额 {balance}",
   "raccoon.models": "模型（{count}）",
+  // Zero multiplier: a statement about the model, not a rate of zero.
+  "raccoon.free": "free",
+  // NOT `llm.rosterRateTitle`: that one says the rate is the operator's own
+  // pseudo figure ("非官方"). This one IS the gateway catalogue's own field,
+  // and quoting the other tooltip here would libel real data as invented.
+  "raccoon.rateTitle": "网关目录声明的积分倍率（0 为免费）",
   "raccoon.registered": "已注册 raccoon 提供方：{count} 个模型。",
   "raccoon.unregistered": "未注册——勾选上方开关即可开启。",
   "raccoon.awaitingLogin": "已启用——登录后即可注册模型。",
@@ -337,6 +343,8 @@ export const en: typeof zh = {
   "raccoon.notLogged": "Not signed in — scan the QR code first.",
   "raccoon.balance": "Balance {balance}",
   "raccoon.models": "Models ({count})",
+  "raccoon.free": "free",
+  "raccoon.rateTitle": "Credit multiplier as declared by the gateway catalogue (0 = free)",
   "raccoon.registered": "Raccoon registered with DSH: {count} model(s).",
   "raccoon.unregistered": "Not registered — tick the switch above.",
   "raccoon.awaitingLogin": "Enabled — log in to register the models.",

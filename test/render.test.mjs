@@ -793,6 +793,53 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
         `${name} name spans=${findAll(tree, (props) => props.style === S.modelName).length}`);
     }
   }
+
+  // The Raccoon roster's parameter line: the gateway ALREADY declares the
+  // window and the output ceiling, the Host has normalized them since the
+  // first release, and a name-only row was this component dropping data it
+  // held. So the line is asserted in both directions — it must appear when
+  // the figures are there, and must NOT appear empty when they are not.
+  //
+  // The thinking ladder is asserted ABSENT on purpose. This provider
+  // registers `reasoning: false` (pi-ai cannot emit `extra_body.thinking`,
+  // the gateway's only working channel), so quoting levels would promise a
+  // selector the DSH picker never offers — the one thing worse than a sparse
+  // row is a row that lies. `tt` returns the key verbatim here, so each
+  // segment is pinned by WHICH template rendered, not by translated text.
+  {
+    const full = treeOf(render.RaccoonRoster, {
+      models: [{ id: "sn-glm-5-3", name: "GLM-5.3", multiplier: 0.75, vision: true, contextWindow: 1_000_000, maxOutputLength: 65_536 }],
+      tt
+    });
+    const meta = findAll(full, (props) => props.style === S.modelMeta);
+    const metaText = meta.map((row) => texts(row).join("")).join(" | ");
+    check("the raccoon row quotes the declared window and output ceiling",
+      meta.length === 1 && metaText.includes("llm.contextBadge") && metaText.includes("llm.metaOutput"),
+      `meta lines=${meta.length} text=${metaText}`);
+    check("the raccoon row never quotes a thinking ladder",
+      !texts(full).join("").includes("llm.metaLevels"),
+      texts(full).join(" | "));
+    check("the raccoon row draws a rate chip for a priced model",
+      texts(full).join("").includes("×0.75"),
+      texts(full).join(" | "));
+    // The rate tooltip must be the RACCOON one. `llm.rosterRateTitle` calls the
+    // figure a pseudo, operator-side number ("非官方") because the Token Plan
+    // rate really is configured by the operator — but this rate comes straight
+    // from the gateway catalogue, and reusing that string would libel real
+    // data as invented. Cheap to share, expensive to get wrong.
+    const rateChips = findAll(full, (props) => props.style === S.modelRate);
+    check("the raccoon rate chip does not borrow the Token Plan's pseudo-rate tooltip",
+      rateChips.length === 1 && rateChips[0].props?.title === "raccoon.rateTitle",
+      `chips=${rateChips.length} title=${rateChips.map((chip) => chip.props?.title).join(",")}`);
+
+    const bare = treeOf(render.RaccoonRoster, { models: [{ id: "x", name: "X" }], tt });
+    check("a row with no declared figures draws no empty parameter line",
+      findAll(bare, (props) => props.style === S.modelMeta).length === 0,
+      texts(bare).join(" | "));
+    check("a free model reads as free, not as a rate of zero",
+      texts(treeOf(render.RaccoonRoster, { models: [{ id: "f", name: "F", multiplier: 0 }], tt })).join("").includes("raccoon.free"),
+      texts(treeOf(render.RaccoonRoster, { models: [{ id: "f", name: "F", multiplier: 0 }], tt })).join(" | "));
+  }
 }
 
 console.log(JSON.stringify(results, null, 2));

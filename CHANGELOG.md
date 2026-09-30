@@ -34,6 +34,18 @@
 - **去掉 `sidebar.panellist` 与 `main` 槽位注册**，只留 `plugins.bundle.config`：面板改为 Plugins 页内的**内联卡片**，不再占侧边栏一行（`src/client/panel-page.ts`、`src/client/index.ts`）。同时摘掉 layout 服务依赖与 onClose 按钮（Plugins 页自己管导航），`PanelPage` 的 `onClose` 改为按传入与否决定渲染。
 - 这解决了「装了 5 个 connect 插件 = 侧边栏 5 行噪音」的问题，与 workbuddy 的形态对齐。
 
+### 小浣熊模型列表：行形态与 Token Plan 花名册对齐
+
+原来每个模型只有「名字 + 一个 English 徽章」，参数行整块缺席，读起来像个半成品。数据其实**早就在手上**——网关的目录行带 `context_window` / `max_output_tokens`，`fetchRaccoonCatalog` 自首个版本就归一化了这两个字段，`raccoonRoster` 也一路保留着，只有这个渲染组件把它们丢了：
+
+- **补上参数行**：「256K 上下文 · 最大输出 64K」，复用 Token Plan 花名册的 `S.modelMeta` 与同两条文案模板（`llm.contextBadge` / `llm.metaOutput`）。目录没声明该字段时**不画这一段**（`num()` 对缺失值返回 `undefined`，不兜底编数）——面板只引述平台真给的东西。
+- **倍率改为独立 chip**（`S.modelRate`，与 Token Plan 同款），`0` 显示 `free` 而不是 `×0`（零倍率是对模型的事实陈述，不是一个为零的费率）；新增 `raccoon.free` 键补齐 i18n。
+- **倍率 tooltip 不复用 `llm.rosterRateTitle`**：那句话写的是「积分消耗**伪**倍率（自定义对比用，**非官方**）」，因为 Token Plan 的倍率确实是操作者在插件里配的；而小浣熊的倍率是**网关目录直接声明的字段**，借那句 tooltip 等于给真数据贴上"编的"标签。新增 `raccoon.rateTitle`「网关目录声明的积分倍率（0 为免费）」，并加断言钉住别再用错。
+- **`· vision` 硬编码英文改为 `llm.rosterVision`「可看图」徽章**，靠右对齐——原先那个 `" · vision"` 是拼在倍率徽章里的中文字典里的英文裸串，既没走 i18n 也没走统一徽章样式。
+- **给列表一个框**（新增 `S.modelPanel`）：与同 tab 里「已登录」块（`S.card`）同级的容器。行的分隔线样式**不变**——仓库既有原则是「section card 持有唯一的框、行不重画框」，缺的是列表这一层的容器，不是给每行描边。
+
+`test/render.test.mjs` 补 5 条断言（150 → 155）：参数行在有字段时出现、在没字段时不出现为空行、费率 chip 渲染、free 不带 `×0`，以及**思考档位必须缺席**——该 provider 注册的是 `reasoning: false`（pi-ai 发不出网关唯一有效的 `extra_body.thinking`），照抄 Token Plan 那行「思考 关闭/低/中/高」等于承诺一个 DSH 选择器永远不会给的档位。均做过「删参数行 / 填入思考档位 → 红 → 还原 → 绿」验证。
+
 ### 「接入 API」tab：卡片改名、重排、默认展开
 
 按「你为什么来这」而不是按依赖排序，三张卡全部改名 / 换位置（`src/client/panel-page.ts`、`src/client/i18n.ts`）：
