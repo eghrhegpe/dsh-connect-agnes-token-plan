@@ -1,9 +1,9 @@
 /**
- * The plugin's side effects, extracted from `index.ts` (IMPROVEMENTS.md §2.3).
+ * The plugin's side effects — the parts of mounting that are not route
+ * handlers.
  *
  * `apply()` is the single mount seam: it assembles the `wiring` object, calls
- * {@link registerRoutes} (routes.ts), then {@link startSideEffects} for the
- * parts of mounting that are NOT route handlers:
+ * {@link registerRoutes} (routes.ts), then {@link startSideEffects} for:
  *
  *   - the mount seed (`seedPublisherFromCatalog`): offer models before the
  *     first poll, fire-and-forget;

@@ -1,5 +1,5 @@
 /**
- * The six HTTP route handlers, extracted from `index.ts` (IMPROVEMENTS.md §2.3).
+ * The six HTTP route handlers.
  *
  * `apply()` stays the single mount seam: it assembles a `wiring` object and
  * hands it to {@link registerRoutes}; the handlers keep exactly the behaviour

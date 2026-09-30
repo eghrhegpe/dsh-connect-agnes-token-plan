@@ -1,13 +1,12 @@
 /**
  * The snapshot route's DATA AGGREGATION — the peer-free pure half.
  *
- * Extracted from `index.ts` so the router keeps only the HTTP surface (route
- * registration, the trust fence, body reading, the `writeJson` responses)
- * while the polling-side decisions — fetching through the cache, parsing
- * pools/trend/catalog, computing shape warnings, splitting a pool's coverage
- * into callable vs locked models, marking quota-exhausted models, identifying
- * vision models, building the `llm` status block — live here as one testable
- * function.
+ * Keeps the router to only the HTTP surface (route registration, the trust
+ * fence, body reading, the `writeJson` responses) while the polling-side
+ * decisions — fetching through the cache, parsing pools/trend/catalog,
+ * computing shape warnings, splitting a pool's coverage into callable vs
+ * locked models, marking quota-exhausted models, identifying vision models,
+ * building the `llm` status block — live here as one testable function.
  *
  * Pure by design: it takes the resolved `settings`, the shared `cache` /
  * `inflight` maps, the `tokenStore`, the `apiKeyStore`, the `publisher`

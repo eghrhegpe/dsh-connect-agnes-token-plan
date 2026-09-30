@@ -2,23 +2,18 @@
  * The directly-registered provider's PUBLISH STATE MACHINE — the peer-free
  * control-plane half of step three ("one-stop service").
  *
- * Extracted from `index.ts` so the 1187-line router stops also owning
- * `providerState`, the `publishChain` serialisation, the mount seed and the
- * rollback path. The extraction is a MOVE, not a rewrite: every semantic that
- * `index.ts` carried — the chain that makes a publish queue behind every other
- * publish in flight (PITFALLS §18 "the slower one wins"), the `disposed`
- * gate that keeps a publish arriving after dispose from registering into a
- * Host that has withdrawn the plugin, the single-point `registerPair` used by
- * both the publish and the rollback path, the factory-await + shape check
- * (PITFALLS §19) — migrates verbatim. `test/wiring.test.mjs` F3 (the gated
- * adapter that parks its first build) still runs against this module, so the
- * race the chain exists to fix cannot reappear as a regression.
+ * Three load-bearing semantics, each pinned by a test that must keep running:
+ *   - the publish chain queues a publish behind every one in flight, so a slow
+ *     publish can never be overwritten by a fast one (PITFALLS §18);
+ *   - the `disposed` gate stops a publish arriving after dispose from
+ *     registering into a Host that has withdrawn the plugin;
+ *   - the single-point `registerPair` (with its factory-await + shape check,
+ *     PITFALLS §19) is used by both the publish and the rollback path.
  *
- * Peer-free by the same discipline as `llm-models.ts` / `llm-retry.ts`: this
- * file imports no runtime peer. The adapter factory is injected by the caller
- * (`loadAdapterModule`, defaulting to `import("./llm-adapter.ts")` exactly as
- * `index.ts` did), so the offline suites can substitute a fake factory without
- * touching the Host's node_modules.
+ * Peer-free: imports no runtime peer. The adapter factory is injected by the
+ * caller (`loadAdapterModule`, defaulting to `import("./llm-adapter.ts")`),
+ * so the offline suites can substitute a fake factory without touching the
+ * Host's node_modules.
  *
  * @module dsh-connect-sensenova-token-plan/provider-publish
  */
@@ -34,13 +29,13 @@ import type { HostDeps } from "./types.ts";
  *
  * Holds the live registration state (`state`), the `publishChain` that
  * serialises publishes, the `disposed` gate, and the single-point
- * `registerPair`. The caller (`index.ts`) drives `publish` from the mount
- * seed, the catalog poll, the provider switch, the roster save and the
- * api-key forget; it calls `dispose` from the `ctx.effect` teardown.
+ * `registerPair`. The caller drives `publish` from the mount seed, the
+ * catalog poll, the provider switch, the roster save and the api-key forget;
+ * it calls `dispose` from the `ctx.effect` teardown.
  *
  * The `getLlm` resolver is a FUNCTION, not a snapshot, because the `llm`
  * service may register with the Host after this plugin mounts — the same
- * resolver-not-snapshot pattern `index.ts` uses for `credentials`.
+ * resolver-not-snapshot pattern used for `credentials`.
  *
  * @param {object} [deps]
  * @param {object} [deps.settings] - the resolved settings row (reads `registerProvider` and `apiBase` only).

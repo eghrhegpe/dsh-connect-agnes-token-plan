@@ -2,9 +2,9 @@
  * SenseNova console token store — the seam between the credentials service and
  * the panel's console calls.
  *
- * The console JWT lives 180 minutes. Previously the only way past that was to
- * copy a new one out of devtools into `$DSH_HOME/.env` and restart, which is
- * exactly the monthly interruption this store removes.
+ * The console JWT lives 180 minutes; this store keeps it renewed, so the
+ * panel never needs the pre-store ritual of copying a fresh token out of
+ * devtools into `$DSH_HOME/.env` and restarting.
  *
  * How it works:
  *
