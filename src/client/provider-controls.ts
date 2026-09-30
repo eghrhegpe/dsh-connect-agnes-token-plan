@@ -181,7 +181,16 @@ export function DrawSwitch({ llm, onDone, tt }: {
             }),
             h("span", { style: S.modelName }, tt("draw.autoOption"))
           ),
-          h("span", { style: S.modelBadge }, preferred === null && effective !== "" ? `${tt("draw.badge")} · ${effective}` : tt("draw.badge"))
+          // The auto badge shows WHICH model the auto-pick addresses: "image ·
+          // <model>" when the catalog yields one, bare "image · (none)" when the
+          // catalogue holds no image model yet (key not saved, first poll
+          // pending, or the plan has no draw model) — so an empty list is not
+          // silently read as "auto = any model" but as "there is no model".
+          h("span", { style: S.modelBadge },
+            effective !== ""
+              ? `${tt("draw.badge")} · ${effective}`
+              : `${tt("draw.badge")} · ${tt("draw.badgeNone")}`
+          )
         ),
         ...candidates.map((id) => h(
           "li",
