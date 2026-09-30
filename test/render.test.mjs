@@ -429,10 +429,10 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const rich = [{
     id: "deepseek-v4-flash", name: "deepseek-v4-flash", vision: false, available: false, quotaExhausted: true,
     contextWindow: 1048576, maxOutputLength: 65536, multiplier: 10,
-    // Proven-only levels: this id's probe (frozen baseline) accepts xhigh,
-    // low/medium are not yet probed (live-contract replay pending) — the
-    // roster quotes exactly what the panel would let the user pick.
-    thinkingLevels: ["off", "high", "xhigh"]
+    // Proven-only levels: the 2026-09-30 probe recorded 200 on
+    // low/medium/xhigh for this model (frozen baseline) — the roster
+    // quotes exactly what the panel would let the user pick.
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh"]
   }];
   const richTree = treeOf(render.ModelRoster, { models: rich, enabledIds: [], tt: ttZh });
   const richText = texts(richTree).join("\n");
@@ -441,7 +441,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the platform-declared output ceiling lands in the parameter line",
     richText.includes("最大输出 64K"), richText);
   check("the row quotes THIS model's selectable levels, localized like the picker",
-    richText.includes("思考 关闭/高/极高"), richText);
+    richText.includes("思考 关闭/低/中/高/极高"), richText);
   check("the provider-wide default never repeats per row (it lives in the header)",
     !richText.includes("默认思考强度") && !richText.includes(zh["llm.rosterThinkingDefault"]), richText);
   check("the pseudo multiplier labels the row ×N", richText.includes("×10"), richText);

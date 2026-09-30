@@ -1112,9 +1112,9 @@ async function withNetwork(stub, body) {
       // because the DEFAULT trendMultipliers match "sensenova" — the same
       // pseudo rate the trend rows would get, one matcher for both.
       // `thinkingLevels` is the proven-only set: these fake-catalog ids are
-      // not in the probe table, so no extended level rides — the roster
-      // quotes off/高 (the platform defaults proven on every chat model)
-      // and nothing the platform never answered 200 for.
+      // not in the probe table (PROBED_EFFORT), so no level beyond the
+      // platform default rides — the roster quotes off/高 and nothing the
+      // platform never answered 200 for on THIS id.
       const snapshot = await call(SNAPSHOT_PATH, makeRequest());
       check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
         JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([

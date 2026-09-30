@@ -9,6 +9,11 @@
         "date": "2026-09-30",
         "change": "平台目录 input_modalities 回退：deepseek-v4-flash / deepseek-v4-pro / deepseek-flash / glm-5.2 / kimi-k3 / deepseek-v4.1-flash 的 input_modalities 由 [\"text\",\"image\"] 退回 [\"text\"]（sensenova-6.8-flash-lite 仍为 [\"text\",\"image\"]）。推理响应方言不变（glm-5.2 仍吐 reasoning_content、flash-lite 仍吐 reasoning）。基线 visionInput 字段据 live-contract 实测刷新。",
         "evidence": "GET /v1/models 2026-09-30 返回 deepseek-v4-flash input_modalities=[\"text\"]；POST /v1/chat/completions glm-5.2 响应 message.reasoning_content 存在（'say hi in 3 words' → 'Hi'）。"
+      },
+      {
+        "date": "2026-09-30",
+        "change": "low/medium 两格首测：live-contract 回放扩了 reasoning_effort:low/medium 探针（每模型 2 请求、2s 退避、429 记 INDEFINITE 不当判读）。200 实锤：sensenova-6.8-flash-lite（low+medium）、deepseek-v4-flash（low+medium）、glm-5.2（low+medium）、deepseek-flash（medium）、kimi-k3（medium）——这些格翻 true。429 rpm 窗口未定（INDEFINITE，非 400、非「不支持」，保持关，重跑翻表）：deepseek-v4-pro 的 low+medium、deepseek-flash 的 low、kimi-k3 的 low。xhigh/max 维持 2026-09-29 那轮结论不变。",
+        "evidence": "npm run test:live:contract 2026-09-30 22:11 输出：deepseek-v4-flash low/medium 各 HTTP 200；glm-5.2 low/medium 各 200；sensenova-6.8-flash-lite low/medium 各 200；deepseek-flash medium 200 / low 429 rps-exhausted；kimi-k3 medium 200 / low 429 tpm-exceeded；deepseek-v4-pro low/medium 均 429。"
       }
     ]
   },
@@ -18,7 +23,7 @@
       "chat": true,
       "visionInput": true,
       "thinkingField": "reasoning",
-      "reasoningEffort": { "max": false, "xhigh": false, "none": true, "default": "high" },
+      "reasoningEffort": { "max": false, "xhigh": false, "low": true, "medium": true, "none": true, "default": "high" },
       "thinkingObject": "untested",
       "status": "ok",
       "contextLength": 262144,
@@ -30,7 +35,7 @@
       "chat": true,
       "visionInput": false,
       "thinkingField": "reasoning_content",
-      "reasoningEffort": { "max": false, "xhigh": true, "none": true, "default": "high" },
+      "reasoningEffort": { "max": false, "xhigh": true, "low": true, "medium": true, "none": true, "default": "high" },
       "thinkingObject": "ok",
       "status": "ok",
       "supportedSamplingParameters": ["temperature", "stop"]
@@ -40,7 +45,7 @@
       "chat": true,
       "visionInput": false,
       "thinkingField": "reasoning_content",
-      "reasoningEffort": { "max": false, "none": true, "default": "high" },
+      "reasoningEffort": { "max": false, "low": "indefinite", "medium": "indefinite", "none": true, "default": "high" },
       "thinkingObject": "ok",
       "status": "ok",
       "supportedSamplingParameters": ["temperature", "stop"]
@@ -50,7 +55,7 @@
       "chat": true,
       "visionInput": false,
       "thinkingField": "reasoning_content",
-      "reasoningEffort": { "none": true, "default": "high" },
+      "reasoningEffort": { "medium": true, "low": "indefinite", "none": true, "default": "high" },
       "thinkingObject": "ok",
       "status": "ok",
       "supportedSamplingParameters": ["temperature", "stop"]
@@ -60,7 +65,7 @@
       "chat": true,
       "visionInput": false,
       "thinkingField": "reasoning_content",
-      "reasoningEffort": { "max": true, "none": true, "default": "high" },
+      "reasoningEffort": { "max": true, "low": true, "medium": true, "none": true, "default": "high" },
       "thinkingObject": "ok",
       "status": "ok",
       "supportedSamplingParameters": ["temperature", "stop"]
@@ -70,7 +75,7 @@
       "chat": true,
       "visionInput": false,
       "thinkingField": "reasoning_content",
-      "reasoningEffort": { "none": true, "default": "high" },
+      "reasoningEffort": { "medium": true, "low": "indefinite", "none": true, "default": "high" },
       "thinkingObject": "unknown",
       "status": "ok",
       "supportedSamplingParameters": ["temperature", "stop"]

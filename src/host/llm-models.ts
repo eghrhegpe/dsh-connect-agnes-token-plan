@@ -211,8 +211,14 @@ export function isChatModel(entry) {
  *   - `none` — 关思考, probed 200 on every model;
  *   - `xhigh` — ONLY probed 200 on deepseek-v4-flash;
  *   - `max`   — ONLY probed 200 on glm-5.2;
- *   - `low` / `medium` — NEVER probed (the live-contract replay does not
- *     currently exercise these two cells).
+ *   - `low` / `medium` — 2026-09-30 live-contract replay probed 200 on
+ *     sensenova-6.8-flash-lite / deepseek-v4-flash / glm-5.2 (both) and on
+ *     deepseek-flash's `medium` (its `low` cell is still INDEFINITE — the
+ *     probe hit a 429 rpm window, not a 400, so it is "not measured" not
+ *     "unsupported"); deepseek-v4-pro's low/medium are also INDEFINITE for
+ *     the same reason. INDEFINITE cells stay closed in this table until a
+ *     clean re-run records a 200 (or a 400, which would close them
+ *     permanently).
  *
  * The panel roster line must not quote a level the platform may 400 on,
  * so a model absent from this table gets `low`/`medium`/`xhigh`/`max` all
@@ -223,12 +229,15 @@ export function isChatModel(entry) {
  * never assumed.
  */
 const PROBED_EFFORT = Object.freeze({
-  "deepseek-v4-flash": { low: false, medium: false, high: true, xhigh: true, max: false },
-  "glm-5.2":           { low: false, medium: false, high: true, xhigh: false, max: true },
-  "sensenova-6.8-flash-lite": { low: false, medium: false, high: true, xhigh: false, max: false },
+  "deepseek-v4-flash": { low: true, medium: true, high: true, xhigh: true, max: false },
+  "glm-5.2":           { low: true, medium: true, high: true, xhigh: false, max: true },
+  "sensenova-6.8-flash-lite": { low: true, medium: true, high: true, xhigh: false, max: false },
   "deepseek-v4-pro":   { low: false, medium: false, high: true, xhigh: false, max: false },
-  "deepseek-flash":    { low: false, medium: false, high: true, xhigh: false, max: false },
-  "kimi-k3":           { low: false, medium: false, high: true, xhigh: false, max: false }
+  // deepseek-flash: medium probed 200; low is INDEFINITE (429, re-run
+  // pending) so it stays closed — "not measured" is not "supported".
+  "deepseek-flash":    { low: false, medium: true, high: true, xhigh: false, max: false },
+  // kimi-k3: medium probed 200; low is INDEFINITE (429, re-run pending).
+  "kimi-k3":           { low: false, medium: true, high: true, xhigh: false, max: false }
 });
 
 export function thinkingLevelMapFor(entry) {

@@ -13,16 +13,20 @@
 明说那串列表是**并集**、各模型支持面不同）——用户点了某家不支持的档就可能 400。
 现把 `thinkingLevelMapFor` 改为**逐模型门控**（新常量 `PROBED_EFFORT`，数据抄自同一张
 冻结契约，覆盖 low/medium/high/xhigh/max 五格）：`high`（平台默认，全家族实测过）保持
-开，`xhigh` 只对 deepseek-v4-flash 开，`max` 只对 glm-5.2 开，`low`/`medium` 尚无逐
-模型探针、两格先关；未收录模型默认全关。`test/live-contract.mjs` 已扩探针段（每模型
-各发 1 个 `low`、1 个 `medium` 的 chat 请求，限流友好、不自动改表），跑完按 200/400
-结果翻 `PROBED_EFFORT` 表把该开的档补回来，探针结果人工写回冻结契约（「live 失败
-不是回归」纪律，ROADMAP §2.3）。
+开，`xhigh` 只对 deepseek-v4-flash 开，`max` 只对 glm-5.2 开；未收录模型默认全关。
 
-测试同步：`retry` §5、`provider` §1、`routes` Q2、`render` G4、`contract` §2 的
-`thinkingLevels` 断言全部改读门控后的值（未实测模型 `["off","high"]`、v4-flash
-`["off","high","xhigh"]`、glm-5.2 `["off","high","max"]`）。文档同步：`API.md` 样例
-行、`IMPROVEMENTS.md` §7 修订注记、本条。
+**2026-09-30 探针补测后**：`test/live-contract.mjs` 扩了 `reasoning_effort:low/medium`
+探针（2s 退避；429 记 INDEFINITE 不当判读——限流是节奏问题不是参数拒绝，只有 4xx 才
+算"不支持"的负证据）。首跑实锤 200 的格子：sensenova-6.8-flash-lite（low+medium）、
+**deepseek-v4-flash（low+medium，你原问的那行——低中档平台真支持）**、glm-5.2（low+medium）、
+deepseek-flash（medium）、kimi-k3（medium）→ 这些格已翻 `true`，对应面板行放出低/中档。
+仍 INDEFINITE 的（429 rpm 窗口，非 400，保持关、重跑再翻）：deepseek-v4-pro 的 low+medium、
+deepseek-flash 的 low、kimi-k3 的 low。
+
+测试同步：`contract` §2 加逐模型 low/medium 断言（读契约表，`true`→开、`indefinite`/`false`→关）、
+`provider` §1（v4-flash/glm-5.2/flash-lite 的 low+medium 开、INDEFINITE 格关）、`retry` §5、
+`routes` Q2、`render` G4（v4-flash 那行 = 关闭/低/中/高/极高）。文档同步：`API.md` 样例
+行与字段注记、`IMPROVEMENTS.md` §7 修订、本条。
 
 ### 可见性修复三连：登录态常显 + provider 注册 pending 态 + 小浣熊错误不再被开关藏起
 

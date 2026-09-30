@@ -93,6 +93,19 @@ for (const model of contract.models) {
       check(`${model.id} thinkingLevelMap.xhigh === null (rejected / unverified)`,
         map.xhigh === null, JSON.stringify(map.xhigh));
     }
+    // low/medium: the 2026-09-30 probe round recorded them per-model. `true`
+    // (a 200) opens the level; `false` or `"indefinite"` (a 429 rhythm
+    // answer, not a 400 — "not measured" not "unsupported") keeps it
+    // closed until a clean re-run flips the baseline cell.
+    for (const level of ["low", "medium"]) {
+      if (model.reasoningEffort?.[level] === true) {
+        check(`${model.id} thinkingLevelMap.${level} === "${level}" (probed 200)`,
+          map[level] === level, JSON.stringify(map[level]));
+      } else {
+        check(`${model.id} thinkingLevelMap.${level} === null (unprobed / indefinite)`,
+          map[level] === null, JSON.stringify({ cell: model.reasoningEffort?.[level], got: map[level] }));
+      }
+    }
     check(`${model.id} thinkingLevelMap.minimal === null (unverified on this gateway)`,
       map.minimal === null, JSON.stringify(map.minimal));
     // vision: the descriptor's input array mirrors the contract's

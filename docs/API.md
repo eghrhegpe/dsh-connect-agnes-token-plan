@@ -46,9 +46,12 @@
     // 每行附目录声明的 contextWindow / maxOutputLength（0 = 平台未声明）、
     // thinkingLevels（DSH 选择器实际可选档位，与 pi-ai getSupportedThinkingLevels
     // 同一规则算出；扩展档 xhigh/max 只对冻结契约表里实测过 200 的模型开放，
-    // low/medium 尚无逐模型探针，未实测的模型这两档也关）；命中 trendMultipliers
-    // 的行再附 multiplier: number（伪倍率，非官方，与 trend 同一匹配器）。
-    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144, "maxOutputLength": 65536, "multiplier": 1, "thinkingLevels": ["off", "high"] }],
+    // low/medium 按 2026-09-30 live-contract 探针的逐模型实锤结果开放：
+    // flash-lite / v4-flash / glm-5.2 全开，deepseek-flash / kimi-k3 只开
+    // medium，v4-pro 两格未定（429 限流未测成，重跑后翻表））；命中
+    // trendMultipliers 的行再附 multiplier: number（伪倍率，非官方，与
+    // trend 同一匹配器）。
+    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144, "maxOutputLength": 65536, "multiplier": 1, "thinkingLevels": ["off", "low", "medium", "high"] }],
     "enabledModelIds": [],
     // 出图工具开关生效值与来源（0.4.2）；工具实际挂载在下一个 Host 启动时发生
     "drawEnabled": false, "drawSource": "config",

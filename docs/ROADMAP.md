@@ -68,7 +68,7 @@ wiring/routes/provider/draw 四套件全绿、e2e-gate 通过。
 |---|---|---|---|
 | 离线 | `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/sensenova-contract.json`（冻结 2026-09-29 实测：9 模型的 thinking 形态 / reasoning_effort 支持面 / 采样参数 / `context_length` / 模态 / 404-403 标记） | 断言 `llm-models.js` 的 `toPiDescriptor` / `identifyVisionModel` / `isChatModel` / `exhaustedModelIds` 对契约表的输出与冻结值一致；`parsers.js` 对契约表的解析结果；`codes.js` 的 reason 折叠对 429/quota 文案的分类。契约表改动必须附「平台响应原文」证据（提交约定） | `npm test` 全绿 |
 | live | `test/live-contract.mjs`（不进 `npm test`，`npm run test:live:contract`） | 对 `token.sensenova.cn/v1/models` 发 1 请求核对 9 模型目录仍含冻结字段（模态 / context_length / max_output_length / supported_sampling_parameters）；推理端点按契约表**每格 1 请求、限流友好**（每格失败记漂移不重试），红 = 平台方言漂移，修法走 `SENSENOVA-API.md` §7 注释层，不静默改代码 | 手动 / CI best-effort（同 `live-jwks`） |
-
+| 探针纪律（2026-09-30 扩） | 推理探针扩到 `reasoning_effort: low/medium`（每模型 2 请求、2s 退避）；**429 是节奏答案不是参数判读**——探针记 INDEFINITE、不计入失败、退出码 0，只有 4xx 参数拒绝才算「平台不支持」的负证据；探针结果**人工**写回冻结契约（`driftLog` 留平台响应原文），不自动改 `llm-models.ts` | 同上；首跑（2026-09-30 22:11）实锤 9 格 200，4 格 INDEFINITE 待重跑 |
 **完成判据**：`test/contract.test.mjs` 进 `package.json` 的 `test` 脚本链；
 `test/baselines/sensenova-contract.json` 字段与 `SENSENOVA-API.md` §7.5 逐模型表一一对应；
 live 档在 `package.json` 加 `test:live:contract` 脚本（与 `test:live` 并列）。
