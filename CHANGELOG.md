@@ -2,6 +2,14 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.4.4] — 2026-10-01
+
+插件卡的自述面补正：中文界面下卡片的标题与简介不再显示英文，并补上卡片图标。
+
+- **卡片标题与简介本地化**（`locale/en.json` + `locale/zh.json`）：Plugins 页卡片的这两行文案**不由插件渲染**，而是 DSH 读包元数据——`package.json.description`（只认字符串）作英文兜底，`locale/*.json` 的 `meta.title` / `meta.description` 按当前语言的兜底链覆盖（`en` → `["en"]`，`zh` → `["zh","en"]`）。此前只提供了英文那一半，于是「点进去每个 tab 都是中文、卡片却是英文」，标题还落回裸包名 `dsh-connect-sensenova-token-plan`（`displayName` 这条链路根本不读）。现在中文界面显示「商汤 Token Plan 接入全家桶」+ 中文简介；英文界面文案不变——`locale/en.json` **只写标题**，英文简介继续由 `package.json` 单一真源提供，同一段英文不会两处漂移。
+- **卡片图标**（`icon.svg`）：沿用面板 `PanelIcon` 的「积分币」母题（青绿渐变圆盘 + 白色记数笔画）。读取端对图标是硬校验——相对路径、SVG/PNG/JPEG/WebP、必须落在清单目录内、≤256 KiB，任一不满足会让整条元数据报错而不是降级。
+- **两处打包遗漏都是静默失效**：`exports` 缺 `"./locale/*.json"` 通配时，解析 `pkg/locale/zh.json` 抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`，而读取端把这一类错误当「没有本地化元数据」**直接吞掉**——不报错、不告警、只显示英文；`files` 漏 `locale` 则本机（符号链接）生效、用户装上仍是英文。已连同 `icon.svg` 一起进白名单，经验写回 `docs/PITFALLS.md` §27。
+
 ## [0.4.3] — 2026-10-01
 
 第二个上游（小浣熊）、面板从侧边栏归位到 Plugins 页、模型花名册重排，外加一批「状态翻成某个值后操作入口跟着消失」的可见性修复。
