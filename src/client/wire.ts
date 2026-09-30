@@ -66,6 +66,10 @@ export interface ModelData {
   quotaExhausted?: boolean;
   /** Positive window from `contextWindowOf`: declared value or the 128k fallback. */
   contextWindow?: number;
+  /** Platform-declared output ceiling from `max_output_length`; 0/absent = unknown. */
+  maxOutputLength?: number;
+  /** Operator pseudo credit multiplier (×N); absent when no config key matched. */
+  multiplier?: number;
 }
 
 /** One vision model line: the id, its capability, and the evidence source. */
@@ -101,6 +105,8 @@ export interface LlmData {
   providerId?: string;
   modelCount?: number;
   visionCount?: number;
+  /** Thinking effort the profile pins as DSH's "Default" (same constant the adapter dispatches). */
+  thinkingDefault?: string;
   models?: ModelData[];
   enabledModelIds?: string[];
   quotaBlockedModelIds?: string[];

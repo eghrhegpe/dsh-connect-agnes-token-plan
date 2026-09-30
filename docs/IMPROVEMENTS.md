@@ -414,3 +414,33 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 > 红线（凭据不入库 / 只 `grant` 一种 kind / `auth` 顶层键 / PKCE `Uint8Array` /
 > trace 落盘 / 密码 JWE），以及 [CONTRIBUTING.md](./CONTRIBUTING.md) 的提交纪律
 > （路径限定提交、`git status --short` 复核）。
+
+---
+
+## 7. 模型花名册重排：向 WorkBuddy 形状学习（2026-09-30 已落地）
+
+对面板「推送到 DSH 的模型」一次锐评的落地记录。三个病灶、三个取舍：
+
+- **卡内再画卡**：原每行 `border + bg-layer-2` 小胶囊，把区块卡（`sectionCard`
+  已有唯一边框）切成栅栏。**取舍**：行改为扁平行 + `borderBottom` 分隔线
+  （面板内 `trendRow` 已有此先例，不是新发明）；徽章去掉描边只留底色阶，
+  且**默认态不发徽章**——「纯文本」是缺省，给缺省发徽章等于给什么都没发
+  （`llm.rosterText` 键随之一删，双语同步）。
+- **参数不可见**：用户看不到 LLM 参数与预设上下文。**取舍**：每行加缩进参数行
+  （`llm.metaOutput`/`llm.metaThinking` + 原上下文徽章合并），数字只报**平台声明**的
+  `max_output_length`（`maxOutputLengthOf`，0 = 未声明就不画该段，绝不猜）与
+  profile 钉死的思考默认值（`DEFAULT_REASONING_EFFORT` 单一常量：`llm-adapter`
+  派发它、`snapshot-aggregate` 播报它，展示与行为构造上不可漂移）。
+- **倍率与格式**：`trendMultipliers` 一直存在但只在趋势表露面。**取舍**：抽
+  `matchMultiplier` 单一匹配器，趋势行与花名册行共用——同一模型的 `×N` 两处
+  是同一计算事实；未命中无字段（不猜 1）。上下文格式修 `1049k` 占位符感 bug
+  （`Math.round(1048576/1000)`）：新增 `tokenSize`，千整走十进制（128000→128K）、
+  二进制才走 1024（262144→256K、65536→64K）、≥1M 走 M（1048576→1M）。
+  顺带补上 `quotaExhausted` 徽章（CHANGELOG 曾承诺"灰色显示原因"而 client 从未实现）。
+- **明确未做（P2，待目录签名联动）**：每模型上下文预算单选与卡内图片开关——
+  覆盖值不进 `catalogSignature`（`id:vision` 位串），改了不会触发重注册，
+  先动签名再动 UI。
+
+验证钉：`render` G4（1M/×N/额度耗尽/无参数行不画线 + `tokenSize` 直测）、
+`routes` Q2（行含 `maxOutputLength`/`multiplier` 与 `llm.thinkingDefault`）、
+`retry` §5（投影层 0=未声明）。

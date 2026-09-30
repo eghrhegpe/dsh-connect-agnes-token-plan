@@ -45,7 +45,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 |---|---|---|
 | `consoleBase` | `https://platform.sensenova.cn` | 控制台源站（OAuth 授权起点 / 默认回调） |
 | `trendHours` | `24` | 消耗趋势回看小时数（最大 168） |
-| `trendMultipliers` | `{"glm-5.2":10,"kimi-k3":20,"sensenova":1,"deepseek":1}` | 消耗趋势的**伪倍率**（自定义对比用，非官方数据）：键为模型 id 的大小写不敏感子串（按书写顺序首个命中生效），值为正数。面板以 `×N` 角标显示并附「非官方」说明；显式设 `{}` 可全部关闭。非法条目（键空 / 值 ≤0 或非数字）被静默丢弃 |
+| `trendMultipliers` | `{"glm-5.2":10,"kimi-k3":20,"sensenova":1,"deepseek":1}` | 消耗趋势的**伪倍率**（自定义对比用，非官方数据）：键为模型 id 的大小写不敏感子串（按书写顺序首个命中生效），值为正数。面板以 `×N` 角标显示并附「非官方」说明，消耗趋势与「模型接入」花名册用**同一匹配器、同一取值**；显式设 `{}` 可全部关闭。非法条目（键空 / 值 ≤0 或非数字）被静默丢弃 |
 | `cacheSeconds` | `60` | Host 侧缓存秒数；面板脚注直接引用此值 |
 | `pollSeconds` | `30` | 面板轮询间隔，由 Host 下发、面板跟随（不再硬编码 30s） |
 | `allowedHosts` | — | 追加可信 `Host` 名（默认 `localhost` / `127.0.0.1` / `::1`，只增不替） |

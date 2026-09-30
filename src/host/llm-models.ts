@@ -83,6 +83,16 @@ export const LLM_PROVIDER_ID = "sensenova-token-plan";
 export const LLM_DISPLAY_NAME = "SenseNova Token Plan";
 
 /**
+ * The thinking effort the profile pins as DSH's "Default" on this provider.
+ *
+ * One constant for two claims: `llm-adapter.ts` pins it into the profile, and
+ * the snapshot echoes it to the panel roster, so the number the user reads is
+ * the number the adapter dispatches. Editing one without the other is now
+ * impossible by construction.
+ */
+export const DEFAULT_REASONING_EFFORT = "high";
+
+/**
  * Per-token prices are unknowable for a quota plan; report zero everywhere.
  *
  * ⚠️ The zeros are a SENTINEL, not "free". SenseNova Token Plan is a credit
@@ -124,6 +134,25 @@ export function contextWindowOf(entry) {
     if (value > 0) return value;
   }
   return FALLBACK_CONTEXT_WINDOW;
+}
+
+/**
+ * Read the platform's declared per-request output ceiling, 0 when unknown.
+ *
+ * This is a DISPLAY fact only. The descriptors deliberately declare no
+ * `maxTokens` value (module header, decision 2), so this figure never becomes
+ * a request parameter — it says what the platform can emit at most, so the
+ * user learns why a long reply can still stop with `finish_reason: length`.
+ * Same spelling-first policy as {@link contextWindowOf}.
+ * @param {object} entry - one normalized catalog entry.
+ * @returns {number} the declared ceiling, or 0 when the entry states none.
+ */
+export function maxOutputLengthOf(entry) {
+  for (const key of ["max_output_length", "maxOutputLength", "max_output_tokens"]) {
+    const value = Math.floor(num(entry?.[key], 0));
+    if (value > 0) return value;
+  }
+  return 0;
 }
 
 /**
@@ -362,7 +391,7 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
  * @param {object[]} entries - the normalized catalog entries.
  * @param {object} pools - the `parsePools` result, or anything without a `pools`
  *   array (in which case every row reads as available).
- * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number}[]}
+ * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number, maxOutputLength: number}[]}
  */
 export function rosterWithAvailability(entries, pools) {
   const blocked = new Set(exhaustedModelIds(pools));
@@ -381,7 +410,11 @@ export function rosterWithAvailability(entries, pools) {
       // The window the descriptor itself will use: a declared `context_length`
       // when the catalog has one, else the same 128k fallback pi-ai gets —
       // so the badge never contradicts the effective behavior.
-      contextWindow: contextWindowOf(entry)
+      contextWindow: contextWindowOf(entry),
+      // The platform's declared output ceiling (0 = unknown). Widening the
+      // projection here is deliberate: the raw entry stays Host-side, and the
+      // panel quotes only these two parameter figures plus the vision verdict.
+      maxOutputLength: maxOutputLengthOf(entry)
     };
     if (position.has(id)) {
       out[position.get(id)] = row;

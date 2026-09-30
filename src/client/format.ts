@@ -54,3 +54,24 @@ export function format(template: string, vars?: Record<string, unknown> | null):
   }
   return text;
 }
+
+/**
+ * A token count the way the platform names it: 1048576 → "1M", 65536 → "64K",
+ * 128000 → "128K". Returns "" for a figure that is not a positive number, so
+ * an unknown value draws no segment instead of a zero.
+ *
+ * Why two bases: the catalogue mixes them — windows and ceilings arrive as
+ * powers of two (1048576), while the plugin's own 128k fallback is the round
+ * decimal 128 000. A flat /1000 rounding once printed "1049k" for the 1M
+ * window and it read like a placeholder bug; so figures divisible by 1000 keep
+ * the decimal reading they were written with, binary-only figures (262144 →
+ * 256K, 65536 → 64K) get the binary one, and anything ≥ 1M goes to M.
+ */
+export function tokenSize(value: unknown): string {
+  const number = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : 0;
+  if (number <= 0) return "";
+  if (number >= 1_000_000) return `${Math.round(number / 100_000) / 10}M`;
+  if (number % 1000 === 0) return `${number / 1000}K`;
+  if (number % 1024 === 0) return `${number / 1024}K`;
+  return `${Math.round(number / 1000)}K`;
+}

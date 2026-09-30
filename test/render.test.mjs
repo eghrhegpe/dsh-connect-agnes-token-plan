@@ -362,10 +362,11 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     JSON.stringify(boxes(none).map((props) => props.checked)));
 
   const visionLines = texts(allOn).filter((line) => line === zh["llm.rosterVision"]);
-  const textLines = texts(allOn).filter((line) => line === zh["llm.rosterText"]);
   check("one vision model earns one vision badge", visionLines.length === 1, String(visionLines.length));
-  check("the two text-only models earn text-only badges", textLines.length === 2, String(textLines.length));
-  check("an unticked row keeps its modality badge",
+  check("a text-only model earns NO badge — the default state is not notable",
+    findAll(allOn, (props) => props.style?.borderRadius === 999).length === 1,
+    String(findAll(allOn, (props) => props.style?.borderRadius === 999).length));
+  check("an unticked row keeps its vision badge",
     texts(none).filter((line) => line === zh["llm.rosterVision"]).length === 1);
 
   const busy = treeOfRoster(["nova-vl"], { busy: true });
@@ -396,6 +397,33 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("a curated id that is no longer in the catalogue draws no row",
     boxes(treeOf(render.ModelRoster, { models: roster, enabledIds: ["ghost-model"], tt })).length === 3,
     String(boxes(treeOf(render.ModelRoster, { models: roster, enabledIds: ["ghost-model"], tt })).length));
+
+  // The WorkBuddy-shape additions: the parameter line and the pseudo rate.
+  // The 1048576 → "1M" reading is exactly the `1049k` placeholder bug the old
+  // decimal rounding drew, so it stays pinned here and in tokenSize below.
+  const rich = [{
+    id: "glm-5.2", name: "glm-5.2", vision: false, available: false, quotaExhausted: true,
+    contextWindow: 1048576, maxOutputLength: 65536, multiplier: 10
+  }];
+  const richTree = treeOf(render.ModelRoster, { models: rich, enabledIds: [], tt: ttZh, thinkingDefault: "high" });
+  const richText = texts(richTree).join("\n");
+  check("1048576 tokens reads as 1M — never the decimal 1049k",
+    richText.includes("1M 上下文") && !richText.includes("1049k"), richText);
+  check("the platform-declared output ceiling lands in the parameter line",
+    richText.includes("最大输出 64K"), richText);
+  check("the profile's pinned thinking default is surfaced",
+    richText.includes("默认思考强度 high"), richText);
+  check("the pseudo multiplier labels the row ×N", richText.includes("×10"), richText);
+  check("a quota-exhausted row names why it cannot answer",
+    richText.includes(zh["llm.rosterExhausted"]), richText);
+  check("a row without declared figures draws no parameter line",
+    texts(allOn).every((line) => !line.includes("上下文")), texts(allOn).join("\n"));
+  const tokenSize = surface.helpers.tokenSize;
+  check("tokenSize keeps decimal and binary figures at home",
+    tokenSize(1048576) === "1M" && tokenSize(262144) === "256K" &&
+    tokenSize(128000) === "128K" && tokenSize(65536) === "64K" &&
+    tokenSize(0) === "" && tokenSize("junk") === "",
+    [tokenSize(1048576), tokenSize(262144), tokenSize(128000), tokenSize(65536), tokenSize(0)].join("/"));
 
   check("an empty catalogue draws no rows at all",
     boxes(treeOf(render.ModelRoster, { models: [], enabledIds: [], tt })).length === 0);

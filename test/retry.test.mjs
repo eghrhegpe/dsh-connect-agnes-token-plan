@@ -173,7 +173,7 @@ const BASE_URL = "https://token.sensenova.cn/v1";
 {
   try {
     const entries = [
-      { id: "m1" },
+      { id: "m1", max_output_length: 65536 },
       { id: "m2" },
       { id: "gen", output_modalities: ["image"] }
     ];
@@ -200,6 +200,13 @@ const BASE_URL = "https://token.sensenova.cn/v1";
       byId.m1.available === true && byId.m1.quotaExhausted === false);
     check("m2 is marked quotaExhausted (its pool hit zero)",
       byId.m2.available === false && byId.m2.quotaExhausted === true);
+    // The parameter figures the WorkBuddy-shape row quotes: the declared
+    // ceiling rides verbatim, an entry without one carries 0 (UNKNOWN, never
+    // a guess) so the panel draws no segment for it.
+    check("the row projects the platform-declared output ceiling",
+      byId.m1.maxOutputLength === 65536, String(byId.m1.maxOutputLength));
+    check("an undeclared ceiling projects as 0, not a guessed number",
+      byId.m2.maxOutputLength === 0, String(byId.m2.maxOutputLength));
 
     // No exhausted pools -> everything available.
     const clear = rosterWithAvailability(entries, { pools: [] });

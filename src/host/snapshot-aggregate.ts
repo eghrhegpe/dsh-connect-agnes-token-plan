@@ -21,19 +21,39 @@
 
 import { fetchConsole, fetchModelCatalog } from "./console-client.ts";
 import { parsePools, parseTrend, checkShape, identifyVisionModel } from "./parsers.ts";
-import { summarizeCatalog, filterByEnabled, rosterWithAvailability, exhaustedModelIds, LLM_PROVIDER_ID } from "./llm-models.ts";
+import { summarizeCatalog, filterByEnabled, rosterWithAvailability, exhaustedModelIds, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
 import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
 import { str } from "./util.ts";
 
 /**
- * Attach the operator's pseudo multipliers to the parsed trend rows.
+ * The operator's pseudo multiplier that names one model id, or undefined.
  *
  * Matching is a case-insensitive SUBSTRING of the model id, first configured
- * key wins (insertion order — `resolveTrendMultipliers` preserves it). A row
- * without a match keeps no `multiplier` field — the panel shows no factor for
- * it rather than guessing 1. The math lives here as one exported seam so the
- * tests drive the exact function `buildSnapshotBody` calls, not a copy.
+ * key wins (insertion order — `resolveTrendMultipliers` preserves it). One
+ * matcher serves BOTH the trend rows and the panel roster, so a model's `×N`
+ * in the consumption chart and its `×N` badge in the model list are the same
+ * computed fact, never two copies that can drift.
+ *
+ * @param {unknown} modelId - a model id (trend row name or roster row id).
+ * @param {Record<string, number>} multipliers - the sanitized config map.
+ * @returns {number|undefined} the hit value, or undefined when nothing matched.
+ */
+export function matchMultiplier(modelId, multipliers) {
+  const id = String(modelId ?? "").toLowerCase();
+  for (const [key, value] of Object.entries(multipliers || {})) {
+    if (id.includes(key.toLowerCase())) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Attach the operator's pseudo multipliers to the parsed trend rows.
+ *
+ * A row without a match keeps no `multiplier` field — the panel shows no
+ * factor for it rather than guessing 1. The math lives here as one exported
+ * seam so the tests drive the exact function `buildSnapshotBody` calls, not a
+ * copy.
  *
  * @param {{models: Array<{model: string, credits: number, multiplier?: number}>}} trend
  *   the `parseTrend` result; rows are replaced in place on the object.
@@ -41,11 +61,9 @@ import { str } from "./util.ts";
  * @returns {object} the same trend object with `multiplier` on matching rows.
  */
 export function applyTrendMultipliers(trend, multipliers) {
-  const lowercased = Object.entries(multipliers || {}).map(([key, value]) => [key.toLowerCase(), value]);
   trend.models = trend.models.map((row) => {
-    const id = row.model.toLowerCase();
-    const hit = lowercased.find(([key]) => id.includes(key));
-    return hit ? { ...row, multiplier: hit[1] } : row;
+    const multiplier = matchMultiplier(row.model, multipliers);
+    return multiplier === undefined ? row : { ...row, multiplier };
   });
   return trend;
 }
@@ -222,10 +240,20 @@ export async function buildSnapshotBody({
     providerId: LLM_PROVIDER_ID,
     modelCount: summary.modelCount,
     visionCount: summary.visionCount,
+    // What DSH's 思考强度 "Default" actually means on this provider. The
+    // adapter profile pins this constant, the panel quotes it — same source,
+    // so the two cannot drift.
+    thinkingDefault: DEFAULT_REASONING_EFFORT,
     // The panel roster: every chat model this catalogue can offer, each tagged
     // with whether its quota pool is currently exhausted, plus the curated
-    // allow-list. An empty allow-list means "no filter".
-    models: rosterWithAvailability(offered, pools),
+    // allow-list. An empty allow-list means "no filter". Every row also carries
+    // the operator's pseudo `×N` under the SAME matcher the trend rows use —
+    // the badge and the consumption chart quote one computed fact, and an
+    // unmatched model simply gets no badge (never a guessed 1).
+    models: rosterWithAvailability(offered, pools).map((row) => {
+      const multiplier = matchMultiplier(row.id, settings.trendMultipliers);
+      return multiplier === undefined ? row : { ...row, multiplier };
+    }),
     enabledModelIds: enabledIds,
     quotaBlockedModelIds: unavailableModelIds,
     drawEnabled: (await drawSwitch?.().catch(() => null) ?? settings.drawEnabled) === true,

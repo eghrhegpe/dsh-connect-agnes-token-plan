@@ -3,7 +3,7 @@
  * picker around it. Verbatim logic from the pre-split `client.js`.
  */
 import { MODELS_PATH } from "./const.ts";
-import { format } from "./format.ts";
+import { format, tokenSize } from "./format.ts";
 import { postJsonOrThrow } from "./http.ts";
 import { bulkModelsIn, modelIsOn, toggleModelIn } from "./models.ts";
 import { h, useCallback, useEffect, useMemo, useState } from "./runtime.ts";
@@ -15,15 +15,22 @@ import type { LlmData, ModelData } from "./wire.ts";
  * The model picker's row list - hook-free, so the Node render suite
  * drives the very rows the browser draws.
  *
- * Each row is a checkbox, the model name, and a modality badge. The rows
- * come only from the Host's roster, so a curated id that no longer exists
- * can never become a checkbox: curation is a filter over the catalogue,
- * never a catalogue of its own.
+ * Each row is two lines in the WorkBuddy shape: a head line (checkbox, the
+ * model name, an optional `×N` pseudo rate, badges for NOTABLE states only)
+ * and an indented parameter line quoting the figures the platform declares -
+ * window and output ceiling - plus the profile's pinned thinking default.
+ * The rows come only from the Host's roster, so a curated id that no longer
+ * exists can never become a checkbox: curation is a filter over the catalogue,
+ * never a catalogue of its own. A default ("text only") earns no badge, and a
+ * figure the catalogue does not declare draws no segment - the list quotes
+ * facts, never guesses.
  */
-export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
+export function ModelRoster({ models, enabledIds, busy, thinkingDefault, tt, onToggle }: {
   models: ModelData[];
   enabledIds: unknown;
   busy: boolean | undefined;
+  /** The provider-level default thinking effort, as the snapshot quotes it. */
+  thinkingDefault?: unknown;
   tt: Tt;
   onToggle?: (id: string) => void;
 }): unknown {
@@ -35,36 +42,59 @@ export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
       const id = String(model?.id ?? "");
       const label = String(model?.name ?? id);
       const on = modelIsOn(enabledIds, id);
+      const ctx = typeof model?.contextWindow === "number" && model.contextWindow > 0
+        ? format(tt("llm.contextBadge"), { ctx: tokenSize(model.contextWindow) })
+        : null;
+      const out = typeof model?.maxOutputLength === "number" && model.maxOutputLength > 0
+        ? format(tt("llm.metaOutput"), { out: tokenSize(model.maxOutputLength) })
+        : null;
+      const thinking = typeof thinkingDefault === "string" && thinkingDefault !== ""
+        ? format(tt("llm.metaThinking"), { level: thinkingDefault })
+        : null;
+      const meta = [ctx, out, thinking].filter(Boolean).join(" · ");
+      const rate = typeof model?.multiplier === "number" ? model.multiplier : null;
       return h(
         "li",
         { key: id, style: { ...S.modelRow, ...(on ? {} : S.modelRowOff) } },
-        h(
-          "label",
-          {
-            style: {
-              display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto",
-              minWidth: 0, cursor: busy ? "default" : "pointer"
-            }
-          },
-          h("input", {
-            type: "checkbox",
-            checked: on,
-            disabled: busy === true,
-            style: S.modelCheck,
-            "aria-label": label,
-            // The roster is hook-free, so the handler is handed in from the
-            // picker. Without it this box is display-only and the allow-list
-            // cannot be edited by a single row at all.
-            onChange: onToggle ? () => onToggle(id) : undefined
-          }),
-          h("span", { style: S.modelName, title: id }, label)
+        h("div", { style: S.modelRowHead },
+          h(
+            "label",
+            {
+              style: {
+                display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto",
+                minWidth: 0, cursor: busy ? "default" : "pointer"
+              }
+            },
+            h("input", {
+              type: "checkbox",
+              checked: on,
+              disabled: busy === true,
+              style: S.modelCheck,
+              "aria-label": label,
+              // The roster is hook-free, so the handler is handed in from the
+              // picker. Without it this box is display-only and the allow-list
+              // cannot be edited by a single row at all.
+              onChange: onToggle ? () => onToggle(id) : undefined
+            }),
+            h("span", { style: S.modelName, title: id }, label),
+            // The pseudo rate rides directly after the name like WorkBuddy's
+            // `(0.29x)`: the Host matched it through the same operator config
+            // that labels the trend chart, so badge and chart cannot diverge.
+            rate !== null
+              ? h("span", { style: S.modelRate, title: tt("llm.rosterRateTitle") }, `×${rate}`)
+              : null
+          ),
+          // A badge marks a NOTABLE state: image input is the exception worth
+          // quoting, and `quota exhausted` says why a ticked row still will
+          // not show up in the DSH picker (the buildDescriptors parity rule).
+          model?.vision === true ? h("span", { style: S.modelBadge }, tt("llm.rosterVision")) : null,
+          model?.quotaExhausted === true
+            ? h("span", { style: { ...S.modelBadge, color: "var(--dsw-alias-state-error-primary)" } }, tt("llm.rosterExhausted"))
+            : null
         ),
-        h("span", { style: S.modelBadge, title: id }, model?.vision === true ? tt("llm.rosterVision") : tt("llm.rosterText")),
-        // Context window the Host resolved for this row (declared value or
-        // the 128k fallback), shown as a compact k figure.
-        typeof model?.contextWindow === "number" && model.contextWindow > 0
-          ? h("span", { style: S.modelBadge }, format(tt("llm.contextBadge"), { ctx: `${Math.round(model.contextWindow / 1000)}k` }))
-          : null
+        // The parameter line carries only what was declared: an unknown
+        // figure draws no segment, and a line with nothing to say vanishes.
+        meta === "" ? null : h("div", { style: S.modelMeta }, meta)
       );
     })
   );
@@ -185,22 +215,25 @@ export function ModelPicker({ llm, onDone, tt }: {
               disabled: busy,
               onChange: (event: { target: { value: string } }) => setQuery(event.target.value)
             }),
+            // The count LEADS the right-hand cluster - state, then actions -
+            // and the bulk buttons share the search box's 32px height, so the
+            // row reads as one grouped control instead of four loose ones.
+            h("span", {
+              style: S.rosterCount,
+              title: format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })
+            }, format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })),
             h("button", {
               type: "button",
-              style: S.button,
+              style: S.rosterBulk,
               disabled: busy === true || visible.length === 0,
               onClick: () => bulk(true)
             }, tt("llm.rosterAll")),
             h("button", {
               type: "button",
-              style: S.button,
+              style: S.rosterBulk,
               disabled: busy === true || visible.length === 0,
               onClick: () => bulk(false)
-            }, tt("llm.rosterNone")),
-            h("span", {
-              style: S.rosterCount,
-              title: format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })
-            }, format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length }))
+            }, tt("llm.rosterNone"))
           ),
           visible.length === 0
             ? h("p", { style: S.empty }, tt("llm.rosterNoMatch"))
@@ -209,6 +242,10 @@ export function ModelPicker({ llm, onDone, tt }: {
                 enabledIds: ids,
                 busy,
                 tt,
+                // The profile's pinned thinking default, quoted from the same
+                // constant the adapter dispatches - the parameter line shows
+                // it only when the Host actually says so.
+                thinkingDefault: llm?.thinkingDefault,
                 // One row is toggled against the WHOLE roster, not the
                 // filtered view, so an edit survives a later change of the
                 // search box.

@@ -36,11 +36,15 @@
     // 直接注册开关 / Host llm 服务 / 当前是否已注册
     "registerProvider": false, "llmAvailable": false,
     "providerRegistered": false, "providerId": "sensenova-token-plan",
-    // 实际注册了多少个（已按下面的允许清单过滤），以及其中多少个可看图
+    // 实际注册了多少个（已按下面的允许清单过滤），以及其中多少个可看图；
+    // thinkingDefault 是本提供方 profile 钉死的思考强度默认值（与 llm-adapter 同一常量）
     "modelCount": 2, "visionCount": 1,
+    "thinkingDefault": "high",
     // 模型选择器数据：整份可选目录（不受过滤影响）与当前生效的允许清单。
     // 空清单 = 不过滤 = 全部推送；["__hide_all__"] = 一个都不推送。
-    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144 }],
+    // 每行附目录声明的 contextWindow / maxOutputLength（0 = 平台未声明）；
+    // 命中 trendMultipliers 的行再附 multiplier: number（伪倍率，非官方，与 trend 同一匹配器）。
+    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144, "maxOutputLength": 65536, "multiplier": 1 }],
     "enabledModelIds": [],
     // 出图工具开关生效值与来源（0.4.2）；工具实际挂载在下一个 Host 启动时发生
     "drawEnabled": false, "drawSource": "config",

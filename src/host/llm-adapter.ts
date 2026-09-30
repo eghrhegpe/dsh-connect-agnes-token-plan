@@ -25,7 +25,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { resolveRetryPolicy, resolveImageAttachmentAccess } from "@deepseek-ai/dsh-llm";
 import { name } from "./host-config.ts";
-import { buildDescriptors, LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.ts";
+import { buildDescriptors, LLM_PROVIDER_ID, LLM_DISPLAY_NAME, DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
 import { buildRetryPolicyConfig } from "./llm-retry.ts";
 import { reclassifyStream } from "./llm-error-fix.ts";
 
@@ -148,12 +148,14 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
         retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${LLM_PROVIDER_ID}.retryPolicy`),
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
-        // The picker's "Default" pins to high. SenseNova thinks by default
-        // (reasoning_effort default high), and the descriptor's thinkingLevelMap
-        // spells off as `none`, so an unselected effort must not reach pi-ai as
-        // "no effort" — that would dispatch `map.off` and silently turn thinking
-        // off. Pinning the profile default to high keeps the platform default.
-        reasoning: "high",
+        // The picker's "Default" pins to DEFAULT_REASONING_EFFORT (high).
+        // SenseNova thinks by default (reasoning_effort default high), and the
+        // descriptor's thinkingLevelMap spells off as `none`, so an unselected
+        // effort must not reach pi-ai as "no effort" — that would dispatch
+        // `map.off` and silently turn thinking off. Pinning the profile default
+        // keeps the platform default; the snapshot quotes this same constant to
+        // the panel roster, so the displayed default cannot drift from it.
+        reasoning: DEFAULT_REASONING_EFFORT,
         ...REQUEST_IMAGE_BUDGETS,
         piProvider: provider
       }

@@ -2,6 +2,9 @@
  * Theme-token-only styles; a renamed token degrades looks, never rendering.
  * Verbatim from the pre-split `client.js`.
  */
+/** The shared button skin; `rosterBulk` reuses it one step taller so the bulk
+ *  buttons sit level with the 32px roster search box. */
+const BUTTON = { height: 30, padding: "0 12px", borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-primary)", fontSize: 13, cursor: "pointer" };
 export const S = {
   // The shell's center column is `display:flex; flex-direction:column;
   // overflow:hidden` — it never scrolls itself; every main-slot panel owns
@@ -22,7 +25,7 @@ export const S = {
   title: { margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "28px" },
   updated: { color: "var(--dsw-alias-label-secondary)", fontSize: 12 },
   spacer: { flex: 1 },
-  button: { height: 30, padding: "0 12px", borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-primary)", fontSize: 13, cursor: "pointer" },
+  button: BUTTON,
   sectionTitle: { margin: "22px 0 10px", fontSize: 13, fontWeight: 600, color: "var(--dsw-alias-label-secondary)" },
   // Content sections are workbuddy-style collapsible cards: a bordered
   // card whose header is a full-width button (title + rotating chevron).
@@ -122,17 +125,29 @@ export const S = {
   primaryBusy: { opacity: 0.6, cursor: "default" },
   formError: { color: "var(--dsw-alias-state-error-primary)", fontSize: 12, margin: "10px 0 0" },
   formNote: { color: "var(--dsw-alias-label-secondary)", fontSize: 12, margin: "10px 0 0" },
-  // The model picker: a search box and a all/none row over one row per
-  // model, each row a checkbox, the name, and a modality badge. Rows sit
-  // in their own card so the list can grow past a screen without pushing
-  // the rest of the panel out of view.
+  // The model picker: a search box, then one flat row per model. The section
+  // card owns the ONLY frame — a border per row was a card inside a card and
+  // flattened the hierarchy (WorkBuddy lesson: inner elements never re-draw
+  // the outer box). Badges read by background step alone, and a badge marks a
+  // NOTABLE state only: "text only" is the default and earns nothing.
   rosterTools: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 },
   rosterCount: { fontSize: 12, color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums", marginLeft: "auto" },
-  modelList: { display: "flex", flexDirection: "column", gap: 6, margin: 0, padding: 0, listStyle: "none" },
-  modelRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)" },
+  rosterBulk: { ...BUTTON, height: 32 },
+  modelList: { display: "flex", flexDirection: "column", margin: 0, padding: 0, listStyle: "none" },
+  // Head line over the parameter line: the divider separates rows without a
+  // box, the padding keeps the whole row as the visual unit.
+  modelRow: { display: "flex", flexDirection: "column", gap: 2, padding: "8px 4px", borderBottom: "1px solid var(--dsw-alias-border-l1)" },
+  modelRowHead: { display: "flex", alignItems: "center", gap: 8 },
   modelRowOff: { opacity: 0.55 },
   modelCheck: { flex: "none", width: 15, height: 15, cursor: "pointer", accentColor: "var(--dsw-alias-brand-primary)", margin: 0 },
-  modelName: { flex: "1 1 auto", minWidth: 0, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  modelBadge: { flex: "none", fontSize: 11, padding: "1px 7px", borderRadius: 999, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-1)", color: "var(--dsw-alias-label-secondary)" },
+  // `0 1 auto` (not `1 1 auto`): the name hugs the rate chip instead of
+  // stretching to the right edge; the label shrinks, so ellipsis still works.
+  modelName: { flex: "0 1 auto", minWidth: 0, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  modelRate: { flex: "none", fontSize: 11, color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums" },
+  modelBadge: { flex: "none", fontSize: 11, padding: "1px 7px", borderRadius: 999, background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-secondary)" },
+  // The WorkBuddy-style parameter line: the figures the platform declares
+  // (window, output ceiling) plus the profile's pinned thinking default,
+  // indented under the model name (15px checkbox + 10px gap = 25).
+  modelMeta: { paddingLeft: 25, fontSize: 11, lineHeight: "15px", color: "var(--dsw-alias-label-secondary)" },
   rosterFoot: { display: "flex", gap: 8, alignItems: "center", marginTop: 10 }
 };

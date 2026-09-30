@@ -47,7 +47,7 @@ import {
   setAllModelsIn,
   toggleModelIn
 } from "./models.ts";
-import { clock, clockLong, count, format, when } from "./format.ts";
+import { clock, clockLong, count, format, tokenSize, when } from "./format.ts";
 import { provideClientReact } from "./runtime.ts";
 import { en, zh } from "./i18n.ts";
 import { S } from "./styles.ts";
@@ -96,6 +96,7 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       when,
       count,
       format,
+      tokenSize,
       HIDE_ALL_MODELS,
       modelIsOn,
       allowListFor,
