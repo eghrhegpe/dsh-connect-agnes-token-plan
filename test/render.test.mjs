@@ -316,6 +316,31 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   });
   check("a failed registration shows the error line",
     failed.some((line) => line.includes("DUPLICATE_ADAPTER")), failed.join("\n"));
+
+  // The switch is ticked, no error, service present, but registration has
+  // not landed: the line must NOT claim the switch is off — that is the
+  // same visibility lie the account editor used to tell after a "forget".
+  const pending = rendered(render.ProviderRegStatus, {
+    llm: { hasApiKey: true, keySource: "credentials", registerProvider: true,
+      llmAvailable: true, providerRegistered: false, providerId: "p" },
+    tt: ttZh
+  });
+  // Match a placeholder-free substring of the pending line, not the raw
+  // dictionary string (which still carries the unfilled `{id}`).
+  check("a ticked switch without a landed registration says pending, not off",
+    pending.some((line) => line.includes("开关已开但注册尚未生效"))
+      && !pending.some((line) => line.includes("未向 DSH 注册")), pending.join("\n"));
+
+  // A specific failure outranks a capability gap: both llmAvailable false
+  // and a providerError present must show the error, not the capability line.
+  const both = rendered(render.ProviderRegStatus, {
+    llm: { hasApiKey: true, keySource: "credentials", registerProvider: true,
+      llmAvailable: false, providerRegistered: false, providerId: "p", providerError: "DUPLICATE_ADAPTER" },
+    tt: ttZh
+  });
+  check("a specific error outranks the no-service line",
+    both.some((line) => line.includes("DUPLICATE_ADAPTER"))
+      && !both.some((line) => line.includes(zh["llm.noService"])), both.join("\n"));
 }
 
 // === G4. the model roster: which rows exist, and which are ticked ==========

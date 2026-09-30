@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### 可见性修复三连：登录态常显 + provider 注册 pending 态 + 小浣熊错误不再被开关藏起
+
+同族问题——「状态翻成某个值后，操作入口/错误行跟着消失，用户拿不到重入路」：
+
+- **登录态与账号编辑器无条件可见**（中间态不再是死路）：此前「连接商汤控制台」区卡只在 `hasAccount || needsAccount` 时出现——中间态（已点过「清除账号」、grant 仍在静默续期）下整卡消失，要等 refresh_token 彻底失效才重新拿到重输入口。现改为**只要快照携带 auth 块就常显**，积分额度页底部永远有该卡（默认折叠、一键展开）：随时可核对登录态、重输账号改指仍有效的 grant、或再清一次账号。头部「需要重新登录」chip 的 tooltip 在 Host 没给 reason 时回落 guidance 文案，不再留空白。
+- **provider 注册 pending 态**：开关已开、服务在、无 error，但注册没落地时，原文案谎报「未注册——勾选上方开关」（指向已勾选的开关）；新增 `llm.registeredPending` 直说 pending。同时修分支序：具体失败（providerError）优先于能力缺失（noService），两者同时成立时不再吞错误。
+- **小浣熊 tab 注册状态行不再被开关门控**：providerError 原来只在 `enabled === true` 时渲染，开关一关报错就消失；现 `state !== null` 即渲染，失败行与开关解耦。
+- **构建修复**：`qr.ts` 内 8 处 `x?.y = v`（可选链左值赋值）是解析错误，tsdown 直接挂掉——改为先索引后赋值。
+- **测试**：`test/panel.test.mjs` B2 组翻转（中间态/死 grant 态都钉 `canManageAccount === true`）；`panel-decision.js` 镜像同步去门控；`render.test.mjs` 新增 pending 态与 error 优先序 2 项 pin。
+
 ### 运维诊断 doctor（PITFALLS §22 的欠账）
 
 回答「这台机器的 provider / 出图开关到底开没开」——此前唯一答案在一个 JSON 状态文件里，不在任何配置文件、任何路由、任何 CLI。

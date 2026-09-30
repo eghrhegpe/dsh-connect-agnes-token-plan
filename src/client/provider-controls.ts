@@ -47,6 +47,11 @@ export function ProviderStatus({ llm, tt }: { llm?: LlmData | null; tt: Tt }): u
  */
 export function ProviderRegStatus({ llm, tt }: { llm?: LlmData | null; tt: Tt }): unknown {
   if (!llm || typeof llm !== "object") return null;
+  // Order matters: a specific failure outranks a capability gap, which
+  // outranks "the switch is ticked but registration has not landed yet".
+  // The old fall-through told the reader "tick the switch above" when the
+  // switch was ALREADY ticked and the registration silently failed — a lie
+  // pointing at the wrong fix.
   if (llm.registerProvider === true && llm.providerRegistered === true) {
     return h("div", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" }, role: "status" },
       format(tt("llm.registered"), {
@@ -55,11 +60,17 @@ export function ProviderRegStatus({ llm, tt }: { llm?: LlmData | null; tt: Tt })
         vision: count(llm.visionCount)
       }));
   }
+  if (llm.registerProvider === true && typeof llm.providerError === "string" && llm.providerError !== "") {
+    return h("div", { style: S.formError, role: "alert" }, format(tt("llm.error"), { error: llm.providerError }));
+  }
   if (llm.registerProvider === true && llm.llmAvailable !== true) {
     return h("div", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } }, tt("llm.noService"));
   }
-  if (llm.registerProvider === true && typeof llm.providerError === "string" && llm.providerError !== "") {
-    return h("div", { style: S.formError, role: "alert" }, format(tt("llm.error"), { error: llm.providerError }));
+  if (llm.registerProvider === true) {
+    // Ticked on, no error, service present, but the register call has not
+    // landed yet: say so instead of claiming the switch is off.
+    return h("div", { style: { ...S.muted, fontSize: 12 }, role: "status" },
+      format(tt("llm.registeredPending"), { id: String(llm.providerId ?? "") }));
   }
   return h("div", { style: { ...S.muted, fontSize: 12 } },
     format(tt("llm.off"), { id: String(llm.providerId ?? "") }));
