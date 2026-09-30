@@ -100,7 +100,7 @@ export function decodeRaccoonJwtExpMs(token) {
  * @param {string} [options.version] - `X-Client-Version` (e.g. `v1.0.35`).
  * @returns {object} the header map.
  */
-export function raccoonHeaders(credential, options = {}) {
+export function raccoonHeaders(credential: any, options: { platform?: string; version?: string } = {}) {
   const source = obj(credential);
   const headers = {
     Accept: "application/json",
@@ -147,7 +147,7 @@ export function parseRaccoonEnvelope(raw, status) {
  * @param {typeof fetch} [fetcher] - injected fetch.
  * @returns {Promise<object>} `{ status }` plus, on success, the token pair.
  */
-export async function pollRaccoonQrLogin(code, fetcher) {
+export async function pollRaccoonQrLogin(code: string, fetcher?: typeof fetch) {
   const effective = fetcher ?? globalThis.fetch;
   let envelope;
   try {
@@ -196,7 +196,10 @@ export async function pollRaccoonQrLogin(code, fetcher) {
  * @param {typeof fetch} [fetcher] - injected fetch.
  * @returns {Promise<object>} `{ ok, accessToken, refreshToken, expiresAtMs?, code?, message? }`.
  */
-export async function refreshRaccoonCredential(credential, fetcher) {
+export async function refreshRaccoonCredential(
+  credential: any,
+  fetcher?: typeof fetch
+): Promise<{ ok: boolean; code?: string; message?: string; accessToken?: string; refreshToken?: string; expiresAtMs?: number }> {
   const effective = fetcher ?? globalThis.fetch;
   const refreshToken = str(obj(credential).refresh_token, "");
   if (refreshToken === "") return { ok: false, code: "no_refresh_token", message: "the stored credential has no refresh token" };
@@ -234,7 +237,7 @@ export async function refreshRaccoonCredential(credential, fetcher) {
  * @param {typeof fetch} [fetcher] - injected fetch.
  * @returns {Promise<object[]|null>} the normalized `[{id, name, multiplier, vision, contextWindow, maxOutputLength}]`, or `null`.
  */
-export async function fetchRaccoonCatalog(credential, fetcher) {
+export async function fetchRaccoonCatalog(credential: any, fetcher?: typeof fetch) {
   const effective = fetcher ?? globalThis.fetch;
   try {
     const response = await effective(
@@ -281,7 +284,7 @@ export async function fetchRaccoonCatalog(credential, fetcher) {
  * @param {typeof fetch} [fetcher] - injected fetch.
  * @returns {Promise<number|null>} the balance, or `null` when unreadable.
  */
-export async function fetchRaccoonBalance(credential, fetcher) {
+export async function fetchRaccoonBalance(credential: any, fetcher?: typeof fetch) {
   const effective = fetcher ?? globalThis.fetch;
   try {
     const response = await effective(

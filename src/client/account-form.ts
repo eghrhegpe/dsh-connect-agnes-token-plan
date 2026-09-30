@@ -152,19 +152,16 @@ export function AccountForm({ auth, onDone, tt, bare }: {
     // section card) already supplies both.
     bare ? null : h("div", { style: S.sectionTitle }, tt("auth.title")),
     // The official entry, visible in BOTH states: no account yet → the
-    // sign-up page; account present → quota management / API keys. Only in
-    // the standalone card — the bare embed (account section inside a
-    // working panel) stays quiet.
-    !bare
-      ? h("a", {
-          href: SENSENOVA_SIGNUP_URL,
-          target: "_blank",
-          rel: "noreferrer",
-          // Inline: the shared `styles.ts` is under a concurrent rewrite
-          // (roster/model-row restyle), so this one-off link skin lives here.
-          style: { color: "var(--dsw-alias-label-primary)", fontSize: 12, marginTop: 10, display: "inline-block", textDecoration: "underline", cursor: "pointer" }
-        }, tt(auth?.hasAccount ? "auth.portalHint" : "auth.registerHint"))
-      : null,
+    // sign-up page; account present → quota management / API keys.
+    // Shown in both standalone and bare embed forms.
+    h("a", {
+      href: SENSENOVA_SIGNUP_URL,
+      target: "_blank",
+      rel: "noreferrer",
+      // Inline: the shared `styles.ts` is under a concurrent rewrite
+      // (roster/model-row restyle), so this one-off link skin lives here.
+      style: { color: "var(--dsw-alias-label-primary)", fontSize: 12, marginTop: 10, display: "inline-block", textDecoration: "underline", cursor: "pointer" }
+    }, tt(auth?.hasAccount ? "auth.portalHint" : "auth.registerHint")),
     h(
       "form",
       { onSubmit: submit },

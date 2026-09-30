@@ -25,6 +25,7 @@ import { name } from "./host-config.ts";
 import { RACCOON_BASE_URL, RACCOON_DISPLAY_NAME, RACCOON_PROVIDER_ID, buildRaccoonDescriptors, raccoonRoster } from "./raccoon-models.ts";
 import { buildRetryPolicyConfig } from "./llm-retry.ts";
 import { reclassifyStream } from "./llm-error-fix.ts";
+import type { RaccoonAdapterOptions } from "./types.ts";
 
 /** Idle ceiling while one stream read is outstanding (dsh-llm-pi-ai default). */
 const STREAM_IDLE_TIMEOUT_MS = 300_000;
@@ -83,7 +84,12 @@ const INERT_AUTH = {
  * @returns {{adapter: object, providerIds: string[]}} the adapter and the ids
  *   it owns.
  */
-export function createRaccoonAdapter({ rows, officeIdentity = "", resolveToken, get } = {}) {
+export function createRaccoonAdapter({
+  rows,
+  officeIdentity = "",
+  resolveToken,
+  get
+}: RaccoonAdapterOptions = {}) {
   const models = buildRaccoonDescriptors(rows ?? raccoonRoster(null), { officeIdentity });
 
   const provider = {

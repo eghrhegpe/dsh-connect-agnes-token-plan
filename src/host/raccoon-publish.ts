@@ -30,6 +30,7 @@
 import { RACCOON_PROVIDER_ID, RACCOON_DISPLAY_NAME, raccoonRoster } from "./raccoon-models.ts";
 import { str, redactSecrets } from "./util.ts";
 import { name as pluginName } from "./host-config.ts";
+import type { RaccoonPublisherDeps } from "./types.ts";
 
 /**
  * The Raccoon provider publisher.
@@ -56,7 +57,7 @@ import { name as pluginName } from "./host-config.ts";
  *   isDisposed: () => boolean
  * }}
  */
-export function createRaccoonPublisher(deps = {}) {
+export function createRaccoonPublisher(deps: RaccoonPublisherDeps = {}) {
   const {
     panelSwitch,
     resolveToken,

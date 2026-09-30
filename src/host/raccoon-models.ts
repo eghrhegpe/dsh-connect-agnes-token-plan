@@ -84,7 +84,7 @@ export function raccoonRoster(catalog) {
  * @param {object} [options] - `{ officeIdentity }` for the request headers.
  * @returns {object} the pi-ai descriptor.
  */
-export function raccoonToDescriptor(row, options = {}) {
+export function raccoonToDescriptor(row: any, options: { officeIdentity?: string } = {}) {
   const id = str(row?.id, "");
   if (id === "") throw new Error("racconToDescriptor: row has no id");
   const vision = row?.vision === true;
@@ -126,7 +126,7 @@ export function raccoonToDescriptor(row, options = {}) {
  * @param {object} [options] - `{ officeIdentity }`.
  * @returns {object[]} the pi-ai descriptors.
  */
-export function buildRaccoonDescriptors(roster, options = {}) {
+export function buildRaccoonDescriptors(roster: any, options: { officeIdentity?: string } = {}) {
   const list = Array.isArray(roster) ? roster : raccoonRoster(null);
   const out = [];
   const seen = new Set();

@@ -176,7 +176,7 @@ async function listProfiles(stateRoot) {
  * @param {string} [options.dshHome] - the DSH home to read; defaults to `~/.dsh` (or `$DSH_HOME`).
  * @returns {Promise<DoctorReport>}
  */
-export async function diagnose(options = {}) {
+export async function diagnose(options: { dshHome?: string } = {}) {
   const home = typeof options.dshHome === "string" && options.dshHome !== "" ? options.dshHome : defaultDshHome();
   const stateRoot = join(home, "state");
   const sharedDir = join(stateRoot, name);

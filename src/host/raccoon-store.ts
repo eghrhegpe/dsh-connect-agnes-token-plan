@@ -29,6 +29,7 @@ import {
   decodeRaccoonJwtExpMs,
   refreshRaccoonCredential
 } from "./raccoon.ts";
+import type { RaccoonStoreDeps } from "./types.ts";
 
 /** The reference name the credential pair is stored under. */
 export const RACCOON_CREDENTIAL_REF = "RACCOON_CREDENTIAL";
@@ -90,7 +91,7 @@ export function serializeRaccoonCredential(credential) {
  *   call (tests stub it; defaults to global `fetch`).
  * @returns {{save, forget, resolve, refresh, state}}
  */
-export function createRaccoonStore({ credentials = null, fetcher } = {}) {
+export function createRaccoonStore({ credentials = null, fetcher }: RaccoonStoreDeps = {}) {
   /** Fallback vault for a Host that has no credentials service. */
   const memory = new Map();
   /** Single-flight: a refresh already in flight is shared, never raced. */

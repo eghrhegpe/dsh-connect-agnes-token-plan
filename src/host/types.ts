@@ -101,6 +101,42 @@ export interface JwksOptions {
   timeoutMs?: number;
 }
 
+/** Dependency bag for the Raccoon credential store (`raccoon-store.ts`). */
+export interface RaccoonStoreDeps {
+  /** The `ctx.credentials` service, a resolver, or `null` (resolved on every use). */
+  credentials?: any;
+  /** Injected fetch for the refresh call (tests stub it; defaults to global fetch). */
+  fetcher?: typeof fetch;
+}
+
+/** Dependency bag for the Raccoon provider publisher (`raccoon-publish.ts`). */
+export interface RaccoonPublisherDeps {
+  /** Panel-saved switch value; `null` = state file untouched (provider stays OFF). */
+  panelSwitch?: () => Promise<boolean | null>;
+  /** Resolve the live Raccoon JWT per request (empty when not logged in). */
+  resolveToken?: () => Promise<string>;
+  /** Optional-service resolver for the `llm` registration service. */
+  getLlm?: (service: string) => any;
+  /** Lazy-load the Raccoon adapter factory module (peer `dsh-llm-pi-ai`). */
+  loadAdapterModule?: () => Promise<{ createRaccoonAdapter: (...args: any[]) => any }>;
+  /** Cordis event emitter for `llm/adapters-updated`. */
+  emit?: (event: string) => void;
+  /** Cordis logger (loose: the peer ships no declarations here). */
+  logger?: { warn: (message: string) => void };
+}
+
+/** Options for the Raccoon adapter factory (`raccoon-llm-adapter.ts`). */
+export interface RaccoonAdapterOptions {
+  /** The roster rows to offer (`raccoonRoster` result). */
+  rows?: any[];
+  /** The credential's office identity (`""` for a personal account). */
+  officeIdentity?: string;
+  /** Resolve the live Raccoon JWT per request (refreshes inside the expiry window first). */
+  resolveToken?: () => Promise<string>;
+  /** Service resolver for the image hooks (`attachments`, `fs`). */
+  get?: (service: string) => any;
+}
+
 /**
  * An `Error` with the stable `code` the panel branches on, plus optional
  * structured fields. The fields are attached at runtime (not inherited), so
