@@ -803,7 +803,10 @@ export function registerRoutes(ctx, wiring) {
           await raccoonStore.save({
             accessToken: settled.accessToken,
             refreshToken: settled.refreshToken,
-            ...(settled.expiresAtMs !== undefined ? { expiresAtMs: settled.expiresAtMs } : {})
+            ...(settled.expiresAtMs !== undefined ? { expiresAtMs: settled.expiresAtMs } : {}),
+            // The QR success envelope carries the nickname — store it, or the
+            // panel's "已登录：" line has nothing to show.
+            ...(settled.nickname !== undefined && settled.nickname !== "" ? { nickname: settled.nickname } : {})
           });
         } catch (error) {
           await answer({ ok: false, status: "logged_in", error: redactSecrets(error instanceof Error ? error.message : String(error)) });
