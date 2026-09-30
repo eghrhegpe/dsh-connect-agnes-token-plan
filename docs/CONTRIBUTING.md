@@ -18,7 +18,7 @@
 
 ## 2. 改动 Host 半边必须重启
 
-Host 半边源码位于 `src/host/`（`index.ts` / `host-config.ts` / `codes.ts` / `token-store.ts` / `throttle-store.ts` / `sensenova-auth.ts` / `sensenova-crypto.ts` / `console-client.ts` / `parsers.ts` / `trace.ts` / `util.ts` 等），经 `npm run build` 构建为 `lib/index.js` 后在 Host 启动时加载一次，**改完须完全退出 DSH（含托盘）再启动**（重新构建产物）。只改 `src/client/*.ts` 时跑 `npm run build:client` 重建根 `client.js`、浏览器刷新即可。提交前用 [SETUP.md](./SETUP.md) §4 的自查确认跑的是新代码。
+Host 半边源码位于 `src/host/`（**27 个模块，清单以该目录为准**，不在本文件逐一枚举——本仓已有「套件数/模块清单只指事实源、不复制数字」的纪律，见 [CHANGELOG](../CHANGELOG.md) 0.4.3「文档与仓库纪律」），经 `npm run build` 构建为 `lib/index.js` 后在 Host 启动时加载一次，**改完须完全退出 DSH（含托盘）再启动**（重新构建产物）。只改 `src/client/*.ts` 时跑 `npm run build:client` 重建根 `client.js`、浏览器刷新即可。提交前用 [SETUP.md](./SETUP.md) §4 的自查确认跑的是新代码。
 
 ---
 
@@ -94,11 +94,17 @@ url: https://github.com/eghrhegpe/dsh-connect-sensenova-token-plan
 name: eghrhegpe/dsh-connect-sensenova-token-plan
 category: usage
 description:
-  en: 'SenseNova Token Plan credit panel in the Harness Web sidebar: per-pool quota windows, grant balance and per-model consumption from the SenseNova console API, with in-panel login and automatic token renewal.'
-  zh: '在 Harness Web 侧边栏显示商汤 SenseNova 控制台的 Token Plan 积分用量：各积分池额度窗口、返赠余额与每模型消耗，支持面板内登录与令牌自动续期。'
+  en: 'SenseNova Token Plan credit panel rendered as a config card on the Harness Plugins page: per-pool quota windows (5h and weekly), grant balance and per-model consumption from the SenseNova console API, with in-panel login and automatic token renewal. Three opt-in switches, off by default, register SenseNova models and the Xiaohuanxiong upstream as LLM providers and expose an image-generation tool to the agent.'
+  zh: '在 Harness 的 Plugins 页以插件卡显示商汤 SenseNova 控制台的 Token Plan 积分用量：各积分池额度窗口（5 小时与每周）、返赠余额与每模型消耗，支持面板内登录与令牌自动续期。另有三个默认关闭的可选开关，用于把商汤模型与小浣熊上游注册为 DSH 提供方，并向 agent 暴露出图工具。'
 ```
 
 含 `: ` 的描述必须加引号，否则 YAML 解析失败；`en` 必填且以句号结尾，`zh` 可选。
+
+**截图（`screenshots.json`）必须与当前 UI 一致**——它是市场页的第一屏，比描述更先被看到，却也是最容易在 UI 迁移后烂掉的东西：
+
+- 现存两张（`assets/panel-credit-pools.png`、`assets/panel-provider-setup.png`）拍于 0.4.3 面板归位之前，已过期：标题还是「积分面板」、右上角还有已摘掉的「返回会话」按钮、没有 tab bar、模型行还带「纯文本」徽章（0.4.3 已删）。
+- 重截清单（表格去重与 tab 覆盖同理，**每张必须对应一个真实 tab**）：①「积分额度」= 池卡 + 每模型消耗；②「接入 API」= provider 开关 + 花名册勾选；③「小浣熊」= 扫码登录 / 余额 / 花名册（**当前缺失**）。
+- 重截后把第 ③ 张加进 `screenshots.json`（1–8 张，路径是仓库根相对路径）。**不要凭想象补图**——画一个不存在的界面比没有图更坏，本插件的市场描述是「每句都会被对照代码核对」。
 
 投稿前的硬门槛（CI 自动检查 + 维护者人工读码）：
 

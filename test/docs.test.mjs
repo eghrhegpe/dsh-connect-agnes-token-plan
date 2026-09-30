@@ -282,6 +282,95 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   note(`注释模块引用 ${checked} 条全部可解析${known ? `（含 ${known} 条架构名词白名单）` : ""}`);
 }
 
+// 9) README 必须覆盖面板的每一个 tab
+// 上面 1-8 全是形式校验：链接能解析、表格没复制、行数没超——它们对「README 说的
+// 事是不是真的」一无所知。事故：0.4.3 新增第三个 tab「小浣熊」，README 零处提及，
+// 而 README 进 npm 的 files 白名单——装完的用户不知道这个能力存在（PITFALLS §24）。
+// 这里从两个真源派生「README 必须出现的文案」，不写死任何名字：
+//   a) panel-page.ts 的 activeTab 联合类型 -> tab id 集合
+//   b) i18n.ts 里 `tab.<id>` 的中文文案（zh 字典在前，同键只取首次）
+// 于是「加一个 tab 而忘了告诉用户」必然红，「改 tab 名而 README 不跟」也必然红。
+{
+  const panelSrc = readFileSync(join(ROOT, "src", "client", "panel-page.ts"), "utf8");
+  const i18nSrc = readFileSync(join(ROOT, "src", "client", "i18n.ts"), "utf8");
+  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+  // 必须钉到 activeTab：本文件第一个 useState 是 useState<SnapshotData | null>，
+  // 泛配会抓到它，反而漏掉真正的 tab 联合类型（自查时此处红过一次）。
+  const union = panelSrc.match(/activeTab,\s*setActiveTab\]\s*=\s*useState<([^>]+)>/);
+  if (!union) bad("src/client/panel-page.ts 找不到 activeTab 的联合类型，检查 9 本身可能已失效");
+  else {
+    const tabIds = [...union[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+    if (tabIds.length === 0) bad("activeTab 联合类型里没有解析出任何 tab id");
+    else {
+      const zh = new Map();
+      for (const m of i18nSrc.matchAll(/"tab\.([A-Za-z]+)"\s*:\s*"([^"]+)"/g)) {
+        if (!zh.has(m[1])) zh.set(m[1], m[2]); // zh 字典在 en 之前
+      }
+      const missingName = tabIds.filter((id) => !zh.has(id));
+      const missingInReadme = tabIds.filter((id) => zh.has(id) && !readme.includes(zh.get(id)));
+      if (missingName.length) bad(`i18n 里缺 tab 文案：${missingName.join(", ")}`);
+      if (missingInReadme.length) {
+        bad(`README 没提到这些 tab（${tabIds.length} 个 tab 必须全覆盖）：` +
+          missingInReadme.map((id) => `${id}（面板文案「${zh.get(id)}」）`).join("、"));
+      }
+      if (!missingName.length && !missingInReadme.length) {
+        note(`README 覆盖全部 ${tabIds.length} 个 tab：${tabIds.map((id) => zh.get(id)).join(" / ")}`);
+      }
+    }
+  }
+}
+
+// 10) 自述面声明的 UI 位置必须与 client 实际注册的槽位一致
+// 同一次事故的另一半：0.4.3 把面板从 sidebar 迁到 plugins.bundle.config，README 三处
+// 仍写「侧边栏」，第 31 行「打开侧边栏「积分面板」」让用户找不到入口——操作级失效。
+// 双向校验：哪一侧单独改都会红。
+//
+// 受检面**必须覆盖全部自述文档**，不能只查 README：首次只查 README + cordis.patch.yml 时，
+// ARCHITECTURE / SETUP / DSH-PLUGIN / ROADMAP / CONTRIBUTING 里另外 7 处「侧边栏」全部漏网
+// （SETUP 那两处还会在用户安装后直接误导操作路径）。CHANGELOG 与 PITFALLS **整file豁免**：
+// 它们记录的是历史动作与事故本身（「从侧边栏归位到 Plugins 页」），写「侧边栏」是如实叙述。
+{
+  const clientDir = join(ROOT, "src", "client");
+  // 只剥「整行都是注释」的行（`//`、`*`、`/*` 开头），不动行内 `//`——URL 里的
+  // `https://` 若被当注释削掉，一条路由字符串会被截成半个，误判成「没有注册」。
+  const stripCommentLines = (src) =>
+    src.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  let code = "";
+  for (const name of readdirSync(clientDir)) {
+    if (name.endsWith(".ts")) code += stripCommentLines(readFileSync(join(clientDir, name), "utf8")) + "\n";
+  }
+  const has = (needle) => code.includes(needle);
+  const HISTORY_FILES = new Set(["CHANGELOG.md", "PITFALLS.md"]);
+  const surfaces = [
+    "README.md",
+    "cordis.patch.yml",
+    ...readdirSync(join(ROOT, "docs"))
+      .filter((n) => n.endsWith(".md") && !HISTORY_FILES.has(n))
+      .map((n) => join("docs", n)),
+  ];
+  const claims = [
+    { words: ["侧边栏", "sidebar panel"], requires: "sidebar", via: "sidebar" },
+    { words: ["Plugins 页", "plugins.bundle.config"], requires: "plugins.bundle.config", via: "plugins.bundle.config" },
+  ];
+  // 「不在侧边栏」这类否定句是在帮用户纠偏，不该被当成位置声明——只在肯
+  // 定行上找槽位词。当初事故那句「打开侧边栏「积分面板」」不含否定词，照样红。
+  const NEGATIONS = ["不在", "不是", "并非", "不再", "已从", "迁移出", "移出", "归位", "no longer", "not in the"];
+  const affirmative = (text) =>
+    text.split(/\r?\n/).filter((l) => !NEGATIONS.some((n) => l.toLowerCase().includes(n))).join("\n");
+  let wrong = 0;
+  for (const file of surfaces) {
+    const text = affirmative(readFileSync(join(ROOT, file), "utf8"));
+    for (const claim of claims) {
+      if (!claim.words.some((w) => text.toLowerCase().includes(w.toLowerCase()))) continue;
+      if (!has(claim.requires)) {
+        wrong++;
+        bad(`${file} 声称面板在 ${claim.words[0]}，但 src/client/*.ts 里没有 ${claim.via} 槽位注册（"${claim.requires}"）——自述与实际已分头走路`);
+      }
+    }
+  }
+  if (wrong === 0) note(`自述面的面板位置与 client 槽位注册一致（受检 ${surfaces.length} 个文件：全量 docs 减 ${HISTORY_FILES.size} 个历史档）`);
+}
+
 if (fails.length) {
   console.error(`\n❌ docs.test.mjs 失败 ${fails.length} 项：`);
   for (const f of fails) console.error(`  - ${f}`);

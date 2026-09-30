@@ -1,6 +1,6 @@
 # 架构（Architecture）
 
-本仓库 `dsh-connect-sensenova-token-plan` 是 DeepSeek Harness 的一个**插件**，在 Harness Web UI 的侧边栏里提供商汤（SenseNova）控制台 Token Plan 的实时积分用量面板。它还**不是**一个独立可运行程序，而是挂在 Host（桌面版 / `dsh web`）里的一截逻辑。
+本仓库 `dsh-connect-sensenova-token-plan` 是 DeepSeek Harness 的一个**插件**，在 Harness Web UI 的 **Plugins 页**以插件卡提供商汤（SenseNova）控制台 Token Plan 的实时积分用量面板。它还**不是**一个独立可运行程序，而是挂在 Host（桌面版 / `dsh web`）里的一截逻辑。
 
 本文讲清三件事：插件与 `upstream/` 的关系、插件内部的 Host/Client 分流、以及数据如何流动。
 
@@ -49,7 +49,7 @@
 - `util.ts`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
 - `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` F3（并发 publish「最后发起者最终注册」门控）经此模块注入。
 - `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 可调用-vs-锁定拆分 / 配额耗尽标记 / vision 识别 / `llm` 状态块组装。`index.js` 只保留 HTTP 面（路由注册、同源闸、body 读取、`writeJson`），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
-- `client.js`：侧边栏图标 + `main` 面板页 + 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
+- `client.js`：Plugins 页内的配置卡与三个 tab（积分额度 / 接入 API / 小浣熊）+ 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
 - 测试基建：`client-surface.js` / `panel-decision.js` / `panel-render.js` —— 把 `client.js` 作为模块加载后物化 `panel` 测试面，供 `panel.test.mjs` / `render.test.mjs` 直接调用。不进运行时、不进 `files` 打包清单。
 
 ---
@@ -109,8 +109,14 @@ client.js: interpretSnapshot(body) → {data, error}
   （§5.2 的降级模式是范本）——不许再造「桌面端必需启动项」。
 - **凭据红线不动**（[AGENTS.md](../AGENTS.md) 红线 1/2）：新增凭据一律只进
   DSH 凭据服务（含未来若引入多 Key 池），永不入库、永不进日志。
-- **只吸收与商汤 Key/账号线强相关的能力**，不做跨 provider 通用聚合——
+- **只吸收与商汤（SenseTime）产品线强相关的能力**，不做跨 provider 通用聚合——
   §5.3 里 `dsh-provider-quota` / `dsh-musage` 的定位边界就是本插件的边界。
+  > **2026-10-01 修订（边界放宽）**：原表述是「只吸收与商汤 **Key/账号线**强相关的能力」，
+  > 按 Key 域名 / 认证域划线。该划法会把同一厂商的姐妹产品线误划到界外——Token Plan
+  > 控制台与小浣熊（`xiaohuanxiong.com`）同属商汤旗下产品，却走互不相通的两个认证域
+  >（实测见 [ROADMAP.md](./ROADMAP.md) §6.1.1 的两次复测）。
+  > 界定依据改为**厂商归属**而非域名或认证域，第二上游因此属**界内**，裁定详情见 §5.5。
+  > 另外两条不变量（opt-in 默认关、凭据红线）不受本次修订影响。
 
 变更前的三层分工，改作吸收路线图：
 
@@ -281,6 +287,42 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
   失败后 30s 冷却（借自上游 line 196）。
 - 快照契约**零改动**（14 键不动，`API.md` 不变）：工具要么在要么不在，
   agent 直接可见；面板不新增展示。
+
+### 5.5 边界裁定：第二上游（小浣熊）属于界内（2026-10-01）
+
+**裁决**：小浣熊（`xiaohuanxiong.com` 网关，`sensenova-raccoon` provider）**属于**
+§5 不变量 3 界内的能力，不是破例，也不是例外许可。随本次裁定，不变量 3 的划线依据
+从「Key/账号线（认证域）」改为「**厂商归属**」。
+
+**为什么原来的划法会判错**：不变量 3 原写「只吸收与商汤 **Key/账号线**强相关的能力」。
+如果「账号线」指的是同一个认证域，那么小浣熊天然被排除——两者的令牌确实不通用：
+拿小浣熊桌面 App 的 `access_token` 打 `platform.sensenova.cn` 的 Token Plan 端点回
+`401 auth_token_invalid`（见 [ROADMAP.md](./ROADMAP.md) §6.1.1 的两次复测）。
+**但认证域不通 ≠ 产品线无关**——把一个自家厂商的姐妹产品判成界外，是拿实现细节当边界。
+
+**同一厂商的举证**（三条独立信源，不是推测）：
+
+| 信源 | 原文要点 |
+|---|---|
+| 中证网 2026-07-19（商汤 U1 Pro 发布） | U1 Pro 的能力「在**商汤旗下的**产业级 AI『小浣熊』及视频创作工具 Seko 中已得到深度验证」 |
+| 商汤官方稿件 2026-09-21 | 「**商汤小浣熊 Raccoon Work**」由商汤科技打造，支持移动端 / 桌面端 / 私有化部署 |
+| 本仓库既有措辞 | [ROADMAP §6.1](./ROADMAP.md) 早已写「接入**商汤小浣熊**桌面 App 模型」——边界这次才承认，事实一直在那儿 |
+
+**它与 Token Plan 的关系**（写清才能让后来人判断能不能再放宽）：同一厂商、**不同产品线**、
+**互不相通的认证域**、**互不算的积分口径**（那边独立余额，这边 5h/周额度池）。所以它在实现上
+必须做到的正是现在这套：**独立凭据生命周期、独立 publisher、独立 provider id**——共享任何
+一样都会把两条产品线焊死在一起。它撞的不是「是不是商汤的」这条线，而是「要不要把一个新
+产品的凭据塞进旧产品的池子里」这条线。
+
+**本次裁定不改变的边界**（防止一句话把口子开成无限大）：
+
+- **仍然不做跨厂商聚合**——codearts 那类「一套形态融 N 个不同厂商」的做法依旧在界外，
+  这是 §5.3 里 `dsh-provider-quota` / `dsh-musage` 的泛化定位，与本插件的深耕路线相反。
+- **本次放宽只覆盖「同一厂商下的产品线」**，不覆盖「同一厂商做的一切」——举个例子，
+  商汤方舟的视觉 API、Seko 视频创作即便确认同厂商，也仍需各自走 §5 的裁定流程。
+- **每纳入一条新产品线，必须同时落三条**：① 厂商归属的外部举证（可核的信源，不是印象）；
+  ② 它与 Token Plan 的具体关系（尤其积分与认证域是否通用）；③ 三者齐全才允许默认关
+  opt-in 地进入树干——缺任何一条都回到 §5.2 的 publisher 隔离形态自行维护。
 
 ---
 

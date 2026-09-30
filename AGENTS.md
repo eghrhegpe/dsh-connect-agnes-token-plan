@@ -5,8 +5,14 @@
 
 ## 项目一句话
 
-DSH 插件：参考上游应用 `upstream/sensenova-usage-dashboard`，从商汤 SenseNova 控制台 API 读 Token Plan 额度，渲染到 Harness Web 面板。
+DSH 插件：参考上游应用 `upstream/sensenova-usage-dashboard`，从商汤 SenseNova 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / 小浣熊）。
 Host（Node/cordis）走完整 OIDC+PKCE 登录并自续期；Client（React bundle）轮询本地路由。
+
+**三条事实**（写代码前先认清你在动哪一条）：
+
+1. 「积分额度」tab 是地基，走 Host 登录 + 自动续期，只读 OpenStack 控制台。
+2. 「接入 API」tab 与出图工具会把本插件**升级为推理通道**——注册 provider `sensenova-token-plan`、给 agent 挂 `sensenova_draw_image`。它们都是 **opt-in 默认关**，任何失败必须降级为「面板照常用、该模块缺席」。
+3. **「小浣熊」tab 是第二个上游**：接的是 `xiaohuanxiong.com` 网关的**独立 provider** `sensenova-raccoon`。它与 Token Plan **同属商汤旗下**，但**认证域互不相通**（桌面 App 登录态打不通 Token Plan，实测见 `docs/ROADMAP.md` §6.1.1）——所以它在 §5 不变量 3 的**界内**（裁定见 `docs/ARCHITECTURE.md` §5.5），而凭据仍必须各走一套。改这条线时它对主注册的影响应恒为零：两边 publisher、store、凭据引用全部隔离。
 
 **定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计决策研究档案见 docs/IMPROVEMENTS.md。
 
@@ -90,10 +96,12 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 何时 | 查 |
 |---|---|
 | 排查登录失败 / 改 PKCE、JWE、续期、节流 | `docs/AUTH.md` → `docs/SENSENOVA-API.md` |
+| 动第二个上游（小浣熊 / `sensenova-raccoon`） | `docs/ROADMAP.md` §6.1.2（网关契约复测表）→ `src/host/raccoon*.ts` |
+| 给用户看的文案（README / `cordis.patch.yml`）改了 | `test/docs.test.mjs` 检查 9/10（tab 全覆盖 + 槽位一致），两者都进 npm 包 |
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（23 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（25 条现象→根因→修法） |
 | 排查「这条配置到底生效没」 / 改了源码却没变 | `docs/PITFALLS.md` §22（bundles 装载 → patch overlay → `$DSH_HOME/state/<profile>/<name>/` 三层，desktop 是安装副本、web 是 symlink） |
 | 加/改 **state 文件**、读 `profileContext`、判断某状态该不该按 profile 分段 | `docs/PITFALLS.md` §23（catalog/provider/draw 分段；throttle 与凭据 grant **故意共享**，别统一） |
 | 提交约定、`upstream/` 红线 | `docs/CONTRIBUTING.md` |

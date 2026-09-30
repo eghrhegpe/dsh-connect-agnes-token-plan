@@ -14,7 +14,7 @@
 
 ## 2. 安装
 
-**Web 与桌面端通用**。由带 `plugin_manager` 的会话（Creator 模式）执行，或在 **Web 侧边栏「插件」页**粘贴同一 target；较新版本 CLI 为 `dsh plugin --profile <profile> add <target>`（`web` / `desktop` 皆可）。target 三种形态：
+**Web 与桌面端通用**。由带 `plugin_manager` 的会话（Creator 模式）执行，或在 **Web 的「插件」页**粘贴同一 target；较新版本 CLI 为 `dsh plugin --profile <profile> add <target>`（`web` / `desktop` 皆可）。target 三种形态：
 
 | target 形态 | 值 | 适用场景 |
 |---|---|---|
@@ -28,7 +28,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 
 - npm 形态装的是预构建 tarball：本包无安装脚本、无打包依赖（DSH 运行时走 peer，由 Host 提供），不需要 `allowBuilds` 构建授权；
 - 安装器依次询问 profile 配置的 registry 与备用源（默认含 `registry.npmmirror.com`）；刚发布的新版本在镜像源同步可能有几分钟延迟，官方源 `registry.npmjs.org` 立即可用；
-- 安装后，Harness Web UI 侧边栏出现「积分面板」入口；首次打开会提示连接商汤控制台；
+- 安装后，Harness **Plugins 页**出现本插件的配置卡（页内内联，不是侧边栏入口）；首次打开会提示连接商汤控制台；
 - **装完必须完全退出 DSH（含托盘）再启动**——Host 半边只在启动时加载一次；只改 `client.js` 时浏览器刷新即可。
 
 ### 环境隔离（历史注记）
@@ -92,7 +92,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 
 ## 5. 首次使用
 
-1. 打开侧边栏「积分面板」。
+1. 打开 Plugins 页的插件卡，切到「积分额度」tab。
 2. 点「连接商汤控制台」，填一次账号与密码，点登录。
 3. 之后令牌自动续期，无需再操作。面板底部可清除已保存账号。
 

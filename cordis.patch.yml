@@ -1,7 +1,8 @@
 # dsh-connect-sensenova-token-plan — the bundle's own patch layer.
 #
 # Reads the SenseNova Token Plan quota through the console API and shows it in
-# a sidebar panel. Everything below is plain configuration: edit it here (or
+# a config card on the Plugins page (`plugins.bundle.config` slot) — not in the
+# sidebar. Everything below is plain configuration: edit it here (or
 # override the same id in the profile's cordis.patch.yml) and reinstall/reload.
 #
 # The console token is NOT configured here. Open the panel and sign in once:
