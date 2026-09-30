@@ -238,20 +238,26 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 
 ### 6.1.1 桌面端登录态作为「第二条登录路径」：已实测否决，实施延后
 
-> **状态（2026-09-29）**：**不做**，但**保留原理与复测判据**。方向上是「最终仍想融」，
+> **状态（2026-09-30 第二次复测：仍判死）**：**不做**，但**保留原理与复测判据**。方向上是「最终仍想融」，
 > 因此这里只钉结论与前置门禁——**实施统一推迟到本体稳定之后**，本块不阻塞任何主线。
 
 **结论**：小浣熊桌面端的登录态**不能**作为本插件 OIDC 之外的第二条登录路径。
 原因不是权限没开，而是**两个独立认证域**。
 
-**实测证据**（2026-09-29，只读探针，token 只在内存中过一遍 `Authorization` 头，
-未落盘、未进日志）：
+**实测证据（2026-09-29，只读探针，token 只在内存中过一遍 `Authorization` 头，
+未落盘、未进日志）**：
 
 | 观测 | 结果 |
 |---|---|
 | 桌面 `~/.box-agent/config/auth.json` 的 JWT claims | `iss` 为**数字型 App 级标识**（本例 `721217`），**无 `aud`、无 `scope`** |
 | `GET platform.sensenova.cn/lite/console/v1/tokenplan/pool-usage`（带该 token） | `401` `auth_token_invalid` / `Invalid access token` |
 | `GET token.sensenova.cn/v1/models`（同上） | `401`，`{"code":16,"message":"Forbidden"}` |
+
+**第二次只读复测（2026-09-30，判据 §6.1.1 原文 1 次只读请求）**：桌面 `access_token`
+（claims 指纹与 09-29 相同）打 `GET platform.sensenova.cn/lite/console/v1/tokenplan/pool-usage`
+仍回 `401 auth_token_invalid / "Unauthenticated"`——**判死结论未变**，认证域未合并。
+附带对照：`xiaohuanxiong.com/api/web/llm/v2/models` 回 `404 page not found`（网关路由或鉴权入口与 09-29 记录有漂移，
+融第二上游前需重新核实该端点契约，不能照抄 raccoon 的 URL 清单）。
 
 对照本插件自己的令牌：Hydra 签发、`client_id=nova`、`scope=openid offline offline_access`
 （见 [SENSENOVA-API.md](./SENSENOVA-API.md) §1）。**令牌这一层就不通用**——
