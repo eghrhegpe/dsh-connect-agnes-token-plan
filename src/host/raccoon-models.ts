@@ -88,9 +88,19 @@ export function raccoonToDescriptor(row, options = {}) {
   const id = str(row?.id, "");
   if (id === "") throw new Error("racconToDescriptor: row has no id");
   const vision = row?.vision === true;
+  // The credit multiplier is billing metadata pi-ai has no channel for (the
+  // descriptor's `cost` is per-token USD, which this credit-gated gateway
+  // does not have), so it rides in the display name — the only surface the
+  // model picker renders. The panel's roster shows the same figure, so the
+  // two views cannot disagree.
+  const multiplier = typeof row?.multiplier === "number" ? row.multiplier : undefined;
+  const suffix = multiplier === undefined ? ""
+    : multiplier === 0 ? "（free）"
+    : multiplier === 1 ? ""
+    : `（×${multiplier}）`;
   return {
     id,
-    name: str(row?.name, id),
+    name: `${str(row?.name, id)}${suffix}`,
     api: "openai-completions",
     provider: RACCOON_PROVIDER_ID,
     baseUrl: RACCOON_BASE_URL,
