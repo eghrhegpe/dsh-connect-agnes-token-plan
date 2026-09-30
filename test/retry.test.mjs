@@ -211,13 +211,22 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     // The selectable ladder the row quotes must be EXACTLY what pi-ai's
     // getSupportedThinkingLevels computes over our map (null drops; xhigh/max
     // opt-in) — that function is the DSH selector's effort list source.
-    check("the row projects the selectable thinking levels",
-      JSON.stringify(byId.m1.thinkingLevels) === JSON.stringify(["off", "low", "medium", "high", "xhigh"]),
+    check("the row projects the platform-proven thinking levels only",
+      JSON.stringify(byId.m1.thinkingLevels) === JSON.stringify(["off", "low", "medium", "high"]),
       JSON.stringify(byId.m1.thinkingLevels));
-    check("only glm-5.2 opts into the top level; minimal is never offered",
-      supportedThinkingLevels({ id: "glm-5.2" }).join(",") === "off,low,medium,high,xhigh,max" &&
-      !supportedThinkingLevels({ id: "anything-else" }).includes("minimal"),
-      supportedThinkingLevels({ id: "glm-5.2" }).join(","));
+    // Extended levels are per-model and gated on the frozen probe table
+    // (`EXTENDED_THINKING` in llm-models.ts): `xhigh` only deepseek-v4-flash,
+    // `max` only glm-5.2 — a model the platform never answered 200 for a level
+    // does not get that level offered, even when its id is unknown.
+    check("only the probed models opt into extended levels; minimal is never offered",
+      supportedThinkingLevels({ id: "glm-5.2" }).join(",") === "off,low,medium,high,max" &&
+      supportedThinkingLevels({ id: "deepseek-v4-flash" }).join(",") === "off,low,medium,high,xhigh" &&
+      supportedThinkingLevels({ id: "anything-else" }).join(",") === "off,low,medium,high",
+      [
+        "glm-5.2=" + supportedThinkingLevels({ id: "glm-5.2" }).join(","),
+        "v4-flash=" + supportedThinkingLevels({ id: "deepseek-v4-flash" }).join(","),
+        "other=" + supportedThinkingLevels({ id: "anything-else" }).join(",")
+      ].join(" | "));
 
     // No exhausted pools -> everything available.
     const clear = rosterWithAvailability(entries, { pools: [] });

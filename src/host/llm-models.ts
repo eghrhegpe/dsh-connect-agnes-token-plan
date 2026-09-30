@@ -196,16 +196,40 @@ export function isChatModel(entry) {
  * @param {object} entry - one normalized catalog entry.
  * @returns {object} the thinkingLevelMap.
  */
+/**
+ * Per-model extended thinking levels, probed against the platform (frozen
+ * 2026-09-29, mirrored from `test/baselines/sensenova-contract.json`).
+ *
+ * The baseline records which of the two EXTENDED levels each model actually
+ * accepts: `xhigh` was only probed 200 on `deepseek-v4-flash`, `max` only on
+ * `glm-5.2`. Every other model's extended levels were NOT probed, so the map
+ * must not offer them — the picker quoting a level the platform 400s on is
+ * exactly the class of silent failure the roster line exists to prevent.
+ *
+ * A model absent from this table gets neither extended level: the safe
+ * default is "proven" not "assumed". A new model that turns out to accept
+ * `xhigh`/`max` is added here WITH its probe evidence (see the baseline's
+ * `driftLog` discipline), never assumed.
+ */
+const EXTENDED_THINKING = Object.freeze({
+  "deepseek-v4-flash": { xhigh: true, max: false },
+  "glm-5.2": { xhigh: false, max: true }
+});
+
 export function thinkingLevelMapFor(entry) {
   const id = str(entry?.id, "");
+  const ext = EXTENDED_THINKING[id];
   return {
     off: "none",
     minimal: null,
     low: "low",
     medium: "medium",
     high: "high",
-    xhigh: "xhigh",
-    max: id === "glm-5.2" ? "max" : null
+    // Extended levels are per-model, gated on the frozen probe table: only a
+    // level the platform answered 200 for THIS model is offered. An absent
+    // entry means "proven on nothing" -> both stay closed.
+    xhigh: ext?.xhigh === true ? "xhigh" : null,
+    max: ext?.max === true ? "max" : null
   };
 }
 

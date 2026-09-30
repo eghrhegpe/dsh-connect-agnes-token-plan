@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 思考档位只对「实测过 200 的模型」开放（面板不再过度承诺 xhigh）
+
+此前 `thinkingLevelMapFor` 给**所有**商汤模型都开了 `xhigh` 档（只有 `max` 按 glm-5.2 特判）。但冻结契约表 `test/baselines/sensenova-contract.json` 里 `xhigh` **只实测过 deepseek-v4-flash（200）**，其余 6 家从未测——面板给它们画"极高"是过度承诺，用户点上去可能 400。现把 `xhigh`/`max` 两个扩展档改成**逐模型门控**（新增 `EXTENDED_THINKING` 表，数据抄自同一张冻结契约）：`xhigh` 只对 deepseek-v4-flash 开，`max` 只对 glm-5.2 开，未实测的模型两档都关，面板每行的思考档位从此只引"平台确认过的"。
+
 ### 可见性修复三连：登录态常显 + provider 注册 pending 态 + 小浣熊错误不再被开关藏起
 
 同族问题——「状态翻成某个值后，操作入口/错误行跟着消失，用户拿不到重入路」：

@@ -83,6 +83,16 @@ for (const model of contract.models) {
       check(`${model.id} thinkingLevelMap.max === null (platform rejects / unverified)`,
         map.max === null, JSON.stringify(map.max));
     }
+    // xhigh is gated the same way: offered only where the baseline recorded a
+    // 200 probe, closed everywhere else (including models the baseline never
+    // probed — absence means "proven on nothing").
+    if (model.reasoningEffort?.xhigh === true) {
+      check(`${model.id} thinkingLevelMap.xhigh === "xhigh" (platform accepts it)`,
+        map.xhigh === "xhigh", JSON.stringify(map.xhigh));
+    } else {
+      check(`${model.id} thinkingLevelMap.xhigh === null (rejected / unverified)`,
+        map.xhigh === null, JSON.stringify(map.xhigh));
+    }
     check(`${model.id} thinkingLevelMap.minimal === null (unverified on this gateway)`,
       map.minimal === null, JSON.stringify(map.minimal));
     // vision: the descriptor's input array mirrors the contract's

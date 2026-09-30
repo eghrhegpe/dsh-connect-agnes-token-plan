@@ -45,9 +45,10 @@
     // 空清单 = 不过滤 = 全部推送；["__hide_all__"] = 一个都不推送。
     // 每行附目录声明的 contextWindow / maxOutputLength（0 = 平台未声明）、
     // thinkingLevels（DSH 选择器实际可选档位，与 pi-ai getSupportedThinkingLevels
-    // 同一规则算出）；命中 trendMultipliers 的行再附 multiplier: number
+    // 同一规则算出；扩展档 xhigh/max 只对冻结契约表里实测过 200 的模型开放，
+    // 未实测的模型不开）；命中 trendMultipliers 的行再附 multiplier: number
     // （伪倍率，非官方，与 trend 同一匹配器）。
-    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144, "maxOutputLength": 65536, "multiplier": 1, "thinkingLevels": ["off", "low", "medium", "high", "xhigh"] }],
+    "models": [{ "id": "sensenova-6.8-flash-lite", "name": "sensenova-6.8-flash-lite", "vision": false, "contextWindow": 262144, "maxOutputLength": 65536, "multiplier": 1, "thinkingLevels": ["off", "low", "medium", "high"] }],
     "enabledModelIds": [],
     // 出图工具开关生效值与来源（0.4.2）；工具实际挂载在下一个 Host 启动时发生
     "drawEnabled": false, "drawSource": "config",

@@ -1111,12 +1111,15 @@ async function withNetwork(stub, body) {
       // `maxOutputLength` is 0 (nothing declared); `multiplier: 1` rides
       // because the DEFAULT trendMultipliers match "sensenova" — the same
       // pseudo rate the trend rows would get, one matcher for both.
+      // `thinkingLevels` is the proven-only set: these fake-catalog ids are
+      // not in the probe table, so no extended level rides — the roster
+      // quotes 关闭/低/中/高 and nothing the platform never answered 200 for.
       const snapshot = await call(SNAPSHOT_PATH, makeRequest());
       check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
         JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([
-          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high", "xhigh"], multiplier: 1 },
-          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high", "xhigh"], multiplier: 1 },
-          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high", "xhigh"], multiplier: 1 }
+          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 },
+          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 },
+          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 }
         ]), JSON.stringify(snapshot.payload.llm?.models));
       check("Q2 the snapshot quotes the profile's pinned thinking default",
         snapshot.payload.llm?.thinkingDefault === "high",

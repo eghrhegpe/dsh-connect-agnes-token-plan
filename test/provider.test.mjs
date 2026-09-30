@@ -76,14 +76,16 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     check("the thinking map pins picker levels to wire spellings",
       JSON.stringify(descriptor.thinkingLevelMap) === JSON.stringify({
         off: "none", minimal: null, low: "low", medium: "medium",
-        high: "high", xhigh: "xhigh", max: null
+        high: "high", xhigh: null, max: null
       }), JSON.stringify(descriptor.thinkingLevelMap));
     check("off is the platform's none, not the OpenAI off (which 400s)",
       thinkingLevelMapFor({ id: "any" }).off === "none");
     check("minimal is not offered (unverified on this gateway)",
       thinkingLevelMapFor({ id: "any" }).minimal === null);
-    check("xhigh is offered (accepted on every chat model)",
-      thinkingLevelMapFor({ id: "any" }).xhigh === "xhigh");
+    check("an unprobed model offers no extended level (xhigh closed)",
+      thinkingLevelMapFor({ id: "any" }).xhigh === null);
+    check("xhigh is offered only on deepseek-v4-flash (probed 200)",
+      thinkingLevelMapFor({ id: "deepseek-v4-flash" }).xhigh === "xhigh");
     check("max is rejected off by default (400 on flash-lite / v4-flash)",
       thinkingLevelMapFor({ id: "sensenova-6.8-flash-lite" }).max === null);
     check("glm-5.2 alone offers max (probed 200)",
