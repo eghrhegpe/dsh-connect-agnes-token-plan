@@ -260,13 +260,14 @@ export async function buildSnapshotBody({
     drawSource: await drawSwitch?.().catch(() => null) === null ? "config" : "panel",
     // A draw call's actual target model, picked by the same precedence the
     // tool itself uses (`pickDrawModel`) over the same normalized catalog —
-    // so the panel's line and the tool's behavior cannot disagree. Absent
-    // (not null) when there is no catalog at all. `drawPreferredModel` is
-    // the operator's configured pick; its absence is what the panel renders
-    // as "auto-picked". `drawCandidateCount` exposes how many image-capable
-    // models the catalog holds, so an auto-pick hiding a newer sibling is
-    // visible instead of silent.
-    ...(Array.isArray(catalog) && effectiveDrawModelId !== ""
+    // so the panel's line and the tool's behavior cannot disagree. Emitted
+    // whenever the catalog is present: an AUTO pick (no configured id) still
+    // addresses the catalog's first image model, so `drawModel` / the
+    // candidate set are facts about the deployment, not about the operator's
+    // preference. Only `drawPreferredModel` (the operator's pinned choice) is
+    // preference-shaped and absent when auto. The whole block disappears when
+    // there is no catalog at all (no key, or the poll has never fetched one).
+    ...(Array.isArray(catalog)
       ? (() => {
           const candidates = imageGenModelIds(catalog);
           return {

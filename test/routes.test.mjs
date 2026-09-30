@@ -737,6 +737,18 @@ async function withNetwork(stub, body) {
     check("the llm block carries the draw switch state",
       llm.drawEnabled === false && llm.drawSource === "config",
       JSON.stringify({ drawEnabled: llm.drawEnabled, drawSource: llm.drawSource }));
+    // 0.4.2+: the draw block is emitted whenever the catalog is present — an
+    // AUTO pick (no configured drawModelId) still addresses the catalog's
+    // first image model, so `drawModel` + the candidate set are deployment
+    // facts, not operator preferences. Only `drawPreferredModel` is
+    // preference-shaped and absent here.
+    check("auto-pick still reports drawModel + candidates when the catalog exists",
+      llm.drawModel === "sensenova-u1.5-lite" &&
+      llm.drawCandidateCount === 1 &&
+      JSON.stringify(llm.drawCandidateIds) === JSON.stringify(["sensenova-u1.5-lite"]),
+      JSON.stringify({ drawModel: llm.drawModel, candidates: llm.drawCandidateIds }));
+    check("auto-pick carries no operator preference",
+      !("drawPreferredModel" in llm), JSON.stringify(llm.drawPreferredModel));
     check("the llm block never carries the key",
       !JSON.stringify(llm).includes("sk-test-key-for-routing-only"));
   }).catch((error) => fail("M: vision publish without settings service", error));
