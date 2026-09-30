@@ -18,7 +18,7 @@
 ### 1. 确认测试与代码
 
 ```bash
-npm test        # 离线十七套件 + 末尾 e2e-gate（探到 dsh CLI 才实跑 e2e）
+npm test        # 全量离线门禁 + 末尾 build-gate + e2e-gate（套件清单与链以 package.json scripts.test 为准，不在本文件背书数字；探到 dsh CLI 才实跑 e2e）
 ```
 
 > 并行开发是常态：改哪个域就先跑哪个域（如 `node test/panel.test.mjs`），全量留给 pre-push。

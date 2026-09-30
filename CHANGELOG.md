@@ -2,7 +2,54 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
-## [Unreleased]
+## [0.4.3] — 2026-10-01
+
+第二个上游（小浣熊）、面板从侧边栏归位到 Plugins 页、模型花名册重排，外加一批「状态翻成某个值后操作入口跟着消失」的可见性修复。
+
+> **版本号说明**：0.4.1 与 0.4.2 都**未发布到 npm**（registry 上仍是 0.4.0）。本版把自 0.4.1 以来的全部改动一次收敛为 0.4.3，0.4.2 不再单独发布。
+
+### 第二个上游：小浣熊 tab（微信扫码登录 + 独立 provider）
+
+`ROADMAP §6.1` 的「第二上游」落地：接入 `xiaohuanxiong.com` 网关，与 Token Plan 积分池**相互独立**，全程 opt-in。
+
+- **面板第三个 tab「小浣熊」**（`src/client/raccoon-tab.ts`）：开关、微信扫码登录、积分余额、模型花名册四块。文案中英双语（`raccoon.*` 17 键）。
+- **Host 半边 peer-free 协议层**（`src/host/raccoon.ts`）：扫码登录走查、信封解析（成功判据是 `code === 0`，用普通 `Number` 比较——共享的 `num` 助手会把 `0` 当假值拒掉）、一次性 refresh-token 轮换、余额与目录读取、两态思考档位映射。
+- **凭据走 DSH 凭据服务**（`src/host/raccoon-store.ts`）：存的是凭据服务引用而非明文；轮换后的新 pair 在续期时**回写**——这正是与「读桌面端文件」路线相比唯一能站住的地方。
+- **开关按 profile 分段**（`src/host/raccoon-switch-store.ts`）：与 provider/draw 同一套文件-backed 纪律。
+- **第二个独立 publisher**（`src/host/raccoon-publish.ts` + `raccoon-llm-adapter.ts`）：与 Token Plan 的注册完全隔离，小浣熊侧怎么折腾都churn 不到主注册。
+- **自包含 QR 编码器**（`src/client/qr.ts`，455 行，零外部依赖）：byte mode、纠错等级 M、v1–10，登录 URL 直接在面板内编码成图。
+- **测试**：`test/raccoon.test.mjs`（离线，覆盖协议、两个 store、描述符映射、publisher 状态机、QR 编码器、开关 store），已进 `npm test` 与 CI offline 档。
+
+**小浣熊上线后连修四轮**（每条都是「面板看起来正常、实际不可用」）：
+
+- **QR 编码器产出的矩阵没有任何解码器读得出来**：用 jsQR（`qrcode-decoder` 同款纯 JS 引擎）做解码验证时发现，首版从 v1 到 v10 全部解码失败——尽管套件里每一条结构断言都是绿的。五个缺陷全是绘制顺序或码表错误，最典型的是**定位图形（timing）画在三个 finder 之后**，把 finder 内部的第 6 行/列擦成黑白条纹；timing 必须先画，finder 后画才能覆盖。
+- **扫码确认时「正在等待」不可见**：进行中的那次扫码对 tab 不可见。
+- **QR 要等下一轮 60s 轮询才出现**：登录入口像没反应。
+- **`fontSize` / `marginTop` 泄漏成 DOM 属性而非样式**：样式静默失效。
+- **扫码登录拿到的昵称没存**：面板无法称呼用户，补存后正常问候。
+- **小浣熊的积分倍率没进模型选择器**：面板花名册显示的 ×0.75 / free / ×0.2，在选择器里看不到（pi-ai 没有计费元数据通道，选择器只渲染名字）。倍率改挂进显示名——`GLM-5.3（×0.75）`、`SenseNova 6.8 Flash（free）`，倍率 1 保持裸名。两处同源，不会打架。
+
+### 面板从侧边栏归位到 Plugins 页
+
+- **去掉 `sidebar.panellist` 与 `main` 槽位注册**，只留 `plugins.bundle.config`：面板改为 Plugins 页内的**内联卡片**，不再占侧边栏一行（`src/client/panel-page.ts`、`src/client/index.ts`）。同时摘掉 layout 服务依赖与 onClose 按钮（Plugins 页自己管导航），`PanelPage` 的 `onClose` 改为按传入与否决定渲染。
+- 这解决了「装了 5 个 connect 插件 = 侧边栏 5 行噪音」的问题，与 workbuddy 的形态对齐。
+
+### 模型花名册重排（WorkBuddy 形态）
+
+- **行去卡内框、改用分隔线**：`modelRow` 由横向 flex 行改为纵向列（头行 + 缩进的参数行），新增 `modelRowHead` 包裹头行；徽章只标 notable 态（删「纯文本」徽章、补「额度耗尽」徽章）。工具行计数成组右置，批量按钮 32px 与搜索框等高。
+- **每行只留会变的 per-model 事实**：参数段从「上下文 · 最大输出 · 默认思考强度」改为**本模型实际可选档位**——「思考 关闭/低/中/高/极高[/最高]」，由 Host 新导出的 `supportedThinkingLevels` 按 pi-ai `getSupportedThinkingLevels` 同一规则过滤（与 DSH 选择器同源），glm-5.2 独显「最高」。provider 级常数（默认思考强度）收进花名册头部只说一次（`llm.rosterThinkingDefault`），**删掉逐行重复的恒定默认档**——用户锐评「恒定默认档逐行重复=噪音」，该反模式已记入 `docs/IMPROVEMENTS.md` §7。
+- **`tokenSize` 修正 1049k → 1M**：千整走十进制、纯二进制走 1024、≥1M 归 M。Host 侧新增 `maxOutputLength` 投影（`0` = 未声明则整段不画，绝不猜）。
+- **`matchMultiplier` 单一匹配器**：趋势行 ×N 与花名册 ×N 同源同值，两处显示不可能不一致。
+
+### 出图行的渲染回归修复
+
+- **出图行把名字与徽章摞成了竖排**：`modelRow` 在花名册重排时改为纵向列并新增 `modelRowHead`，但当时只迁移了 `model-picker.ts`；`provider-controls.ts` 的 `DrawSwitch` 与 `raccoon-tab.ts` 仍是旧标记——`label` 与徽章成了纵向列的直接子元素，于是堆叠，且 `modelName` 的 `flex: 0 1 auto` 被压到近乎零宽。现两处都补上 `modelRowHead` 包裹（与 `ModelRoster` 同一契约）。
+- **回归守卫**：`test/render.test.mjs` G6 组改为真正挂载 `DrawSwitch` 并断言行是列形态、没有任何一行把名字/徽章留在 `modelRowHead` 之外、每行恰好 3 个头行；`ModelRoster` 与 `RaccoonRoster` 共用同一组断言并带**非空性检查**（此前「0 行也算通过」的真空通过正是这次回归溜走的原因）。为让渲染套件能挂载，`raccoon-tab.ts` 把内联花名册抽成无 hook 的导出组件 `RaccoonRoster`。
+- **出图选择器的两处显示修复**：勾选态不再叠在开关上；目录为空时说明原因（而不是留白）；自动选择且未钉模型时徽章点名实际生效的模型；出图块在自动选择时也下发（此前只在钉死模型时下发）。
+
+### 面板注册引导双向化
+
+- 账号表单标题下与 API Key 表单底部的官网链接**两种状态都显示**：无账号时「前往官网注册」，已有账号时「前往官网管理额度 / 获取 API Key」（新键 `auth.portalHint`，中英双语；URL 入 `const.ts`）。
 
 ### 思考档位收敛到「实测过 200 才画」（面板不再过度承诺 low/medium/xhigh）
 
@@ -50,6 +97,11 @@ deepseek-flash 的 low、kimi-k3 的 low。
 
 - [ROADMAP.md](docs/ROADMAP.md) §0 与 §2 引言原写「本插件已是双 profile 的 `agent-default-model`——即这台机器的**默认推理通道**，故障域已升级为推理可用性」。该论断 2026-09-29 已被 [IMPROVEMENTS.md](docs/IMPROVEMENTS.md) §1.2 撤销（`agent-default-model` 是宿主的选择记录服务，原引用不可复现），但 ROADMAP 未同步。现改为「**能力事实**：可注册 provider `sensenova-token-plan`；是否默认通道由 profile 与用户模型选择决定；一旦某 profile 选它作默认，故障域才从面板升级为推理可用性（条件性爆炸半径）」。两份文档不再正面矛盾。
 
+### 文档与仓库纪律
+
+- **消灭「离线 N 套件」数字漂移源**：文档不再背书套件数量与枚举（`AGENTS.md` 曾写十七套件、`DSH-PLUGIN.md` 曾列 17 项清单，raccoon/doctor 套件加入后双双过期）——套件清单与链的唯一事实源收敛到 `package.json scripts.test`（已有 `package.test.mjs` 钉磁盘 ↔ 链 ↔ CI 一致性），文档只指事实源不复制数字。
+- **现状模块引用 `.js` → `.ts` 全量对齐**（64 处 / 9 文件）：只改「现状引用」，保留「历史动作 / 研究档案 / 产物 / 外部」四类原文。
+
 ### 仓库结构规范化：src/ 全源码，lib/ 纯产物
 
 - 全部源码收敛到 `src/`（`src/host/*.ts` 27 个 Host 模块 + `src/client/*.ts` Client 半边）；`lib/` 与根 `client.js` 降为纯构建产物并加入 `.gitignore`——删掉后 `npm run build` 一条命令从源码完整重建。
@@ -74,6 +126,7 @@ deepseek-flash 的 low、kimi-k3 的 low。
 - **注册成功不再常驻绿色**：「已向 DSH 注册提供方…」是静止常态，长期亮 `state-success-primary` 会让人误以为刚发生了好事。收敛为中性次要文字，绿色只留给「已保存」这类瞬时反馈。
 - **去掉最内层子卡的冗余边框**：section 卡→池卡→双子窗三层等宽 `border-l1` 互相抵消、压平层级。最内层子窗改为纯靠更深的背景面（layer-2）浮起，边框只留两层。
 - **API Key 字段标题去重**：「模型接入（API Key）」区块头与卡内输入框标签原本同名重复，标签改为「API Key」。
+- **品牌色锚定商汤紫**：去掉 shell 跟随层，3 个品牌强调点直接锚定 SenseNova 紫；活动 tab 与非活动 tab 使用同一套基础样式。
 
 ## [0.4.1] — 2026-09-29
 
