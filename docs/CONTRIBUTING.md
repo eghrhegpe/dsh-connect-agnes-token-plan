@@ -114,12 +114,29 @@ description:
 - 仓库创建满 24 小时（CI 按 GitHub `created_at` 自动卡）；本仓 2026-09-28T05:03:11Z 建仓；
 - 真实可用代码、非占位——已满足；仓库需公开且处于活跃维护。
 
-已发布 npm 包 `dsh-connect-sensenova-token-plan`（registry 上最新为 **0.4.0**，2026-09-28 首发 0.2.0；
+已发布 npm 包 `dsh-connect-sensenova-token-plan`（registry 上最新为 **0.4.3**，2026-09-30 发布；2026-09-28 首发 0.2.0；
 0.4.1 与 0.4.2 打了 git tag 但**未发布到 npm**，其内容随 **0.4.3** 一并发布。`repository` 指回本仓，列表会
 自动按下载量关联，yml 里无需任何 npm 字段）。注意本机默认 registry 是 npmmirror 镜像，登录与发布都
 必须显式带 `--registry=https://registry.npmjs.org`；发新版前先在 package.json 升版本号（已发布版本
 不可覆盖）。**完整发布清单见根目录 [RELEASING.md](../RELEASING.md)**——尤其第 6 步 GitHub Release
 没有任何自动化，漏掉时不会有任何东西报错。
+
+> **已发布 ⇒ tag 不可移**（2026-10-01 实测，别踩）：`v0.4.3` 已同时存在于 npm 与 GitHub Release，
+> 因此**不能**按 RELEASING §4 的告警去「删除并强制移动 tag」来补齐后来的提交——那会让 npm 上的
+> 0.4.3 与 tag 内容不符。`v0.4.3` 之后落地的改动（e2e 进程树修复、`.gitignore`、
+> 以及自述面文档追平）**只能随下一个版本（0.4.4）到达用户**。
+>
+> 实测证据：`npm view dsh-connect-sensenova-token-plan readme --registry=https://registry.npmjs.org`
+> 抓下来的 README 仍含 3 处「侧边栏」、0 处「小浣熊」——**修好的 README 在发新版前对用户不存在**。
+
+**市场收录状态（2026-10-01 实测）**：投稿 PR 已提且**仍处于 open、未合并**——
+[awesome-dsh-plugin#6139](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6139)
+（2026-09-29 提交，`merged_at: null`，0 评论）；`data/plugins/` 目录下尚无
+`eghrhegpe__dsh-connect-sensenova-token-plan.yml`，与实际一致。**该 PR 的正文描述已过期**：
+原文写的是 "for the Harness Web sidebar"，且只提额度面板，未提 provider 注册 / 出图 / 第二上游；
+正文还点名引用了两张**旧 UI** 截图。收录后市场会按 `screenshots.json` 自动取图，所以
+**重截并推送后截图自动生效**（文件名不变），但 PR 正文需要人工用 `gh pr edit` 更新——
+这是对外公开动作，动手前先确认。
 
 其余可选增强：根目录放 `screenshots.json` 声明 1–8 张截图；或在 GitHub Release 挂版本无关文件名的
 `.tgz`（yml 的 `tarball:` 字段）。本仓可从源码安装，tarball 不需要。

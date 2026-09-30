@@ -342,11 +342,13 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   const has = (needle) => code.includes(needle);
   const HISTORY_FILES = new Set(["CHANGELOG.md", "PITFALLS.md"]);
   const surfaces = [
-    "README.md",
-    "cordis.patch.yml",
+    ...readdirSync(ROOT)
+      .filter((n) => n.endsWith(".md") && !HISTORY_FILES.has(n))
+      .map((n) => n),
     ...readdirSync(join(ROOT, "docs"))
       .filter((n) => n.endsWith(".md") && !HISTORY_FILES.has(n))
       .map((n) => join("docs", n)),
+    "cordis.patch.yml",
   ];
   const claims = [
     { words: ["侧边栏", "sidebar panel"], requires: "sidebar", via: "sidebar" },
@@ -354,7 +356,17 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   ];
   // 「不在侧边栏」这类否定句是在帮用户纠偏，不该被当成位置声明——只在肯
   // 定行上找槽位词。当初事故那句「打开侧边栏「积分面板」」不含否定词，照样红。
-  const NEGATIONS = ["不在", "不是", "并非", "不再", "已从", "迁移出", "移出", "归位", "no longer", "not in the"];
+  //
+  // 第二类豁免：**谈论「旧 / 原文 / 已过期」的句子**。文档里必须能引用一句失效的
+  // 原文来说明它错在哪（例：引 PR 正文的 "for the Harness Web sidebar" 作为
+  // 「该描述已过期」的证据；引用 npm 上旧 README 里还写着侧边栏入口）。这类句子
+  // 是在描述「别处那份旧文本」，不是声明当前位置。判据词刻意收窄到这五个，
+  // 免得把「打开侧边栏…」这种真事故也一并豁免掉。
+  const NEGATIONS = [
+    "不在", "不是", "并非", "不再", "已从", "迁移出", "移出", "归位",
+    "仍含", "原文", "引述", "旧版", "已过期",
+    "no longer", "not in the",
+  ];
   const affirmative = (text) =>
     text.split(/\r?\n/).filter((l) => !NEGATIONS.some((n) => l.toLowerCase().includes(n))).join("\n");
   let wrong = 0;

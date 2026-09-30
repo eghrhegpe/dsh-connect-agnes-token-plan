@@ -68,7 +68,17 @@ git push origin main
 git push origin vX.Y.Z
 ```
 
-> ⚠️ **tag 必须指向包含本次代码的提交**。若目标 tag 已存在且指向旧提交，需先删除并强制移动，修正后用 `git rev-list -n1 vX.Y.Z` 确认指向当前 HEAD。
+> ⚠️ **tag 必须指向包含本次代码的提交**。若目标 tag 已存在且指向旧提交，修正后用 `git rev-list -n1 vX.Y.Z` 确认指向当前 HEAD。
+>
+> **但「删除并强制移动 tag」只在两个前提下合法**：① 该版本**尚未** `npm publish`；② 尚未创建 GitHub Release。
+> 只要二者之一已经发生（例如 `v0.4.3` 于 2026-09-30 同时上了 npm 与 Release），tag 就**钉死**了——
+> 移动它会让 npm 上那一版的内容与 tag 所指不符，而 npm 又不可覆盖。此时**唯一正解是发新版本**，
+> 让后来的提交随 `X.Y.(Z+1)` 到达用户。判断方法：
+>
+> ```bash
+> npm view <pkg> versions --registry=https://registry.npmjs.org   # 目标版本已在列？→ 不可移
+> gh release view vX.Y.Z --json tagName                           # 已存在？→ 不可移
+> ```
 >
 > 这里的 `-m` 用**冒号**（`vX.Y.Z: <一句话>`），第 6 步 Release 的 `--title` 用**破折号**（`vX.Y.Z — <一句话>`）——两者措辞可以不同，但都必须是同一件事的一句话说明。**打完 tag 别忘了第 6 步。**
 
@@ -144,5 +154,9 @@ gh release view vX.Y.Z --json name,tagName,isDraft,isPrerelease,assets
 - **GitHub 上没有本次 Release / `gh release list` 看不到新版本**：第 6 步漏了。`gh release create` 与 tag 推送是两条独立通道，**tag 推送成功不会自动创建 Release**。补做即可：版本、tag、正文都还在仓库里，事后补建与当时创建完全等效，只是 GitHub 上的时间戳会晚。
 - **`gh release create` 报 `tag not found`**：tag 还没推。先完成第 4 步的 `git push origin vX.Y.Z`。**不要**为了让它通过就去掉 `--verify-tag`——那会让 gh 新建一个指向当前 HEAD 的 tag，可能偏离你实际发布的提交。
 - **`gh` 报 `HTTP 403` / `Resource not accessible`**：token 缺 `repo` scope。`gh auth status` 确认 scopes；需要时 `gh auth refresh -s repo`。
+- **发布后才发现 tag 落后于 HEAD**（`git log --oneline vX.Y.Z..HEAD` 有输出）：**不要**动 tag。既然该版本已在 npm / Release 上，正确动作是**开下一个版本**（升 `package.json` → 新 CHANGELOG 节 → 提交 → 打新 tag → publish → 建 Release），让漏掉的提交随新版到达用户。已发布版本的内容是既成事实，改 tag 只会制造「tag 说什么 ≠ npm 装到什么」的错位。
+- **修好的文档用户看不到**：README / `cordis.patch.yml` 都在 `files` 白名单里，随包发布。改完仓库里的 README **不代表**用户读到的是新版——验证方式：
+  `npm view dsh-connect-sensenova-token-plan readme --registry=https://registry.npmjs.org | grep -c '<你刚加的关键词>'`
+  返回 0 就说明还停在上一版，需要发新版才会生效。
 - **发布提交不小心卷走了别人的改动**：回退用 `git reset --soft HEAD~1`（仅撤提交保留文件改动），重新按「1.5 并行会话纪律」只 `git add` 自己的文件再提交；已 push 的先用 `git push --force-with-lease` 谨慎修正（仅限自己未与他人共享的分支/tag）。
 - **npm 包 / `dsh plugin add` 还没刷到新版本**：确认第 5 步 `npm publish --registry=https://registry.npmjs.org` 已成功，且 `npm view dsh-connect-sensenova-token-plan version --registry=https://registry.npmjs.org` 已显示 X.Y.Z（带同样的 `--registry`，否则读到镜像缓存旧版）。GitHub Release 与 npm 包是两条独立通道，建了 Release 不等于发了包。
