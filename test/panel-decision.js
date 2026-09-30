@@ -92,7 +92,15 @@ export function decidePanelView(data, error) {
     guidanceKey: view.guidanceKey,
     guidance: view.guidance,
     render: view.needsSetup ? RENDER.FORM : (data === null ? RENDER.TEXT : RENDER.PANELS),
-    canManageAccount: view.auth !== null && view.auth.hasAccount === true,
+    // Mirrors `panel-page.ts` `authManage`: the editor is offered when an
+    // account exists (change / clear it) OR nothing works yet
+    // (`needsAccount` — the Host's "an account is required to read
+    // anything"). Gating on `hasAccount` alone locked the user out after
+    // "forget the saved account": the grant keeps the panel working on
+    // `ok:true` empty snapshots, the setup form lives behind `!data`, and
+    // the section card vanished with `hasAccount` — no re-entry path.
+    canManageAccount: view.auth !== null &&
+      (view.auth.hasAccount === true || view.auth.needsAccount === true),
     coolingMs: typeof view.auth?.retryAfterMs === "number" && view.auth.retryAfterMs > 0
       ? view.auth.retryAfterMs
       : null,

@@ -63,6 +63,41 @@ const healthy = {
     String(result.guidanceKey));
 }
 
+// === B2. THE CLEARED-ACCOUNT LOCKOUT: `ok:true` empty snapshot after forget =
+// "Forget the saved account" keeps the refresh grant breathing, so the next
+// poll still answers `ok:true` with empty pools. `data` is non-null, so the
+// `!data` setup form never mounts; if the account section card were gated on
+// `hasAccount` alone (false right after a forget), the user was locked out
+// of their own account — no re-entry path. The card must re-appear whenever
+// the Host says "an account is required to read anything" (`needsAccount`),
+// which is true the moment the grant dies and the stored token is reaped.
+// The MIDDLE state (grant still alive: `hasAccount` false, `needsAccount`
+// false, `configured` true) correctly keeps the card hidden: the panel still
+// reads quota on its own and does not need the form.
+{
+  const midState = {
+    ok: true,
+    pools: { pools: [] },
+    trend: { models: [] },
+    auth: { configured: true, hasAccount: false, hasRefreshToken: true, needsAccount: false, retryAfterMs: null }
+  };
+  const dead = {
+    ok: true,
+    pools: { pools: [] },
+    trend: { models: [] },
+    auth: { configured: false, hasAccount: false, hasRefreshToken: false, needsAccount: true, retryAfterMs: null }
+  };
+  const mid = view(midState);
+  check("grant still alive: the account editor stays hidden", mid.canManageAccount === false,
+    JSON.stringify(mid.auth));
+  check("grant still alive: the panel still reads quota", mid.render === RENDER.PANELS, mid.render);
+  const deadResult = view(dead);
+  check("grant dead: the account editor re-appears", deadResult.canManageAccount === true,
+    JSON.stringify(deadResult.auth));
+  check("grant dead: the panel still answers (empty), no setup form",
+    deadResult.render === RENDER.PANELS, deadResult.render);
+}
+
 // === C. a config error must NOT hide behind the form ====================
 {
   const result = view({ ok: false, error: "bad endpoint override", code: "config_error" });

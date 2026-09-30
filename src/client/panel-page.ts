@@ -188,7 +188,17 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       : h("span", { style: S.chip }, tt("auth.selfRenew"));
   // The account editor is offered whenever a token is working too, so the
   // stored account can be changed or cleared without waiting to fail.
-  const authManage = auth !== null && auth.hasAccount === true;
+  // A CLEARED account (refresh token still breathing on the stored grant)
+  // must ALSO keep the editor reachable: `hasAccount` is false right after
+  // "forget the saved account", but the grant stays valid until it dies —
+  // gating on `hasAccount` alone hid the only re-entry path, and when the
+  // grant finally expires the Host answers `ok:true` with empty pools, so
+  // the `!data` setup form never mounts either: the user was locked out
+  // of their own account. `auth.needsAccount` (nothing works yet) is the
+  // Host's own declaration of "an account is required to read anything" and
+  // is the honest second trigger.
+  const authManage = auth !== null &&
+    (auth.hasAccount === true || auth.needsAccount === true);
   const body = !data
     ? showSetupForm
       ? h(AccountForm, { auth, onDone: () => void load(), tt })
