@@ -1,20 +1,29 @@
 // @ts-check
 /**
- * Gate for the client build pipeline (docs/ROADMAP.md §6.2).
+ * Gate for the client build (docs/ROADMAP.md §6.2).
  *
- * The client.js split is gated on introducing a build chain, and the one risk
- * that decision carries is the loader ABI: the bundle must keep loading in
- * three module worlds (browser module table, Node CJS `require`, Node ESM
- * `import`) with no top-level import/export statements and no dependency
- * other than react-through-factory-require. This gate rehearses the whole
- * chain against TODAY'S source — bundling the root `client.js` passthrough
- * style and proving the artifact behaves identically — so the day the split
- * lands, the only new variable is the file layout, not the toolchain.
+ * Since the client split, `client.js` at the package root is a GENERATED
+ * artifact: `src/client/*.ts` bundled by tsdown (IIFE). Its path, filename,
+ * and loader ABI are contracts — `package.json#exports`, the browser module
+ * table, and `client-surface.js` all consume the same file — and the test
+ * suites above this one in the chain exercise the artifact itself, so what
+ * they test is what the browser runs.
+ *
+ * This gate owns two things the offline suites cannot see:
+ *
+ * 1. FRESHNESS — the artifact must match a rebuild of the current sources.
+ *    A stale artifact silently ships yesterday's client: the suite that
+ *    fails here tells you to commit the fresh build. Comparison is done on
+ *    newline-normalized bytes so a checkout's CRLF state cannot fake drift.
+ * 2. SHAPE — the artifact carries no top-level `import`/`export` statement
+ *    (legal in all three module worlds), registers exactly one bundle under
+ *    the plugin id when imported as ESM, materializes with a react-only
+ *    stand-in require, and still exposes the panel test surface.
  *
  * Same rule as test/e2e-gate.mjs: if tsdown is not installed, print a loud
  * SKIP and exit 0 — a machine without dev deps is not a regression. (CI's
- * offline job installs nothing, so it always SKIPs here for now; wiring build
- * + freshness into CI is on the split-day checklist in ROADMAP §6.2.)
+ * offline job installs nothing, so it always SKIPs here for now; wiring the
+ * build into CI is a listed follow-up in ROADMAP §6.2.)
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -22,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const ARTIFACT = join(root, "tmp", "build-dry", "client.js");
+const ARTIFACT = join(root, "client.js");
 
 const results = [];
 const check = (name, pass, detail = "") => {
@@ -40,14 +49,17 @@ if (!existsSync(join(root, "node_modules", "tsdown", "package.json"))) {
   process.exit(0);
 }
 
-// 1. the dry build itself must succeed
-const build = spawnSync("npm", ["run", "build:client:dry"], {
+const normalized = (path) => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+const before = normalized(ARTIFACT);
+
+// 1. the build itself must succeed
+const build = spawnSync("npm", ["run", "build:client"], {
   cwd: root,
   shell: true,
   encoding: "utf8",
   timeout: 120_000,
 });
-check("npm run build:client:dry exits 0", !build.error && build.status === 0,
+check("npm run build:client exits 0", !build.error && build.status === 0,
   String(build.stderr ?? build.error ?? "").slice(-2000));
 
 if (build.error || build.status !== 0) {
@@ -55,64 +67,63 @@ if (build.error || build.status !== 0) {
   process.exit(1);
 }
 
-// 2. the artifact must carry no top-level import/export statement: the file is
-//    evaluated by the browser module table AND imported as legal ESM in Node
-//    (the client.js tail comment pins all three worlds). A bundler that leaks
-//    a static import — e.g. a real `import ... from "react"` — breaks both
-//    worlds at once, so this stays checked even though it looks like a text
-//    anchor: it pins a property of the GENERATED output, not of the source.
-const artifactText = readFileSync(ARTIFACT, "utf8");
-check("artifact exists and is non-empty", artifactText.length > 0);
+// 2. freshness: the committed artifact must equal a rebuild of the sources
+const after = normalized(ARTIFACT);
+check("client.js is fresh (rebuild reproduces it byte-for-byte)", before === after,
+  "the artifact drifted from src/client/ — the fresh build is now in the working tree; review and commit it");
+
+// 3. shape: no top-level import/export statement — the file is evaluated by
+//    the browser module table AND imported as legal ESM in Node (the tail in
+//    src/client/index.ts pins all three worlds). This pins a property of the
+//    GENERATED output, not of the sources, so it is a contract check, not a
+//    text anchor.
+const artifactText = after;
 check("artifact has no top-level import/export statement",
   !/^\s*import\s*[{*"'\w]/m.test(artifactText) && !/^\s*export\s*[{*\w]/m.test(artifactText));
 
-// 3. behavioral ABI: load source and artifact as ESM with a capturing
-//    `window.__ModuleLoader__` (the client-surface pattern), materialize both
-//    factories with the same stand-in require, and demand identical
-//    registrations. Deliberately NOT a text comparison — the transform is
-//    allowed to rewrite the code; only the observed surface must survive.
+// 4. behavioral surface: imported as ESM with a capturing
+//    `window.__ModuleLoader__` (the client-surface pattern), the artifact
+//    must register exactly one bundle under the plugin id, materialize with
+//    a react-only stand-in require, and expose the panel surface keys.
 const reactStandin = {
   createElement: (type, props, ...children) => ({ type, props, children }),
-};
-const requireStandin = (spec) => {
-  if (spec === "react") return reactStandin;
-  throw new Error(`the client factory required "${spec}" — only react may pass`);
+  Fragment: Symbol("Fragment"),
+  useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
+  useEffect: () => undefined,
+  useCallback: (callback) => callback,
+  useMemo: (factory) => factory(),
+  useRef: (initial) => ({ current: initial })
 };
 
 const win = /** @type {any} */ (globalThis.window ?? {});
 globalThis.window = win;
+const captured = [];
+win.__ModuleLoader__ = { load: (registration) => captured.push(registration) };
 
-async function loadRegistration(path) {
-  const captured = [];
-  win.__ModuleLoader__ = { load: (registration) => captured.push(registration) };
-  await import(path);
-  return captured;
-}
+await import(pathToFileURL(ARTIFACT).href);
 
-const fromSource = await loadRegistration(new URL("../client.js", import.meta.url).href);
-const fromArtifact = await loadRegistration(pathToFileURL(ARTIFACT).href);
-
-check("source registers exactly one bundle", fromSource.length === 1, `got ${fromSource.length}`);
-check("artifact registers exactly one bundle", fromArtifact.length === 1, `got ${fromArtifact.length}`);
-
-if (fromSource.length === 1 && fromArtifact.length === 1) {
-  const surfaceOf = (registration) => {
-    const instance = registration.factory(requireStandin);
-    return {
-      inject: instance.inject,
-      panel: instance.panel,
-      applyIsFunction: typeof instance.apply === "function",
-    };
-  };
-  const normalize = (value) => JSON.stringify(
-    value,
-    (_key, x) => (typeof x === "function" ? `ƒ${x.length}` : x)
-  );
-  const sourceSurface = normalize(surfaceOf(fromSource[0]));
-  const artifactSurface = normalize(surfaceOf(fromArtifact[0]));
-  check("artifact registration is identical to source (inject/panel/apply)",
-    sourceSurface === artifactSurface,
-    `source=${sourceSurface.slice(0, 400)} artifact=${artifactSurface.slice(0, 400)}`);
+check("artifact registers exactly one bundle", captured.length === 1, `got ${captured.length}`);
+if (captured.length === 1) {
+  const registration = captured[0];
+  check("registration carries the plugin id", registration.id === "dsh-connect-sensenova-token-plan",
+    String(registration.id));
+  let surface = null;
+  try {
+    const instance = registration.factory((specifier) => {
+      if (specifier === "react") return reactStandin;
+      throw new Error(`unexpected require of "${specifier}"`);
+    });
+    surface = instance.panel;
+    check("factory returns an apply function", typeof instance.apply === "function",
+      String(typeof instance.apply));
+    check("factory returns the inject list", Array.isArray(instance.inject) && instance.inject.join(",") === "slots,locale",
+      JSON.stringify(instance.inject));
+  } catch (error) {
+    check("factory materializes with a react-only require", false, String(error));
+  }
+  const surfaceKeys = ["interpretSnapshot", "viewOf", "errorOfStatus", "dictionaries", "tables", "styles", "helpers", "components"];
+  check("panel surface exposes every documented key", surface !== null && surfaceKeys.every((key) => key in surface),
+    surface === null ? "panel missing" : surfaceKeys.filter((key) => !(key in surface)).join(","));
 }
 
 console.log(JSON.stringify(results, null, 2));

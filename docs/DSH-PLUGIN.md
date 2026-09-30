@@ -135,8 +135,8 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-sensenova-token-
 ## 7. 测试与构建（本插件）
 
 - 本插件测试**无需 `npm install`**：网络层打桩，密码用临时密钥加密，不碰真实账号；peer 依赖由 `test/peer-roots.mjs` 在 DSH 运行时就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到会列全部查过的位置，而非静默跳过。这只是让**测试**拿得到 peer；插件运行期自己 `import()` 的解析链是另一回事，见 [PITFALLS.md](./PITFALLS.md) §16。
-- 跑 `npm test`（十七个离线套件：`auth` / `store` / `store-baseline` / `routes` / `panel` / `render` / `parsers` / `provider` / `config` / `package` / `docs` / `wiring` / `contract` / `retry` / `error-fix` / `peer-contract` / `draw`），末尾接 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。`package.test.mjs` 还把「磁盘上的 *.test.mjs ↔ npm test 链 ↔ CI 离线 job」钉成同一个事实：新写套件忘接门禁会直接红。`store-baseline` 是 token-store 的全行为冻结基线（拆分 guardrail），详见 `docs/TESTING.md`。
-- 本插件 **Client 半边无构建步骤**：`client.js` 直接随 bundle 注入，没有 `src/` → 产物的分离（这点与 `dsh-connect-qoder` 不同，后者有 `src/client/` 经 `tsdown` 重建 `lib/client.js`）。
+- 跑 `npm test`（十七个离线套件：`auth` / `store` / `store-baseline` / `routes` / `panel` / `render` / `parsers` / `provider` / `config` / `package` / `docs` / `wiring` / `contract` / `retry` / `error-fix` / `peer-contract` / `draw`），末尾接 `test/build-gate.mjs`（重建 client 产物并验证新鲜度，tsdown 缺席则醒目 SKIP）与 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。`package.test.mjs` 还把「磁盘上的 *.test.mjs ↔ npm test 链 ↔ CI 离线 job」钉成同一个事实：新写套件忘接门禁会直接红。`store-baseline` 是 token-store 的全行为冻结基线（拆分 guardrail），详见 `docs/TESTING.md`。
+- 本插件 **Client 半边已构建化（2026-09-30）**：源码在 `src/client/*.ts`，经 `npm run build:client`（tsdown，IIFE）重建根目录 `client.js` 产物——产物路径、文件名与 loader ABI 与无构建时代完全一致（`package.json#exports`、浏览器 module table、`client-surface.js` 消费的仍是同一个文件）。**改 Client 源码后必须重建，并把产物与源码放进同一个 commit**；`test/build-gate.mjs` 会在产物过期时拦红。Host 半边仍是免构建 JavaScript（这点与 `dsh-connect-qoder` 相同：它也只构建 Client 半边）。
 - 所有离线测试均已通过；各套件用例数会随并行会话变化，以 `npm test` 实际输出为准，不在此处保留快照（详见 [TESTING.md](./TESTING.md)）。
 
 ---

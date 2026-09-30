@@ -175,52 +175,45 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - **签到 / 每日领取**：先证商汤有端点，否则不吸。
 - **不再往 `upstream/` 拉新项目**，除非同时定义「提炼出口」（吸知识不吸代码）。
 - **跨 provider 通用聚合**：不吸收 `dsh-provider-quota` / `dsh-musage` 的泛化定位（见 §5.3）。
-- **client.js 文件级分解（2026-09-29 锐评评估后定界；2026-09-30 量化 tripwire 并完成构建链干跑，见 §6.2）**：
-  Client 半边无构建步骤、浏览器模块表只解析包名（`docs/DSH-PLUGIN.md`、`client.js` 头注），
-  跨文件拆分的前置是引入构建链（同 `dsh-connect-qoder` 的自定义构建脚本路线）。在那笔取舍
-  （改 Client 从「浏览器刷新」变成「必须构建」）被明确接受之前不拆文件，继续以 `client-surface.js`
-  测试面补偿。**重开条件（先到为准；触发即按 §6.2 清单执行，不再重新论证）**：
-  client.js 总行数突破 3000，或下一个 UI 吸收块（provider 完整接入 / 429 面板）开工之前。
+- **client.js 文件级分解（2026-09-29 定界不拆；2026-09-30 tripwire 触发、决策重开并执行完毕——client 半边 TS 化 + 按功能拆文件一步到位，见 §6.2）**。
+  该边界条目的「不拆」部分就此退役；Host 半边免构建 + checkJs 的现状不变。
 
-## 6.2 构建链准备（2026-09-30 已执行；拆分未开始）
+## 6.2 构建链与 Client 拆分（2026-09-30：先干跑验证，当日决策重开并执行完毕）
 
-§6 的 tripwire 触发前就绪的部分、与触发后的执行清单——重开时照单执行，不从头论证。
+原计划「拆分先行、.ts 化稳定后再说」被合并为一步（touch 每个文件一遍而非两遍），
+用户拍板采纳；本节是既成事实的执行记录。
 
-**已就绪（本轮干跑的产出与发现）：**
+**已落地：**
 
-- **干跑通道**：`tsdown.dry.config.mjs` + `npm run build:client:dry`（入口=现行根
-  `client.js`，产物落 gitignored 的 `tmp/build-dry/`）。关键取值是 `format: "iife"`：
-  rolldown 的语法探测见到尾巴的 `module.exports` 就把整文件判成 CJS，esm 构建会包
-  `__commonJS` 壳并加顶层 `export default`（改写 loader ABI、无开关可关）；IIFE 把全部
-  语句收进一个函数作用域——顶层只剩一个表达式、零 import/export，loader 按 script 或
-  module 求值都合法，尾巴的三个世界分支原样活在里面。
-- **门禁**：`test/build-gate.mjs`（在 `npm test` 链尾、e2e-gate 之前；文件名不含
-  `.test.`，故不入 `package.test.mjs` 的三方名册，与 e2e-gate 同范式）。探到 tsdown
-  就实跑：干跑构建 → ESM 加载产物（捕获式 `window.__ModuleLoader__`）→ 产物与源
-  materialize 出的 `{inject, panel, apply}` 深等（含全部决策函数与双语文典）→ 产物
-  文本无顶层 `import`/`export`。探不到 tsdown 打醒目 SKIP 退出 0。本机已全绿。
-- **devDep 现实**：本仓 peerDependencies 指向 Host 运行时包、registry 上不存在，
-  `npm install` 必须带 `--legacy-peer-deps`（CI 离线 job 不装依赖，故该门禁在 CI 恒
-  SKIP；本仓刻意无 lockfile，勿引入）。
-- **判例**：`dsh-connect-qoder` 的已发布产物（本机 `node_modules` 可查）不是 tsdown
-  CLI 直出，而是自定义构建脚本发射 `window.__ModuleLoader__.load({ id, factory })` 壳、
-  顶层零 import/export，且未保留 CJS require 世界——「CLI 配不出这个形状」不是障碍，
-  是既定路线。
+- **源码布局**：`src/client/*.ts` 十五个文件，按功能拆——`index.ts`（factory +
+  三世界尾巴）、`runtime.ts`（React 缝隙：factory 入口 `provideClientReact`，其余
+  模块经转发的 `h`/hooks 取用，调用点与拆分前的闭包形式逐字一致）、`const.ts`
+  （路由常量）、`i18n.ts`（zh/en 双语字典，`en: typeof zh` 编译期钉键集齐平）、
+  `styles.ts`、`format.ts`、`models.ts`（allow-list 代数）、`snapshot.ts`（决策层
+  + 三张码表）、`cards.ts`、`account-form.ts`、`provider-controls.ts`、
+  `model-picker.ts`、`api-key-form.ts`、`panel-page.ts`、`apply.ts`。行为逐字转录，
+  17 个离线套件 + e2e 全绿背书。
+- **构建**：`tsdown.config.mjs` → 根 `client.js` 产物，`npm run build:client`。三个
+  关键取值：`format: "iife"`（顶层零 import/export，三世界尾巴活在函数作用域里；
+  esm 构建会被 rolldown 的 CJS 语法探测包壳改写 ABI）；`outputOptions.entryFileNames:
+  "client.js"`（产物路径/文件名不变，`package.json#exports` 与 `files` 不动）；
+  `clean: false`（outDir 是仓库根）。factory 参数命名 `loaderRequire` 而非
+  `require`——避免裸 `require` 被打包器当模块系统语法改写；react 仍由 loader 注入
+  （`deps.neverBundle` 钉住）。三世界尾巴保留在源码里，CJS require 世界照旧声明。
+- **门禁**：`test/build-gate.mjs`（npm test 链尾、e2e-gate 之前；文件名不含
+  `.test.`，不入 `package.test.mjs` 三方名册，同 e2e-gate 范式）——**freshness**
+  （重建与提交产物做换行归一化的逐字节比对，过期即红并提示提交新产物）+ **形状**
+  （无顶层 import/export、ESM 导入恰好注册一份、react-only 替身可物化、panel 测试面
+  键齐全）。tsdown 缺席则醒目 SKIP 退出 0。
+- **新纪律**：改 `src/client/*.ts` 后必须 `npm run build:client`，并把根 `client.js`
+  与源码放进**同一个 commit**；只提交源码不提交产物 = build-gate 红。devDeps 安装需
+  `--legacy-peer-deps`（peer 包不在 registry；本仓刻意无 lockfile）。
+- **Host 半边不动**：仍为免构建 JavaScript + checkJs（qoder 判例：它也只构建
+  Client 半边）。
 
-**拆分当天的执行清单（照单，不即兴）：**
-
-1. `src/client/index.js` 只定义并 `export` `clientFactory`，三世界尾巴**移出源码**、
-   由构建脚本（qoder 式，或 tsdown API + 壳代码发射）补上；各功能一个文件；react 仍走
-   factory 的 `require` 参数（`deps.neverBundle` 钉住），包内相对 import 由 bundler 内联。
-2. 产物路径与文件名不变（`./client.js`），`package.json#exports` 与 `files` 不动；
-   干跑配置退役，`build-gate` 的比对从「源 vs 产物」改成「重建后 git diff 干净」。
-3. CJS require 世界的去留：先确认没有任何调用方以 CJS 方式 require 产物（现有套件
-   全走 ESM 捕获面），确认后按 qoder 判例放弃该世界，并同步改写三世界尾注（归宿是
-   构建壳）与 `test/package.test.mjs` §5（client.js 源文本扫描改挂 `src/client/` 图）。
-4. CI：离线 job 加一步装 devDeps（`--legacy-peer-deps`）跑构建 + freshness，或独立
-   best-effort job；文档四处同步——`docs/DSH-PLUGIN.md`（「无构建步骤」表述）、
-   `docs/ARCHITECTURE.md` 语言行、`docs/TESTING.md` 链条枚举、README 开发循环说明。
-5. **不迁 .ts**：JSDoc + checkJs 全保留；.ts 化是拆分稳定后的独立决策。
+**遗留（下次碰 CI 时做）**：CI 离线 job 不装依赖，build-gate 在 CI 恒 SKIP——加一步
+`npm i --legacy-peer-deps` 或独立 freshness job。文档四处「无构建」表述已于当日同步
+（`DSH-PLUGIN.md` §7、`ARCHITECTURE.md` 语言行、`TESTING.md` 链条枚举、`AGENTS.md` 验证段）。
 
 ## 6.1 竞品参照：raccoon 的机制点（可选模式范本）
 

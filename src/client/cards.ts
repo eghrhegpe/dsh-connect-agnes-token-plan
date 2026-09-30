@@ -1,0 +1,297 @@
+/**
+ * Hook-free presentational components: the panel icon, the quota pool cards,
+ * the exhaustion notice, the trend chart, and the collapsible section card.
+ * Verbatim logic from the pre-split `client.js` — the render suite drives
+ * every one of these in Node, so behavior may not drift by a hair.
+ */
+import { PANEL_ID } from "./const.js";
+import { clockLong, count, format, when } from "./format.js";
+import { h } from "./runtime.js";
+import type { Tt } from "./runtime.js";
+import { S } from "./styles.js";
+
+/** A quota window as the wire carries it; fields are defensive on purpose. */
+interface QuotaWindow {
+  limit?: number;
+  used?: number;
+  remaining?: number;
+  resetAt?: number;
+}
+
+/** The sidebar row glyph: the shell owns the button, this draws the coin. */
+export function PanelIcon({ size }: { size?: number }): unknown {
+  return h(
+    "svg",
+    {
+      "data-dsh-panel-entry": PANEL_ID,
+      viewBox: "0 0 16 16",
+      width: size,
+      height: size,
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.3",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": "true"
+    },
+    h("circle", { cx: 8, cy: 8, r: 6 }),
+    h("path", { d: "M8 5.2v5.6M6.2 6.6h3.6M6.2 9.4h3.6" })
+  );
+}
+
+/** The bar fill and figure tone for a usage percentage: 70 warn / 90 danger. */
+export function usageTone(pct: number): { fill: Record<string, unknown>; color: string } {
+  if (pct >= 90) return { fill: S.barFillError, color: "var(--dsw-alias-state-error-primary)" };
+  if (pct >= 70) return { fill: S.barFillWarn, color: "var(--dsw-alias-state-warn-primary)" };
+  return { fill: S.barFill, color: "var(--dsw-alias-label-secondary)" };
+}
+
+/**
+ * One quota window as a compact sub-card: the REMAINING balance is the
+ * headline number (the panel is opened to see how much is left), the
+ * percentage sits beside it in a usage tone, and used/limit is a single
+ * quiet caption under the bar.
+ *
+ * A window that is not an object at all (a pool row the Host flagged as
+ * shape-drifted, or a window field simply absent) renders NOTHING instead
+ * of throwing: one malformed pool must not blank the whole panel — the
+ * shape warning above already says what is wrong.
+ */
+export function QuotaCard({ label, window, tt }: { label: string; window: QuotaWindow | null | unknown; tt: Tt }): unknown {
+  if (window === null || typeof window !== "object") return null;
+  const { limit, used, remaining, resetAt } = window as QuotaWindow;
+  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const tone = usageTone(pct);
+  const pctColor = tone.color;
+  return h(
+    "div",
+    { style: S.quota },
+    h(
+      "div",
+      { style: S.quotaTop },
+      h("span", { style: S.quotaLabel }, label),
+      remaining <= 0
+        ? h("span", { style: { ...S.chip, color: "var(--dsw-alias-state-error-primary)", borderColor: "var(--dsw-alias-state-error-primary)" } }, tt("pool.exhausted"))
+        // `when` not `clock`: the weekly reset can land on another day, and
+        // a bare HH:MM reads as "later today" — wrong and alarming.
+        : h("span", { style: S.quotaReset }, resetAt ? format(tt("pool.reset"), { time: when(resetAt) }) : "")
+    ),
+    h(
+      "div",
+      { style: S.quotaFigures },
+      h(
+        "div",
+        { style: { minWidth: 0 } },
+        h("div", { style: S.quotaRemaining }, count(remaining)),
+        h("div", { style: S.quotaRemainLabel }, tt("pool.remaining"))
+      ),
+      // The right column mirrors the left: percentage over the quiet
+      // used/limit caption. `minWidth:0` lets it shrink instead of
+      // pushing the headline number off the card when columns get tight.
+      h(
+        "div",
+        { style: { minWidth: 0, textAlign: "right" } },
+        h("div", { style: { ...S.quotaPct, color: pctColor } }, `${pct.toFixed(1)}%`),
+        h("div", { style: S.quotaUsed }, `${tt("pool.used")} ${count(used)} / ${count(limit)}`)
+      )
+    ),
+    h(
+      "div",
+      { style: S.bar, role: "progressbar", "aria-label": `${label} ${pct.toFixed(1)}%`, "aria-valuenow": pct.toFixed(1), "aria-valuemin": 0, "aria-valuemax": 100 },
+      h("div", { style: { ...tone.fill, width: `${pct}%` } })
+    )
+  );
+}
+
+/**
+ * One pool card. The open state is intentionally tiny: name, type chip,
+ * spendable grant balance, and the twin quota sub-cards. Everything
+ * explanatory (grant expiry, the model coverage lists) folds into one
+ * `<details>` row so the deck stays scannable on wide screens.
+ */
+export function PoolCard({ pool, tt }: { pool: Record<string, any>; tt: Tt }): unknown {
+  const callable = (pool.callableModels || pool.modelIds || []) as string[];
+  const locked = (pool.lockedModels || []) as string[];
+  const hasDetails = pool.nearestGrantExpiry || callable.length > 0 || locked.length > 0;
+  return h(
+    "div",
+    { style: S.card },
+    h(
+      "div",
+      { style: S.cardHead },
+      h("span", { style: S.poolName }, pool.name),
+      h("span", { style: S.chip }, pool.poolType === "dedicated" ? tt("pool.dedicated") : tt("pool.default")),
+      h("span", { style: S.spacer }),
+      // Spendable grant money belongs up with the headline, not buried.
+      pool.grantBalance > 0
+        ? h("span", { style: S.grantChip, title: format(tt("pool.grant"), { balance: count(pool.grantBalance) }) }, format(tt("pool.grant"), { balance: count(pool.grantBalance) }))
+        : null
+    ),
+    h(
+      "div",
+      { style: S.quotas },
+      h(QuotaCard, { label: tt("pool.window5h"), window: pool.window5h, tt }),
+      h(QuotaCard, { label: tt("pool.window7d"), window: pool.window7d, tt })
+    ),
+    hasDetails
+      ? h(
+          "details",
+          { style: S.details },
+          h("summary", { style: S.detailsSummary }, tt("pool.details")),
+          h(
+            "div",
+            { style: S.detailsBody },
+            pool.nearestGrantExpiry
+              ? h("div", { style: S.grant }, format(tt("pool.grantExpiry"), { time: clockLong(pool.nearestGrantExpiry), balance: count(pool.nearestGrantExpiringBalance) }))
+              : null,
+            callable.length > 0
+              ? h(
+                  "div",
+                  { style: S.models },
+                  h("span", { style: { ...S.muted, fontSize: 12, marginRight: 2 } }, `${tt("pool.callable")}:`),
+                  callable.map((model) => h("span", { key: model, style: S.modelTag }, model))
+                )
+              : null,
+            locked.length > 0
+              ? h(
+                  "div",
+                  { style: { ...S.models, ...S.muted }, title: locked.join(", ") },
+                  h("span", { style: { fontSize: 12, marginRight: 2 } }, format(tt("pool.locked"), { count: locked.length }))
+                )
+              : null
+          )
+        )
+      : null
+  );
+}
+
+/**
+ * A top-of-section notice for the "transient exhaustion" case: when one or
+ * more credit pools have hit zero, the picker (host side) drops those pools'
+ * models, so the reader sees models vanish with no explanation. This line
+ * says WHY they vanished and WHEN they are expected back — the earliest
+ * `resetAt` among the exhausted windows — so a zeroed pool reads as
+ * "recovers at HH:MM", never as a mystery.
+ *
+ * Hook-free: it only reads the snapshot's `pools` array, so the render suite
+ * drives the exact component the browser draws. Returns null when nothing is
+ * exhausted (the common case stays silent). It does not guess whether a zero
+ * came from a true quota drain or a rate-limit blip — the panel never sees
+ * the 429 class — it only reports the pool's own reset clock, which is the
+ * one honest recovery signal available here.
+ */
+export function PoolExhaustionNotice({ pools, tt }: { pools?: { pools?: Array<Record<string, any>> } | null; tt: Tt }): unknown {
+  const list = Array.isArray(pools?.pools) ? pools.pools : [];
+  let earliest = 0;
+  let anyExhausted = false;
+  for (const pool of list) {
+    for (const key of ["window5h", "window7d"]) {
+      const win = pool?.[key] as QuotaWindow | undefined;
+      if (win && Number(win.remaining) <= 0) {
+        anyExhausted = true;
+        const reset = Number(win.resetAt) || 0;
+        if (reset > 0 && (earliest === 0 || reset < earliest)) earliest = reset;
+      }
+    }
+  }
+  if (!anyExhausted) return null;
+  // `when`, not `clock`: the earliest reset may belong to the weekly window
+  // and sit days out, and a bare HH:MM would promise recovery in hours.
+  const time = earliest > 0 ? when(earliest) : "—";
+  return h(
+    "div",
+    {
+      style: { ...S.formNote, color: "var(--dsw-alias-state-error-primary)", marginTop: 4, marginBottom: 10 },
+      role: "status"
+    },
+    format(tt("pool.exhaustedNotice"), { time })
+  );
+}
+
+/**
+ * Per-model credit consumption, drawn as a mini bar chart so the eye
+ * lands on WHICH model is burning credits: each row carries a bar
+ * relative to the largest consumer (the top model fills the track), with
+ * the absolute number right-aligned beside the model name. The whole
+ * block sits in a card like the quota cards instead of floating as a
+ * bare table.
+ */
+export function TrendTable({ trend, tt }: { trend?: { models?: Array<Record<string, any>> } | null; tt: Tt }): unknown {
+  // `models` missing entirely (a drifted payload the Host still passed as
+  // data) is the empty case, not a crash: the empty note is honest.
+  if (!trend || !Array.isArray(trend.models) || trend.models.length === 0) return h("div", { style: S.card }, h("div", { style: S.empty }, tt("trend.none")));
+  const max = Math.max(0, ...trend.models.map((row) => Math.max(0, Number(row.credits) || 0)));
+  return h(
+    "div",
+    { style: S.card },
+    h(
+      "div",
+      { style: S.trendHead },
+      h("span", { style: S.trendHeadLabel }, tt("trend.model")),
+      h("span", { style: { ...S.trendHeadLabel, textAlign: "right" } }, tt("trend.credits"))
+    ),
+    trend.models.map((row) => {
+      const credits = Math.max(0, Number(row.credits) || 0);
+      const pct = max > 0 ? (credits / max) * 100 : 0;
+      return h(
+        "div",
+        { key: row.model as string, style: S.trendRow },
+        h(
+          "div",
+          { style: S.trendRowHead },
+          // Long model ids truncate; the full name is one hover away.
+          h("span", { style: S.trendModel, title: row.model }, row.model),
+          h("span", { style: S.trendCredits }, count(credits))
+        ),
+        h(
+          "div",
+          { style: S.trendBar, role: "progressbar", "aria-label": `${row.model} ${Math.round(pct)}%`, "aria-valuenow": Math.round(pct), "aria-valuemin": 0, "aria-valuemax": 100 },
+          h("div", { style: { ...S.barFill, width: `${pct}%` } })
+        )
+      );
+    }),
+    // The bars above are scaled to the LARGEST consumer, so the top model
+    // always fills the track — that answers "who is burning credits", but
+    // the eye misreads a full track as "this model is at its limit". The
+    // legend names the convention so the chart never lies by omission.
+    h("div", { style: S.trendLegend }, tt("trend.legend"))
+  );
+}
+
+/**
+ * One content section as a workbuddy-style collapsible card: a full-width
+ * header button (title + rotating chevron) over a bordered card body.
+ * Auto-expanded by default in `PanelPage`; the reader can tuck a section
+ * away to focus on the other. Hook-free on purpose — `open` and `onToggle`
+ * arrive as props, so the render tests exercise the toggle without faking
+ * React state (children travel as a regular `children` prop, as in React).
+ */
+export function SectionCard({ title, open, onToggle, children, tt }: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children?: unknown;
+  tt: Tt;
+}): unknown {
+  return h(
+    "div",
+    { style: S.sectionCard },
+    h(
+      "button",
+      {
+        type: "button",
+        style: S.sectionHead,
+        "aria-expanded": open,
+        "aria-label": `${tt(open ? "section.collapse" : "section.expand")}: ${title}`,
+        onClick: onToggle
+      },
+      h("span", { style: S.sectionHeadTitle }, title),
+      h(
+        "svg",
+        { viewBox: "0 0 16 16", width: 14, height: 14, fill: "none", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", style: open ? { ...S.chevron, ...S.chevronOpen } : S.chevron },
+        h("path", { d: "M3 6l5 5 5-5" })
+      )
+    ),
+    h("div", { style: S.sectionBody, hidden: !open }, open ? children : null)
+  );
+}

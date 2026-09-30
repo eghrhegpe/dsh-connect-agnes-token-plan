@@ -1,0 +1,25 @@
+/** Ids and same-origin routes the client half talks to. */
+
+/** Dictionary namespace this plugin owns. */
+export const NS = "dsh-connect-sensenova-token-plan";
+
+/** Shared id: the sidebar row id and the `main` slot key are the same string. */
+export const PANEL_ID = "dsh-connect-sensenova-token-plan";
+
+/** The Host snapshot route. Relative, same-origin. */
+export const SNAPSHOT_PATH = "/api/dsh-connect-sensenova-token-plan/snapshot";
+
+/** The account route: lets the panel configure itself, no `.env` editing. */
+export const ACCOUNT_PATH = "/api/dsh-connect-sensenova-token-plan/account";
+
+/** The inference API-key route: saves the `sk-` key the provider uses. */
+export const API_KEY_PATH = "/api/dsh-connect-sensenova-token-plan/api-key";
+
+/** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
+export const PROVIDER_PATH = "/api/dsh-connect-sensenova-token-plan/provider";
+
+/** The model-roster route: which of this key's models get pushed to DSH. */
+export const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
+
+/** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
+export const DRAW_PATH = "/api/dsh-connect-sensenova-token-plan/draw";

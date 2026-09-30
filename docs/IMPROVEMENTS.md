@@ -334,6 +334,10 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 
 > 核验修订（2026-09-29）：标题原写 1848 行；复核时点为 1875 行（且工作树有对
 > `client.js` 的未提交改动，数字随改动浮动），取"≈1.9k 行"量级，不影响下述结论。
+>
+> **状态（2026-09-30）**：本条路线已被 ROADMAP §6.2 的正式拆分取代——纯逻辑与组件已按
+> 功能拆入 `src/client/*.ts`（TypeScript），经 tsdown 构建回根 `client.js` 产物；本节保留
+> 为当时的约束分析。
 
 - **约束**：`client.js` 刻意**不 import** 任何 DSH Client 包（浏览器 module
   table 只解析包名，无构建步骤，`package.json dsh.client` 只声明 `inject`）。

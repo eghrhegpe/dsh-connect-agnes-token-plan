@@ -7,7 +7,7 @@
 ## 1. 运行
 
 ```powershell
-npm test       # 依次跑 auth / store / store-baseline / routes / panel / render / parsers / provider / config / package / docs / wiring / contract / retry / error-fix / peer-contract / draw，末尾 build-gate（无 tsdown 则 SKIP，见 ROADMAP §6.2）+ e2e-gate（无 dsh CLI 则 SKIP）
+npm test       # 依次跑 auth / store / store-baseline / routes / panel / render / parsers / provider / config / package / docs / wiring / contract / retry / error-fix / peer-contract / draw，末尾 build-gate（重建 src/client 并逐字节验证根 client.js 产物新鲜度；无 tsdown 则 SKIP，见 ROADMAP §6.2）+ e2e-gate（无 dsh CLI 则 SKIP）
 npm run test:e2e    # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
 npm run test:live   # 仅 live-jwks.test.mjs，需联网，验证 JWKS 文档可达
 npm run test:live:contract # 仅 live-contract.mjs，需联网 + SENSENOVA_API_KEY，重放商汤推理契约
@@ -65,7 +65,7 @@ npm run test:live:contract # 仅 live-contract.mjs，需联网 + SENSENOVA_API_K
 - **路由测试用的是假 `response`，不是真实的 `http.ServerResponse`。** 它会计数写入次数（这是抓住「保存账号答了两次」的原因），但不会复现真实对象的 `ERR_HTTP_HEADERS_SENT`、`setHeader` 顺序与流语义。
 - **端到端已进 `npm test` 门禁，但依赖 dsh CLI。** `test/e2e.mjs` 拉起**真 Host 进程**（`dsh web`）+ 一个 127.0.0.1 上的**假商汤平台**（`test/fake-platform.mjs`，自带独立 `$DSH_HOME`、零真实凭据、全部端点重定向到本机），断言登录/池用量/节流分类等端到端行为，并校验假平台真的收到了流量。它曾长期被排除在默认跑之外——而「嵌套 `auth:` 块打到真平台锁号」这类最危险的 bug 只有它能抓。现在 `npm test` 末尾接 `test/e2e-gate.mjs`：探到 dsh CLI 就实跑（失败即红），探不到就打醒目 SKIP 并退出 0。缺 CLI 不是回归，但一次绿跑若跳过了端到端，装配路径就没被真正验过——`.github/workflows/ci.yml` 把它列为独立的 best-effort job 正是为了让这个信号不被离线绿灯掩盖。**它自己也开着 `registerProvider: true` 并断言 provider 真的注册上了**（含目录/vision/去密状态），所以第三步那套 Host 侧装配不会被「离线全绿」掩盖；同时它把 `SENSENOVA_API_KEY`/`SENSENOVA_USERNAME`/`SENSENOVA_PASSWORD` 从子进程环境里删掉——否则开发机的 Key 会被凭据服务当成只读环境值传进 Host，目录不再降级、面板保存被拒，测试只在作者机器上红（PITFALLS §17）。
 
-- **本机 2026-09-29 已知环境故障（非插件缺陷，勿当回归）**：隔离 Home 启动真 Host 时全部 154 个 `@deepseek-ai/*` 宿主插件 `failed to import`（required 插件 `webserver` 缺席 → 面板插件等不到 `webServer` 服务 → `dsh web` 启动失败）。根因在 **Host 运行时的宿主插件包解析链**（`C:\Users\Zhujieling11\AppData\Roaming\npm\dsh.ps1` 对应的 dsh 运行时与其 `dsh-asar-unpacked` 运行态），不在本插件代码——`DSH_HOME` 指向真实 `~/.dsh` 时 `dsh web` 正常启动（127.0.0.1:3080），且 17 个离线套件全绿。此故障下 `test/e2e-gate.mjs` 会在 `npm test` 里红；修复 DSH 运行时后自然恢复，离线门禁已独立守住全部行为语义。
+- **本机 2026-09-29 已知环境故障（非插件缺陷，勿当回归）**：隔离 Home 启动真 Host 时全部 154 个 `@deepseek-ai/*` 宿主插件 `failed to import`（required 插件 `webserver` 缺席 → 面板插件等不到 `webServer` 服务 → `dsh web` 启动失败）。根因在 **Host 运行时的宿主插件包解析链**（`C:\Users\Zhujieling11\AppData\Roaming\npm\dsh.ps1` 对应的 dsh 运行时与其 `dsh-asar-unpacked` 运行态），不在本插件代码——`DSH_HOME` 指向真实 `~/.dsh` 时 `dsh web` 正常启动（127.0.0.1:3080），且 17 个离线套件全绿。此故障下 `test/e2e-gate.mjs` 会在 `npm test` 里红；修复 DSH 运行时后自然恢复，离线门禁已独立守住全部行为语义。**（2026-09-30 状态：已恢复，本机 e2e 门禁全绿。）**
 
 ---
 

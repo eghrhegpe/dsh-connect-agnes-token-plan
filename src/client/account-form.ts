@@ -1,0 +1,251 @@
+/**
+ * The setup form shown when no account is configured.
+ *
+ * This is the whole point of the account route: the user types a username
+ * and a password once, and the Host signs in, stores the account in the
+ * DSH credentials, and renews the token from then on. No `.env` editing,
+ * no restart, and the password is never sent anywhere but this Host.
+ *
+ * `bare` strips the inner card and title: the account section card that
+ * embeds this form (when a token already works) supplies both itself.
+ *
+ * Hook-based, so the Node render suite does not mount this form; its
+ * secret-free halves are covered via `ProviderStatus` and the route tests.
+ */
+import { ACCOUNT_PATH } from "./const.js";
+import { format } from "./format.js";
+import { h, useCallback, useEffect, useState } from "./runtime.js";
+import type { Tt } from "./runtime.js";
+import { REFUSAL_TEXT } from "./snapshot.js";
+import { S } from "./styles.js";
+
+export function AccountForm({ auth, onDone, tt, bare }: {
+  auth?: Record<string, any> | null;
+  onDone?: () => void;
+  tt: Tt;
+  bare?: boolean;
+}): unknown {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  // The user must be able to see what they actually typed: a browser
+  // autofill or an IME full-width character looks identical to a real
+  // password behind the dots, and every failed guess burns a lockout
+  // attempt on the platform.
+  const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  // The platform's own words for a classified refusal, shown beneath the
+  // canned line: the canned text translates, the prose carries the lockout
+  // policy and anything else the platform wanted to say.
+  const [formDetail, setFormDetail] = useState<string | null>(null);
+  // `saved` means a sign-in was stored. It is NOT a generic "the request
+  // worked" flag — forgetting the account is a different outcome with a
+  // different sentence, and reusing this one made the "clear the saved
+  // account" button announce "saved and signed in, reading quota…".
+  const [saved, setSaved] = useState(false);
+  const [forgotten, setForgotten] = useState(false);
+  // Epoch millis until which the platform asked us not to retry. While
+  // this is in the future the submit button stays disabled, because a
+  // retry inside the window is what extends a lockout.
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  // One ticking clock drives the countdown; it stops when the wait ends.
+  useEffect(() => {
+    if (cooldownUntil <= Date.now()) return undefined;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() >= cooldownUntil) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownUntil]);
+
+  const cooling = now < cooldownUntil;
+  const coolingMinutes = Math.max(1, Math.ceil((cooldownUntil - now) / 60_000));
+
+  const setCooldown = useCallback((ms: number) => {
+    setCooldownUntil(Date.now() + ms);
+    setNow(Date.now());
+  }, []);
+
+  const submit = useCallback(async (event?: { preventDefault?: () => void }) => {
+    event?.preventDefault?.();
+    // Refuse to fire inside the platform's own wait window.
+    if (cooling) return;
+    if (username.trim() === "" || password === "") {
+      setFormError(tt("auth.empty"));
+      return;
+    }
+    setBusy(true);
+    setFormError(null);
+    setFormDetail(null);
+    try {
+      const response = await fetch(ACCOUNT_PATH, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ username: username.trim(), password })
+      });
+      const body = await response.json().catch(() => null);
+      if (body && body.ok === true) {
+        // Clear the password from component state the moment it is no
+        // longer needed: it lives on in the Host's credentials, not here.
+        setPassword("");
+        setSaved(true);
+        // A fresh sign-in supersedes any earlier "account cleared" note.
+        setForgotten(false);
+        onDone?.();
+        return;
+      }
+      const code = body?.code;
+      // The Host's own backoff is authoritative: retrying inside it is what
+      // turns a bad password into a locked account, so surface the wait
+      // instead of a plain refusal.
+      const waitMs = typeof body?.retryAfterMs === "number" ? body.retryAfterMs : null;
+      if (waitMs !== null && waitMs > 0) {
+        setCooldown(waitMs);
+        setFormError(tt(code === "account_locked" ? "auth.locked" : "auth.rateLimited"));
+        return;
+      }
+      // Only say "wrong password" when the platform said so. Every other
+      // refusal gets its own line, and anything unrecognised shows the
+      // platform's own words rather than a guess.
+      if (typeof REFUSAL_TEXT[code] === "string") {
+        setFormError(tt(REFUSAL_TEXT[code]));
+        setFormDetail(typeof body?.detail === "string" && body.detail !== "" ? body.detail : null);
+        return;
+      }
+      setFormError(code === "login_failed"
+        ? format(tt("auth.failed"), { reason: body?.error ?? "" })
+        : (body?.error ?? tt("auth.network")));
+    } catch {
+      setFormError(tt("auth.network"));
+    } finally {
+      setBusy(false);
+    }
+  }, [username, password, onDone, tt, cooling, setCooldown]);
+
+  const forget = useCallback(async () => {
+    setBusy(true);
+    setFormError(null);
+    setFormDetail(null);
+    try {
+      const response = await fetch(ACCOUNT_PATH, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ forget: true })
+      });
+      const body = await response.json().catch(() => null);
+      if (body?.ok !== true) {
+        setFormError(body?.error ?? tt("auth.network"));
+        return;
+      }
+      // Not `setSaved`: that flag means a sign-in was stored, and its
+      // sentence claims one. Clearing the account is its own outcome.
+      setForgotten(true);
+      setSaved(false);
+      setUsername("");
+      setPassword("");
+      onDone?.();
+    } catch {
+      setFormError(tt("auth.network"));
+    } finally {
+      setBusy(false);
+    }
+  }, [onDone, tt]);
+
+  return h(
+    "div",
+    { style: bare ? {} : { ...S.card, maxWidth: 420 } },
+    // `bare` drops the inner card and title: the caller (the account
+    // section card) already supplies both.
+    bare ? null : h("div", { style: S.sectionTitle }, tt("auth.title")),
+    h(
+      "form",
+      { onSubmit: submit },
+      h(
+        "label",
+        { style: S.field },
+        h("span", { style: S.fieldLabel }, tt("auth.username")),
+        h("input", {
+          style: S.input,
+          value: username,
+          autoComplete: "username",
+          placeholder: tt("auth.placeholderUser"),
+          disabled: busy,
+          onChange: (event: { target: { value: string } }) => setUsername(event.target.value)
+        })
+      ),
+      h(
+        "label",
+        { style: S.field },
+        h("span", { style: S.fieldLabel }, tt("auth.password")),
+        h(
+          "div",
+          { style: { display: "flex", gap: 6, alignItems: "center" } },
+          h("input", {
+            style: { ...S.input, flex: 1 },
+            type: showPassword ? "text" : "password",
+            value: password,
+            autoComplete: "current-password",
+            disabled: busy,
+            onChange: (event: { target: { value: string } }) => setPassword(event.target.value)
+          }),
+          h(
+            "button",
+            {
+              type: "button",
+              style: { ...S.button, flex: "none" },
+              disabled: busy,
+              onClick: () => setShowPassword((shown) => !shown)
+            },
+            showPassword ? tt("auth.hide") : tt("auth.show")
+          )
+        )
+      ),
+      h(
+        "div",
+        { style: { display: "flex", gap: 8, alignItems: "center", marginTop: 4 } },
+        h(
+          "button",
+          {
+            type: "submit",
+            style: { ...S.primary, ...(busy || cooling ? S.primaryBusy : {}) },
+            disabled: busy || cooling
+          },
+          busy ? tt("auth.submitting") : tt("auth.submit")
+        ),
+        auth?.hasAccount
+          ? h(
+              "button",
+              { type: "button", style: S.button, disabled: busy, onClick: forget },
+              tt("auth.forget")
+            )
+          : null
+      ),
+      // Two different outcomes, two different sentences: "the account was
+      // cleared" must never read as "saved and signed in".
+      forgotten
+        ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("auth.forgotten"))
+        : saved
+          ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("auth.working"))
+          : null,
+      formError ? h("p", { style: S.formError, role: "alert" }, formError) : null,
+      formError && formDetail ? h("p", { style: S.formNote }, formDetail) : null,
+      // The wait is stated with the platform's own number, so the reason
+      // the button is greyed out is never a mystery.
+      cooling
+        ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } },
+            format(tt("auth.retryAfter"), { minutes: coolingMinutes }))
+        : null,
+      h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved")),
+      // The auto-recovery readiness is a boolean from the Host (`state()`):
+      // whether the environment carries `SENSENOVA_PASSWORD`. The value
+      // itself never reaches the bundle; the line only tells the user
+      // whether a dead refresh token re-signs in by itself or asks again.
+      h("p", { style: S.formNote },
+        auth?.autoRecoverArmed === true ? tt("auth.autoRecoverOn") : tt("auth.autoRecoverOff"))
+    )
+  );
+}

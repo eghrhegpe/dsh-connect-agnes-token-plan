@@ -13,7 +13,7 @@
 | 维度 | `dsh-connect-sensenova-token-plan`（本仓库） | `upstream/`（被忽略，独立仓库） |
 |---|---|---|
 | 形态 | DSH 插件（Host 半边 + Client 半边） | 独立 Python 桌面应用（pywebview 原生窗口） |
-| 语言 | Node.js / JavaScript（无构建步骤） | Python（`dashboard.py` + `auth_login.py`） |
+| 语言 | Node.js / JavaScript（Host 免构建 + checkJs）；Client 半边为 TypeScript（`src/client/*.ts` 经 tsdown 构建为根 `client.js` 产物） | Python（`dashboard.py` + `auth_login.py`） |
 | 账号凭据 | 走 **DSH 凭据服务**（`~/.dsh/.credentials.yaml`），无明文文件 | 明文存 `accounts.json`（为支持自动重登） |
 | 令牌续期 | **`refresh_token` 静默续期**，面板过期无需重启 | JWT 过期后用明文账号密码**重登** |
 | 登录节流 | 区分时间型 / 凭据型拒绝，防锁号 | 仅基础重试 |
