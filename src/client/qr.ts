@@ -98,11 +98,15 @@ function rsEncode(data: number[], ecCount: number): number[] {
  * The alignment-pattern centre coordinates per version.
  * v1 has none; v2–6 use `[6, size-7]`; v7–v10 follow the ISO table.
  */
-function alignmentCentres(version: number, size: number): number[] {
+function alignmentCentres(version: number): number[] {
   if (version <= 1) return [];
-  const table = [null, null, [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46]];
-  const centres = table[version] ?? [6, size - 7];
-  return centres.map((c) => (c === 6 ? 6 : size - 7));
+  // ISO/IEC 18004 Table E (alignment-pattern centre coordinates), v2–v10.
+  // Use the values AS THEY ARE: v2–v6 have one non-6 centre (which happens to
+  // equal size-7), v7–v10 have three distinct centres — a `c === 6 ? 6 :
+  // size-7` mapping silently collapsed the middle centre and produced
+  // unscannable codes.
+  const table = [null, null, [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]];
+  return table[version] ?? [];
 }
 
 /** Pick the smallest version (1–10) that holds `byteLength` bytes, or -1. */
@@ -185,6 +189,17 @@ function buildMatrix(size: number, codewords: number[], version: number): { modu
     isFunction[row][col] = true;
   };
 
+  // Timing patterns FIRST (drawing order is load-bearing): row 6 / column 6
+  // run the full grid, but the finder patterns below must WIN where they
+  // overlap — a finder's row-6/col-6 slice is part of its 7×7 ring, not an
+  // alternating stripe. Drawing timing after the finders (as a first draft
+  // did) scrubbed those slices into stripes and produced codes no decoder
+  // could read.
+  for (let i = 0; i < size; i++) {
+    set(6, i, i % 2 === 0);
+    set(i, 6, i % 2 === 0);
+  }
+
   // Finder + separator, centred on (3,3), (size-4,3) and (3,size-4). The
   // ring at distance 4 is the light separator; distance 2 is the light inner
   // ring; everything else in the 9×9 box is dark.
@@ -204,7 +219,7 @@ function buildMatrix(size: number, codewords: number[], version: number): { modu
   finder(3, size - 4);
 
   // Alignment patterns, skipping the three corners that sit on finders.
-  const centres = alignmentCentres(version, size);
+  const centres = alignmentCentres(version);
   for (const row of centres) {
     for (const col of centres) {
       if ((row === 6 && col === 6) || (row === 6 && col === size - 7) || (row === size - 7 && col === 6)) continue;
@@ -216,16 +231,32 @@ function buildMatrix(size: number, codewords: number[], version: number): { modu
     }
   }
 
-  // Timing patterns: alternating dark/light along row 6 and column 6,
-  // covering the whole grid (the finder regions the loop touches are already
-  // function cells, so the `set` above overwrites them with the same value).
-  for (let i = 0; i < size; i++) {
-    set(6, i, i % 2 === 0);
-    set(i, 6, i % 2 === 0);
-  }
+  // The always-dark module at (row size-8, col 8) — beside the bottom-left
+  // finder's format strip, NOT its transpose.
+  set(size - 8, 8, true);
 
-  // The always-dark module at (row 8, col size-8).
-  set(8, size - 8, true);
+  // Reserve the format strips BEFORE data placement (drawing order is
+  // load-bearing): the zig-zag below must skip the 31 format cells, or the
+  // data stream is displaced and no decoder can follow it. The placeholder
+  // values here are overwritten by `writeFormat` once the mask is chosen.
+  const reserveFormat = (row: number, col: number) => {
+    if (row >= 0 && row < size && col >= 0 && col < size) {
+      modules[row][col] = false;
+      isFunction[row][col] = true;
+    }
+  };
+  for (let i = 0; i <= 8; i++) { reserveFormat(i, 8); reserveFormat(8, i); }
+  for (let i = 0; i < 8; i++) { reserveFormat(size - 1 - i, 8); reserveFormat(8, size - 1 - i); }
+  // v7+: the two 3×6 version-information blocks occupy data cells too —
+  // reserve them BEFORE placement, or the codeword stream is displaced.
+  if (version >= 7) {
+    for (let i = 0; i < 18; i++) {
+      const a = size - 11 + (i % 3);
+      const b = Math.floor(i / 3);
+      reserveFormat(b, a);
+      reserveFormat(a, b);
+    }
+  }
 
   // Data placement in the ISO zig-zag, two-column strips from the right edge,
   // alternating upward / downward, with the timing column (col 6) skipped.
@@ -260,7 +291,10 @@ function maskInvert(row: number, col: number, mask: number): boolean {
     case 2: return col % 3 === 0;
     case 3: return (row + col) % 3 === 0;
     case 4: return (Math.floor(row / 2) + Math.floor(col / 3)) % 2 === 0;
-    case 5: return ((row * col) % 2 + (row * col) % 3) % 2 === 0;
+    // Mask 5 is "the sum is ZERO" — no outer % 2. Collapsing it onto mask 6's
+    // formula (as a first draft did) made a matrix whose format bits claim 5
+    // while the data carries mask 6: unreadable to every decoder.
+    case 5: return (row * col) % 2 + (row * col) % 3 === 0;
     case 6: return ((row * col) % 2 + (row * col) % 3) % 2 === 0;
     default: return ((row + col) % 2 + (row * col) % 3) % 2 === 0;
   }
@@ -287,18 +321,24 @@ function writeFormat(modules: boolean[][], isFunction: boolean[][], mask: number
   const size = modules.length;
   const bits = formatBits(mask);
   const bit = (i: number): boolean => ((bits >>> i) & 1) === 1;
+  // ISO layout (nayuki's setFunctionModule(x = col, y = row)):
+  //   first copy: bits 0–5 → (row i, col 8); bit 6 → (7, 8); bit 7 → (8, 8);
+  //   bit 8 → (8, 7); bits 9–14 → (row 8, col 14-i).
+  //   second copy: bits 0–7 → (row 8, col size-1-i, along the top-right
+  //   finder's edge); bits 8–14 → (row size-15+(i-8), col 8, down the
+  //   bottom-left finder's edge). Dark module: (row size-8, col 8).
   const set = (row: number, col: number, dark: boolean): void => {
     modules[row][col] = dark;
     isFunction[row][col] = true;
   };
-  for (let i = 0; i <= 5; i++) set(8, i, bit(i));
-  set(8, 7, bit(6));
+  for (let i = 0; i <= 5; i++) set(i, 8, bit(i));
+  set(7, 8, bit(6));
   set(8, 8, bit(7));
-  set(7, 8, bit(8));
-  for (let i = 9; i < 15; i++) set(14 - i, 8, bit(i));
-  for (let i = 0; i < 8; i++) set(size - 1 - i, 8, bit(i));
-  for (let i = 8; i < 15; i++) set(8, size - 7 + (i - 8), bit(i));
-  set(8, size - 8, true); // the dark module
+  set(8, 7, bit(8));
+  for (let i = 9; i < 15; i++) set(8, 14 - i, bit(i));
+  for (let i = 0; i < 8; i++) set(8, size - 1 - i, bit(i));
+  for (let i = 8; i < 15; i++) set(size - 15 + i, 8, bit(i));
+  set(size - 8, 8, true); // the dark module
 }
 
 /** The 18-bit version block (v7+), placed above the bottom-left finder. */

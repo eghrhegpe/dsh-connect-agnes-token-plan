@@ -475,7 +475,7 @@ function section(title) {
   }
 }
 
-// --- 7. the QR encoder (client bundle, differential-tested) ----------------
+// --- 7. the QR encoder (client bundle, decoder-verified) --------------------
 {
   section("the in-panel QR encoder (client-side)");
   try {
@@ -503,6 +503,57 @@ function section(title) {
       threw = true;
     }
     check("an over-capacity payload throws (no unscannable code)", threw === true);
+
+    // Ground truth: structural assertions cannot tell a scannable code from
+    // an ISO-shaped one — the first draft of this encoder passed all of the
+    // checks above while producing matrices NO decoder could read (timing
+    // drawn over finders, mask 5 collapsed onto 6, transposed format strips,
+    // data placed over the format/version reservations). The real contract is
+    // "a decoder reads it back", so decode every version through jsQR, a
+    // pure-JS decoder the tab's users effectively run in reverse. It is a
+    // devDependency-free dynamic import: the check skips with a note when the
+    // package is absent (an air-gapped checkout still runs the rest).
+    let jsQR = null;
+    try {
+      ({ default: jsQR } = await import("jsqr"));
+    } catch {
+      console.log("  note: jsqr is not installed; the decode-verification checks are skipped");
+    }
+    if (jsQR !== null) {
+      // Render the matrix to a raw RGBA raster (dark modules black on white,
+      // 10× scale, a 4-module quiet zone — what a camera would see).
+      const renderRgba = (m, scale = 10, quiet = 4) => {
+        const dim = (m.size + quiet * 2) * scale;
+        const data = new Uint8ClampedArray(dim * dim * 4).fill(255);
+        for (let r = 0; r < m.size; r++) {
+          for (let c = 0; c < m.size; c++) {
+            if (!m.modules[r][c]) continue;
+            for (let dy = 0; dy < scale; dy++) {
+              for (let dx = 0; dx < scale; dx++) {
+                const i = (((r + quiet) * scale + dy) * dim + (c + quiet) * scale + dx) * 4;
+                data[i] = data[i + 1] = data[i + 2] = 0;
+              }
+            }
+          }
+        }
+        return { dim, data };
+      };
+      const decodesTo = (text) => {
+        const { dim, data } = renderRgba(buildQrMatrix(text));
+        const result = jsQR(data, dim, dim, { inversionAttempts: "dontInvert" });
+        return result !== null && result.data === text;
+      };
+      // One probe per version (byte lengths that pin v1–v10 in both encoders
+      // and the reference capacity table), plus the real login URL — the
+      // payload this encoder exists for, which lands in v8 where the first
+      // draft's alignment-collapse bug lived.
+      const probes = [["v1", 12], ["v2", 22], ["v3", 36], ["v4", 54], ["v5", 72], ["v6", 90], ["v7", 108], ["v8", 130], ["v9", 158], ["v10", 190]];
+      for (const [label, len] of probes) {
+        const text = "a".repeat(len);
+        check(`jsQR decodes a ${label} matrix back to its payload`, decodesTo(text));
+      }
+      check("jsQR decodes a REAL login URL back to itself", decodesTo(payload));
+    }
 
     // The SVG data-URL: the tab drops it straight into an <img>. It carries
     // the white background and the dark-module path. The URL is percent-encoded,

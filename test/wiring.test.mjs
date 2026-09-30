@@ -262,9 +262,10 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     "/api/dsh-connect-sensenova-token-plan/api-key",
     "/api/dsh-connect-sensenova-token-plan/provider",
     "/api/dsh-connect-sensenova-token-plan/models",
-    "/api/dsh-connect-sensenova-token-plan/draw"
+    "/api/dsh-connect-sensenova-token-plan/draw",
+    "/api/dsh-connect-sensenova-token-plan/raccoon"
   ];
-  check("all six routes are registered on mount",
+  check("all seven routes are registered on mount",
     routes.every((path) => webServer.registered.has(path)),
     [...webServer.registered.keys()].join(", "));
   // The registered values must be callable handlers, not specs: the real
@@ -317,7 +318,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // in the real Host means a stale panel still polling a route nobody owns.
 {
   const { webServer, stop } = await bootPlugin();
-  check("all six routes are present while mounted", webServer.registered.size === 6,
+  check("all seven routes are present while mounted", webServer.registered.size === 7,
     [...webServer.registered.keys()].join(", "));
   await stop();
   check("unmounting withdraws the routes", webServer.registered.size === 0,
