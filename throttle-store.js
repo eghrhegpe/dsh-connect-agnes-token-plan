@@ -28,11 +28,16 @@ import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, stateDir as
 const THROTTLE_VERSION = 1;
 
 /**
- * Where this plugin keeps state.
+ * Where the throttle lives: the SHARED directory, `$DSH_HOME/state/<plugin>`.
  *
- * `$DSH_HOME/state/<plugin>` — beside the Host's own directories rather than
- * in `logs/`, because a throttle is not a log line and must not be swept up by
- * the trace rotation.
+ * Deliberately NOT per-profile, even though the catalog / provider / draw
+ * states are (PITFALLS §23). A throttle is not a per-profile preference, it is
+ * "how long the upstream told this machine to stop knocking" — if only the
+ * profile that got the 429 honoured it, the other profile's Host would resume
+ * hammering the same endpoint from the same machine during the very window the
+ * platform asked for. Splitting it would silently undo the whole point of the
+ * throttle, and the failure only surfaces under load. Do not "make it
+ * consistent" with the other three.
  * @returns {string} the directory.
  */
 export function throttleDir() {

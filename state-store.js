@@ -32,14 +32,148 @@ import { join } from "node:path";
 import { str } from "./util.js";
 
 /**
+ * The DSH home: `$DSH_HOME` when the operator exported one, else `~/.dsh`.
+ * @returns {string} the home directory.
+ */
+export function dshHome() {
+  return str(process.env.DSH_HOME, join(homedir(), ".dsh"));
+}
+
+/**
  * Where this plugin keeps state: `$DSH_HOME/state/<name>`.
  * @param {string} name - the plugin's own state directory name
  *   (`host-config.js`'s `name`).
  * @returns {string} the directory.
  */
 export function stateDir(name) {
-  const home = str(process.env.DSH_HOME, join(homedir(), ".dsh"));
-  return join(home, "state", name);
+  return join(dshHome(), "state", name);
+}
+
+/**
+ * 单个 profile 名的形态约束。它会直接成为磁盘路径的一段，所以这里按
+ * **外部输入**处理，而不是信任 Host 给的值。
+ *
+ * 规则与它的用途一一对应：
+ *   - 字符集限制（`[A-Za-z0-9._-]`）——排除路径分隔符与任何 traversal 形状；
+ *   - 不以点开头——顺带排掉 `.` 与 `..` 这两个唯一能让单段路径逃逸的名字；
+ *   - 长度上限——防超长目录名（Windows 路径上限、以及某些文件系统的 NAME_MAX）。
+ *
+ * 为什么不用白名单枚举已知 profile 名：集合是开放的（用户可以任意新建
+ * profile，本插件不该认识它们），白名单会把新 profile 错判成"拿不到名字"。
+ */
+const PROFILE_SEGMENT_MAX = 64;
+const PROFILE_SEGMENT_RE = /^(?!\.)[A-Za-z0-9._-]+$/;
+
+/**
+ * Is this string safe to use as ONE path segment?
+ * @param {unknown} value - candidate profile name.
+ * @returns {boolean} true when it survives {@link PROFILE_SEGMENT_RE}.
+ */
+export function isProfileSegment(value) {
+  if (typeof value !== "string") return false;
+  const name = value.trim();
+  if (name === "" || name.length > PROFILE_SEGMENT_MAX) return false;
+  return PROFILE_SEGMENT_RE.test(name);
+}
+
+/**
+ * 当前这台 Host 跑在哪个 profile 下，取不到就返回 `null`。
+ *
+ * **怎么读它**：`ctx.get(name)` —— Cordis 自己的 "read a service without the
+ * inject requirement" 入口，未提供时安静返回 `undefined`。注意**别用属性访问**
+ * 去探：`ctx.profileContext` 会在服务缺失时**抛错**（`cannot get property
+ * "profileContext" without inject`，cordis `lib/index.js:676`）——这是本插件
+ * 实测踩到的，不是推测。`readOptionalService` 把两个入口都包了，属性访问只作为
+ * 测试桩的兜底留在最后。
+ *
+ * **为什么不用 `inject` 声明它**：`inject` 里的是**硬依赖**（`lib/index.js:688`
+ * 的报错文案就叫 "cannot get required service"），缺了 Cordis 根本不加载本插件。
+ * 而 `profileContext` 在官方 runtime 里是**可选**的（`@linxin666/
+ * dsh-client-ui-plugin-manager` 明确处理了"host 隐藏了它"的情形，
+ * `dsh-better-sidebar` 同理）。把它变成硬依赖，会让那些主机上整个插件消失
+ * （面板、额度、provider 全挂），代价远大于收益。
+ *
+ * **为什么不读 `DSH_PROFILE`**：在那个 runtime 里它是 OUTPUT 而非输入——由
+ * `runProfile()` 派生给子进程（`dsh-shell-env` 做的事），"no runtime module
+ * reads it to choose a profile"。手设或陈旧的值会把状态写进一个"这台 Host
+ * 根本不读"的 profile。
+ *
+ * 取到 = 调用方据此分段；取不到 = **退回今天的全局路径**，行为零漂移。
+ *
+ * @param {object} [ctx] - the Cordis context the Host handed `apply()`.
+ * @returns {string|null} the profile name, or `null` when unavailable/unsafe.
+ */
+export function profileSegment(ctx) {
+  if (ctx === null || typeof ctx !== "object") return null;
+  const raw = readOptionalService(ctx, "profileContext");
+  if (raw === null || typeof raw !== "object") return null;
+  const name = /** @type {{name?: unknown}} */ (raw).name;
+  return isProfileSegment(name) ? /** @type {string} */ (name).trim() : null;
+}
+
+/**
+ * 读一个**可选**服务，三种入口依次尝试。
+ *
+ * 1. `ctx.get(name)` —— Cordis 的官方无 inject 读法（`ReflectService.get`），也是
+ *    `startSideEffects` 读可选 `settings` 服务用的同一入口。首选。
+ * 2. `ctx.reflect.get(name, false)` —— 底层等价物，宿主未把 mixin 挂出来时用。
+ * 3. `ctx[name]` 直接取属性 —— 手写测试桩的形状。**留在最后**：在真 Cordis 上
+ *    访问一个未声明且未提供的服务会抛（`... without inject`），必须包着 try。
+ *
+ * 三者都拿不到就是"这台 Host 没有这个服务"，调用方据此降级；这里永不抛错，
+ * 因为一个探测不到的可选服务不该让插件挂掉。
+ * @param {object} ctx - the Cordis context.
+ * @param {string} name - the service name.
+ * @returns {unknown} the service value, or `undefined`.
+ */
+export function readOptionalService(ctx, name) {
+  // `ctx.get` is Cordis's own "read a service without the inject requirement"
+  // mixin (ReflectService.get) — the same entry `startSideEffects` already uses
+  // for the optional `settings` service. It answers `undefined` for a service
+  // this Host never provided.
+  if (typeof ctx.get === "function") {
+    try {
+      return ctx.get(name);
+    } catch {
+      // Not every host publishes the mixin; fall through.
+    }
+  }
+  const reflect = /** @type {{reflect?: {get?: (n: string, strict?: boolean) => unknown}}} */ (ctx).reflect;
+  if (reflect && typeof reflect.get === "function") {
+    try {
+      return reflect.get(name, false);
+    } catch {
+      // Ditto.
+    }
+  }
+  // Last resort: a plain object (the hand-written test stubs). Reading a member
+  // off a REAL Cordis context throws for undeclared services, which is why this
+  // entry is last and guarded.
+  try {
+    return /** @type {Record<string, unknown>} */ (ctx)[name];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Per-profile state directory: `$DSH_HOME/state/<profile>/<name>`.
+ *
+ * Which states use this and which keep {@link stateDir} is a deliberate split,
+ * not an inconsistency — see PITFALLS §23. Briefly: the three switch-shaped
+ * states (catalog / provider / draw) answer "what does THIS profile want", so
+ * two profiles must not overwrite each other; the throttle answers "how long
+ * did the upstream tell US to wait" and the credentials grant answers "who are
+ * you", both of which are per-machine and are INTENDED to cross profiles.
+ *
+ * `profile` being `null` degrades to the shared directory, so every old host,
+ * every test and every in-process construction behaves exactly as before.
+ * @param {string} name - the plugin's own state directory name.
+ * @param {string|null} [profile] - the profile name; `null` means shared.
+ * @returns {string} the directory.
+ */
+export function profileStateDir(name, profile) {
+  return profile ? join(dshHome(), "state", profile, name) : stateDir(name);
 }
 
 /**
@@ -113,31 +247,68 @@ export const STATE_READ_TTL_MS = 1000;
  * peer-free，与其余原语同纪律（不 import Host peer、离线可测）。时钟与 TTL
  * 都可注入，便于测试把缓存推进过期。
  *
+ * `inheritFrom` 是 §23 的一次性迁移缝：按 profile 分段后，本 profile 的新文件
+ * 一开始并不存在，而旧版把值放在**所有 profile 共享**的目录里。给了它以后，
+ * 读穿透发现自己的记录缺失时会去旧路径取一次、回填、再返回——**只尝试一次**
+ * （`adopted` 标志），所以它不会变成每个 TTL 周期都多读一个文件。
+ *
+ * 为什么让缓存原语承担这件事，而不是在外面先跑一遍迁移脚本：迁移就有了时序，
+ * 而"先迁移、再 seed"在 `apply()` 的同步构造里排不出确定顺序。挂在读穿透上
+ * 则天然正确——任何读到"空"的地方都会自动拿到旧值，且与并发进程无关（读到
+ * 同一份旧值、写同一份结果）。
+ *
  * @template T
- * @param {() => Promise<T>} readThrough - 真正的读盘 + 解析；返回 `null` 表示无可用记录。
+ * @param {() => Promise<T|null>} readThrough - 真正的读盘 + 解析；返回 `null` 表示无可用记录。
  * @param {object} [options]
  * @param {number} [options.ttlMs] - 缓存有效期，默认 {@link STATE_READ_TTL_MS}。
  * @param {() => number} [options.now] - 时钟源；测试注入。
- * @returns {{read: () => Promise<T>, remember: (value: T) => void}}
+ * @param {{read: () => Promise<T|null>, write: (value: T) => Promise<void>}|null} [options.inheritFrom]
+ *   - 旧版共享布局（`read`）与把它回填到本 profile（`write`）；`null` = 不迁移。
+ * @returns {{read: () => Promise<T|null>, remember: (value: T|null) => void}}
  */
-export function createStateReadCache(readThrough, { ttlMs = STATE_READ_TTL_MS, now = Date.now } = {}) {
+export function createStateReadCache(readThrough, { ttlMs = STATE_READ_TTL_MS, now = Date.now, inheritFrom = null } = {}) {
   let cached = undefined;
   let cachedAt = 0;
+  /** Whether the one-shot legacy adoption has already been attempted. */
+  let adopted = false;
+
+  /**
+   * 读穿透：自己的记录优先；缺失且还有旧布局可继承时，取一次旧值并回填。
+   * @returns {Promise<T|null>}
+   */
+  const load = async () => {
+    const own = await readThrough();
+    if (own !== null || inheritFrom === null || adopted) return own;
+    // One shot, whatever the outcome: a machine with no legacy file should not
+    // re-read it every TTL, and a value that reached memory has served its
+    // purpose even if writing it back failed (a read-only Home).
+    adopted = true;
+    const inherited = await inheritFrom.read();
+    if (inherited === null) return null;
+    try {
+      await inheritFrom.write(inherited);
+    } catch {
+      // Read-only Home, or another process won the race. The value still
+      // serves this process for the rest of its life.
+    }
+    return inherited;
+  };
+
   return {
     /**
-     * 读值：TTL 内返回缓存，过期则穿透到 `readThrough`。
-     * @returns {Promise<T>}
+     * 读值：TTL 内返回缓存，过期则穿透到 `load()`。
+     * @returns {Promise<T|null>}
      */
     async read() {
       if (cached !== undefined && now() - cachedAt < ttlMs) return cached;
-      cached = await readThrough();
+      cached = await load();
       cachedAt = now();
       return cached;
     },
     /**
      * 写路径用：把刚写入的值直接放进缓存，省掉下一次读盘，并保证自己的写入
      * 立刻对自己可见（不必等 TTL）。语义与 `read()` 一致，只是来源可信。
-     * @param {T} value - 刚写入并解析后的值。
+     * @param {T|null} value - 刚写入并解析后的值。
      * @returns {void}
      */
     remember(value) {

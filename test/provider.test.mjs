@@ -12,7 +12,7 @@
  * Nothing here imports a Host peer, so these decisions stay covered on a clean
  * checkout; the peer-dependent adapter is exercised in wiring/e2e instead.
  */
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isolateHostEnv, isolateStateDir } from "./peer-roots.mjs";
@@ -43,6 +43,7 @@ import { createApiKeyStore, API_KEY_REF } from "../api-key-store.js";
 import { PROVIDER_VERSION, createFileProviderStore } from "../provider-store.js";
 import { DRAW_STORE_VERSION, createFileDrawStore, normalizeDrawEnabled } from "../draw-store.js";
 import { redactSecrets } from "../util.js";
+import { profileSegment, profileStateDir } from "../state-store.js";
 import { surface as clientSurface } from "../client-surface.js";
 
 const results = [];
@@ -553,6 +554,141 @@ const BASE_URL = "https://token.sensenova.cn/v1";
   } finally {
     restoreHome();
     restoreEnv();
+  }
+}
+
+// --- 8c. exactly which names may become a path segment (PITFALLS §23) ------
+// `profileContext.name` is FOREIGN input that ends up as a directory name, so
+// it is validated rather than trusted. Rejecting costs nothing here — the
+// caller falls back to the shared directory, i.e. today's layout — so the rule
+// can afford to be strict.
+{
+  const accepted = [
+    ["web", "web"],
+    ["desktop", "desktop"],
+    ["  web  ", "web"],
+    ["a_b-c.1", "a_b-c.1"],
+    ["9", "9"]
+  ];
+  for (const [input, expected] of accepted) {
+    const got = profileSegment({ get: () => ({ name: input }) });
+    check(`a safe profile name is accepted: ${JSON.stringify(input)}`, got === expected,
+      `got=${JSON.stringify(got)}`);
+  }
+
+  const rejected = [
+    "..", ".", "../etc", "..\\windows", "a/b", "a\\b", "", "   ",
+    "x".repeat(65), "/absolute", "c:", "a b", "a\u0000b"
+  ];
+  for (const input of rejected) {
+    const got = profileSegment({ get: () => ({ name: input }) });
+    check(`an unsafe profile name degrades to null: ${JSON.stringify(input)}`, got === null,
+      `got=${JSON.stringify(got)}`);
+  }
+  for (const input of [null, undefined, 42, {}, ["web"]]) {
+    const got = profileSegment({ get: () => ({ name: input }) });
+    check(`a non-string profile name degrades to null: ${JSON.stringify(input)}`, got === null,
+      `got=${JSON.stringify(got)}`);
+  }
+
+  // The three ctx shapes a Host may hand us — including the one that THROWS for
+  // services we did not inject (Cordis' proxy behaviour; verified against the
+  // real runtime, see §23). None of them may take the plugin down.
+  check("a ctx that provides no profileContext yields null",
+    profileSegment({ get: () => undefined }) === null);
+  check("a ctx whose get() throws is survived, not propagated",
+    profileSegment({ get() { throw new Error('cannot get property "profileContext" without inject'); } }) === null);
+  check("a plain-object test stub is still readable",
+    profileSegment({ profileContext: { name: "web" } }) === "web");
+  for (const notCtx of [null, undefined, 42, "web"]) {
+    check(`a non-object ctx degrades to null: ${JSON.stringify(notCtx)}`,
+      profileSegment(notCtx) === null);
+  }
+}
+
+// --- 8d. the directory split, and the one-shot adoption of the old layout --
+// Before §23 every profile shared `$DSH_HOME/state/<plugin>/`. A profile-scoped
+// store must (a) not see the other profile's values, and (b) adopt the shared
+// value exactly once so an existing install keeps its allow-list and switches.
+{
+  const restoreHome = isolateStateDir();
+  try {
+    const home = process.env.DSH_HOME;
+    check("a named profile gets its own directory",
+      profileStateDir("plug", "web") === join(home, "state", "web", "plug"),
+      profileStateDir("plug", "web"));
+    check("no profile keeps the shared directory",
+      profileStateDir("plug", null) === join(home, "state", "plug"),
+      profileStateDir("plug", null));
+
+    // Seed the pre-§23 shared layout: a provider switch, a draw switch and a
+    // catalog allow-list, exactly as an existing install would have them.
+    const legacyDir = join(home, "state", "dsh-connect-sensenova-token-plan");
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(join(legacyDir, "provider.json"),
+      `${JSON.stringify({ version: PROVIDER_VERSION, enabled: true, updatedAt: "2026-01-01T00:00:00.000Z" })}\n`,
+      { encoding: "utf8" });
+    writeFileSync(join(legacyDir, "draw.json"),
+      `${JSON.stringify({ version: DRAW_STORE_VERSION, enabled: true, updatedAt: "2026-01-01T00:00:00.000Z" })}\n`,
+      { encoding: "utf8" });
+    writeFileSync(join(legacyDir, "catalog.json"),
+      `${JSON.stringify({ version: CATALOG_VERSION, fetchedAt: 1_700_000_000_000, entries: [{ id: "m1" }], enabledModelIds: ["m1"] })}\n`,
+      { encoding: "utf8" });
+
+    const webSwitch = createFileProviderStore({ profile: "web" });
+    const webDraw = createFileDrawStore({ profile: "web" });
+    const webCatalog = createFileCatalogStore({ profile: "web" });
+    check("a profile switch inherits the pre-§23 shared value",
+      (await webSwitch.enabled()) === true, `enabled=${await webSwitch.enabled()}`);
+    check("a profile draw switch inherits it too", (await webDraw.enabled()) === true);
+    check("the catalog allow-list survives the split",
+      JSON.stringify(await webCatalog.listEnabledIds()) === JSON.stringify(["m1"]),
+      JSON.stringify(await webCatalog.listEnabledIds()));
+
+    const adoptedDir = join(home, "state", "web", "dsh-connect-sensenova-token-plan");
+    check("the inherited value was written under the profile",
+      existsSync(join(adoptedDir, "provider.json")), join(adoptedDir, "provider.json"));
+    // Copy, NOT move — unlike the rename adoption in store.test.mjs §16d. An
+    // older Host of this plugin still reads the shared path; taking the file
+    // away would silently reset its switch.
+    check("the legacy file is left in place for an older Host",
+      existsSync(join(legacyDir, "provider.json")));
+
+    // Adoption is one-shot: after the first read the profile has its own file,
+    // so a later edit to the legacy one must NOT win.
+    writeFileSync(join(legacyDir, "provider.json"),
+      `${JSON.stringify({ version: PROVIDER_VERSION, enabled: false, updatedAt: "2026-01-02T00:00:00.000Z" })}\n`,
+      { encoding: "utf8" });
+
+    // THE POINT of the split: the two profiles end up independent, even though
+    // both adopted the same legacy value.
+    const desktopSwitch = createFileProviderStore({ profile: "desktop" });
+    check("a sibling profile adopts the shared value too",
+      (await desktopSwitch.enabled()) === false, `enabled=${await desktopSwitch.enabled()}`);
+    await desktopSwitch.save(true);
+    check("saving in one profile leaves the other alone",
+      (await createFileProviderStore({ profile: "web" }).enabled()) === true,
+      `web=${await createFileProviderStore({ profile: "web" }).enabled()}`);
+    check("and the profile that was saved reports its own value",
+      (await createFileProviderStore({ profile: "desktop" }).enabled()) === true);
+    check("once adopted, a later legacy edit does not win",
+      (await createFileProviderStore({ profile: "web" }).enabled()) === true,
+      `web=${await createFileProviderStore({ profile: "web" }).enabled()}`);
+
+    // An explicit `dir` (what the other tests use) never reaches for the shared
+    // layout: it was never part of it.
+    const explicit = mkdtempSync(join(tmpdir(), "dsh-explicit-dir-"));
+    try {
+      const isolatedStore = createFileProviderStore({ dir: explicit, profile: "web" });
+      check("an explicit dir does not adopt the legacy value",
+        (await isolatedStore.enabled()) === null, `enabled=${await isolatedStore.enabled()}`);
+    } finally {
+      rmSync(explicit, { recursive: true, force: true });
+    }
+  } catch (error) {
+    fail("the per-profile state split and its one-shot adoption", error);
+  } finally {
+    restoreHome();
   }
 }
 

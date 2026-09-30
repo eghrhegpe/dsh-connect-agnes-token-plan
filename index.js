@@ -33,6 +33,7 @@ import { createFileThrottleStore } from "./throttle-store.js";
 import { createFileCatalogStore } from "./catalog-store.js";
 import { createFileProviderStore } from "./provider-store.js";
 import { createFileDrawStore } from "./draw-store.js";
+import { profileSegment } from "./state-store.js";
 import { createApiKeyStore } from "./api-key-store.js";
 import { createProviderPublisher } from "./provider-publish.js";
 import { registerRoutes } from "./routes.js";
@@ -124,21 +125,31 @@ function apply(ctx, config = {}, deps = {}) {
   /** One in-flight console fetch per URL, so concurrent polls share a call. */
   const inflight = new Map();
 
+  // Two profiles can host this plugin at once and they are NOT the same build
+  // (see PITFALLS §22): the Desktop profile runs an installed copy, the web
+  // profile commonly symlinks this source tree. Each therefore gets its OWN
+  // directory for the three switch-shaped states below, derived from the Host's
+  // optional `profileContext.name`. `null` (no service, no name, unsafe name)
+  // degrades to today's single shared directory — behaviour unchanged.
+  // The throttle deliberately stays shared; see `throttle-store.js`.
+  const profile = profileSegment(ctx);
+
   // Step three's PRIVATE catalog file: the last `/v1/models` answer the key
   // fetched, plus the curated enabled-model allow-list. It lives under
-  // `$DSH_HOME/state/<plugin>/catalog.json`, never in the settings row or the
-  // patch layer — a catalog is operational state, not an operator decision.
-  const catalogStore = createFileCatalogStore();
+  // `$DSH_HOME/state/[<profile>/]<plugin>/catalog.json`, never in the settings
+  // row or the patch layer — a catalog is operational state, not an operator
+  // decision.
+  const catalogStore = createFileCatalogStore({ profile });
   // The panel's live provider switch (docs/PROVIDER-HOT-RELOAD.md). A value
   // saved from the panel overrides the patch's `registerProvider`; an untouched
   // state file falls back to it, so configuration-driven deployments keep
   // working unchanged.
-  const providerStore = createFileProviderStore();
+  const providerStore = createFileProviderStore({ profile });
   // The panel's live draw-tool switch (docs/PROVIDER-HOT-RELOAD.md, same
   // "own state file beats the config default" discipline as the provider
   // switch). A value saved from the panel overrides the patch's
   // `drawEnabled`; an untouched state file falls back to it.
-  const drawStore = createFileDrawStore();
+  const drawStore = createFileDrawStore({ profile });
 
   /** Read an optional service without throwing on a Host that lacks it. */
   const getService = (service) => {

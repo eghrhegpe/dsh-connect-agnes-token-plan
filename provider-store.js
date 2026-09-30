@@ -27,18 +27,21 @@
 import { obj } from "./util.js";
 import { join } from "node:path";
 import { name } from "./host-config.js";
-import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, stateDir as pluginStateDir } from "./state-store.js";
+import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, profileStateDir, stateDir as sharedStateDir } from "./state-store.js";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const PROVIDER_VERSION = 1;
 
 /**
- * The directory this plugin's state lives in — the same one the catalog and
- * the throttle use.
+ * The directory this plugin's state lives in — per-profile when the Host names
+ * one, shared otherwise (PITFALLS §23). Unlike the THROTTLE, which is
+ * deliberately shared across profiles, this answers "does THIS profile want the
+ * provider registered" and must not be overwritten by the other profile's Host.
+ * @param {string|null} [profile] - the profile name; `null` means shared.
  * @returns {string} the directory.
  */
-export function providerDir() {
-  return pluginStateDir(name);
+export function providerDir(profile) {
+  return profileStateDir(name, profile);
 }
 
 /**
@@ -54,13 +57,39 @@ export function normalizeEnabled(raw) {
  * The file-backed provider switch.
  * @param {object} [options]
  * @param {string} [options.dir] - override the state directory (tests).
+ * @param {string|null} [options.profile] - the profile name; see {@link providerDir}.
  * @param {number} [options.ttlMs] - how long a parsed switch may be reused
  *   before disk is consulted again; defaults to {@link STATE_READ_TTL_MS}.
  * @returns {object} the store.
  */
-export function createFileProviderStore({ dir, ttlMs = STATE_READ_TTL_MS } = {}) {
-  const stateDir = dir ?? providerDir();
+export function createFileProviderStore({ dir, profile = null, ttlMs = STATE_READ_TTL_MS } = {}) {
+  const stateDir = dir ?? providerDir(profile);
   const filePath = join(stateDir, "provider.json");
+
+  /**
+   * Write one payload atomically to this switch's own file.
+   *
+   * The single writer for all three callers (save / forget / the §23 legacy
+   * adoption) — three copies of this is exactly the drift this module keeps
+   * getting bitten by.
+   * @param {object} body - the JSON body to persist.
+   * @returns {Promise<void>}
+   */
+  const writePayload = async (body) => {
+    const temporary = temporaryOf(stateDir, "provider.json");
+    await ensureStateDir(stateDir);
+    await writeStateFile(filePath, JSON.stringify(body, null, 2), { temporary });
+  };
+
+  // Pre-§23 machines kept this switch in the SHARED directory. A profile-scoped
+  // store inherits it once, when its own file is missing — see the note on
+  // `createStateReadCache` (`state-store.js`). An explicit `dir` (the tests)
+  // never inherits: it was never part of the shared layout.
+  const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "provider.json") : null;
+  const parseSwitch = (raw) => {
+    const source = obj(raw);
+    return source.version === PROVIDER_VERSION ? normalizeEnabled(source.enabled) : null;
+  };
 
   // Short-TTL read cache, deliberately shared with the draw switch and the
   // catalog (`state-store.js`): "someone else edited this file" must become
@@ -70,9 +99,16 @@ export function createFileProviderStore({ dir, ttlMs = STATE_READ_TTL_MS } = {})
     // Shape check, not trust: anything unexpected reads as "not set" so a
     // corrupted or downgraded file can never silently flip the switch.
     // Absent/unreadable/non-JSON reads as `null` (`readStateJson`).
-    const source = obj(await readStateJson(filePath));
-    return source.version === PROVIDER_VERSION ? normalizeEnabled(source.enabled) : null;
-  }, { ttlMs });
+    return parseSwitch(await readStateJson(filePath));
+  }, {
+    ttlMs,
+    inheritFrom: legacyFile === null ? null : {
+      read: async () => parseSwitch(await readStateJson(legacyFile)),
+      write: async (enabled) => {
+        await writePayload({ version: PROVIDER_VERSION, enabled, updatedAt: new Date().toISOString() });
+      }
+    }
+  });
   const read = () => cache.read();
 
   return {
@@ -101,9 +137,7 @@ export function createFileProviderStore({ dir, ttlMs = STATE_READ_TTL_MS } = {})
       if (enabled === null) throw new TypeError("provider switch expects a boolean");
       // Write failures PROPAGATE on purpose: a switch the panel ordered must
       // not silently stay off because the state file could not be written.
-      const temporary = temporaryOf(stateDir, "provider.json");
-      await ensureStateDir(stateDir);
-      await writeStateFile(filePath, JSON.stringify({ version: PROVIDER_VERSION, enabled, updatedAt: new Date().toISOString() }, null, 2), { temporary });
+      await writePayload({ version: PROVIDER_VERSION, enabled, updatedAt: new Date().toISOString() });
       cache.remember(enabled);
     },
     /**
@@ -112,9 +146,8 @@ export function createFileProviderStore({ dir, ttlMs = STATE_READ_TTL_MS } = {})
      */
     async forget() {
       cache.remember(null);
-      const temporary = temporaryOf(stateDir, "provider.json");
-      await ensureStateDir(stateDir);
-      await writeStateFile(filePath, JSON.stringify({ version: PROVIDER_VERSION, updatedAt: new Date().toISOString() }, null, 2), { temporary });
+      // No `enabled` key: "not set" is the absence of an answer, not `false`.
+      await writePayload({ version: PROVIDER_VERSION, updatedAt: new Date().toISOString() });
     }
   };
 }

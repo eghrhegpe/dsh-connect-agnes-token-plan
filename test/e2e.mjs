@@ -513,6 +513,18 @@ try {
       llm.modelCount === 2 && llm.visionCount === 1 &&
         JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["SenseNova-Lite", "SenseNova-Vision"]),
       `modelCount=${String(llm.modelCount)} visionCount=${String(llm.visionCount)} models=${JSON.stringify(llm.models)}`);
+
+    // PITFALLS §23, end-to-end. This Host was launched with `--profile web`
+    // (see startHost), so a real `profileContext` names it — and the states
+    // that belong to a profile must land UNDER that name. No unit stub can
+    // settle this: only a real Host says whether the optional service is truly
+    // visible to a plugin that does NOT inject it.
+    const perProfile = join(home, "state", "web", "dsh-connect-sensenova-token-plan");
+    check("the catalog landed under this profile's directory",
+      existsSync(join(perProfile, "catalog.json")), join(perProfile, "catalog.json"));
+    check("nothing was written to the pre-§23 shared state directory",
+      !existsSync(join(home, "state", "dsh-connect-sensenova-token-plan", "catalog.json")),
+      join(home, "state", "dsh-connect-sensenova-token-plan", "catalog.json"));
   }
 
   // === a wrong password is classified, and the panel explains itself =====

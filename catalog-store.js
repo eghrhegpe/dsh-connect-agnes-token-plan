@@ -22,7 +22,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { str, obj, num } from "./util.js";
 import { name } from "./host-config.js";
-import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, stateDir as pluginStateDir } from "./state-store.js";
+import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, profileStateDir, stateDir as sharedStateDir } from "./state-store.js";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const CATALOG_VERSION = 1;
@@ -50,11 +50,13 @@ export function normalizeEnabledIds(raw) {
 }
 
 /**
- * The directory this plugin's state lives in — the same one the throttle uses.
+ * The directory this plugin's state lives in — per-profile when the Host names
+ * one, shared otherwise (PITFALLS §23).
+ * @param {string|null} [profile] - the profile name; `null` means shared.
  * @returns {string} the directory.
  */
-export function catalogDir() {
-  return pluginStateDir(name);
+export function catalogDir(profile) {
+  return profileStateDir(name, profile);
 }
 
 /**
@@ -114,14 +116,18 @@ function parse(raw) {
 /**
  * A catalog store backed by one atomically-written file.
  * @param {object} [options] - wiring.
- * @param {string} [options.dir] - directory; defaults to {@link catalogDir}.
+ * @param {string} [options.dir] - directory; overrides {@link options.profile}.
+ * @param {string|null} [options.profile] - the profile name, so two profiles
+ *   each get their own catalog instead of overwriting one shared allow-list;
+ *   defaults to `null` (the shared directory, i.e. today's behaviour).
  * @param {() => number} [options.now] - clock source; injected by the tests.
  * @param {number} [options.ttlMs] - how long a parsed record may be reused
  *   before disk is consulted again; defaults to {@link STATE_READ_TTL_MS}.
  * @returns {CatalogStore} the store.
  */
-export function createFileCatalogStore({ dir = catalogDir(), now = Date.now, ttlMs = STATE_READ_TTL_MS } = {}) {
-  const file = join(dir, "catalog.json");
+export function createFileCatalogStore({ dir, profile = null, now = Date.now, ttlMs = STATE_READ_TTL_MS } = {}) {
+  const stateDir = dir ?? catalogDir(profile);
+  const file = join(stateDir, "catalog.json");
   /**
    * Last known record, mirrored from {@link cache} so the writers can reuse the
    * allow-list without a second read. `undefined` means "never synced from
@@ -134,7 +140,25 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now, ttl
   // see PITFALLS §22), so a cache that never expires means another process's
   // allow-list edit stays invisible here until a restart. Same bound the
   // provider and draw switches already use.
-  const cache = createStateReadCache(async () => parse(await readStateJson(file)), { ttlMs, now });
+  // A profile-scoped store starts empty even on a machine whose values still
+  // live in the pre-§23 SHARED directory. The cache inherits that record ONCE,
+  // when its own file is found missing, then writes it back. An explicit `dir`
+  // (the tests) never inherits: it was never part of the shared layout.
+  const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "catalog.json") : null;
+
+  const cache = createStateReadCache(async () => parse(await readStateJson(file)), {
+    ttlMs,
+    now,
+    inheritFrom: legacyFile === null ? null : {
+      /** The pre-§23 record, if this machine ever wrote one. */
+      read: async () => parse(await readStateJson(legacyFile)),
+      /** Re-persist an inherited record under this profile's own directory. */
+      write: async (record) => {
+        held = record;
+        await persist();
+      }
+    }
+  });
   /** Sync `held` with disk (through the TTL cache) and return it. */
   const seen = async () => {
     held = await cache.read();
@@ -150,9 +174,9 @@ export function createFileCatalogStore({ dir = catalogDir(), now = Date.now, ttl
    */
   const persist = async () => {
     if (held === null) return;
-    const temporary = temporaryOf(dir, "catalog.json", now);
+    const temporary = temporaryOf(stateDir, "catalog.json", now);
     try {
-      await ensureStateDir(dir);
+      await ensureStateDir(stateDir);
       await writeStateFile(file, JSON.stringify(held), { temporary });
     } catch {
       // The in-memory record still serves this process.
