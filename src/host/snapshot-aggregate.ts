@@ -1,7 +1,7 @@
 /**
  * The snapshot route's DATA AGGREGATION — the peer-free pure half.
  *
- * Extracted from `indexts` so the router keeps only the HTTP surface (route
+ * Extracted from `index.ts` so the router keeps only the HTTP surface (route
  * registration, the trust fence, body reading, the `writeJson` responses)
  * while the polling-side decisions — fetching through the cache, parsing
  * pools/trend/catalog, computing shape warnings, splitting a pool's coverage
@@ -11,7 +11,7 @@
  *
  * Pure by design: it takes the resolved `settings`, the shared `cache` /
  * `inflight` maps, the `tokenStore`, the `apiKeyStore`, the `publisher`
- * (from `provider-publishts`) and the `catalogStore`, and returns the exact
+ * (from `provider-publish.ts`) and the `catalogStore`, and returns the exact
  * snapshot body the route writes. No HTTP surface, no filesystem writes, no
  * module-level state — so `test/routes.test.mjs` can pin every branch (the
  * 14-key snapshot contract, the vision-vs-catalog distinction, the

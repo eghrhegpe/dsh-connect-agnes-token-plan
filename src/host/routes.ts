@@ -1,5 +1,5 @@
 /**
- * The six HTTP route handlers, extracted from `indexts` (IMPROVEMENTS.md §2.3).
+ * The six HTTP route handlers, extracted from `index.ts` (IMPROVEMENTS.md §2.3).
  *
  * `apply()` stays the single mount seam: it assembles a `wiring` object and
  * hands it to {@link registerRoutes}; the handlers keep exactly the behaviour
@@ -152,7 +152,7 @@ function failureCode(error) {
  * The handlers close over `wiring` only — every service they touch is listed
  * there, so `apply()` is the single place that decides what a route can do.
  * @param ctx - the host root context (only `ctx.webServer` is used here).
- * @param {object} wiring - assembled by `apply()` in `indexts`.
+ * @param {object} wiring - assembled by `apply()` in `index.ts`.
  * @param {object} wiring.settings - the resolved settings row.
  * @param {string|null} wiring.configError - a settings/auth misconfiguration
  *   surfaced through the snapshot instead of a mount crash.

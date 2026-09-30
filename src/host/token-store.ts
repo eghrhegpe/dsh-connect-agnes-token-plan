@@ -111,7 +111,7 @@ const credentialRef = (name) => name;
  * Where the throttle used to live, as a record in the credentials service.
  *
  * Read for MIGRATION ONLY and never written again. The marker-based adoption
- * lives in `token-store/throttlets`; this constant stays here as the public
+ * lives in `token-store/throttle.ts`; this constant stays here as the public
  * export surface (`THROTTLE_ID`).
  */
 const THROTTLE_ID = "sensenova-console-throttle";
@@ -142,7 +142,7 @@ const THROTTLE_ID = "sensenova-console-throttle";
  * @param {function(?object[], ?(Error & {code?: unknown})): void} [options.onTrace] - called with
  *   the sanitized hop list when a sign-in attempt ENDS, success or failure;
  *   the second argument is `null` on success and the thrown error otherwise
- *   (matching the contract `sensenova-authts` uses).
+ *   (matching the contract `sensenova-auth.ts` uses).
  * @returns the store: `getToken`, `invalidate`, `saveAccount`,
  *   `forgetAccount`, and `state`.
  */

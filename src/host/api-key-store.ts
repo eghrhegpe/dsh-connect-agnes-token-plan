@@ -3,7 +3,7 @@
  * directly-registered LLM provider and the `/v1/models` catalog.
  *
  * It is the SAME reference-value mechanism the console account uses
- * (`token-storets`): the key is not a new credentials record KIND (the
+ * (`token-store.ts`): the key is not a new credentials record KIND (the
  * service admits only `grant` / `api-key`, and a private kind makes the whole
  * credentials document unparseable and takes the Host down). It is stored as a
  * credential REFERENCE named `SENSENOVA_API_KEY` — owner-only in

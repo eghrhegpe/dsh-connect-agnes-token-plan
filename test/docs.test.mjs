@@ -1,10 +1,9 @@
-// docs.test.mjs —— 文档一致性钉子（纯文件读取：无网络、无 peer 依赖、干净检出即可跑）
+// docs.test.mjs —— 文档与引用一致性钉子（纯文件读取：无网络、无 peer 依赖、干净检出即可跑）
 //
-// 守住四条「文档结构纪律」：
-//   1. 内部链接全部可解析（防死链）
-//   2. 同一张表格不出现在 ≥2 个文件（防多源事实：配置表 / 节流表 / 测试表这类单一事实只允许一个出处）
-//   3. 根 README.md 行数有上限（它只做索引与快速上手，细节下沉 docs/）
-//   4. docs/DSH-PLUGIN.md 的 package.json 教学快照与真实 package.json 同步（快照不被其它测试钉住）
+// 守住两类「一致性纪律」：
+//   文档结构（1-6）：内部链接可解析、跨文件表格去重、README 行数上限、
+//                    DSH-PLUGIN.md 教学快照同步、API.md 快照契约、docs/ 孤儿文件
+//   事实引用（N-8）：PITFALLS 条数引用有效、src/ 注释里的模块名引用完整（含伪文件名扫描）
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -223,6 +222,64 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   }
   if (claims < 2) bad(`只找到 ${claims} 处「N 条」引用，检查本身可能已经失效`);
   else note(`PITFALLS 条目数 ${actual}，${claims} 处总数引用与 ${pointed} 处条号引用全部有效`);
+}
+
+// 8) src/ 注释里的模块名引用完整性
+// 事故教训：注释里 `indexts`（少了点的 index.ts）这种伪文件名曾在 21 个文件里繁殖 66 处，
+// 修完 42 处又长回来——注释里的引用没人校验就不会红。这里钉两条：
+//   a) 反引号里的 `Xts` / `dir/Xts` 伪文件名，若 `X.ts`/`X.js` 在 src 里真实存在，直接报错
+//      （候选存在判定天然放过 hosts / attempts 这类正常英文词）；
+//   b) 反引号里的 `X.ts` 式正引用必须能解析到真实文件，否则断链。
+// 两个白名单名词是架构事实而非源码引用，跳过但留痕：
+//   - `client.js`        根构建产物（tsdown 从 src/client 构建，gitignore，干净检出不在）
+//   - `client-surface.js` loader 的模块面（仓库外约定名，见 src/client/runtime.ts 头注释）
+{
+  const tsFiles = [];
+  const walk = (dir) => {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) { if (name !== "node_modules") walk(p); }
+      else if (name.endsWith(".ts")) tsFiles.push(p);
+    }
+  };
+  walk(join(ROOT, "src"));
+  const rel = (p) => p.replace(ROOT + "\\", "").replace(/\\/g, "/");
+  const KNOWN_ARTIFACTS = new Set(["client.js", "client-surface.js"]);
+  const srcCandidate = (ref) => {
+    // 引用可能是 `X.ts`（同目录或 src 根）、`dir/X.ts`（src 内相对）或 `src/host/X.ts`
+    // （仓库根相对，wire.ts 就这么写）；按惯例的基准全部枚举一遍
+    const plain = ref.startsWith("./") ? ref.slice(2) : ref;
+    const bases = [join(ROOT, "src"), join(ROOT, "src", "host"), join(ROOT, "src", "client"), ROOT];
+    return bases.map((b) => join(b, plain)).filter((c) => existsSync(c));
+  };
+  const fileCandidates = (ref, baseDir) => [join(baseDir, ref), ...srcCandidate(ref)].filter((c) => existsSync(c));
+  let pseudo = 0, checked = 0, known = 0;
+  for (const f of tsFiles) {
+    const text = readFileSync(f, "utf8");
+    // a) 伪文件名 `Xts` / `dir/Xts`：候选真实文件存在才算数
+    for (const m of text.matchAll(/`([\w-]+(?:\/[\w-]+)*)ts`/g)) {
+      const x = m[1];
+      const asTs = srcCandidate(`${x}.ts`);
+      const asJs = srcCandidate(`${x}.js`);
+      if (asTs.length || asJs.length) {
+        pseudo++;
+        bad(`${rel(f)} 注释伪文件名 \`${x}ts\`（应为 \`${x}.ts\`）`);
+      }
+    }
+    // b) 正引用 `X.ts` / `dir/X.ts`（含 ./ 前缀）必须存在；两个架构名词白名单跳过但留痕
+    for (const m of text.matchAll(/`((?:\.\/)?[\w-]+(?:\/[\w-]+)*\.(?:ts|js))`/g)) {
+      const ref = m[1];
+      checked++;
+      if (KNOWN_ARTIFACTS.has(ref)) { known++; continue; }
+      if (fileCandidates(ref, dirname(f)).length === 0) {
+        bad(`注释引用断链：${rel(f)} -> \`${ref}\``);
+      }
+    }
+  }
+  if (pseudo === 0) note(`注释伪文件名 0 处（${tsFiles.length} 个 src 文件）`);
+  else note(`注释伪文件名 ${pseudo} 处（已在上方逐条列出）`);
+  note(`注释模块引用 ${checked} 条全部可解析${known ? `（含 ${known} 条架构名词白名单）` : ""}`);
 }
 
 if (fails.length) {

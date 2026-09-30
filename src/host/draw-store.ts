@@ -2,7 +2,7 @@
  * The draw-tool switch — this plugin's OWN state file, never the Host's
  * configuration.
  *
- * Mirrors `provider-storets`: `drawEnabled` in `cordis.patch.yml` is a
+ * Mirrors `provider-store.ts`: `drawEnabled` in `cordis.patch.yml` is a
  * DEPLOYMENT default the operator edits with a reload, but the panel needs a
  * live switch that takes effect on the next request. The switch state lives in
  * `$DSH_HOME/state/<plugin>/draw.json`, exactly like the catalog and the
@@ -16,7 +16,7 @@
  *      to the patch's `drawEnabled` — so an operator who enabled drawing
  *      through configuration keeps it enabled across this change.
  *
- * Integrity follows `provider-storets`: a versioned payload, a temp file plus
+ * Integrity follows `provider-store.ts`: a versioned payload, a temp file plus
  * an atomic rename, owner-only modes, and "anything unrecognised reads as not
  * set" — a corrupted or downgraded file costs one re-toggle, never a crash.
  *
@@ -77,7 +77,7 @@ export function createFileDrawStore(options: StoreOptions = {}) {
 
   /**
    * Write one payload atomically to this switch's own file — the single writer
-   * for save / forget / the §23 legacy adoption (see `provider-storets`).
+   * for save / forget / the §23 legacy adoption (see `provider-store.ts`).
    * @param {object} body - the JSON body to persist.
    * @returns {Promise<void>}
    */
@@ -101,7 +101,7 @@ export function createFileDrawStore(options: StoreOptions = {}) {
   };
 
   // Short-TTL read cache, shared with the provider switch and the catalog
-  // (`state-storets`): see the note in `provider-storets` — one primitive,
+  // (`state-store.ts`): see the note in `provider-store.ts` — one primitive,
   // three callers, so the three cannot drift apart again.
   const cache = createStateReadCache(async () => {
     // Shape check, not trust: anything unexpected reads as "not set" so a

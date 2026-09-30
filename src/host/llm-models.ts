@@ -5,7 +5,7 @@
  * This module deliberately imports NO runtime peer (`@earendil-works/pi-ai`,
  * `@deepseek-ai/dsh-llm-pi-ai`): it builds plain objects only, so the mapping
  * decisions are testable on a clean checkout the same way the qoder fork keeps
- * its own `pi-modelts` peer-free. `llm-adapterts` is the peer-dependent half
+ * its own pi-ai model mapping peer-free. `llm-adapter.ts` is the peer-dependent half
  * that hands these descriptors to `createProvider`.
  *
  * Two decisions carried here are load-bearing rather than cosmetic:

@@ -1,8 +1,8 @@
 /**
  * The shared context a token store instance runs on — the seam the split
- * around `token-storets` stands on.
+ * around `token-store.ts` stands on.
  *
- * `token-storets` is one closure holding four intertwined blocks (grant,
+ * `token-store.ts` is one closure holding four intertwined blocks (grant,
  * account, renewal, throttle) that share seven mutable variables. The split
  * (docs/TOKEN-STORE-SPLIT.md) moves each block into its own module; what they
  * all keep in common is exactly what this file owns:
@@ -17,7 +17,7 @@
  *     read any field through `state.`.
  *
  * Step 1 of the split: `createStoreContext()` is the one new piece of code in
- * this move. `token-storets`'s `createTokenStore` now builds this context and
+ * this move. `token-store.ts`'s `createTokenStore` now builds this context and
  * keeps its bodies verbatim against it, so the behavior baseline
  * (`test/store-baseline.test.mjs`) and the 131 live checks stay green —
  * no semantics moved, only the names did.
@@ -40,7 +40,7 @@ const DEFAULT_SKEW_MS = 120_000;
  * The body of what `createTokenStore` used to do before its first `let`:
  * resolve the throttle store, build the in-memory vault, the service
  * resolver, the backend and the ephemeral check, and the key pair. The
- * defaults and their comments move here unchanged; `token-storets` still
+ * defaults and their comments move here unchanged; `token-store.ts` still
  * documents the OPTIONS (they are the public face of the factory).
  *
  * @param {object} options - the same options object `createTokenStore` takes.

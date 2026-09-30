@@ -6,7 +6,7 @@
  * default the operator edits with a reload, but the panel needs a live switch
  * that takes effect on the next request. The switch state therefore lives in
  * `$DSH_HOME/state/<plugin>/provider.json`, exactly like the catalog
- * (`catalog-storets`) and the throttle (`throttle-storets`): operational
+ * (`catalog-store.ts`) and the throttle (`throttle-store.ts`): operational
  * state, not an operator decision baked into the patch layer.
  *
  * Precedence at read time:
@@ -16,7 +16,7 @@
  *      to the patch's `registerProvider` — so an operator who enabled the
  *      provider through configuration keeps it enabled across this change.
  *
- * Integrity follows `throttle-storets` / `catalog-storets`: a versioned
+ * Integrity follows `throttle-store.ts` / `catalog-store.ts`: a versioned
  * payload, a temp file plus an atomic rename (two Host processes can share
  * the directory), owner-only modes, and "anything unrecognised reads as not
  * set" — a corrupted or downgraded file costs one re-toggle, never a crash.
@@ -84,7 +84,7 @@ export function createFileProviderStore(options: StoreOptions = {}) {
 
   // Pre-§23 machines kept this switch in the SHARED directory. A profile-scoped
   // store inherits it once, when its own file is missing — see the note on
-  // `createStateReadCache` (`state-storets`). An explicit `dir` (the tests)
+  // `createStateReadCache` (`state-store.ts`). An explicit `dir` (the tests)
   // never inherits: it was never part of the shared layout.
   const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "provider.json") : null;
   const parseSwitch = (raw) => {
@@ -93,7 +93,7 @@ export function createFileProviderStore(options: StoreOptions = {}) {
   };
 
   // Short-TTL read cache, deliberately shared with the draw switch and the
-  // catalog (`state-storets`): "someone else edited this file" must become
+  // catalog (`state-store.ts`): "someone else edited this file" must become
   // visible here within a tick, not after a restart, but one poll must not
   // re-read the file for every question it asks.
   const cache = createStateReadCache(async () => {

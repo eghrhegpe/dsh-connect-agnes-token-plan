@@ -10,7 +10,7 @@
  * operator decision, and writing volatile arrays into the patch layer is the
  * shape the WorkBuddy catalog drift warned about.
  *
- * Integrity follows `throttle-storets`: a versioned payload, a temp file plus
+ * Integrity follows `throttle-store.ts`: a versioned payload, a temp file plus
  * an atomic rename (two Host processes can share the directory), owner-only
  * modes, and "anything unrecognised reads as no catalog" — a corrupted or
  * downgraded file costs one re-fetch, never a crash.
@@ -169,7 +169,7 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
   /**
    * Persist the held record atomically; a write failure only loses the cache.
    *
-   * The temp path is process-plus-clock unique (`state-storets`'s
+   * The temp path is process-plus-clock unique (`state-store.ts`'s
    * `temporaryOf`), so two Host processes sharing this directory never write
    * the same temp name and `rename` each other's half-written file away.
    */

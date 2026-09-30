@@ -4,10 +4,10 @@
  * Before this module the same codes were spelled out in three places, and the
  * three copies disagreed:
  *
- * - `sensenova-authts` PRODUCED them (its `IAM_REASON_CODES` table);
- * - `token-storets` kept its own list of the ones that describe a bad
+ * - `sensenova-auth.ts` PRODUCED them (its `IAM_REASON_CODES` table);
+ * - `token-store.ts` kept its own list of the ones that describe a bad
  *   credential (`CREDENTIAL_REFUSALS`);
- * - `indexts` kept a third list of the ones that mean "we never got a token"
+ * - `index.ts` kept a third list of the ones that mean "we never got a token"
  *   (`isAuthFailure`).
  *
  * The third list had fallen behind the first: `account_locked`,
@@ -78,7 +78,7 @@ export const CODE = Object.freeze({
  * IAM answers with a `google.rpc.Status` envelope whose real cause sits in
  * `details[].reason` (`invalidAccountOrPassword`, `accountLocked`,
  * `tooManyAttempts`, …). Matching that code exactly — and treating the
- * substring scan in `sensenova-authts` as a fallback for a reason this table
+ * substring scan in `sensenova-auth.ts` as a fallback for a reason this table
  * has not learned yet — is the difference between a reworded message and a
  * silently reclassified lockout.
  *

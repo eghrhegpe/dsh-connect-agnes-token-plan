@@ -41,7 +41,7 @@ export function dshHome() {
 /**
  * Where this plugin keeps state: `$DSH_HOME/state/<name>`.
  * @param {string} name - the plugin's own state directory name
- *   (`host-configts`'s `name`).
+ *   (`host-config.ts`'s `name`).
  * @returns {string} the directory.
  */
 export function stateDir(name) {

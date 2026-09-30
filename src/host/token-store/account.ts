@@ -3,10 +3,10 @@
  * username/account, logging in, saving and forgetting the account, and the
  * one-time password sweep.
  *
- * No state of its own; operates on the shared context from `statets`.
+ * No state of its own; operates on the shared context from `state.ts`.
  * `loginFromAccount` needs two grant-block operations (read the stored grant,
  * persist the new one); they are injected by the caller so this module never
- * imports `grantts` (no circular dependency).
+ * imports `grant.ts` (no circular dependency).
  *
  * Functions moved here are **verbatim** — the behavior baseline
  * (`test/store-baseline.test.mjs`) stays green, so no semantics moved, only

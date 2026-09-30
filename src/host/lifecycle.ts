@@ -1,5 +1,5 @@
 /**
- * The plugin's side effects, extracted from `indexts` (IMPROVEMENTS.md §2.3).
+ * The plugin's side effects, extracted from `index.ts` (IMPROVEMENTS.md §2.3).
  *
  * `apply()` is the single mount seam: it assembles the `wiring` object, calls
  * {@link registerRoutes} (routes.ts), then {@link startSideEffects} for the

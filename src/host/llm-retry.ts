@@ -3,7 +3,7 @@
  * peer-FREE half of the 429 self-healing work.
  *
  * Why a separate, peer-free module: the policy is handed to the Host's
- * `resolveRetryPolicy` (a peer import) inside `llm-adapterts`, but the
+ * `resolveRetryPolicy` (a peer import) inside `llm-adapter.ts`, but the
  * *decision* — which failure classes this shared-pool provider should retry,
  * and how gently — is pure and must stay unit-testable on a clean checkout
  * where the peer is not resolvable. Keeping the config here means
@@ -21,7 +21,7 @@
  *     retries this by default, and we keep doing so, with a backoff biased
  *     longer than default so an immediate re-hit against the one shared pool
  *     is less likely. SenseNova's daytime rate ceiling (rpm/tpm) is aggressive
- *     (see `llm-error-fixts`: its `quota_exceeded_error` code 8 is actually a
+ *     (see `llm-error-fix.ts`: its `quota_exceeded_error` code 8 is actually a
  *     per-minute rate cap), so we ride it out with more attempts and a gentler
  *     initial step than the peer default.
  *
@@ -32,11 +32,11 @@
  * The failure-class codes this provider reasons about, in peer-canonical
  * spelling.
  *
- * The strings mirror `@deepseek-ai/dsh-llm`'s `errorts` constants
+ * The strings mirror the `@deepseek-ai/dsh-llm` peer's error-code constants
  * (`QUOTA_EXCEEDED_CODE = "QUOTA"`, `ACCOUNT_QUOTA_EXCEEDED_CODE =
  * "ACCOUNT_QUOTA"`, `EMPTY_RESPONSE_CODE = "EMPTY_RESPONSE"`). They are stable
  * protocol codes, not implementation details, so pinning them here is what the
- * qoder route does too; `llm-adapterts` still imports the live constants from
+ * qoder route does too; `llm-adapter.ts` still imports the live constants from
  * the peer and passes them through `resolveRetryPolicy`, so a peer rename would
  * surface at the adapter, not silently drift here.
  */
@@ -84,7 +84,7 @@ export function retryableCodes() {
  * the peer's default policy cannot silently alter this provider's behaviour.
  *
  * Tuned for SenseNova's daytime rate ceiling (rpm/tpm), which the peer mislabels
- * as `QUOTA` — `llm-error-fixts` pulls those back to `RATE_LIMIT` so they
+ * as `QUOTA` — `llm-error-fix.ts` pulls those back to `RATE_LIMIT` so they
  * reach this policy. The numbers: more attempts (8) and a gentler, longer
  * backoff than the peer default (initial 1.5s → cap 20s, jitter 0.25) so a
  * single shared credit pool is not stampeded while the rate window refills.

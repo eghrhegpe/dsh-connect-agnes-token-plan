@@ -15,8 +15,8 @@ import { str, obj, num } from "./util.ts";
  * The one slug every addressable surface of this plugin derives from.
  *
  * Besides the name the Loader reports for the row, it is also the `/api` route
- * prefix (`indexts`), the credential record's scope (`token-storets`) and the
- * state directory (`throttle-storets`) — so a rename has to carry the user's
+ * prefix (`index.ts`), the credential record's scope (`token-store.ts`) and the
+ * state directory (`throttle-store.ts`) — so a rename has to carry the user's
  * stored grant and parked throttle with it, not just the text. The two files
  * that cannot import from here repeat it literally: `package.json#name` and the
  * `id`/`name` pair in `cordis.patch.yml`. Neither is pinned against this
@@ -104,7 +104,7 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * see it rather than fail.
    *
    * 0.4.2: this value is now the DEPLOYMENT DEFAULT only. The panel's draw
-   * tool switch (`POST /api/<name>/draw`, stored in `draw-storets`)
+   * tool switch (`POST /api/<name>/draw`, stored in `draw-store.ts`)
    * overrides it live with no restart. See `docs/PROVIDER-HOT-RELOAD.md` §7.
    */
   drawEnabled: false,

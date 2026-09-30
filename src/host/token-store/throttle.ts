@@ -3,13 +3,13 @@
  * Owns the throttle's read/write/clear, the local backoff doubling, the legacy
  * record adoption, and the refusal-shape error synthesis.
  *
- * No state of its own; operates on the shared context from `statets`.
+ * No state of its own; operates on the shared context from `state.ts`.
  * Functions moved here are **verbatim** — the behavior baseline
  * (`test/store-baseline.test.mjs`) stays green, so no semantics moved, only
  * the file did.
  *
  * The two backoff constants live here because they only ever appear in this
- * block; they are still re-exported from `token-storets` (public surface
+ * block; they are still re-exported from `token-store.ts` (public surface
  * unchanged).
  *
  * @module dsh-connect-sensenova-token-plan/token-store/throttle

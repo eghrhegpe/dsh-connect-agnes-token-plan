@@ -8,16 +8,16 @@
  * The heavy lifting lives in focused sibling modules so this file stays a
  * readable orchestrator:
  *
- *   - `host-configts`    config contract + the `isAdmitted` trust fence
+ *   - `host-config.ts`    config contract + the `isAdmitted` trust fence
  *   - `routes.ts`         the six HTTP route handlers (peer-free, wiring-injected)
  *   - `lifecycle.ts`      mount seed / draw tool / vision step two / teardown
  *   - `console-client.ts` console/catalog fetch with cache + single-flight
- *   - `parsersts`        response normalization + shape-drift detection
- *   - `snapshot-aggregatets` the snapshot body's data aggregation
- *   - `provider-publishts`  the provider registration state machine
- *   - `state-storets`    atomic state-file primitives for the three stores
- *   - `tracets`          login-trace persistence (already sanitized upstream)
- *   - `utilts`           the small `str`/`num`/`obj` readers
+ *   - `parsers.ts`        response normalization + shape-drift detection
+ *   - `snapshot-aggregate.ts` the snapshot body's data aggregation
+ *   - `provider-publish.ts`  the provider registration state machine
+ *   - `state-store.ts`    atomic state-file primitives for the three stores
+ *   - `trace.ts`          login-trace persistence (already sanitized upstream)
+ *   - `util.ts`           the small `str`/`num`/`obj` readers
  *
  * This file keeps the Cordis entry (`name`/`inject`/`apply`), the wiring
  * assembly, and the unmount effect — the parts that are about *this* plugin's
@@ -131,7 +131,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   // directory for the three switch-shaped states below, derived from the Host's
   // optional `profileContext.name`. `null` (no service, no name, unsafe name)
   // degrades to today's single shared directory — behaviour unchanged.
-  // The throttle deliberately stays shared; see `throttle-storets`.
+  // The throttle deliberately stays shared; see `throttle-store.ts`.
   const profile = profileSegment(ctx);
 
   // Step three's PRIVATE catalog file: the last `/v1/models` answer the key
@@ -161,9 +161,9 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   };
 
   // The directly-registered provider's live registration state now lives in
-  // the peer-free `provider-publishts` module: the `publishChain` that
+  // the peer-free `provider-publish.ts` module: the `publishChain` that
   // serialises publishes, the `disposed` gate, the single-point `registerPair`
-  // and the rollback path (PITFALLS §18 / §19). `indexts` drives it from the
+  // and the rollback path (PITFALLS §18 / §19). `index.ts` drives it from the
   // mount seed, the catalog poll, the provider switch, the roster save and the
   // api-key forget, and reads its `state` for the snapshot's `llm` block.
   // `llm` is an OPTIONAL service (this plugin injects only `webServer`), read

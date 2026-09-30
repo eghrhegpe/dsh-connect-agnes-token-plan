@@ -2,10 +2,10 @@
  * The directly-registered provider's PUBLISH STATE MACHINE — the peer-free
  * control-plane half of step three ("one-stop service").
  *
- * Extracted from `indexts` so the 1187-line router stops also owning
+ * Extracted from `index.ts` so the 1187-line router stops also owning
  * `providerState`, the `publishChain` serialisation, the mount seed and the
  * rollback path. The extraction is a MOVE, not a rewrite: every semantic that
- * `indexts` carried — the chain that makes a publish queue behind every other
+ * `index.ts` carried — the chain that makes a publish queue behind every other
  * publish in flight (PITFALLS §18 "the slower one wins"), the `disposed`
  * gate that keeps a publish arriving after dispose from registering into a
  * Host that has withdrawn the plugin, the single-point `registerPair` used by
@@ -17,7 +17,7 @@
  * Peer-free by the same discipline as `llm-models.ts` / `llm-retry.ts`: this
  * file imports no runtime peer. The adapter factory is injected by the caller
  * (`loadAdapterModule`, defaulting to `import("./llm-adapter.ts")` exactly as
- * `indexts` did), so the offline suites can substitute a fake factory without
+ * `index.ts` did), so the offline suites can substitute a fake factory without
  * touching the Host's node_modules.
  *
  * @module dsh-connect-sensenova-token-plan/provider-publish
@@ -34,24 +34,24 @@ import type { HostDeps } from "./types.ts";
  *
  * Holds the live registration state (`state`), the `publishChain` that
  * serialises publishes, the `disposed` gate, and the single-point
- * `registerPair`. The caller (`indexts`) drives `publish` from the mount
+ * `registerPair`. The caller (`index.ts`) drives `publish` from the mount
  * seed, the catalog poll, the provider switch, the roster save and the
  * api-key forget; it calls `dispose` from the `ctx.effect` teardown.
  *
  * The `getLlm` resolver is a FUNCTION, not a snapshot, because the `llm`
  * service may register with the Host after this plugin mounts — the same
- * resolver-not-snapshot pattern `indexts` uses for `credentials`.
+ * resolver-not-snapshot pattern `index.ts` uses for `credentials`.
  *
  * @param {object} [deps]
  * @param {object} [deps.settings] - the resolved settings row (reads `registerProvider` and `apiBase` only).
  * @param {() => Promise<boolean|null>} [deps.panelSwitch] - the panel-saved value
  *   (`provider-store.enabled()`); null when the state file is untouched.
  * @param {() => Promise<{createSensenovaAdapter: Function}>} [deps.loadAdapterModule] - the
- *   peer-dependent adapter factory module; defaults to the real `llm-adapterts`.
+ *   peer-dependent adapter factory module; defaults to the real `llm-adapter.ts`.
  * @param {(service: string) => object|null} [deps.getLlm] - optional-service
  *   resolver for the `llm` registration service.
  * @param {() => Promise<string>} [deps.resolveApiKey] - resolves the live `sk-`
- *   key per request (the `api-key-storets` seam). The adapter factory reads
+ *   key per request (the `api-key-store.ts` seam). The adapter factory reads
  *   it, so it must be a real resolver, never a snapshot.
  * @param {(event: string) => void} [deps.emit] - `ctx.emit` for the adapter
  *   update event.
@@ -197,7 +197,7 @@ export function createProviderPublisher(deps: HostDeps = {}) {
    * registered and then registers its own — so the Host ends up serving a
    * stale (possibly empty) catalog while the snapshot reports the fresh one.
    *
-   * The chain is the same shape `token-storets` uses for `getToken`: no
+   * The chain is the same shape `token-store.ts` uses for `getToken`: no
    * lock object, and a rejected link never poisons the ones behind it.
    */
   let publishChain = Promise.resolve();
@@ -230,7 +230,7 @@ export function createProviderPublisher(deps: HostDeps = {}) {
     state.unavailableIds = Array.isArray(unavailableModelIds) ? unavailableModelIds : [];
     // Opt-in: with the switch off there must be no registration left behind
     // from a row that flipped it after mounting. The EFFECTIVE switch is
-    // panel-first (`provider-storets`), falling back to the patch value —
+    // panel-first (`provider-store.ts`), falling back to the patch value —
     // re-read here on every publish, so a flip applies without a restart.
     const panelValue = await effectivePanelSwitch().catch(() => null);
     const registerWanted = panelValue ?? effectiveSettings.registerProvider === true;

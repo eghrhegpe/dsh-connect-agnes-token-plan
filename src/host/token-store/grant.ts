@@ -4,7 +4,7 @@
  * reap, fresh check.
  *
  * This module has no state of its own; it operates on the shared context
- * (`wiring` + `state`) built by `statets`. The ownership table is in
+ * (`wiring` + `state`) built by `state.ts`. The ownership table is in
  * `docs/TOKEN-STORE-SPLIT.md` §1. Functions moved here are **verbatim** —
  * the behavior baseline (`test/store-baseline.test.mjs`) and the 131 live
  * checks stay green, so no semantics moved, only the file did.

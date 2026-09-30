@@ -61,7 +61,7 @@ const INERT_AUTH = {
     // optional "persist the latest credential" hook during a normal request,
     // and an exception there would 500 a conversation that is otherwise
     // working. The credential lifecycle for this route lives in
-    // `api-key-storets`, not here.
+    // `api-key-store.ts`, not here.
     async modify() {},
     async delete() {}
   },
@@ -183,7 +183,7 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
   // 429 误判纠正层：peer 的 `classifyPiAiError` 会把带 "budget/credits" 字眼的
   // 限频 429 抢判成 QUOTA（不重试），本 Proxy 把这类误判体在出流前纠正回
   // RATE_LIMIT，使 `llm-retry.ts` 的退避重试真正生效。只拦截流出口，不触碰
-  // peer 内部逻辑，也不影响任何正常数据 chunk。详见 `llm-error-fixts`。
+  // peer 内部逻辑，也不影响任何正常数据 chunk。详见 `llm-error-fix.ts`。
   const adapter = new Proxy(inner, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
