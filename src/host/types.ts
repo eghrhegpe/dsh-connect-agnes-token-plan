@@ -27,6 +27,8 @@ export interface HostDeps {
   panelSwitch?: any;
   /** Lazy-load the LLM adapter module (peer `dsh-llm-pi-ai`). */
   loadAdapterModule?: any;
+  /** Lazy-load the Raccoon LLM adapter module (ROADMAP §6.1 second provider). */
+  loadRaccoonAdapterModule?: any;
   /** Resolve the registered LLM instance. */
   getLlm?: any;
   /** Resolve the API key from the credentials service. */

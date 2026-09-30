@@ -65,6 +65,8 @@ import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch } from ".
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage } from "./panel-page.ts";
+import { RaccoonTab } from "./raccoon-tab.ts";
+import { buildQrMatrix, qrDataUrl } from "./qr.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
   inject: string[];
@@ -119,8 +121,14 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       DrawSwitch,
       ModelRoster,
       ModelPicker,
-      PanelPage
-    })
+      PanelPage,
+      RaccoonTab
+    }),
+    // The Raccoon QR encoder lives on the test surface too: the suite
+    // differential-tests it against the upstream zero-dep reference (the
+    // shipped code must not import `upstream/`), and the tab's fallback
+    // path (`qrDataUrl` throwing) is exercised through the same export.
+    qr: Object.freeze({ buildQrMatrix, qrDataUrl })
   });
 
   return { inject, apply, panel };

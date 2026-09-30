@@ -191,10 +191,15 @@ export function startSideEffects(ctx, wiring, side) {
  * @returns {void}
  */
 export function teardown(wiring, offs) {
-  const { publisher, releaseProvider } = wiring;
+  const { publisher, releaseProvider, raccoonPublisher } = wiring;
   // Before anything else: a publish still in flight (the mount seed's, or a
   // poll's) must not register into a Host that is letting this plugin go.
   publisher.dispose();
+  // The Raccoon provider is a SECOND, independent registration (ROADMAP
+  // §6.1): dispose it in the same order it registered, so a late raccoon
+  // publish cannot register into the withdrawing Host either.
+  raccoonPublisher?.dispose();
+  raccoonPublisher?.release?.();
   // Stop offering the provider first, so a request cannot be routed to an
   // adapter whose Host services are already half gone.
   releaseProvider();

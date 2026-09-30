@@ -24,6 +24,9 @@ export const MODELS_PATH = "/api/dsh-connect-sensenova-token-plan/models";
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
 export const DRAW_PATH = "/api/dsh-connect-sensenova-token-plan/draw";
 
+/** The Raccoon provider route (second upstream provider, ROADMAP §6.1). */
+export const RACCOON_PATH = "/api/dsh-connect-sensenova-token-plan/raccoon";
+
 /**
  * The official sign-up / Token Plan console entry. The panel points new
  * users here to register and obtain their free quota (account + API key).

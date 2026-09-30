@@ -34,6 +34,9 @@ import { createFileProviderStore } from "./provider-store.ts";
 import { createFileDrawStore } from "./draw-store.ts";
 import { profileSegment } from "./state-store.ts";
 import { createApiKeyStore } from "./api-key-store.ts";
+import { createRaccoonStore } from "./raccoon-store.ts";
+import { createFileRaccoonStore } from "./raccoon-switch-store.ts";
+import { createRaccoonPublisher } from "./raccoon-publish.ts";
 import { createProviderPublisher } from "./provider-publish.ts";
 import { registerRoutes } from "./routes.ts";
 import { startSideEffects, teardown } from "./lifecycle.ts";
@@ -193,6 +196,58 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     publisher.publish(entries, enabledIds, unavailableModelIds);
   const releaseProvider = () => publisher.release();
 
+  // ── Second upstream provider: Raccoon Work (商汤小浣熊) — ROADMAP §6.1 ──
+  // A fully independent credential + registration pair. It NEVER touches the
+  // Token Plan publisher's state (its own `createRaccoonPublisher`), and the
+  // desktop `~/.box-agent` token route is rejected by design (§6.1.1): the
+  // credential is only ever the DSH credentials-service reference that the
+  // panel's self-built QR login writes. The switch is opt-in default OFF —
+  // a Host that never touches the Raccoon tab registers no Raccoon provider.
+  const raccoonStore = createRaccoonStore({
+    credentials: () => ctx.get("credentials") ?? null
+  });
+  const raccoonSwitch = createFileRaccoonStore({ profile });
+  const raccoonPublisher = createRaccoonPublisher({
+    panelSwitch: () => raccoonSwitch.enabled().catch(() => null),
+    resolveToken: async () => {
+      const { credential } = await raccoonStore.resolve();
+      if (credential === null) return "";
+      // Keep the credential inside its expiry window before every request:
+      // the refresh token is single-use, so refresh eagerly and re-store.
+      if (await raccoonStore.isExpired().catch(() => false)) {
+        await raccoonStore.refresh().catch(() => {});
+      }
+      const { credential: live } = await raccoonStore.resolve();
+      return live?.accessToken ?? "";
+    },
+    getLlm: (service) => getService(service),
+    loadAdapterModule: deps.loadRaccoonAdapterModule ?? (() => import("./raccoon-llm-adapter.ts")),
+    emit: (event) => {
+      try {
+        ctx.emit?.(event);
+      } catch {
+        // A Host that refuses the event still has the registration; readers
+        // refresh on their own cadence.
+      }
+    },
+    logger: ctx.logger
+  });
+  // Mount seed: if the switch is already on and a credential was stored before
+  // this restart, offer the Raccoon models before the first poll. The roster
+  // is whatever the route layer last knew (the publisher holds it on
+  // `state.rows`), falling back to the static roster — a catalog drift merely
+  // rebuilds on the next switch/login.
+  void (async () => {
+    try {
+      const switchState = await raccoonSwitch.enabled().catch(() => null);
+      if (switchState === true && raccoonPublisher.state.rows.length > 0) {
+        await raccoonPublisher.publish(raccoonPublisher.state.rows, "");
+      }
+    } catch {
+      // No seed: the first switch/login publishes.
+    }
+  })();
+
   // The credentials service is how the console token and account are held and
   // renewed. It is optional: a Host without one still gets a working panel,
   // with the account kept in memory for that process's lifetime rather than on
@@ -244,7 +299,13 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     releaseProvider,
     resolveApiKey,
     visionPublish,
-    logger: ctx.logger
+    logger: ctx.logger,
+    // Raccoon (second upstream provider, ROADMAP §6.1): its own store,
+    // switch, and publisher — a fully independent registration that never
+    // touches the Token Plan publisher above.
+    raccoonStore,
+    raccoonSwitch,
+    raccoonPublisher
   };
 
   // The six route handlers (trust fence, method allowances, body ceilings,

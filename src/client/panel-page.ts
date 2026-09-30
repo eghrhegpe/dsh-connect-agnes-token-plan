@@ -15,6 +15,7 @@ import type { PoolData, SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PoolCard, PoolExhaustionNotice, SectionCard, TrendTable } from "./cards.ts";
 import { DrawSwitch } from "./provider-controls.ts";
+import { RaccoonTab } from "./raccoon-tab.ts";
 
 export function PanelPage({ onClose, tt, localeSubscribe }: {
   onClose?: () => void;
@@ -39,11 +40,13 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // maintenance action, one click away. Remounting on a page switch
   // restores these defaults.
   const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false, llm: false, provider: false, draw: false });
-  // Two fixed perspectives: "quota" is the daily reading (pools, trend,
-  // account), "api" is one-off wiring (key, provider push, draw). The tab
-  // bar itself only renders once a snapshot has landed — the loading,
+  // Three fixed perspectives: "quota" is the daily reading (pools, trend,
+  // account), "api" is the Token Plan wiring (key, provider push, draw), and
+  // "raccoon" is the SECOND upstream provider (ROADMAP §6.1) — an independent
+  // credential + switch that shares no pool semantics with the first two. The
+  // tab bar itself only renders once a snapshot has landed — the loading,
   // error and setup views are full-screen and know no tabs.
-  const [activeTab, setActiveTab] = useState<"quota" | "api">("quota");
+  const [activeTab, setActiveTab] = useState<"quota" | "api" | "raccoon">("quota");
 
   // The Host half registers the dictionaries, but a runtime language switch
   // only reaches this page through the locale face's subscribe: without it a
@@ -184,21 +187,22 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   const authChip = auth === null
     ? null
     : auth.error || !auth.configured
-      ? h("span", { style: S.chip, title: auth.error ?? "" }, tt("auth.needsLogin"))
+      // A "needs login" chip with a blank tooltip is a dead end: the reader
+      // sees "something is wrong" but cannot say what. When the Host gives no
+      // reason (a fresh install, nothing configured yet), the tooltip is the
+      // guidance line — the same one the setup form would show — so the chip
+      // and the form never disagree about why.
+      ? h("span", { style: S.chip, title: auth.error || guidance || "" }, tt("auth.needsLogin"))
       : h("span", { style: S.chip }, tt("auth.selfRenew"));
-  // The account editor is offered whenever a token is working too, so the
-  // stored account can be changed or cleared without waiting to fail.
-  // A CLEARED account (refresh token still breathing on the stored grant)
-  // must ALSO keep the editor reachable: `hasAccount` is false right after
-  // "forget the saved account", but the grant stays valid until it dies —
-  // gating on `hasAccount` alone hid the only re-entry path, and when the
-  // grant finally expires the Host answers `ok:true` with empty pools, so
-  // the `!data` setup form never mounts either: the user was locked out
-  // of their own account. `auth.needsAccount` (nothing works yet) is the
-  // Host's own declaration of "an account is required to read anything" and
-  // is the honest second trigger.
-  const authManage = auth !== null &&
-    (auth.hasAccount === true || auth.needsAccount === true);
+  // The login state and its editor are shown UNCONDITIONALLY (whenever the
+  // snapshot carries the Host's auth block): a reader must always be able to
+  // see the token state, re-type credentials to re-point a still-valid grant,
+  // or clear the saved account. Gating this on `hasAccount` / `needsAccount`
+  // made the "middle state" (grant still alive, saved account cleared) a dead
+  // end: the full-screen setup form lives behind `!data`, and the section card
+  // vanished with `hasAccount` — the user was locked out of their own account
+  // with no re-entry path until the grant died.
+  const authManage = auth !== null;
   const body = !data
     ? showSetupForm
       ? h(AccountForm, { auth, onDone: () => void load(), tt })
@@ -220,7 +224,8 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
           "div",
           { style: S.tabBar, role: "tablist" },
           h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: { ...S.tab, ...(activeTab === "quota" ? S.tabActive : {}) }, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
-          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api"))
+          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api")),
+          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "raccoon", style: { ...S.tab, ...(activeTab === "raccoon" ? S.tabActive : {}) }, onClick: () => setActiveTab("raccoon") }, tt("tab.raccoon"))
         ),
         // The shape-drift banner belongs with the daily reading: it warns
         // about the numbers themselves, not about the wiring below.
@@ -272,9 +277,10 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               // a note that says 60 while the Host caches for 300 is a lie the
               // reader has no way to catch.
               h("div", { style: S.note }, format(tt("note"), { cache: data?.cacheSeconds ?? 60 })),
-              // The stored account stays manageable while everything works:
-              // a collapsed section (unlike the content sections) keeps the
-              // editor one click away without cluttering the quota view.
+              // The login state stays visible while everything works — and
+              // while nothing does: a collapsed section (unlike the content
+              // sections) keeps the editor one click away without cluttering
+              // the quota view, but the header itself is always on screen.
               authManage
                 ? h(
                     SectionCard,
@@ -288,9 +294,23 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
           // view stays the panel's first screen. Key, provider+push, and
           // draw are three different functions; cramming them into one
           // card is what made the block read as a pile of look-alike notices.
-          : h(
-              "div",
-              null,
+          : activeTab === "raccoon"
+            // The Raccoon provider (ROADMAP §6.1) is a SECOND upstream, with
+            // its own credential and its own data source (the /raccoon route
+            // this tab polls) — it never touches the Token Plan snapshot, so
+            // it renders from its own card, not from `data`.
+            ? h(
+                "div",
+                { style: { marginTop: 22 } },
+                h(
+                  SectionCard,
+                  { title: tt("raccoon.title"), open: true, onToggle: () => {}, tt },
+                  h(RaccoonTab, { tt })
+                )
+              )
+            : h(
+                "div",
+                null,
               h(
                 SectionCard,
                 { title: tt("llm.title"), open: openSections.llm, onToggle: () => toggleSection("llm"), tt },
