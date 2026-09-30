@@ -6,7 +6,7 @@
  * (`token-store.ts`): the key is not a new credentials record KIND (the
  * service admits only `grant` / `api-key`, and a private kind makes the whole
  * credentials document unparseable and takes the Host down). It is stored as a
- * credential REFERENCE named `SENSENOVA_API_KEY` — owner-only in
+ * credential REFERENCE named `AGNES_TOKEN_PLAN_API_KEY` — owner-only in
  * `~/.dsh/.credentials.yaml` — and the raw process environment stays honored
  * as a fallback, so an existing `$DSH_HOME/.env` setup keeps working untouched.
  *
@@ -26,7 +26,7 @@ import { verbatim } from "./util.ts";
  * a key this panel saves lights that provider too — one stored value, both
  * routes.
  */
-export const API_KEY_REF = "SENSENOVA_API_KEY";
+export const API_KEY_REF = "AGNES_TOKEN_PLAN_API_KEY";
 
 /**
  * Build the API-key store.
@@ -63,7 +63,7 @@ export function createApiKeyStore({ credentials = null, env = process.env } = {}
 
   return {
     /**
-     * Persist a typed-in key as the `SENSENOVA_API_KEY` reference.
+     * Persist a typed-in key as the `AGNES_TOKEN_PLAN_API_KEY` reference.
      *
      * The value is stored verbatim (no trim): like the console password,
      * trimming an invisible character is a change the user cannot see. A

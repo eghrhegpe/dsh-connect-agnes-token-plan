@@ -541,9 +541,9 @@ try {
     check("the panel reports the opt-in switch as on", llm.registerProvider === true, String(llm.registerProvider));
     check("the Host exposes an llm registration service", llm.llmAvailable === true,
       JSON.stringify(llm).slice(0, 200));
-    check("the SenseNova provider is registered with the Host", llm.providerRegistered === true,
+    check("the Agnes provider is registered with the Host", llm.providerRegistered === true,
       JSON.stringify(llm).slice(0, 300));
-    check("it registers under its own provider id", llm.providerId === "sensenova-token-plan", String(llm.providerId));
+    check("it registers under its own provider id", llm.providerId === "agnes-token-plan", String(llm.providerId));
     check("the offered models come from the catalog, image-output excluded",
       llm.modelCount === 2 && llm.visionCount === 1 &&
         JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["SenseNova-Lite", "SenseNova-Vision"]),

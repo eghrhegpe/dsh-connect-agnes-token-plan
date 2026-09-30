@@ -10,7 +10,7 @@
  * The shape mirrors the qoder adapter that is known to work:
  *
  * - ONE `PiAiAdapter` carrying one profile (this provider has one region —
- *   `https://token.sensenova.cn/v1`);
+ *   `https://api.agnes-ai.cn/v1`);
  * - an INERT pi-ai auth plane — the key is resolved per request from the
  *   plugin's own store, pi-ai must never manufacture a credential;
  * - both IMAGE hooks wired, or an image-accepting model answers
@@ -46,7 +46,7 @@ const REQUEST_IMAGE_BUDGETS = {
 /**
  * Inert pi-ai auth plane.
  *
- * Authentication goes through `resolveApiKey` (the stored `SENSENOVA_API_KEY`
+ * Authentication goes through `resolveApiKey` (the stored `AGNES_TOKEN_PLAN_API_KEY`
  * reference) per request. pi-ai's own credential lifecycle must never
  * manufacture a credential for this route, so every ambient question answers
  * "nothing stored, nothing set".
@@ -103,7 +103,7 @@ const INERT_AUTH = {
  * @returns {{adapter: object, providerIds: string[]}} the adapter and the ids
  *   it owns.
  */
-export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, resolveApiKey, get, unavailableModelIds = [] }) {
+export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveApiKey, get, unavailableModelIds = [] }) {
   const models = buildDescriptors(entries, { providerId: LLM_PROVIDER_ID, baseUrl, enabledIds, unavailableModelIds });
 
   const provider = {
@@ -112,7 +112,7 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
       name: LLM_DISPLAY_NAME,
       auth: {
         apiKey: {
-          name: "SenseNova API key",
+          name: "Agnes API key",
           /**
            * pi-ai hands the credential it resolved; this route stores none, so
            * the parameter is typed only to name what is read off it.
@@ -149,7 +149,7 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
         // The picker's "Default" pins to DEFAULT_REASONING_EFFORT (high).
-        // SenseNova thinks by default (reasoning_effort default high), and the
+        // Agnes thinks by default (reasoning_effort default high), and the
         // descriptor's thinkingLevelMap spells off as `none`, so an unselected
         // effort must not reach pi-ai as "no effort" — that would dispatch
         // `map.off` and silently turn thinking off. Pinning the profile default

@@ -101,9 +101,9 @@ function adapterDeps() {
   return {
     builds,
     loadAdapterModule: async () => ({
-      createSensenovaAdapter(options) {
+      createAgnesAdapter(options) {
         builds.push(options);
-        return { providerIds: ["sensenova-token-plan"], adapter: { fake: true } };
+        return { providerIds: ["agnes-token-plan"], adapter: { fake: true } };
       }
     })
   };
@@ -128,12 +128,12 @@ function gatedAdapterDeps() {
     /** Let the parked build continue. */
     release() { open?.(); },
     loadAdapterModule: async () => ({
-      async createSensenovaAdapter(options) {
+      async createAgnesAdapter(options) {
         const n = (count += 1);
         builds.push(options);
         // Only the FIRST build parks, so the second can finish ahead of it.
         if (n === 1) await new Promise((resolve) => { open = resolve; });
-        return { providerIds: ["sensenova-token-plan"], adapter: { tag: n } };
+        return { providerIds: ["agnes-token-plan"], adapter: { tag: n } };
       }
     })
   };
@@ -360,7 +360,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     llm.calls.adapter === 1 && llm.calls.directory === 1,
     JSON.stringify({ adapter: llm.calls.adapter, directory: llm.calls.directory }));
   check("the adapter is owned by the non-colliding provider id",
-    Array.isArray(llm.calls.lastIds) && llm.calls.lastIds[0] === "sensenova-token-plan",
+    Array.isArray(llm.calls.lastIds) && llm.calls.lastIds[0] === "agnes-token-plan",
     JSON.stringify(llm.calls.lastIds));
   check("the directory row names this plugin's settings namespace",
     llm.calls.lastRows?.[0]?.settingsNs === "dsh-connect-sensenova-token-plan" &&
@@ -368,7 +368,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     JSON.stringify(llm.calls.lastRows));
   check("the adapter was built for apiBase with the key resolver seam",
     de.builds.length === 1 && typeof de.builds[0].resolveApiKey === "function" &&
-    de.builds[0].baseUrl === "https://token.sensenova.cn/v1",
+    de.builds[0].baseUrl === "https://api.agnes-ai.cn/v1",
     JSON.stringify({ builds: de.builds.length, baseUrl: de.builds[0]?.baseUrl }));
   // The API-key route is served by the same container while registered.
   const keyRes = response();

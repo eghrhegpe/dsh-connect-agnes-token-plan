@@ -1,17 +1,17 @@
 /**
- * The SenseNova inference contract against the LIVE platform — run
+ * The Agnes inference contract against the LIVE platform — run
  * deliberately, never by default.
  *
  * Companion to `test/live-jwks.test.mjs` (same discipline: not part of
  * `npm test`, a default run must not reach a real service). This one replays
- * the frozen `test/baselines/sensenova-contract.json` against the platform's
+ * the frozen `test/baselines/agnes-contract.json` against the platform's
  * `/v1/models` catalogue and a SMALL set of inference probes, so a platform
  * dialect drift (a renamed field, a flipped 400, a new modality spelling)
  * shows up as a red here FIRST, before it silently degrades the panel.
  *
  * A failure is INFORMATION, not a regression — the fix belongs in
- * `docs/SENSENOVA-API.md` §7 (the comment layer) plus a refresh of the
- * baseline JSON with the new platform response, never in `llm-models.js`
+ * `docs/AGNES-API.md` §7 (the comment layer) plus a refresh of the
+ * `agnes-contract.json` baseline with the new platform response, never in `llm-models.ts`
  * logic. See ROADMAP.md §2.3 (the "live failure is not a regression" rule).
  *
  *   npm run test:live:contract
@@ -30,18 +30,18 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contract = JSON.parse(
-  readFileSync(join(ROOT, "test", "baselines", "sensenova-contract.json"), "utf8")
+  readFileSync(join(ROOT, "test", "baselines", "agnes-contract.json"), "utf8")
 );
 const BASE_URL = contract.meta.baseUrl;
 
 /** The live `sk-` key, read from the environment. `/v1/models` itself
- *  requires it (无鉴权实测 401，SENSENOVA-API.md §7.1), so without one the
+ *  requires it (无鉴权实测 401，AGNES-API.md §7.1), so without one the
  *  whole replay is meaningless — it SKIPs, loudly, and exits 0 the way
  *  `test/e2e-gate.mjs` does for a missing dsh CLI. A missing key is an
  *  environment fact, not a platform signal; conflating the two would train
  *  readers to ignore reds, which is the one thing a drift guard must never
  *  teach. */
-const apiKey = process.env.SENSENOVA_API_KEY ?? "";
+const apiKey = process.env.AGNES_TOKEN_PLAN_API_KEY ?? "";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -49,7 +49,7 @@ function check(name, condition, detail = "") {
 }
 
 if (apiKey === "") {
-  console.log("SKIP test:live:contract — SENSENOVA_API_KEY is not set in this environment.");
+  console.log("SKIP test:live:contract — AGNES_TOKEN_PLAN_API_KEY is not set in this environment.");
   console.log("The platform's /v1/models answers 401 without a key, so nothing here");
   console.log("could distinguish 'the platform drifted' from 'we never asked'. Set the");
   console.log("key (or run on a Host whose credentials service holds it) and re-run.");
@@ -216,7 +216,7 @@ if (failed.length > 0 || indefinite.length > 0) {
   if (failed.length > 0) {
     console.error(`\n${failed.length}/${results.length} live contract check(s) did not hold`);
     console.error("A live contract failure is usually a PLATFORM change, not a code bug: " +
-      "refresh test/baselines/sensenova-contract.json and docs/SENSENOVA-API.md §7.");
+      "refresh test/baselines/agnes-contract.json and docs/AGNES-API.md §7.");
   }
   process.exit(failed.length > 0 ? 1 : 0);
 }

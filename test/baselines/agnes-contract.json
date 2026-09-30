@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "source": "AGNES-API.md §7 (seed, 待 test:live:contract 实测刷新)",
+    "note": "Agnes 推理契约基线（seed）。baseUrl / apiKeyRef 已确证（源码 host-config.ts CONFIG_DEFAULTS.apiBase、api-key-store.ts API_KEY_REF）。模型清单与逐模型思考方言为 seed，待真机 npm run test:live:contract 实测回填——不得臆造。改表必须附平台响应原文证据（提交约定，见 SENSENOVA-API.md 同款纪律）。",
+    "baseUrl": "https://api.agnes-ai.cn/v1",
+    "apiKeyRef": "AGNES_TOKEN_PLAN_API_KEY",
+    "driftLog": []
+  },
+  "models": [
+    {
+      "id": "deepseek-v4.1-flash",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "pending-probe",
+      "reasoningEffort": {
+        "off": "pending",
+        "low": "pending",
+        "medium": "pending",
+        "high": "pending",
+        "xhigh": "pending",
+        "max": "pending"
+      },
+      "thinkingObject": "pending-probe",
+      "status": "ok",
+      "supportedSamplingParameters": ["temperature", "stop"]
+    }
+  ]
+}

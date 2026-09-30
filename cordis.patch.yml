@@ -17,7 +17,7 @@
         # The OpenAI-compatible API base, used only for the optional model
         # catalog (which models a pool can call). Leave it alone unless the
         # platform moves the endpoint.
-        apiBase: https://token.sensenova.cn/v1
+        apiBase: https://api.agnes-ai.cn/v1
         # How many hours of per-model credit consumption to show (max 168 = 7d).
         trendHours: 24
         # Pseudo multipliers for the trend table: keys are case-insensitive
@@ -81,10 +81,10 @@
         imageModelIds: []
         visionModels: []
         # ------------------------------------------------------------------
-        # Step three ("one-stop service"): register the SenseNova LLM
+        # Step three ("one-stop service"): register the Agnes LLM
         # provider DIRECTLY, with no hand-written llm-pi-ai row. When true
         # the Host offers an OpenAI-compatible provider
-        # (`sensenova-token-plan`, base apiBase above): the panel's API-key
+        # (`agnes-token-plan`, base apiBase above): the panel's API-key
         # field stores the `sk-` key in the DSH credentials (the process
         # environment still works as a fallback), the catalog poll builds
         # the model list, and vision models accept image input

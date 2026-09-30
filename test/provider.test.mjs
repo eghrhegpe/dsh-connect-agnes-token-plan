@@ -6,7 +6,7 @@
  *   dedupe);
  * - `catalog-store.js`: the private state file (normalization, version
  *   rejection, atomic round-trip, the memory fallback);
- * - `api-key-store.js`: the `SENSENOVA_API_KEY` reference store (service
+ * - `api-key-store.js`: the `AGNES_TOKEN_PLAN_API_KEY` reference store (service
  *   precedence over env, save/forget, failure fall-through, ephemeral state).
  *
  * Nothing here imports a Host peer, so these decisions stay covered on a clean
@@ -54,15 +54,15 @@ function fail(name, error) {
   results.push({ name, pass: false, detail: String(error?.message ?? error) });
 }
 
-const BASE_URL = "https://token.sensenova.cn/v1";
+const BASE_URL = "https://api.agnes-ai.cn/v1";
 
 // --- 1. toPiDescriptor: the wire contract pi-ai consumes ------------------
 {
   try {
     const descriptor = toPiDescriptor({ id: "SenseNova-Lite", name: "SenseNova Lite" }, { baseUrl: BASE_URL });
 
-    check("provider id is the collision-free own slug", LLM_PROVIDER_ID === "sensenova-token-plan", LLM_PROVIDER_ID);
-    check("display name is set", LLM_DISPLAY_NAME === "SenseNova Token Plan");
+    check("provider id is the collision-free own slug", LLM_PROVIDER_ID === "agnes-token-plan", LLM_PROVIDER_ID);
+    check("display name is set", LLM_DISPLAY_NAME === "Agnes Token Plan");
     check("identity fields are mapped", descriptor.id === "SenseNova-Lite" && descriptor.name === "SenseNova Lite");
     check("api is openai-completions", descriptor.api === "openai-completions", descriptor.api);
     check("descriptor is tagged with the provider", descriptor.provider === LLM_PROVIDER_ID);
@@ -75,17 +75,19 @@ const BASE_URL = "https://token.sensenova.cn/v1";
     check("advertised as a reasoning model", descriptor.reasoning === true);
     check("the thinking map pins picker levels to wire spellings",
       JSON.stringify(descriptor.thinkingLevelMap) === JSON.stringify({
-        off: "none", minimal: null, low: null, medium: null,
+        off: "none", minimal: null, low: "low", medium: "medium",
         high: "high", xhigh: null, max: null
       }), JSON.stringify(descriptor.thinkingLevelMap));
     check("off is the platform's none, not the OpenAI off (which 400s)",
       thinkingLevelMapFor({ id: "any" }).off === "none");
     check("minimal is not offered (unverified on this gateway)",
       thinkingLevelMapFor({ id: "any" }).minimal === null);
-    check("an unprobed model offers no extended level (xhigh closed) and no low/medium",
+    check("an unprobed model offers the safe low/medium/high set (Agnes advertises these) and keeps xhigh/max closed",
       thinkingLevelMapFor({ id: "any" }).xhigh === null &&
-      thinkingLevelMapFor({ id: "any" }).low === null &&
-      thinkingLevelMapFor({ id: "any" }).medium === null);
+      thinkingLevelMapFor({ id: "any" }).max === null &&
+      thinkingLevelMapFor({ id: "any" }).low === "low" &&
+      thinkingLevelMapFor({ id: "any" }).medium === "medium" &&
+      thinkingLevelMapFor({ id: "any" }).high === "high");
     check("xhigh is offered only on deepseek-v4-flash (probed 200)",
       thinkingLevelMapFor({ id: "deepseek-v4-flash" }).xhigh === "xhigh");
     check("low/medium are offered where the 2026-09-30 probe recorded 200 (v4-flash / glm-5.2 / flash-lite / deepseek-flash-medium / kimi-k3-medium)",
@@ -852,7 +854,7 @@ const BASE_URL = "https://token.sensenova.cn/v1";
 {
   const restoreEnv = isolateHostEnv();
   try {
-    const store = createApiKeyStore({ credentials: null, env: { SENSENOVA_API_KEY: "sk-env" } });
+    const store = createApiKeyStore({ credentials: null, env: { AGNES_TOKEN_PLAN_API_KEY: "sk-env" } });
     const resolved = await store.resolve();
     check("env provides the key when no service exists",
       resolved.value === "sk-env" && resolved.source === "env");
@@ -868,7 +870,7 @@ const BASE_URL = "https://token.sensenova.cn/v1";
 
 // --- 11. api key store: memory save/validate/forget without a service -------
 {
-  const restoreEnv = isolateHostEnv(["SENSENOVA_API_KEY"]);
+  const restoreEnv = isolateHostEnv(["AGNES_TOKEN_PLAN_API_KEY"]);
   try {
     const store = createApiKeyStore({ credentials: null, env: {} });
     check("no key anywhere resolves empty/null source",
@@ -902,7 +904,7 @@ const BASE_URL = "https://token.sensenova.cn/v1";
       async set(ref, value) { refs.set(ref, value); },
       async unset(ref) { refs.delete(ref); }
     };
-    const store = createApiKeyStore({ credentials: () => service, env: { SENSENOVA_API_KEY: "sk-env" } });
+    const store = createApiKeyStore({ credentials: () => service, env: { AGNES_TOKEN_PLAN_API_KEY: "sk-env" } });
 
     check("env still serves before a panel save", (await store.resolve()).source === "env");
     check("state says the host is not ephemeral with a service", (await store.state()).ephemeral === false);
@@ -932,7 +934,7 @@ const BASE_URL = "https://token.sensenova.cn/v1";
       async set() { throw new Error("credentials file locked"); },
       async unset() { throw new Error("credentials file locked"); }
     };
-    const store = createApiKeyStore({ credentials: flaky, env: { SENSENOVA_API_KEY: "sk-env" } });
+    const store = createApiKeyStore({ credentials: flaky, env: { AGNES_TOKEN_PLAN_API_KEY: "sk-env" } });
     const resolved = await store.resolve();
     check("a throwing resolve falls through to env", resolved.source === "env" && resolved.value === "sk-env");
 

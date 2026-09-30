@@ -41,7 +41,7 @@ import type { HostDeps } from "./types.ts";
  * @param {object} [deps.settings] - the resolved settings row (reads `registerProvider` and `apiBase` only).
  * @param {() => Promise<boolean|null>} [deps.panelSwitch] - the panel-saved value
  *   (`provider-store.enabled()`); null when the state file is untouched.
- * @param {() => Promise<{createSensenovaAdapter: Function}>} [deps.loadAdapterModule] - the
+ * @param {() => Promise<{createAgnesAdapter: Function}>} [deps.loadAdapterModule] - the
  *   peer-dependent adapter factory module; defaults to the real `llm-adapter.ts`.
  * @param {(service: string) => object|null} [deps.getLlm] - optional-service
  *   resolver for the `llm` registration service.
@@ -121,7 +121,7 @@ export function createProviderPublisher(deps: HostDeps = {}) {
   const resolveAdapterFactory = async () => {
     if (adapterFactoryPromise === undefined) {
       adapterFactoryPromise = Promise.resolve(effectiveLoadAdapterModule())
-        .then((mod) => mod.createSensenovaAdapter);
+        .then((mod) => mod.createAgnesAdapter);
     }
     return adapterFactoryPromise;
   };
@@ -244,15 +244,15 @@ export function createProviderPublisher(deps: HostDeps = {}) {
       state.error = "the Host exposes no llm registration service";
       return { ok: false, error: state.error };
     }
-    let createSensenovaAdapter;
+    let createAgnesAdapter;
     let built;
     try {
-      createSensenovaAdapter = await resolveAdapterFactory();
+      createAgnesAdapter = await resolveAdapterFactory();
       // Awaited, not assumed synchronous: a factory that ever becomes async
       // would otherwise hand a Promise to `registerAdapter`, and the Host
       // would be offered a provider whose adapter is `undefined` — a failure
       // that surfaces as broken model routing, nowhere near its cause.
-      built = await createSensenovaAdapter({
+      built = await createAgnesAdapter({
         entries: state.entries,
         enabledIds: state.enabledIds,
         baseUrl: effectiveSettings.apiBase,
@@ -278,7 +278,7 @@ export function createProviderPublisher(deps: HostDeps = {}) {
       const note = redactSecrets(why);
       state.error = note;
       effectiveLogger?.warn?.(
-        `${pluginName}: cannot build the SenseNova adapter: ${note}` +
+        `${pluginName}: cannot build the Agnes adapter: ${note}` +
           (error?.code === "ERR_MODULE_NOT_FOUND"
             ? " — the llm peer packages ship with the Host; install this plugin where they resolve" +
               " (or link them into its own node_modules)"

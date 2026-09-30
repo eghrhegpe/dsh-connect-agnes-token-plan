@@ -685,7 +685,7 @@ async function withNetwork(stub, body) {
 {
   const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
   // Give the credentials service the API key ref so the catalog is computed.
-  credentials.refs.set("SENSENOVA_API_KEY", "sk-test-key-for-routing-only");
+  credentials.refs.set("AGNES_TOKEN_PLAN_API_KEY", "sk-test-key-for-routing-only");
   // Build on top of a real login stub so the token flow works; extend it
   // with the /v1/models answer.
   const net = await loginNetwork();
@@ -778,7 +778,7 @@ async function withNetwork(stub, body) {
     const saved = await call(API_KEY_PATH, makePost({ apiKey: "sk-panel-saved" }));
     check("N1 save stores the shared reference",
       saved.payload.ok === true && saved.payload.hasApiKey === true &&
-      saved.payload.keySource === "credentials" && credentials.refs.get("SENSENOVA_API_KEY") === "sk-panel-saved",
+      saved.payload.keySource === "credentials" && credentials.refs.get("AGNES_TOKEN_PLAN_API_KEY") === "sk-panel-saved",
       JSON.stringify(saved.payload));
     check("N1 the save response carries no echo",
       !JSON.stringify(saved.payload).includes("sk-panel-saved"));
@@ -803,7 +803,7 @@ async function withNetwork(stub, body) {
     const forgotten = await call(API_KEY_PATH, makePost({ forget: true }));
     check("N1 forget clears the reference",
       forgotten.payload.ok === true && forgotten.payload.hasApiKey === false &&
-      !credentials.refs.has("SENSENOVA_API_KEY"), JSON.stringify(forgotten.payload));
+      !credentials.refs.has("AGNES_TOKEN_PLAN_API_KEY"), JSON.stringify(forgotten.payload));
   } catch (error) { fail("N1: credentials-backed API-key route", error); }
 
   // N2. a Host with no credentials service: memory + ephemeral.
@@ -822,7 +822,7 @@ async function withNetwork(stub, body) {
 
   // N3. the environment fallback stays authoritative without a reference.
   {
-    process.env.SENSENOVA_API_KEY = "sk-from-env";
+    process.env.AGNES_TOKEN_PLAN_API_KEY = "sk-from-env";
     try {
       const credentials = makeCredentials(null);
       const call = await mount(credentials);
@@ -838,7 +838,7 @@ async function withNetwork(stub, body) {
     } catch (error) {
       fail("N3: env fallback", error);
     } finally {
-      delete process.env.SENSENOVA_API_KEY;
+      delete process.env.AGNES_TOKEN_PLAN_API_KEY;
     }
   }
 
@@ -882,9 +882,9 @@ async function withNetwork(stub, body) {
     return {
       builds,
       loadAdapterModule: async () => ({
-        createSensenovaAdapter(options) {
+        createAgnesAdapter(options) {
           builds.push(options);
-          return { providerIds: ["sensenova-token-plan"], adapter: { fake: true, builtFrom: options.entries.length } };
+          return { providerIds: ["agnes-token-plan"], adapter: { fake: true, builtFrom: options.entries.length } };
         }
       })
     };
@@ -893,7 +893,7 @@ async function withNetwork(stub, body) {
   // O1. enabled + llm service + a catalog poll: one registration for the set.
   try {
     const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
-    credentials.refs.set("SENSENOVA_API_KEY", "sk-routing");
+    credentials.refs.set("AGNES_TOKEN_PLAN_API_KEY", "sk-routing");
     const llm = makeFakeLlm();
     const adapterDeps = makeFakeAdapterDeps();
     const events = [];
@@ -922,15 +922,15 @@ async function withNetwork(stub, body) {
         snapshot.payload.llm?.providerRegistered === true, JSON.stringify(snapshot.payload.llm));
       check("O1 the adapter was registered under the own (non-colliding) id",
         llm.calls.adapter.length >= 1 &&
-        JSON.stringify(llm.calls.adapter.at(-1).ids) === JSON.stringify(["sensenova-token-plan"]),
+        JSON.stringify(llm.calls.adapter.at(-1).ids) === JSON.stringify(["agnes-token-plan"]),
         JSON.stringify(llm.calls.adapter.map((c) => c.ids)));
       check("O1 the provider directory row was declared",
         llm.calls.directory.length >= 1 &&
-        llm.calls.directory.at(-1)[0]?.provider === "sensenova-token-plan",
+        llm.calls.directory.at(-1)[0]?.provider === "agnes-token-plan",
         JSON.stringify(llm.calls.directory));
       const lastBuild = adapterDeps.builds.at(-1);
       check("O1 the adapter was built from the two catalog models at apiBase",
-        lastBuild.entries.length === 2 && lastBuild.baseUrl === "https://token.sensenova.cn/v1",
+        lastBuild.entries.length === 2 && lastBuild.baseUrl === "https://api.agnes-ai.cn/v1",
         JSON.stringify({ count: lastBuild.entries.length, baseUrl: lastBuild.baseUrl }));
       check("O1 the rebuild notified catalog readers",
         events.includes("llm/adapters-updated"), JSON.stringify(events));
@@ -957,7 +957,7 @@ async function withNetwork(stub, body) {
   // O2. enabled on a Host WITHOUT an llm service degrades, never crashes.
   try {
     const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
-    credentials.refs.set("SENSENOVA_API_KEY", "sk-routing2");
+    credentials.refs.set("AGNES_TOKEN_PLAN_API_KEY", "sk-routing2");
     const adapterDeps = makeFakeAdapterDeps();
     const net = await loginNetwork();
     await withNetwork(async (url, init) => {
@@ -1051,9 +1051,9 @@ async function withNetwork(stub, body) {
     return {
       builds,
       loadAdapterModule: async () => ({
-        createSensenovaAdapter(options) {
+        createAgnesAdapter(options) {
           builds.push(options);
-          return { providerIds: ["sensenova-token-plan"], adapter: { fake: true } };
+          return { providerIds: ["agnes-token-plan"], adapter: { fake: true } };
         }
       })
     };
@@ -1073,7 +1073,7 @@ async function withNetwork(stub, body) {
   // Q2-Q7. with a real session, a catalog, and an llm service.
   try {
     const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
-    credentials.refs.set("SENSENOVA_API_KEY", "sk-roster");
+    credentials.refs.set("AGNES_TOKEN_PLAN_API_KEY", "sk-roster");
     const llm = makeFakeLlm();
     const adapterDeps = makeFakeAdapterDeps();
     const net = await loginNetwork();
@@ -1111,16 +1111,17 @@ async function withNetwork(stub, body) {
       // `maxOutputLength` is 0 (nothing declared); `multiplier: 1` rides
       // because the DEFAULT trendMultipliers match "sensenova" — the same
       // pseudo rate the trend rows would get, one matcher for both.
-      // `thinkingLevels` is the proven-only set: these fake-catalog ids are
-      // not in the probe table (PROBED_EFFORT), so no level beyond the
-      // platform default rides — the roster quotes off/高 and nothing the
-      // platform never answered 200 for on THIS id.
+      // `thinkingLevels` is the Agnes safe-set for an unprobed id: off→none,
+      // plus low/medium/high (the provider row advertises these); xhigh/max
+      // stay closed until a live-contract probe proves them on a specific
+      // model. These fake-catalog ids are not in the probe table
+      // (PROBED_EFFORT), so they ride exactly that set.
       const snapshot = await call(SNAPSHOT_PATH, makeRequest());
       check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
         JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([
-          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "high"], multiplier: 1 },
-          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "high"], multiplier: 1 },
-          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "high"], multiplier: 1 }
+          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 },
+          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 },
+          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"], multiplier: 1 }
         ]), JSON.stringify(snapshot.payload.llm?.models));
       check("Q2 the snapshot quotes the profile's pinned thinking default",
         snapshot.payload.llm?.thinkingDefault === "high",

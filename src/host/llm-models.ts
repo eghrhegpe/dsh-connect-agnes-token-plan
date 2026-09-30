@@ -73,14 +73,14 @@ export function exhaustedModelIds(pools) {
  *
  * It must NOT be the bare `"sensenova"`: a hand-written `llm-pi-ai` row using
  * that id can already exist in an operator's profile (apiKeyEnv
- * `SENSENOVA_API_KEY`, base `https://token.sensenova.cn/v1/`), and
+ * `AGNES_TOKEN_PLAN_API_KEY`, base `https://api.agnes-ai.cn/v1`), and
  * `registerAdapter` with a colliding id is refused as a duplicate. This own
  * slug-shaped id cannot collide with that row or with another plugin.
  */
-export const LLM_PROVIDER_ID = "sensenova-token-plan";
+export const LLM_PROVIDER_ID = "agnes-token-plan";
 
 /** What the DSH model picker shows as the provider's name. */
-export const LLM_DISPLAY_NAME = "SenseNova Token Plan";
+export const LLM_DISPLAY_NAME = "Agnes Token Plan";
 
 /**
  * The thinking effort the profile pins as DSH's "Default" on this provider.
@@ -160,7 +160,7 @@ export function maxOutputLengthOf(entry) {
  * OpenAI-compatible endpoint.
  *
  * The catalog also lists image GENERATION models (`sensenova-u1-fast`,
- * `sensenova-u1.5-lite`): their `output_modalities` is `["image"]` and they
+ * `sensenova-u1.5-lite`): their `output_modalities` includes `"image"` (or `"video"`) and they
  * answer 404 "model is not found" on `/v1/chat/completions` (verified
  * 2026-09-29), so offering them as chat models only produces errors in DSH.
  * A missing/unknown `output_modalities` is treated as chat (permissive): the
@@ -172,7 +172,7 @@ export function maxOutputLengthOf(entry) {
 export function isChatModel(entry) {
   const out = entry?.output_modalities;
   if (!Array.isArray(out)) return true;
-  return !out.includes("image");
+  return !out.includes("image") && !out.includes("video");
 }
 
 /**
@@ -188,12 +188,12 @@ export function isChatModel(entry) {
  * none`). So:
  *
  * - `off: "none"` — the picker's "关闭" must send `none`, not `off`;
- *   - `low`/`medium` — per-model, gated on the PROBED_EFFORT table. The
- *     2026-09-29 probe round exercised `none`/`high`/`max`/`xhigh` only;
- *     these two levels have not yet been probed, so they default closed
- *     (the roster line must not quote a level the platform may reject).
- *     The live-contract replay (`test/live-contract.mjs`) probes them and
- *     flips the table cells once a model's 200 is recorded.
+ *   - `low`/`medium` — per-model, gated on the PROBED_EFFORT table. A model
+ *     PRESENT in that table with a level set `false` keeps it closed; a model
+ *     ABSENT from it (an unknown id) is given the Agnes safe-set
+ *     `low`/`medium`/`high` so the picker is never empty. The live-contract
+ *     replay (`test/live-contract.mjs`) probes the per-model levels and flips
+ *     the table cells once a model's 200 is recorded.
  * - `max` — `"max"` on glm-5.2 only, `null` elsewhere.
  *
  * A value of `null` means "the picker must not offer this level"; a string is
@@ -220,13 +220,15 @@ export function isChatModel(entry) {
  *     clean re-run records a 200 (or a 400, which would close them
  *     permanently).
  *
- * The panel roster line must not quote a level the platform may 400 on,
- * so a model absent from this table gets `low`/`medium`/`xhigh`/`max` all
- * closed: only `off` (the `none` wire spelling) and `high` stay open —
- * the two values proven on every chat model by the same 2026-09-29 probe
- * round. A new model that turns out to accept an extra level is added
- * here WITH its probe evidence (see the baseline's `driftLog` discipline),
- * never assumed.
+ * The panel roster line must not quote a level the platform may 400 on.
+ * For Agnes, a model ABSENT from this table (an unknown / future id) is
+ * offered the safe OpenAI-compatible set the provider row advertises —
+ * `off`→`none`, plus `low`/`medium`/`high` — while `xhigh`/`max` stay closed
+ * until a live-contract probe proves them on a specific model. A model
+ * PRESENT here (even all-`false`) is a known id whose extended levels were
+ * never confirmed, so its closed levels stay closed. A new model that turns
+ * out to accept an extra level is added here WITH its probe evidence (see the
+ * baseline's `driftLog` discipline), never assumed.
  */
 const PROBED_EFFORT = Object.freeze({
   "deepseek-v4-flash": { low: true, medium: true, high: true, xhigh: true, max: false },
@@ -237,19 +239,28 @@ const PROBED_EFFORT = Object.freeze({
   // pending) so it stays closed — "not measured" is not "supported".
   "deepseek-flash":    { low: false, medium: true, high: true, xhigh: false, max: false },
   // kimi-k3: medium probed 200; low is INDEFINITE (429, re-run pending).
-  "kimi-k3":           { low: false, medium: true, high: true, xhigh: false, max: false }
+  "kimi-k3":           { low: false, medium: true, high: true, xhigh: false, max: false },
+  // deepseek-v4.1-flash: a 403 plan-restricted model (not image-gen). No
+  // extended level was ever proven on it, so every level but the platform
+  // default `high` stays closed — it rides the probed branch, not the unprobed
+  // Agnes safe-set, exactly like the other known ids.
+  "deepseek-v4.1-flash": { low: false, medium: false, high: true, xhigh: false, max: false }
 });
 
 export function thinkingLevelMapFor(entry) {
   const id = str(entry?.id, "");
   const probed = PROBED_EFFORT[id];
+  if (!probed) {
+    // Agnes: the provider row advertises low/medium/high, so a model with no
+    // per-model probe is offered the safe OpenAI-compatible set
+    // (off→none, low/medium/high). The extended xhigh/max levels stay closed
+    // until a live-contract probe proves them on a specific model.
+    return { off: "none", minimal: null, low: "low", medium: "medium", high: "high", xhigh: null, max: null };
+  }
   return {
     off: "none",
     minimal: null,
-    // low/medium: per-model, gated on the probe table. A model NOT in the
-    // table keeps the safe default (both closed) — the panel does not quote
-    // a level the platform may reject, and the live-contract replay will
-    // flip these cells once it probes them.
+    // low/medium: per-model, gated on the probe table.
     low: probed?.low === true ? "low" : null,
     medium: probed?.medium === true ? "medium" : null,
     // high: the platform default on every chat model; always offered.

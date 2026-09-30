@@ -38,7 +38,7 @@ export const inject = ["webServer"];
  */
 export const CONFIG_DEFAULTS = Object.freeze({
   consoleBase: "https://platform.sensenova.cn",
-  apiBase: "https://token.sensenova.cn/v1",
+  apiBase: "https://api.agnes-ai.cn/v1",
   trendHours: 24,
   /**
    * Pseudo multipliers for the trend table, keyed by a case-insensitive
@@ -86,7 +86,7 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * When true, the plugin calls `ctx.llm.registerAdapter` itself with an
    * OpenAI-compatible pi-ai adapter aimed at `apiBase`, the catalog poll feeds
    * its model list, vision models carry image input automatically, and the
-   * panel-saved `SENSENOVA_API_KEY` reference authenticates requests. Off by
+   * panel-saved `AGNES_TOKEN_PLAN_API_KEY` reference authenticates requests. Off by
    * default for the same reason `writeImageModelIds` is: registering a model
    * source is a Host-wide change, not a read-only panel view, so it stays an
    * explicit opt-in and an operator with the hand-written `llm-pi-ai` row is
