@@ -9,14 +9,17 @@ import { clockLong, count, format, when } from "./format.ts";
 import { h } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
+import type { PoolData, PoolsData, QuotaWindowData, TrendData } from "./wire.ts";
 
-/** A quota window as the wire carries it; fields are defensive on purpose. */
-interface QuotaWindow {
-  limit?: number;
-  used?: number;
-  remaining?: number;
-  resetAt?: number;
-}
+/**
+ * A quota window as the wire carries it; fields are defensive on purpose.
+ *
+ * The alias exists because `QuotaCard` deliberately accepts `unknown`: a
+ * window that is not an object at all (a shape-drifted row, an absent field)
+ * must render nothing instead of throwing. `wire.ts` already describes the
+ * well-formed case, so this narrows the same shape instead of redeclaring it.
+ */
+type QuotaWindow = QuotaWindowData;
 
 /** The sidebar row glyph: the shell owns the button, this draws the coin. */
 export function PanelIcon({ size }: { size?: number }): unknown {
@@ -111,9 +114,9 @@ export function QuotaCard({ label, window, tt }: { label: string; window: QuotaW
  * explanatory (grant expiry, the model coverage lists) folds into one
  * `<details>` row so the deck stays scannable on wide screens.
  */
-export function PoolCard({ pool, tt }: { pool: Record<string, any>; tt: Tt }): unknown {
-  const callable = (pool.callableModels || pool.modelIds || []) as string[];
-  const locked = (pool.lockedModels || []) as string[];
+export function PoolCard({ pool, tt }: { pool: PoolData; tt: Tt }): unknown {
+  const callable = pool.callableModels || pool.modelIds || [];
+  const locked = pool.lockedModels || [];
   const hasDetails = pool.nearestGrantExpiry || callable.length > 0 || locked.length > 0;
   return h(
     "div",
@@ -182,7 +185,7 @@ export function PoolCard({ pool, tt }: { pool: Record<string, any>; tt: Tt }): u
  * the 429 class — it only reports the pool's own reset clock, which is the
  * one honest recovery signal available here.
  */
-export function PoolExhaustionNotice({ pools, tt }: { pools?: { pools?: Array<Record<string, any>> } | null; tt: Tt }): unknown {
+export function PoolExhaustionNotice({ pools, tt }: { pools?: PoolsData | null; tt: Tt }): unknown {
   const list = Array.isArray(pools?.pools) ? pools.pools : [];
   let earliest = 0;
   let anyExhausted = false;
@@ -218,7 +221,7 @@ export function PoolExhaustionNotice({ pools, tt }: { pools?: { pools?: Array<Re
  * block sits in a card like the quota cards instead of floating as a
  * bare table.
  */
-export function TrendTable({ trend, tt }: { trend?: { models?: Array<Record<string, any>> } | null; tt: Tt }): unknown {
+export function TrendTable({ trend, tt }: { trend?: TrendData | null; tt: Tt }): unknown {
   // `models` missing entirely (a drifted payload the Host still passed as
   // data) is the empty case, not a crash: the empty note is honest.
   if (!trend || !Array.isArray(trend.models) || trend.models.length === 0) return h("div", { style: S.card }, h("div", { style: S.empty }, tt("trend.none")));
@@ -238,7 +241,7 @@ export function TrendTable({ trend, tt }: { trend?: { models?: Array<Record<stri
       const pct = max > 0 ? (credits / max) * 100 : 0;
       return h(
         "div",
-        { key: row.model as string, style: S.trendRow },
+        { key: row.model, style: S.trendRow },
         h(
           "div",
           { style: S.trendRowHead },
