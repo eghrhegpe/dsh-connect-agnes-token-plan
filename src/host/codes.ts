@@ -117,7 +117,7 @@ export const IAM_REASON_CODES = Object.freeze({
  * wrong yet.
  * @type {ReadonlySet<string>}
  */
-export const CREDENTIAL_REFUSALS = Object.freeze(new Set([
+export const CREDENTIAL_REFUSALS: ReadonlySet<string> = Object.freeze(new Set([
   CODE.LOGIN_REJECTED,
   CODE.VERIFICATION_REQUIRED
 ]));
@@ -132,7 +132,7 @@ export const CREDENTIAL_REFUSALS = Object.freeze(new Set([
  * be told the wrong thing.
  * @type {ReadonlySet<string>}
  */
-export const AUTH_FAILURE_CODES = Object.freeze(new Set([
+export const AUTH_FAILURE_CODES: ReadonlySet<string> = Object.freeze(new Set([
   CODE.JWKS,
   CODE.LOGIN_FLOW,
   CODE.MISSING_CREDENTIALS,

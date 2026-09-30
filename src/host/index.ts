@@ -49,6 +49,7 @@ import {
   name
 } from "./host-config.ts";
 import { str } from "./util.ts";
+import type { HostDeps } from "./types.ts";
 
 /**
  * The record address format, matching `@deepseek-ai/dsh-credentials`.
@@ -89,7 +90,7 @@ export { catalogSignature } from "./provider-publish.ts";
  * @param deps - test-only seams (the peer adapter / tools modules, a draw
  *   fetch replacement). The real Loader passes nothing.
  */
-function apply(ctx, config = {}, deps = {}) {
+function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   // A malformed row is reported through the snapshot rather than thrown out of
   // `apply`, which would take the whole plugin down at mount.
   const { settings, configError: rowError } = resolveSettings(config);

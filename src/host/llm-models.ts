@@ -35,6 +35,7 @@
 
 import { str, num } from "./util.ts";
 import { identifyVisionModel } from "./parsers.ts";
+import type { AdapterConfig } from "./types.ts";
 
 /**
  * The model ids whose quota pool is exhausted.
@@ -192,7 +193,8 @@ export function thinkingLevelMapFor(entry) {
  * @param {string} [options.baseUrl] - the OpenAI-compatible base URL.
  * @returns {object} the pi-ai descriptor.
  */
-export function toPiDescriptor(entry, { providerId = LLM_PROVIDER_ID, baseUrl } = {}) {
+export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
+  const { providerId = LLM_PROVIDER_ID, baseUrl } = options;
   const id = str(entry?.id, "");
   if (id === "") throw new Error("toPiDescriptor: catalog entry has no id");
   const vision = identifyVisionModel(entry).vision === true;
@@ -321,7 +323,8 @@ export function rosterOf(entries) {
  * @param {object} options - `{ providerId, baseUrl, enabledIds }`.
  * @returns {object[]} the pi-ai descriptors, in first-seen order.
  */
-export function buildDescriptors(entries, { providerId = LLM_PROVIDER_ID, baseUrl, enabledIds = [], unavailableModelIds = [] } = {}) {
+export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
+  const { providerId = LLM_PROVIDER_ID, baseUrl, enabledIds = [], unavailableModelIds = [] } = options;
   // Image-generation models (`output_modalities: ["image"]`) cannot be
   // addressed as chat models and are excluded BEFORE the allow-list, so a
   // stale id in `enabledIds` matches nothing rather than resurrecting one.

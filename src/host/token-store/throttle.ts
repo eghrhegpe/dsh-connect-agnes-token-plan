@@ -61,11 +61,11 @@ const THROTTLE_VERSION = 1;
  */
 export function throttleError(held, cause) {
   if (cause !== undefined) return cause;
-  const error = /** @type {Error & { code?: string }} */ (new Error(
+  const error = new Error(
     held.parked
       ? "sign-in is not being retried automatically: the account needs to be entered again"
       : `sign-in is not being retried automatically: waiting out a ${held.code} refusal`
-  ));
+  ) as Error & { code?: string };
   error.code = held.code;
   return error;
 }

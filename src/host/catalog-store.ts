@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { str, obj, num } from "./util.ts";
 import { name } from "./host-config.ts";
 import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, profileStateDir, stateDir as sharedStateDir } from "./state-store.ts";
+import type { StoreOptions } from "./types.ts";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const CATALOG_VERSION = 1;
@@ -124,7 +125,8 @@ function parse(raw) {
  *   before disk is consulted again; defaults to {@link STATE_READ_TTL_MS}.
  * @returns {CatalogStore} the store.
  */
-export function createFileCatalogStore({ dir, profile = null, now = Date.now, ttlMs = STATE_READ_TTL_MS } = {}) {
+export function createFileCatalogStore(options: StoreOptions = {}) {
+  const { dir, profile = null, now = Date.now, ttlMs = STATE_READ_TTL_MS } = options;
   const stateDir = dir ?? catalogDir(profile);
   const file = join(stateDir, "catalog.json");
   /**

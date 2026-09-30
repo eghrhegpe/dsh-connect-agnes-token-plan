@@ -205,7 +205,7 @@ const healthy = {
 // in `PanelPage`, whose cadence the Host states in every snapshot. The form's
 // 1-second countdown timer is unrelated to polling and may stay a literal.
 {
-  const source = await readFile(new URL("../src/host/client.ts", import.meta.url), "utf8");
+  const source = await readFile(new URL("../src/client/panel-page.ts", import.meta.url), "utf8");
   const pollTimers = source.match(/setInterval\(run,\s*[^)]*\)/g) ?? [];
   check("the poll timer takes a stated cadence, not a literal",
     pollTimers.length === 1 && /\d/.test(pollTimers[0]) === false,

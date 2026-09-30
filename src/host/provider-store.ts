@@ -27,6 +27,7 @@ import { obj } from "./util.ts";
 import { join } from "node:path";
 import { name } from "./host-config.ts";
 import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, profileStateDir, stateDir as sharedStateDir } from "./state-store.ts";
+import type { StoreOptions } from "./types.ts";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const PROVIDER_VERSION = 1;
@@ -61,7 +62,8 @@ export function normalizeEnabled(raw) {
  *   before disk is consulted again; defaults to {@link STATE_READ_TTL_MS}.
  * @returns {object} the store.
  */
-export function createFileProviderStore({ dir, profile = null, ttlMs = STATE_READ_TTL_MS } = {}) {
+export function createFileProviderStore(options: StoreOptions = {}) {
+  const { dir, profile = null, ttlMs = STATE_READ_TTL_MS } = options;
   const stateDir = dir ?? providerDir(profile);
   const filePath = join(stateDir, "provider.json");
 

@@ -27,6 +27,7 @@
  */
 
 import { str, num } from "./util.ts";
+import type { DrawRequest } from "./types.ts";
 
 /** The agent tool name. Scoped so it cannot collide with `dsh-draw-router`'s `draw_image`. */
 export const DRAW_TOOL_NAME = "sensenova_draw_image";
@@ -136,9 +137,10 @@ export function pickDrawModel(entries, requested, preferred) {
  * @param {object} options - `{ model, prompt, n, size, responseFormat }`.
  * @returns {object} the wire body.
  */
-export function buildDrawBody({ model, prompt, n, size, responseFormat } = {}) {
+export function buildDrawBody(options: Partial<DrawRequest> = {}) {
+  const { model, prompt, n, size, responseFormat } = options;
   const count = Math.floor(num(n, 1));
-  const body = {
+  const body: Record<string, unknown> = {
     model: str(model, ""),
     prompt: str(prompt, ""),
     n: Number.isFinite(count) ? Math.min(DRAW_MAX_IMAGES, Math.max(1, count)) : 1,

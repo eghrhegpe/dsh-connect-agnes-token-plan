@@ -118,7 +118,7 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
            * the parameter is typed only to name what is read off it.
            * @param {{credential?: {key?: string}}} [options]
            */
-          async resolve({ credential } = {}) {
+          async resolve({ credential }: { credential?: { key?: string } } = {}) {
             const apiKey = credential?.key;
             return apiKey === undefined || apiKey.length === 0
               ? undefined

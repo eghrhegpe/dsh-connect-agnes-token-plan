@@ -7,6 +7,8 @@
  * @module dsh-connect-sensenova-token-plan/util
  */
 
+import type { PluginError } from "./types.ts";
+
 /**
  * The error `pluginError` actually produces at runtime: an `Error` with a
  * stable `code` the panel branches on, plus optional structured fields the
@@ -21,12 +23,12 @@
  */
 
 /** Read a finite positive number, else the fallback. */
-export function num(value, fallback) {
+export function num(value: any, fallback?: any): any {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 /** Read a non-empty string, else the fallback. */
-export function str(value, fallback) {
+export function str(value: any, fallback?: any): string {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : fallback;
 }
 
@@ -65,7 +67,7 @@ export function redactSecrets(text) {
 }
 
 /** Read a plain object, else `{}`. */
-export function obj(value) {
+export function obj(value?: any): any {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
@@ -77,7 +79,7 @@ export function obj(value) {
  * password of only whitespace is still "not filled in", which the caller
  * judges with `.trim()`.
  */
-export function verbatim(value, fallback) {
+export function verbatim(value: any, fallback?: any): string {
   return typeof value === "string" ? value : fallback;
 }
 
@@ -103,8 +105,8 @@ export function numOrNull(value) {
  * @param {{ retryAfterMs?: number, detail?: string }} [extra] - optional structured fields.
  * @returns {PluginError}
  */
-export function pluginError(code, message, extra = {}) {
-  const error = /** @type {PluginError} */ (new Error(message));
+export function pluginError(code: string, message: string, extra: { retryAfterMs?: number; detail?: string } = {}): PluginError {
+  const error = new Error(message) as PluginError;
   error.code = code;
   if (extra.retryAfterMs !== undefined) error.retryAfterMs = extra.retryAfterMs;
   if (extra.detail !== undefined) error.detail = extra.detail;

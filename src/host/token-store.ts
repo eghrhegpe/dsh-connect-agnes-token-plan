@@ -155,10 +155,10 @@ export function createTokenStore(options) {
   const readStored = () => readStoredImpl(wiring, state);
   const store = (at, rt, exp, replacing) => storeGrant(wiring, state, at, rt, exp, replacing);
   const purgeGrant = (accessToken) => purgeGrantImpl(wiring, state, accessToken);
-  const isFresh = (token, at) => isFreshImpl(wiring, state, token, at);
+  const isFresh = (token: any, at?: number) => isFreshImpl(wiring, state, token, at);
   const readThrottle = () => readThrottleImpl(wiring, state);
   const clearThrottle = () => clearThrottleImpl(wiring, state);
-  const writeThrottle = (error, previousAttempt) => writeThrottleImpl(wiring, state, error, previousAttempt);
+  const writeThrottle = (error: any, previousAttempt?: any) => writeThrottleImpl(wiring, state, error, previousAttempt);
   const throttleError = (held, cause) => throttleErrorImpl(held, cause);
   const inForceWaitMs = (held) => inForceWaitMsImpl(wiring, held);
   const readUsername = () => readUsernameImpl(wiring, state);

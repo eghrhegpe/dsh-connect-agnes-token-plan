@@ -240,8 +240,8 @@ export function resolveAuthOverrides(source, consoleBase) {
     );
   }
   const text = (key) => str(source[key], "");
-  const overrides = { consoleOrigin: consoleBase };
-  const set = (key, value, transform) => {
+  const overrides: Record<string, unknown> = { consoleOrigin: consoleBase };
+  const set = (key: string, value: any, transform?: (value: any) => any) => {
     if (value === "") return;
     overrides[key] = transform === undefined ? value : transform(value);
   };

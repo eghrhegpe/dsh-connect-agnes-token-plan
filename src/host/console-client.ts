@@ -77,7 +77,7 @@ export async function fetchConsole(settings, path, params, cacheMs, cache, infli
       response = await send(token);
     }
     if (response.status === 401 || response.status === 403) {
-      const error = /** @type {import("./util.ts").PluginError} */ (new Error(`console rejected the token (HTTP ${response.status})`));
+      const error = new Error(`console rejected the token (HTTP ${response.status})`) as import("./types.ts").PluginError;
       error.code = CODE.JWT_EXPIRED;
       throw error;
     }

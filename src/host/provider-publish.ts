@@ -27,6 +27,7 @@ import { LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.ts";
 import { identifyVisionModel } from "./parsers.ts";
 import { str, redactSecrets } from "./util.ts";
 import { name as pluginName } from "./host-config.ts";
+import type { HostDeps } from "./types.ts";
 
 /**
  * The provider publisher.
@@ -66,15 +67,16 @@ import { name as pluginName } from "./host-config.ts";
  *   isDisposed: () => boolean
  * }}
  */
-export function createProviderPublisher({
-  settings,
-  panelSwitch,
-  loadAdapterModule,
-  getLlm,
-  resolveApiKey,
-  emit,
-  logger
-} = {}) {
+export function createProviderPublisher(deps: HostDeps = {}) {
+  const {
+    settings,
+    panelSwitch,
+    loadAdapterModule,
+    getLlm,
+    resolveApiKey,
+    emit,
+    logger
+  } = deps;
   const effectiveSettings = settings ?? {};
   const effectivePanelSwitch = panelSwitch ?? (async () => null);
   const effectiveLoadAdapterModule = loadAdapterModule ?? (() => import("./llm-adapter.ts"));

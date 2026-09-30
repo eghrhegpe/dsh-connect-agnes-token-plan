@@ -274,7 +274,7 @@ function createTrace() {
   return {
     hops,
     /** Record one hop; never throws — logging must not break the flow. */
-    step(name, info = {}) {
+    step(name: string, info: any = {}) {
       if (hops.length >= TRACE_MAX_HOPS) return;
       try {
         hops.push({
@@ -348,7 +348,7 @@ function durationFactorMs(unit) {
  * @param {RequestInit & {timeoutMs?: number}} init - fetch options.
  * @returns {Promise<Response>}
  */
-async function httpGet(url, init = {}, cfg) {
+async function httpGet(url: string, init: RequestInit & { timeoutMs?: number } = {}, cfg: any) {
   const { timeoutMs = cfg.requestTimeoutMs, ...rest } = init;
   return fetch(url, {
     ...rest,
@@ -504,7 +504,7 @@ async function readTokenResponse(response, cfg) {
  * @param {number} [options.timeoutMs] - deadline override.
  * @returns {Promise<{accessToken: string, refreshToken: string, expiresIn: number, scope: string}>}
  */
-export async function refreshWith(cfg, refreshToken, options = {}) {
+export async function refreshWith(cfg, refreshToken, options: { timeoutMs?: number } = {}) {
   const token = str(refreshToken, "");
   if (token === "") throw pluginError(CODE.NO_REFRESH_TOKEN, "no refresh token is stored");
   const response = await fetch(cfg.tokenEndpoint, {
@@ -624,7 +624,7 @@ function rejectionCode(body) {
  *   the access token (the console JWT), the refresh token when the platform
  *   issued one, and the access token lifetime in seconds.
  */
-export async function loginWith(cfg, credentials, options = {}) {
+export async function loginWith(cfg, credentials, options: { timeoutMs?: number; onTrace?: (trace: unknown, error: unknown) => void } = {}) {
   /** Run one attempt; every exit — success included — reports its trace. */
   const attempt = async () => {
     const trace = createTrace();

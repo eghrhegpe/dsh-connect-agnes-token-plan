@@ -13,6 +13,7 @@
  */
 import { CODE } from "./codes.ts";
 import { str, obj, pluginError } from "./util.ts";
+import type { JwksOptions } from "./types.ts";
 
 /**
  * Base64url-encode bytes, unpadded, as JOSE requires.
@@ -41,7 +42,7 @@ export function b64url(bytes) {
     const bad = /** @type {*} */ (bytes);
     throw pluginError(CODE.CONFIG, `b64url expects Uint8Array or ArrayBuffer, got ${bad?.constructor?.name ?? typeof bad}`);
   }
-  return Buffer.from(/** @type {*} */ (bytes)).toString("base64url");
+  return Buffer.from(bytes as unknown as ArrayBuffer).toString("base64url");
 }
 
 /** Decode a base64url JWT segment into a UTF-8 string. */
@@ -188,7 +189,8 @@ async function fetchJwks({ jwksEndpoint, timeoutMs = 15_000, now = Date.now, cac
  *   repeated attempts reuse the set WITHOUT sharing it with another instance.
  * @returns {Promise<string>} the compact JWE.
  */
-export async function sealPassword(password, { jwksEndpoint, encKeyId, timeoutMs, cache = createJwksCache() } = {}) {
+export async function sealPassword(password: string, options: JwksOptions = {}) {
+  const { jwksEndpoint, encKeyId, timeoutMs, cache = createJwksCache() } = options;
   if (str(jwksEndpoint, "") === "") throw pluginError(CODE.CONFIG, "no JWKS endpoint is configured");
   if (str(encKeyId, "") === "") throw pluginError(CODE.CONFIG, "no encryption key id is configured");
   const keys = await fetchJwks({ jwksEndpoint, timeoutMs, cache });
