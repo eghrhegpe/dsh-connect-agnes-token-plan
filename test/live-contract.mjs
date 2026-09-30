@@ -16,11 +16,13 @@
  *
  *   npm run test:live:contract
  *
- * One catalogue request (the `/v1/models` poll) plus at most ONE inference
- * probe per model family that the contract marks "thinking-object untested",
- * kept deliberately small and rate-limit friendly: each probe is a single
- * `reasoning_effort:"none"` chat completion, and a failure is recorded, not
- * retried.
+ * One catalogue request (the `/v1/models` poll) plus a SMALL set of inference
+ * probes, kept deliberately small and rate-limit friendly: a 2s backoff
+ * between probes keeps the run inside the platform's rpm/rps window. A
+ * `429` is recorded as INDEFINITE (the platform rejects the request before
+ * validating `reasoning_effort`, so it is a rhythm answer, not a level
+ * verdict) and does NOT fail the run — re-run after the window clears.
+ * Only a 4xx parameter refusal counts as a real "level unsupported" red.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -100,27 +102,38 @@ if (apiKey === "") {
 }
 
 // --- 2. inference probes: one `reasoning_effort` per untested model ------
-// Only the families the contract marked `thinkingObject: "untested"` /
-// `"doc-claimed"` get a single live probe; a failure is recorded, never
-// retried (rate-limit friendly against the shared pool). The key is always
-// present here: without one the whole file already SKIPPED above.
-//
 // Each probe answers ONE question per call, and the answer is written back
 // into the baseline by hand afterwards (the "live failure is not a
 // regression, refresh the baseline" rule, ROADMAP §2.3):
 //   - `reasoning_effort: "low"`   -> does the baseline's `low` cell flip?
 //   - `reasoning_effort: "medium"`-> does the baseline's `medium` cell flip?
 // The existing `none` probe (the "thinking object is even accepted"
-// check) stays. 14 requests for 7 models is deliberate: each level costs
-// one chat completion, `max_tokens: 8` keeps the credit bill trivial, and
-// no level is ever probed twice in one run.
+// check) stays.
+//
+// Two rate-limit disciplines, both load-bearing against a shared pool:
+//   1. A backoff BETWEEN probes: back-to-back requests across 7 models trip
+//      the platform's rpm/rps windows and turn a parameter question into a
+//      rhythm answer. 2s between probes keeps the run inside the window.
+//   2. A 429 is NOT a "level unsupported" answer: the platform rejects the
+//      request BEFORE it validates `reasoning_effort`, so a rate-limit
+//      response proves nothing about the level. It is recorded as `indefinite`
+//      (evidence to re-run later, not a negative conclusion) and excluded
+//      from the failure count — only a 4xx parameter refusal is a real "the
+//      platform does not accept this level" signal.
+const PROBE_BACKOFF_MS = 2000;
+
 for (const model of contract.models) {
   if (model.status !== "ok") continue; // 403/404 plans cannot be probed
   for (const level of ["low", "medium"]) {
-    const response = await fetchProbe(model.id, level);
-    const text = await response?.text?.().catch(() => "") ?? "";
-    check(`${model.id} reasoning_effort:"${level}" probe answered ${response?.status ?? "n/a"}`,
-      response?.ok === true, `HTTP ${response?.status ?? "?"} ${text.slice(0, 120)}`);
+    const { response, text, status } = await probeOnce(model.id, level);
+    if (status === 429) {
+      check(`${model.id} reasoning_effort:"${level}" probe INDEFINITE (rate-limited, not a level verdict)`,
+        true, `HTTP 429 ${text.slice(0, 120)} — re-run after the window clears`);
+    } else {
+      check(`${model.id} reasoning_effort:"${level}" probe answered ${status}`,
+        response.ok && status >= 200 && status < 300, `HTTP ${status} ${text.slice(0, 120)}`);
+    }
+    await sleep(PROBE_BACKOFF_MS);
   }
 }
 
@@ -132,16 +145,38 @@ for (const model of contract.models) {
   if (model.status !== "ok") continue; // 403/404 plans cannot be probed
   const probeNeeded = model.thinkingObject === "untested" || model.thinkingObject === "doc-claimed";
   if (!probeNeeded) continue;
-  try {
-    const response = await fetchProbe(model.id, "none");
-    const text = await response.text().catch(() => "");
-    check(`${model.id} reasoning_effort:"none" probe answered ${response.status}`,
-      response.ok, `HTTP ${response.status} ${text.slice(0, 120)}`);
-  } catch (error) {
-    check(`${model.id} reasoning_effort:"none" probe answered`, false,
-      String(error?.message ?? error));
+  const { response, text, status } = await probeOnce(model.id, "none");
+  if (status === 429) {
+    check(`${model.id} reasoning_effort:"none" probe INDEFINITE (rate-limited)`,
+      true, `HTTP 429 ${text.slice(0, 120)} — re-run after the window clears`);
+  } else {
+    check(`${model.id} reasoning_effort:"none" probe answered ${status}`,
+      response.ok && status >= 200 && status < 300, `HTTP ${status} ${text.slice(0, 120)}`);
   }
+  await sleep(PROBE_BACKOFF_MS);
 }
+
+/** One chat-completion probe, unwrapped into {response, text, status}. */
+async function probeOnce(modelId, effort) {
+  let response;
+  try {
+    response = await fetchProbe(modelId, effort);
+  } catch (error) {
+    // A transport failure is a "did not reach the platform" answer, not a
+    // level verdict: record it, keep running, exit non-zero is not our job
+    // here (the run summary reports the red row, a human re-runs).
+    return {
+      response: { ok: false, status: 0 },
+      text: String(error?.message ?? error),
+      status: 0
+    };
+  }
+  const text = await response.text().catch(() => "");
+  return { response, text, status: response.status };
+}
+
+/** Backoff between probes: keeps the run inside the platform's rpm/rps window. */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** One chat-completion probe; its result is evidence, not a code fix. */
 async function fetchProbe(modelId, effort) {
@@ -156,15 +191,27 @@ async function fetchProbe(modelId, effort) {
       stream: false
     }),
     signal: AbortSignal.timeout(60_000)
-  }).catch((error) => ({ ok: false, status: 0, text: async () => String(error?.message ?? error) }));
+  });
 }
 
 console.log(JSON.stringify(results, null, 2));
-const failed = results.filter((r) => !r.pass);
-if (failed.length > 0) {
-  console.error(`\n${failed.length}/${results.length} live contract check(s) did not hold`);
-  console.error("A live contract failure is usually a PLATFORM change, not a code bug: " +
-    "refresh test/baselines/sensenova-contract.json and docs/SENSENOVA-API.md §7.");
-  process.exit(1);
+// A 429 is a rhythm answer, not a platform verdict: the request is
+// rejected BEFORE `reasoning_effort` is validated, so it proves nothing
+// about the level. Indefinite probes are evidence to re-run later, not
+// failures — only a 4xx parameter refusal counts against the run.
+const failed = results.filter((r) => !r.pass && !r.name.includes("INDEFINITE"));
+const indefinite = results.filter((r) => r.name.includes("INDEFINITE"));
+if (failed.length > 0 || indefinite.length > 0) {
+  if (indefinite.length > 0) {
+    console.error(`\n${indefinite.length} probe(s) INDEFINITE (rate-limited, no verdict):`);
+    for (const row of indefinite) console.error(`  - ${row.name}`);
+    console.error("Re-run after the platform's rate window clears; a 429 is not a level verdict.");
+  }
+  if (failed.length > 0) {
+    console.error(`\n${failed.length}/${results.length} live contract check(s) did not hold`);
+    console.error("A live contract failure is usually a PLATFORM change, not a code bug: " +
+      "refresh test/baselines/sensenova-contract.json and docs/SENSENOVA-API.md §7.");
+  }
+  process.exit(failed.length > 0 ? 1 : 0);
 }
 console.log(`\nall ${results.length} live contract checks passed`);
