@@ -30,8 +30,8 @@ import {
   THROTTLE_ID,
   USERNAME_REF,
   PASSWORD_REF
-} from "../token-store.js";
-import { createMemoryThrottleStore } from "../throttle-store.js";
+} from "../src/host/token-store.ts";
+import { createMemoryThrottleStore } from "../src/host/throttle-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASELINE_DIR = join(HERE, "baselines");

@@ -18,7 +18,7 @@
 
 ## 2. 改动 Host 半边必须重启
 
-Host 半边（`index.js` / `host-config.js` / `codes.js` / `token-store.js` / `throttle-store.js` / `sensenova-auth.js` / `sensenova-crypto.js` / `console-client.js` / `parsers.js` / `trace.js` / `util.js`）在 Host 启动时加载一次，**改完须完全退出 DSH（含托盘）再启动**。只改 `client.js` 时浏览器刷新即可。提交前用 [SETUP.md](./SETUP.md) §4 的自查确认跑的是新代码。
+Host 半边源码位于 `src/host/`（`index.ts` / `host-config.ts` / `codes.ts` / `token-store.ts` / `throttle-store.ts` / `sensenova-auth.ts` / `sensenova-crypto.ts` / `console-client.ts` / `parsers.ts` / `trace.ts` / `util.ts` 等），经 `npm run build` 构建为 `lib/index.js` 后在 Host 启动时加载一次，**改完须完全退出 DSH（含托盘）再启动**（重新构建产物）。只改 `src/client/*.ts` 时跑 `npm run build:client` 重建根 `client.js`、浏览器刷新即可。提交前用 [SETUP.md](./SETUP.md) §4 的自查确认跑的是新代码。
 
 ---
 

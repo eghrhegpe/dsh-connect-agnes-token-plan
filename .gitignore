@@ -15,6 +15,11 @@ dist/
 build/
 *.tsbuildinfo
 
+# 构建产物：源码在 src/，lib/ 与根 client.js 由 `npm run build` 从 src 重建，
+# 纯产物、可删可重建、绝不进版本库（workbuddy 同款约定）。
+/lib/
+/client.js
+
 # 编辑器与系统
 .DS_Store
 Thumbs.db

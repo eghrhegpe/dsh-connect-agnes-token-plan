@@ -25,25 +25,22 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 {
   "name": "dsh-connect-sensenova-token-plan",
   "version": "0.4.2",
-  "main": "./index.js",                 // Host 半边入口
+  "main": "./lib/index.js",              // Host 半边入口：src/host/*.ts 经 tsdown 打成的单条 bundle
   "exports": {
-    ".": "./index.js",
-    "./client": "./client.js",           // Client 半边入口（宿主注入用）
-    "./sensenova-auth": "./sensenova-auth.js",
-    "./token-store": "./token-store.js",
+    ".": "./lib/index.js",               // 源码在 src/host/，lib/ 为纯构建产物（git-ignored）
+    "./client": "./client.js",           // Client 半边入口（宿主注入用）：src/client/*.ts 打成的 IIFE 产物
     "./package.json": "./package.json"
   },
-  "files": [                            // 发到 registry 时只带这些；必须覆盖 import 图，
-                                        // 由 test/package.test.mjs 钉住（panel-*.js 是测试基建，不进包）
-    "index.js", "codes.js", "client.js", "console-client.js", "host-config.js",
-    "parsers.js", "throttle-store.js", "catalog-store.js", "provider-store.js", "provider-publish.js", "snapshot-aggregate.js", "state-store.js", "routes.js", "lifecycle.js", "api-key-store.js",
-    "llm-models.js", "llm-adapter.js", "llm-retry.js", "llm-error-fix.js", "draw.js", "draw-store.js",
-    "trace.js", "util.js",
-    "sensenova-auth.js", "sensenova-crypto.js", "token-store.js", "token-store/state.js", "token-store/grant.js", "token-store/throttle.js", "token-store/account.js", "token-store/renewal.js", "token-store/acquire.js",
-    "cordis.patch.yml", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"
+  "files": [                            // 发到 registry 时只带这些；必须覆盖构建产物与文档，
+                                        // 由 test/package.test.mjs 钉住（src/ 不进包，panel-*.js 是测试基建也不进包）
+    "lib", "client.js",
+    "cordis.patch.yml", "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "screenshots.json"
   ],
   "scripts": {
-    "test": "node test/auth.test.mjs && ... && node test/wiring.test.mjs",
+    "build": "tsdown -c tsdown.config.mjs",        // 重建 lib/index.js + 根 client.js
+    "build:client": "tsdown -c tsdown.config.mjs",
+    "prepack": "npm run build",                    // 发布前自动重建产物
+    "test": "node test/auth.test.mjs && ... && node test/build-gate.mjs && node test/e2e-gate.mjs",
     "test:live": "node test/live-jwks.test.mjs",
     "test:e2e": "node test/e2e.mjs"
   },
@@ -60,14 +57,18 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
     }
   },
   "peerDependencies": {                 // 运行时由 Host 提供，不随包安装
-    "@deepseek-ai/dsh": ">=0.1.7-rc.2",
-    "@deepseek-ai/dsh-credentials": ">=0.1.7-rc.2",
-    "@earendil-works/pi-ai": "^0.85.1",
-    "@deepseek-ai/dsh-llm": ">=0.1.5 <0.2",
-    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.5 <0.2",
-    "react": "^18.2.0"
+    "@deepseek-ai/cordis": ">=4.0.2 <5.0.0",
+    "@deepseek-ai/dsh-credentials": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-llm": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-settings": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-home-paths": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-tools": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.5 <0.3",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@earendil-works/pi-ai": "^0.85.1"
   },
-  "engines": { "node": ">=22" }
+  "engines": { "node": "^22.19.0 || >=24.0.0" }
 }
 ```
 

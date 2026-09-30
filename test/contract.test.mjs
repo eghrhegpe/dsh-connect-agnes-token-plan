@@ -26,10 +26,10 @@ import {
   contextWindowOf,
   thinkingLevelMapFor,
   LLM_PROVIDER_ID
-} from "../llm-models.js";
-import { credits, epochSeconds, parsePools, parseTrend, checkShape, identifyVisionModel } from "../parsers.js";
-import { retryableCodes, QUOTA_CODES } from "../llm-retry.js";
-import { isCredentialRefusal, CODE } from "../codes.js";
+} from "../src/host/llm-models.ts";
+import { credits, epochSeconds, parsePools, parseTrend, checkShape, identifyVisionModel } from "../src/host/parsers.ts";
+import { retryableCodes, QUOTA_CODES } from "../src/host/llm-retry.ts";
+import { isCredentialRefusal, CODE } from "../src/host/codes.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contract = JSON.parse(

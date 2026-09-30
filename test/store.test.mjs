@@ -2,8 +2,8 @@
  * Checks for the token store: renewal, rejection memory, and the account —
  * with and without a credentials service.
  */
-import { createTokenStore, MAX_LOGIN_BACKOFF_MS, DEFAULT_LOGIN_BACKOFF_MS, THROTTLE_ID } from "../token-store.js";
-import { createFileThrottleStore, createMemoryThrottleStore } from "../throttle-store.js";
+import { createTokenStore, MAX_LOGIN_BACKOFF_MS, DEFAULT_LOGIN_BACKOFF_MS, THROTTLE_ID } from "../src/host/token-store.ts";
+import { createFileThrottleStore, createMemoryThrottleStore } from "../src/host/throttle-store.ts";
 import { loadPeer, installNetworkGuard, findPeerRoot, isolateStateDir } from "./peer-roots.mjs";
 import { createRequire } from "node:module";
 import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -1037,7 +1037,7 @@ async function withNetwork(stub, body) {
 // own output is the reference. If the service ever changes its address format,
 // this goes red instead of the panel quietly losing its stored grant.
 {
-  const { credentialKey: shim } = await import("../index.js");
+  const { credentialKey: shim } = await import("../src/host/index.ts");
   for (const [scope, id] of [
     ["dsh-connect-sensenova-token-plan", "sensenova-console"],
     ["dsh-connect-sensenova-token-plan", THROTTLE_ID],

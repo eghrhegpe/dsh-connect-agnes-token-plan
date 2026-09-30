@@ -29,7 +29,7 @@ import {
   drawOnce,
   createDrawCooldown,
   defineDrawTool
-} from "../draw.js";
+} from "../src/host/draw.ts";
 
 const results = [];
 function check(name, condition, detail = "") {

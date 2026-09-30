@@ -13,8 +13,8 @@
  * components stay uncalled until a check expands them — the tree a check sees
  * is the tree React would receive.
  */
-import { render, styles as S, texts, findElement, findAll } from "../panel-render.js";
-import { surface } from "../client-surface.js";
+import { render, styles as S, texts, findElement, findAll } from "./panel-render.js";
+import { surface } from "./client-surface.js";
 
 const results = [];
 function check(name, condition, detail = "") {

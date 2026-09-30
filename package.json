@@ -12,51 +12,21 @@
     "quota"
   ],
   "type": "module",
-  "main": "./index.js",
+  "main": "./lib/index.js",
   "exports": {
-    ".": "./index.js",
+    ".": "./lib/index.js",
     "./client": "./client.js",
-    "./sensenova-auth": "./sensenova-auth.js",
-    "./token-store": "./token-store.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "index.js",
-    "codes.js",
+    "lib",
     "client.js",
-    "console-client.js",
-    "host-config.js",
-    "parsers.js",
-    "throttle-store.js",
-    "catalog-store.js",
-    "provider-store.js",
-    "provider-publish.js",
-    "snapshot-aggregate.js",
-    "state-store.js",
-    "routes.js",
-    "lifecycle.js",
-    "api-key-store.js",
-    "llm-models.js",
-    "llm-adapter.js",
-    "llm-retry.js",
-    "llm-error-fix.js",
-    "draw.js",
-    "draw-store.js",
-    "trace.js",
-    "util.js",
-    "sensenova-auth.js",
-    "sensenova-crypto.js",
-    "token-store.js",
-    "token-store/state.js",
-    "token-store/grant.js",
-    "token-store/throttle.js",
-    "token-store/account.js",
-    "token-store/renewal.js",
-    "token-store/acquire.js",
     "cordis.patch.yml",
     "README.md",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "screenshots.json"
   ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -66,7 +36,9 @@
     "test:live:contract": "node test/live-contract.mjs",
     "test:e2e": "node test/e2e.mjs",
     "test:errorfix": "node test/error-fix.test.mjs",
-    "test:peer-contract": "node test/peer-contract.test.mjs"
+    "test:peer-contract": "node test/peer-contract.test.mjs",
+    "build": "tsdown -c tsdown.config.mjs",
+    "prepack": "npm run build"
   },
   "dsh": {
     "bundle": {

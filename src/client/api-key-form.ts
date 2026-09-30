@@ -7,12 +7,12 @@
  * is NEVER populated from the snapshot — the Host only reports whether one
  * exists.
  */
-import { API_KEY_PATH } from "./const.js";
-import { h, useCallback, useState } from "./runtime.js";
-import type { Tt } from "./runtime.js";
-import { DrawSwitch, ProviderStatus, ProviderSwitch } from "./provider-controls.js";
-import { ModelPicker } from "./model-picker.js";
-import { S } from "./styles.js";
+import { API_KEY_PATH } from "./const.ts";
+import { h, useCallback, useState } from "./runtime.ts";
+import type { Tt } from "./runtime.ts";
+import { DrawSwitch, ProviderStatus, ProviderSwitch } from "./provider-controls.ts";
+import { ModelPicker } from "./model-picker.ts";
+import { S } from "./styles.ts";
 
 export function ApiKeyForm({ llm, onDone, tt }: {
   llm?: Record<string, any> | null;

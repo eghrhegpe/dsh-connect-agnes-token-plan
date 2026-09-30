@@ -10,8 +10,8 @@
  * becoming a lockout was, as a consequence, entirely uncovered.
  */
 import { readFile } from "node:fs/promises";
-import { decidePanelView, dictionaries, interpretSnapshot, tables, RENDER } from "../panel-decision.js";
-import { AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS, NO_LOGIN_CODES } from "../codes.js";
+import { decidePanelView, dictionaries, interpretSnapshot, tables, RENDER } from "./panel-decision.js";
+import { AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS, NO_LOGIN_CODES } from "../src/host/codes.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -205,7 +205,7 @@ const healthy = {
 // in `PanelPage`, whose cadence the Host states in every snapshot. The form's
 // 1-second countdown timer is unrelated to polling and may stay a literal.
 {
-  const source = await readFile(new URL("../client.js", import.meta.url), "utf8");
+  const source = await readFile(new URL("../src/host/client.ts", import.meta.url), "utf8");
   const pollTimers = source.match(/setInterval\(run,\s*[^)]*\)/g) ?? [];
   check("the poll timer takes a stated cadence, not a literal",
     pollTimers.length === 1 && /\d/.test(pollTimers[0]) === false,

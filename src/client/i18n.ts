@@ -1,11 +1,11 @@
 /**
- * The two dictionaries, verbatim from the pre-split `client.js`.
+ * The two dictionaries, verbatim from the pre-split `clientts`.
  *
  * `en` is typed as `typeof zh`, so a key added to one and not the other is a
  * compile error — the same parity `test/panel.test.mjs` asserts at runtime,
  * now also pinned at build time.
  */
-import type { Tt } from "./runtime.js";
+import type { Tt } from "./runtime.ts";
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {

@@ -1,6 +1,6 @@
 /**
  * Theme-token-only styles; a renamed token degrades looks, never rendering.
- * Verbatim from the pre-split `client.js`.
+ * Verbatim from the pre-split `clientts`.
  */
 export const S = {
   // The shell's center column is `display:flex; flex-direction:column;

@@ -1,0 +1,291 @@
+/**
+ * The persisted model catalog — this plugin's OWN state file, never the Host's
+ * configuration.
+ *
+ * Why a file at all: the directly-registered LLM provider needs a model list
+ * before the first snapshot poll completes (and after a restart with no console
+ * login), so the last catalog the API key fetched is cached under
+ * `$DSH_HOME/state/<plugin>/catalog.json`. It is deliberately NOT written into
+ * the settings row (`cordis.patch.yml`): a catalog is operational state, not an
+ * operator decision, and writing volatile arrays into the patch layer is the
+ * shape the WorkBuddy catalog drift warned about.
+ *
+ * Integrity follows `throttle-storets`: a versioned payload, a temp file plus
+ * an atomic rename (two Host processes can share the directory), owner-only
+ * modes, and "anything unrecognised reads as no catalog" — a corrupted or
+ * downgraded file costs one re-fetch, never a crash.
+ *
+ * @module dsh-connect-sensenova-token-plan/catalog-store
+ */
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+import { str, obj, num } from "./util.ts";
+import { name } from "./host-config.ts";
+import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, profileStateDir, stateDir as sharedStateDir } from "./state-store.ts";
+
+/** Shape version, bumped when the persisted form changes incompatibly. */
+export const CATALOG_VERSION = 1;
+
+/**
+ * Normalize a model-id allow-list.
+ *
+ * An EMPTY list means "no filter" (the WorkBuddy convention): a fresh install
+ * has curated nothing and must still be offered every model. Once non-empty it
+ * is an allow-list. Junk entries are dropped rather than stored.
+ * @param {unknown} raw - the persisted or posted list.
+ * @returns {string[]} unique string ids in first-seen order.
+ */
+export function normalizeEnabledIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const id = str(item, "");
+    if (id === "" || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/**
+ * The directory this plugin's state lives in — per-profile when the Host names
+ * one, shared otherwise (PITFALLS §23).
+ * @param {string|null} [profile] - the profile name; `null` means shared.
+ * @returns {string} the directory.
+ */
+export function catalogDir(profile) {
+  return profileStateDir(name, profile);
+}
+
+/**
+ * Normalize a raw catalog into unique, whole entries.
+ *
+ * Mirrors `console-client.fetchModelCatalog`: keep every field the platform
+ * sent (vision identification reads `input_modalities`), normalize `id`, and
+ * drop entries without one. Duplicate ids keep the LAST occurrence — the
+ * freshest read wins — and stay in first-seen order.
+ * @param {unknown} raw - the raw `body.data` array or persisted entries.
+ * @returns {object[]} normalized entries.
+ */
+export function normalizeEntries(raw) {
+  if (!Array.isArray(raw)) return [];
+  const byId = new Map();
+  for (const item of raw) {
+    const source = obj(item);
+    const id = str(source.id, "");
+    if (id === "") continue;
+    byId.set(id, { ...source, id });
+  }
+  return [...byId.values()];
+}
+
+/**
+ * Parse a persisted catalog, or `null` when it is absent, stale, or foreign.
+ *
+ * The safe direction for a cache is "absent": the next snapshot re-fetches.
+ * @param {unknown} raw - the parsed file contents.
+ * @returns {{version: number, fetchedAt: number, entries: object[], enabledModelIds: string[]}|null}
+ */
+function parse(raw) {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const body = /** @type {{ version?: unknown, fetchedAt?: unknown, entries?: unknown, enabledModelIds?: unknown }} */ (raw);
+  if (num(body.version, 0) !== CATALOG_VERSION) return null;
+  const fetchedAt = num(body.fetchedAt, 0);
+  if (fetchedAt <= 0) return null;
+  const entries = normalizeEntries(body.entries);
+  const enabledModelIds = normalizeEnabledIds(body.enabledModelIds);
+  // `version` travels with the record so the in-memory view and the written
+  // payload are the same shape: what `parse` accepted is exactly what `persist`
+  // will write back.
+  return { version: CATALOG_VERSION, fetchedAt, entries, enabledModelIds };
+}
+
+/**
+ * The store contract both the file-backed and in-memory factories satisfy:
+ * one cached catalog of model entries plus a curated id allow-list.
+ * @typedef {object} CatalogStore
+ * @property {() => Promise<object[]>} list - stored entries, `[]` when none usable.
+ * @property {() => Promise<string[]>} listEnabledIds - allow-list; `[]` means "no filter".
+ * @property {(entries: object[], enabledModelIds?: string[]) => Promise<void>} replace - swap the catalog, preserving the allow-list unless given a new one.
+ * @property {(ids: string[]) => Promise<void>} setEnabledIds - swap ONLY the allow-list.
+ * @property {() => Promise<void>} clear - remove the stored catalog.
+ */
+
+/**
+ * A catalog store backed by one atomically-written file.
+ * @param {object} [options] - wiring.
+ * @param {string} [options.dir] - directory; overrides {@link options.profile}.
+ * @param {string|null} [options.profile] - the profile name, so two profiles
+ *   each get their own catalog instead of overwriting one shared allow-list;
+ *   defaults to `null` (the shared directory, i.e. today's behaviour).
+ * @param {() => number} [options.now] - clock source; injected by the tests.
+ * @param {number} [options.ttlMs] - how long a parsed record may be reused
+ *   before disk is consulted again; defaults to {@link STATE_READ_TTL_MS}.
+ * @returns {CatalogStore} the store.
+ */
+export function createFileCatalogStore({ dir, profile = null, now = Date.now, ttlMs = STATE_READ_TTL_MS } = {}) {
+  const stateDir = dir ?? catalogDir(profile);
+  const file = join(stateDir, "catalog.json");
+  /**
+   * Last known record, mirrored from {@link cache} so the writers can reuse the
+   * allow-list without a second read. `undefined` means "never synced from
+   * disk", `null` means "synced, nothing usable stored".
+   * @type {{version: number, fetchedAt: number, entries: object[], enabledModelIds: string[]}|null|undefined}
+   */
+  let held;
+  // Read-through with a short TTL, NOT a once-per-process cache: this state
+  // directory is shared with every other Host process (another profile included,
+  // see PITFALLS §22), so a cache that never expires means another process's
+  // allow-list edit stays invisible here until a restart. Same bound the
+  // provider and draw switches already use.
+  // A profile-scoped store starts empty even on a machine whose values still
+  // live in the pre-§23 SHARED directory. The cache inherits that record ONCE,
+  // when its own file is found missing, then writes it back. An explicit `dir`
+  // (the tests) never inherits: it was never part of the shared layout.
+  const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "catalog.json") : null;
+
+  const cache = createStateReadCache(async () => parse(await readStateJson(file)), {
+    ttlMs,
+    now,
+    inheritFrom: legacyFile === null ? null : {
+      /** The pre-§23 record, if this machine ever wrote one. */
+      read: async () => parse(await readStateJson(legacyFile)),
+      /** Re-persist an inherited record under this profile's own directory. */
+      write: async (record) => {
+        held = record;
+        await persist();
+      }
+    }
+  });
+  /** Sync `held` with disk (through the TTL cache) and return it. */
+  const seen = async () => {
+    held = await cache.read();
+    return held;
+  };
+
+  /**
+   * Persist the held record atomically; a write failure only loses the cache.
+   *
+   * The temp path is process-plus-clock unique (`state-storets`'s
+   * `temporaryOf`), so two Host processes sharing this directory never write
+   * the same temp name and `rename` each other's half-written file away.
+   */
+  const persist = async () => {
+    if (held === null) return;
+    const temporary = temporaryOf(stateDir, "catalog.json", now);
+    try {
+      await ensureStateDir(stateDir);
+      await writeStateFile(file, JSON.stringify(held), { temporary });
+    } catch {
+      // The in-memory record still serves this process.
+      await rm(temporary, { force: true }).catch(() => {});
+    }
+  };
+
+  return {
+    /**
+     * The stored entries, or `[]` when nothing usable is stored.
+     * @returns {Promise<object[]>}
+     */
+    async list() {
+      const record = await seen();
+      return record === null ? [] : record.entries;
+    },
+
+    /**
+     * The curated model-id allow-list; an EMPTY array means "no filter".
+     * @returns {Promise<string[]>}
+     */
+    async listEnabledIds() {
+      const record = await seen();
+      return record === null ? [] : record.enabledModelIds;
+    },
+
+    /**
+     * Atomically replace the stored catalog.
+     *
+     * A read-only Home must not break the panel: the write failing only means
+     * the catalog is re-fetched after the next restart, so the error is
+     * swallowed after the in-memory copy is updated. The curated allow-list is
+     * PRESERVED across a catalog refresh unless a new one is supplied.
+     * @param {object[]} entries - the fresh catalog entries.
+     * @param {string[]} [enabledModelIds] - an optional replacement allow-list.
+     * @returns {Promise<void>}
+     */
+    async replace(entries, enabledModelIds) {
+      // Sync first, so the allow-list being preserved is the one ACTUALLY
+      // stored — including a list another process wrote since this one last
+      // looked. Reading it lazily used to silently reset it to `[]` whenever a
+      // replace happened before the first `list()`.
+      const current = await seen();
+      const kept = current === null ? [] : current.enabledModelIds;
+      held = {
+        version: CATALOG_VERSION,
+        fetchedAt: now(),
+        entries: normalizeEntries(entries),
+        enabledModelIds: enabledModelIds === undefined ? kept : normalizeEnabledIds(enabledModelIds)
+      };
+      cache.remember(held);
+      await persist();
+    },
+
+    /** Replace ONLY the curated allow-list, keeping the cached catalog. */
+    async setEnabledIds(ids) {
+      const current = await seen();
+      const entries = current === null ? [] : current.entries;
+      const fetchedAt = current === null ? now() : current.fetchedAt;
+      held = { version: CATALOG_VERSION, fetchedAt, entries, enabledModelIds: normalizeEnabledIds(ids) };
+      cache.remember(held);
+      await persist();
+    },
+
+    /** Remove the stored catalog (used when the API key is forgotten). */
+    async clear() {
+      held = null;
+      cache.remember(null);
+      try {
+        await rm(file, { force: true });
+      } catch {
+        // An absent file is already a cleared catalog.
+      }
+    }
+  };
+}
+
+/**
+ * A catalog store that forgets everything when the process ends.
+ *
+ * Used by the tests and by hosts given nothing writable; deliberately not the
+ * default, like the memory throttle store.
+ * @param {() => number} [now] - clock source.
+ * @returns {CatalogStore}
+ */
+export function createMemoryCatalogStore(now = Date.now) {
+  let held = null;
+  return {
+    async list() {
+      return held === null ? [] : held.entries;
+    },
+    async listEnabledIds() {
+      return held === null ? [] : held.enabledModelIds;
+    },
+    async replace(entries, enabledModelIds) {
+      const kept = held === null ? [] : held.enabledModelIds;
+      held = {
+        version: CATALOG_VERSION,
+        fetchedAt: now(),
+        entries: normalizeEntries(entries),
+        enabledModelIds: enabledModelIds === undefined ? kept : normalizeEnabledIds(enabledModelIds)
+      };
+    },
+    async setEnabledIds(ids) {
+      const entries = held === null ? [] : held.entries;
+      const fetchedAt = held === null ? now() : held.fetchedAt;
+      held = { version: CATALOG_VERSION, fetchedAt, entries, enabledModelIds: normalizeEnabledIds(ids) };
+    },
+    async clear() {
+      held = null;
+    }
+  };
+}

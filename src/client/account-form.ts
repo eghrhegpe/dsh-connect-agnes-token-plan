@@ -12,12 +12,12 @@
  * Hook-based, so the Node render suite does not mount this form; its
  * secret-free halves are covered via `ProviderStatus` and the route tests.
  */
-import { ACCOUNT_PATH } from "./const.js";
-import { format } from "./format.js";
-import { h, useCallback, useEffect, useState } from "./runtime.js";
-import type { Tt } from "./runtime.js";
-import { REFUSAL_TEXT } from "./snapshot.js";
-import { S } from "./styles.js";
+import { ACCOUNT_PATH } from "./const.ts";
+import { format } from "./format.ts";
+import { h, useCallback, useEffect, useState } from "./runtime.ts";
+import type { Tt } from "./runtime.ts";
+import { REFUSAL_TEXT } from "./snapshot.ts";
+import { S } from "./styles.ts";
 
 export function AccountForm({ auth, onDone, tt, bare }: {
   auth?: Record<string, any> | null;

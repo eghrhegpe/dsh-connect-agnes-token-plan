@@ -12,7 +12,7 @@
  * the form was then unreachable.
  */
 import { loadPeer, installNetworkGuard, isolateHostEnv, isolateStateDir } from "./peer-roots.mjs";
-import { createFileThrottleStore } from "../throttle-store.js";
+import { createFileThrottleStore } from "../src/host/throttle-store.ts";
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
@@ -20,7 +20,7 @@ const releaseNetworkGuard = installNetworkGuard();
 const restoreHostEnv = isolateHostEnv();
 
 const { credentialKey } = await loadPeer("dsh-credentials");
-const { interpretSnapshot, decidePanelView } = await import("../panel-decision.js");
+const { interpretSnapshot, decidePanelView } = await import("./panel-decision.js");
 
 /** After the peers are found: the throttle is real state, kept off the real Home. */
 const restoreStateDir = isolateStateDir();
@@ -118,7 +118,7 @@ function makeResponse() {
  *   `llm` a fake llm service, `loadAdapterModule` the peer adapter seam.
  */
 async function mount(credentials, config = {}, deps = {}) {
-  const host = await import(`../index.js?route=${Math.random()}`);
+  const host = await import(`../src/host/index.ts?route=${Math.random()}`);
   const handlers = new Map();
   const services = { credentials, llm: deps.llm };
   host.apply({
@@ -382,7 +382,7 @@ async function withNetwork(stub, body) {
 {
   const token = jwtExpiring(120);
   const credentials = makeCredentials(storedGrant(token, "r", 7200));
-  const host = await import(`../index.js?origin=${Math.random()}`);
+  const host = await import(`../src/host/index.ts?origin=${Math.random()}`);
   let handler = null;
   host.apply({
     get: (s) => (s === "credentials" ? credentials : undefined),

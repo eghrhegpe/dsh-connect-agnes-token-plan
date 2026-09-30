@@ -1,12 +1,12 @@
 /**
  * The Host-facing mount: dictionary registration, the sidebar row, and the
- * main-slot page. Verbatim logic from the pre-split `client.js`.
+ * main-slot page. Verbatim logic from the pre-split `clientts`.
  */
-import { PanelIcon } from "./cards.js";
-import { NS, PANEL_ID } from "./const.js";
-import { en, zh } from "./i18n.js";
-import { PanelPage } from "./panel-page.js";
-import type { Tt } from "./runtime.js";
+import { PanelIcon } from "./cards.ts";
+import { NS, PANEL_ID } from "./const.ts";
+import { en, zh } from "./i18n.ts";
+import { PanelPage } from "./panel-page.ts";
+import type { Tt } from "./runtime.ts";
 
 /** Required services: the slot system, the locale registry, the layout face. */
 export const inject = ["slots", "locale"];

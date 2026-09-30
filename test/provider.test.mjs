@@ -31,20 +31,20 @@ import {
   rosterOf,
   HIDE_ALL_MODELS,
   summarizeCatalog
-} from "../llm-models.js";
+} from "../src/host/llm-models.ts";
 import {
   CATALOG_VERSION,
   normalizeEnabledIds,
   normalizeEntries,
   createFileCatalogStore,
   createMemoryCatalogStore
-} from "../catalog-store.js";
-import { createApiKeyStore, API_KEY_REF } from "../api-key-store.js";
-import { PROVIDER_VERSION, createFileProviderStore } from "../provider-store.js";
-import { DRAW_STORE_VERSION, createFileDrawStore, normalizeDrawEnabled } from "../draw-store.js";
-import { redactSecrets } from "../util.js";
-import { profileSegment, profileStateDir } from "../state-store.js";
-import { surface as clientSurface } from "../client-surface.js";
+} from "../src/host/catalog-store.ts";
+import { createApiKeyStore, API_KEY_REF } from "../src/host/api-key-store.ts";
+import { PROVIDER_VERSION, createFileProviderStore } from "../src/host/provider-store.ts";
+import { DRAW_STORE_VERSION, createFileDrawStore, normalizeDrawEnabled } from "../src/host/draw-store.ts";
+import { redactSecrets } from "../src/host/util.ts";
+import { profileSegment, profileStateDir } from "../src/host/state-store.ts";
+import { surface as clientSurface } from "./client-surface.js";
 
 const results = [];
 function check(name, condition, detail = "") {

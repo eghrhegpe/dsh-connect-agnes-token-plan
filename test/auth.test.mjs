@@ -7,13 +7,13 @@
  * `test/live-jwks.test.mjs` and `npm run test:live` — so that "the suite is
  * offline" stays a property you can rely on rather than a claim.
  */
-import { readJwtClaims, readJwtExpiry, createAuth } from "../sensenova-auth.js";
-import { sealPassword, createJwksCache } from "../sensenova-crypto.js";
+import { readJwtClaims, readJwtExpiry, createAuth } from "../src/host/sensenova-auth.ts";
+import { sealPassword, createJwksCache } from "../src/host/sensenova-crypto.ts";
 import { installNetworkGuard } from "./peer-roots.mjs";
 import {
   AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS,
   IAM_REASON_CODES, isAuthFailure, isCredentialRefusal
-} from "../codes.js";
+} from "../src/host/codes.ts";
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
@@ -265,7 +265,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
     return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
   };
   try {
-    const mod = await import(`../sensenova-auth.js?login=${Date.now()}`);
+    const mod = await import(`../src/host/sensenova-auth.ts?login=${Date.now()}`);
     let code = null;
     let message = "";
     try {
@@ -334,7 +334,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
     return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
   };
   try {
-    const mod = await import(`../sensenova-auth.js?pkce=${Date.now()}`);
+    const mod = await import(`../src/host/sensenova-auth.ts?pkce=${Date.now()}`);
     await mod.createAuth().login({ username: "u", password: "p" });
     const sent = new URLSearchParams(tokenBody);
     const verifier = sent.get("code_verifier") ?? "";
@@ -392,7 +392,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
       return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
     };
     try {
-      const mod = await import(`../sensenova-auth.js?refusal=${Date.now()}`);
+      const mod = await import(`../src/host/sensenova-auth.ts?refusal=${Date.now()}`);
       let code = null;
       try { await mod.createAuth().login({ username: "u", password: "p" }); } catch (error) { code = error?.code; }
       check(`${label} is not reported as a wrong password`, code === expected, String(code));
@@ -445,7 +445,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
       return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
     };
     try {
-      const mod = await import(`../sensenova-auth.js?window=${Date.now()}-${Math.random()}`);
+      const mod = await import(`../src/host/sensenova-auth.ts?window=${Date.now()}-${Math.random()}`);
       let retryAfterMs;
       try { await mod.createAuth().login({ username: "u", password: "p" }); } catch (error) { retryAfterMs = error?.retryAfterMs; }
       check(`${label} yields its wait`, retryAfterMs === expected, String(retryAfterMs));
@@ -482,7 +482,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
       return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
     };
     try {
-      const mod = await import(`../sensenova-auth.js?header=${Date.now()}-${Math.random()}`);
+      const mod = await import(`../src/host/sensenova-auth.ts?header=${Date.now()}-${Math.random()}`);
       let retryAfterMs;
       try { await mod.createAuth().login({ username: "u", password: "p" }); } catch (error) { retryAfterMs = error?.retryAfterMs; }
       check("a Retry-After header is read as seconds", retryAfterMs === 600_000, String(retryAfterMs));
@@ -573,7 +573,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
       return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
     };
     try {
-      const mod = await import(`../sensenova-auth.js?trace-${label}=${Date.now()}-${Math.random()}`);
+      const mod = await import(`../src/host/sensenova-auth.ts?trace-${label}=${Date.now()}-${Math.random()}`);
       const reported = [];
       let granted = null;
       let thrown = null;
@@ -665,7 +665,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
     return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
   };
   try {
-    const mod = await import(`../sensenova-auth.js?scrub=${Date.now()}-${Math.random()}`);
+    const mod = await import(`../src/host/sensenova-auth.ts?scrub=${Date.now()}-${Math.random()}`);
     const reported = [];
     try {
       await mod.createAuth().login({ username: "u", password: "p" },
@@ -722,7 +722,7 @@ check("empty token yields null expiry", readJwtExpiry("") === null);
       return new Response("{}", { status: 500, headers: { "content-type": "application/json" } });
     };
     try {
-      const mod = await import(`../sensenova-auth.js?state-${echoState}=${Date.now()}-${Math.random()}`);
+      const mod = await import(`../src/host/sensenova-auth.ts?state-${echoState}=${Date.now()}-${Math.random()}`);
       let granted = null;
       let code = null;
       try {

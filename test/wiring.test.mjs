@@ -192,7 +192,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   // `llm` is consumed optionally through `ctx.get` (this plugin injects only
   // webServer), the same optional seam the settings/attachments services use.
   if (llm !== undefined) ctx.provide("llm", llm);
-  const host = await import(`../index.js?wiring=${Math.random()}`);
+  const host = await import(`../src/host/index.ts?wiring=${Math.random()}`);
   // The Loader hands Cordis the plugin object; the module's named exports are
   // that object, so pass exactly them. `ctx.plugin` returns the fiber, and
   // disposing that fiber is how a plugin is stopped — the teardown path the

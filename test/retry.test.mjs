@@ -16,12 +16,12 @@ import {
   buildRetryPolicyConfig,
   retryableCodes,
   QUOTA_CODES
-} from "../llm-retry.js";
+} from "../src/host/llm-retry.ts";
 import {
   exhaustedModelIds,
   buildDescriptors,
   rosterWithAvailability
-} from "../llm-models.js";
+} from "../src/host/llm-models.ts";
 
 const results = [];
 function check(name, condition, detail = "") {

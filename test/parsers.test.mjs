@@ -19,7 +19,7 @@ import {
   parseTrend,
   identifyVisionModel,
   EXPECTED_SHAPES
-} from "../parsers.js";
+} from "../src/host/parsers.ts";
 
 const results = [];
 function check(name, condition, detail = "") {

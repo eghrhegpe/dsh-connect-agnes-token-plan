@@ -1,13 +1,13 @@
 /**
  * The curated model allow-list UI: the hook-free row list and the hook-based
- * picker around it. Verbatim logic from the pre-split `client.js`.
+ * picker around it. Verbatim logic from the pre-split `clientts`.
  */
-import { MODELS_PATH } from "./const.js";
-import { format } from "./format.js";
-import { bulkModelsIn, modelIsOn, toggleModelIn } from "./models.js";
-import { h, useCallback, useEffect, useMemo, useState } from "./runtime.js";
-import type { Tt } from "./runtime.js";
-import { S } from "./styles.js";
+import { MODELS_PATH } from "./const.ts";
+import { format } from "./format.ts";
+import { bulkModelsIn, modelIsOn, toggleModelIn } from "./models.ts";
+import { h, useCallback, useEffect, useMemo, useState } from "./runtime.ts";
+import type { Tt } from "./runtime.ts";
+import { S } from "./styles.ts";
 
 interface ModelRow {
   id?: unknown;

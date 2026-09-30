@@ -163,9 +163,9 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
       // plus `index.js` (which still assembles the error-path bodies and
       // carries the key names through its route handlers). Either file may
       // carry a key; both are required to be import-reachable from index.js.
-      const indexSrc = readFileSync(join(ROOT, "index.js"), "utf8");
-      const aggregateSrc = existsSync(join(ROOT, "snapshot-aggregate.js"))
-        ? readFileSync(join(ROOT, "snapshot-aggregate.js"), "utf8")
+      const indexSrc = readFileSync(join(ROOT, "src", "host", "index.ts"), "utf8");
+      const aggregateSrc = existsSync(join(ROOT, "src", "host", "snapshot-aggregate.ts"))
+        ? readFileSync(join(ROOT, "src", "host", "snapshot-aggregate.ts"), "utf8")
         : "";
       const sourceText = `${indexSrc}\n${aggregateSrc}`;
       const missing = canonical.split(",").filter((k) => !new RegExp(`\\b${k}\\b`).test(sourceText));

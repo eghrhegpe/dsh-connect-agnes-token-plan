@@ -9,12 +9,13 @@
     "allowJs": true,
     "checkJs": false,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "strict": false,
     "noImplicitAny": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["*.js", "token-store/*.js", "types/*.d.ts", "src/client"],
-  "exclude": ["node_modules", "upstream", "test", "assets", "docs", ".github", ".box-agent", ".box-agent-scratch"]
+  "include": ["src/host", "src/client", "types/*.d.ts"],
+  "exclude": ["node_modules", "upstream", "lib", "test", "assets", "docs", ".github", ".box-agent", ".box-agent-scratch"]
 }

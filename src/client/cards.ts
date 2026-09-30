@@ -1,14 +1,14 @@
 /**
  * Hook-free presentational components: the panel icon, the quota pool cards,
  * the exhaustion notice, the trend chart, and the collapsible section card.
- * Verbatim logic from the pre-split `client.js` — the render suite drives
+ * Verbatim logic from the pre-split `clientts` — the render suite drives
  * every one of these in Node, so behavior may not drift by a hair.
  */
-import { PANEL_ID } from "./const.js";
-import { clockLong, count, format, when } from "./format.js";
-import { h } from "./runtime.js";
-import type { Tt } from "./runtime.js";
-import { S } from "./styles.js";
+import { PANEL_ID } from "./const.ts";
+import { clockLong, count, format, when } from "./format.ts";
+import { h } from "./runtime.ts";
+import type { Tt } from "./runtime.ts";
+import { S } from "./styles.ts";
 
 /** A quota window as the wire carries it; fields are defensive on purpose. */
 interface QuotaWindow {

@@ -16,7 +16,7 @@
  * A failure here is information, not a regression — a rotated key or a renamed
  * kid is a platform change, and the fix belongs in sensenova-crypto.js.
  */
-import { sealPassword } from "../sensenova-crypto.js";
+import { sealPassword } from "../src/host/sensenova-crypto.ts";
 
 const JWKS_ENDPOINT = "https://signin.sensecore.cn/.well-known/jwks.json";
 /** The kid the console seals the password under. */

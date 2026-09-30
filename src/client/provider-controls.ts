@@ -1,13 +1,13 @@
 /**
  * The secret-free provider/draw registration controls: the status lines, the
  * live provider switch, and the live draw-tool switch. Verbatim logic from
- * the pre-split `client.js`.
+ * the pre-split `clientts`.
  */
-import { DRAW_PATH, PROVIDER_PATH } from "./const.js";
-import { count, format } from "./format.js";
-import { h, useCallback, useState } from "./runtime.js";
-import type { Tt } from "./runtime.js";
-import { S } from "./styles.js";
+import { DRAW_PATH, PROVIDER_PATH } from "./const.ts";
+import { count, format } from "./format.ts";
+import { h, useCallback, useState } from "./runtime.ts";
+import type { Tt } from "./runtime.ts";
+import { S } from "./styles.ts";
 
 /**
  * The secret-free registration status, step three.
@@ -105,7 +105,7 @@ export function ProviderSwitch({ llm, onDone, tt }: {
  * The live draw-tool switch (docs/PROVIDER-HOT-RELOAD.md, same discipline
  * as `ProviderSwitch`). Posts `{ enabled }` to the plugin's own `/draw`
  * route; the Host persists the value in its state file. The draw tool
- * itself is mounted at `apply` time (lifecycle.js), so a panel flip only
+ * itself is mounted at `apply` time (lifecyclets), so a panel flip only
  * becomes visible after the NEXT Host (re)mount — but the switch state,
  * the source, and the snapshot's `llm.drawEnabled` are all live, so the
  * panel shows the effective value immediately. Hook-based like

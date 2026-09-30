@@ -8,7 +8,7 @@
  *
  * 这些与 peer 缺席与否无关——干净 checkout 也能跑（符合 npm test 离线门禁）。
  */
-import { looksLikeRateLimit, extractStructuredType, shouldReclassifyQuotaToRate, reclassifyFinish, reclassifyStream, CODE } from "../llm-error-fix.js";
+import { looksLikeRateLimit, extractStructuredType, shouldReclassifyQuotaToRate, reclassifyFinish, reclassifyStream, CODE } from "../src/host/llm-error-fix.ts";
 
 const results = [];
 function check(name, condition, detail = "") {

@@ -1,18 +1,18 @@
 /**
  * The `main`-slot page: polling, the decision gate, and the whole panel
- * layout. Verbatim logic from the pre-split `client.js`.
+ * layout. Verbatim logic from the pre-split `clientts`.
  */
 import {
   AccountForm
-} from "./account-form.js";
-import { ApiKeyForm } from "./api-key-form.js";
-import { SNAPSHOT_PATH } from "./const.js";
-import { clock, format } from "./format.js";
-import { errorOfStatus, interpretSnapshot, viewOf } from "./snapshot.js";
-import { h, useCallback, useEffect, useRef, useState } from "./runtime.js";
-import type { Tt } from "./runtime.js";
-import { S } from "./styles.js";
-import { PoolCard, PoolExhaustionNotice, SectionCard, TrendTable } from "./cards.js";
+} from "./account-form.ts";
+import { ApiKeyForm } from "./api-key-form.ts";
+import { SNAPSHOT_PATH } from "./const.ts";
+import { clock, format } from "./format.ts";
+import { errorOfStatus, interpretSnapshot, viewOf } from "./snapshot.ts";
+import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
+import type { Tt } from "./runtime.ts";
+import { S } from "./styles.ts";
+import { PoolCard, PoolExhaustionNotice, SectionCard, TrendTable } from "./cards.ts";
 
 export function PanelPage({ onClose, tt, localeSubscribe }: {
   onClose?: () => void;

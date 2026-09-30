@@ -47,7 +47,7 @@ import {
   shouldReclassifyQuotaToRate,
   reclassifyFinish,
   CODE
-} from "../llm-error-fix.js";
+} from "../src/host/llm-error-fix.ts";
 
 const results = [];
 function check(name, condition, detail = "") {

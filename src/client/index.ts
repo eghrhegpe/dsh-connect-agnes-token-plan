@@ -9,7 +9,7 @@
  * session events of its own.
  *
  * The sources live in `src/client/*.ts` and are bundled into the root
- * `client.js` artifact by tsdown (IIFE, see `tsdown.config.mjs`); the tests
+ * `clientts` artifact by tsdown (IIFE, see `tsdown.config.mjs`); the tests
  * load the ARTIFACT, so what they exercise is what the browser runs.
  * @module dsh-connect-sensenova-token-plan/client
  */
@@ -23,14 +23,14 @@
  * call for module-system syntax — see `runtime.ts`.
  *
  * The Node-side test suites run this exact factory with a stand-in React
- * (`client-surface.js`), so the definitions it sees — the decision, the
+ * (`client-surfacets`), so the definitions it sees — the decision, the
  * tables, the style tokens, the components — are the ones the browser runs,
  * not a copy.
  *
  * @param loaderRequire - the loader's require; hands out `react`.
  * @returns {{inject: string[], apply: Function, panel: object}}
  */
-import { inject, apply } from "./apply.js";
+import { inject, apply } from "./apply.ts";
 import {
   errorOfStatus,
   FORM_EXCLUDED_CODES,
@@ -38,7 +38,7 @@ import {
   interpretSnapshot,
   REFUSAL_TEXT,
   viewOf
-} from "./snapshot.js";
+} from "./snapshot.ts";
 import {
   allowListFor,
   bulkModelsIn,
@@ -46,25 +46,25 @@ import {
   modelIsOn,
   setAllModelsIn,
   toggleModelIn
-} from "./models.js";
-import { clock, clockLong, count, format, when } from "./format.js";
-import { provideClientReact } from "./runtime.js";
-import { en, zh } from "./i18n.js";
-import { S } from "./styles.js";
+} from "./models.ts";
+import { clock, clockLong, count, format, when } from "./format.ts";
+import { provideClientReact } from "./runtime.ts";
+import { en, zh } from "./i18n.ts";
+import { S } from "./styles.ts";
 import {
   AccountForm
-} from "./account-form.js";
+} from "./account-form.ts";
 import {
   PoolCard,
   PoolExhaustionNotice,
   QuotaCard,
   SectionCard,
   TrendTable
-} from "./cards.js";
-import { ProviderStatus, ProviderSwitch, DrawSwitch } from "./provider-controls.js";
-import { ApiKeyForm } from "./api-key-form.js";
-import { ModelPicker, ModelRoster } from "./model-picker.js";
-import { PanelPage } from "./panel-page.js";
+} from "./cards.ts";
+import { ProviderStatus, ProviderSwitch, DrawSwitch } from "./provider-controls.ts";
+import { ApiKeyForm } from "./api-key-form.ts";
+import { ModelPicker, ModelRoster } from "./model-picker.ts";
+import { PanelPage } from "./panel-page.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
   inject: string[];
@@ -132,11 +132,11 @@ const REGISTRATION = { id: "dsh-connect-sensenova-token-plan", factory: clientFa
 // - BROWSER: the DSH client loader calls `window.__ModuleLoader__.load(...)`
 //   with this file's text; the registry it gets back is the one the Host
 //   materializes with the browser's own module table (real React).
-// - NODE CJS: a `require("./client.js")` gets the same registration object on
+// - NODE CJS: a `require("./client.ts")` gets the same registration object on
 //   `module.exports`, so the suite can hand a stand-in React to `factory`.
-// - NODE ESM: `import("./client.js")` — the artifact carries no `import`/
+// - NODE ESM: `import("./client.ts")` — the artifact carries no `import`/
 //   `export` statements, so it is legal ESM; `module` is undefined there, and
-//   `client-surface.js` installs a capturing `window.__ModuleLoader__` BEFORE
+//   `client-surfacets` installs a capturing `window.__ModuleLoader__` BEFORE
 //   the import, which is what runs this branch.
 //
 // In every world the SAME `clientFactory` is what the panel runs, so the Node
@@ -144,7 +144,7 @@ const REGISTRATION = { id: "dsh-connect-sensenova-token-plan", factory: clientFa
 // copy and never a scrape of this source text.
 if (typeof window !== "undefined") {
   // The module table is shell-attached, so the DOM lib does not declare it.
-  // Asserted once here — the same face `client-surface.js` installs before it
+  // Asserted once here — the same face `client-surfacets` installs before it
   // imports this bundle in Node.
   const loader = (window as Window & typeof globalThis & { __ModuleLoader__?: { load: (registration: object) => void } }).__ModuleLoader__;
   if (loader !== undefined) loader.load(REGISTRATION);
