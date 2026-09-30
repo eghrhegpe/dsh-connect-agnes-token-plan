@@ -14,9 +14,9 @@ export const S = {
   // shell silently truncates everything below the fold.
   page: { flex: "1 1 auto", height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", color: "var(--dsw-alias-label-primary)", fontSize: 14, lineHeight: "22px" },
   headerBar: { flex: "none", background: "var(--dsw-alias-bg-base)", position: "relative", zIndex: 1 },
-  header: { display: "flex", alignItems: "center", gap: 12, maxWidth: 1040, margin: "0 auto", padding: "16px 32px 12px" },
+  header: { display: "flex", alignItems: "center", gap: 12, padding: "16px 0 12px" },
   scroll: { flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" },
-  content: { padding: "6px 32px 56px", maxWidth: 1040, margin: "0 auto" },
+  content: { padding: "6px 0 56px" },
   // Two fixed perspectives — daily quota reading vs. one-off API wiring —
   // so the setup cards stop crowding the numbers the panel exists for.
   tabBar: { display: "flex", gap: 4, borderBottom: "1px solid var(--dsw-alias-border-l1)", marginBottom: 4 },
