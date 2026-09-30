@@ -3,10 +3,13 @@ name: CI
 # Three tiers, on purpose.
 #
 #   offline      — the full offline suite list (see package.json's `test` script,
-#                  minus the e2e-gate tail). The roster is pinned three ways by
-#                  test/package.test.mjs: disk ↔ `test` script ↔ this job, so a
+#                  plus the build-gate tail: a real tsdown build of src/ into
+#                  lib/ + client.js). The *.test.mjs roster is pinned three ways
+#                  by test/package.test.mjs: disk ↔ `test` script ↔ this job, so a
 #                  suite that is written but not gated, or gated but not run here,
-#                  goes red instead of rotting silently.
+#                  goes red instead of rotting silently. The gate file itself is
+#                  not a *.test.mjs (same exemption as e2e-gate) and is listed
+#                  explicitly below.
 #                  These are the real gate: they stub the network
 #                  (test/peer-roots.mjs installs a sentinel that fails any
 #                  request escaping a stub), so a red here is always a regression.
@@ -50,9 +53,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      # No dependencies to install: the plugin has only peerDependencies (react,
-      # @deepseek-ai/dsh*), which the offline suites resolve from the Host
-      # runtime or stub outright. A bare `node test/*.mjs` is the whole contract.
+          # No lockfile by design (the peerDependencies cannot resolve from any
+          # registry), so the npm cache keys off package.json instead.
+          cache: npm
+          cache-dependency-path: package.json
+      # The offline suites themselves still run on bare node (they import the
+      # src/*.ts sources directly via native type stripping and resolve peers
+      # from stubs). The install exists for ONE suite: build-gate, which runs
+      # the real tsdown build. --legacy-peer-deps is mandatory — the plugin's
+      # peerDependencies are Host-runtime packages that no registry serves.
+      - name: Install dev dependencies (tsdown, for the build gate)
+        run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Run the offline suites
         run: |
           set -e
@@ -73,6 +84,11 @@ jobs:
           node test/error-fix.test.mjs
           node test/peer-contract.test.mjs
           node test/draw.test.mjs
+          # The build gate is not a *.test.mjs, so it stays outside the
+          # three-way roster pin; it is listed here because CI is exactly
+          # where the build must be proven (artifacts are gitignored, so a
+          # fresh checkout has none until this build produces them).
+          node test/build-gate.mjs
 
   e2e:
     name: End-to-end (best effort)

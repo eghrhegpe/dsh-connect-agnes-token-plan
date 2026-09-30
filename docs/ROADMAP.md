@@ -214,9 +214,11 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
   测试面与门禁已适配；17 套件 + build-gate + e2e + tsc 全绿，「删 lib 可重建」验收通过。
   checkJs 的 JSDoc 投入随 .ts 化自然并入类型标注。
 
-**遗留（下次碰 CI 时做）**：CI 离线 job 不装依赖，build-gate 在 CI 恒 SKIP——加一步
-`npm i --legacy-peer-deps` 或独立 freshness job。文档四处「无构建」表述已于当日同步
-（`DSH-PLUGIN.md` §7、`ARCHITECTURE.md` 语言行、`TESTING.md` 链条枚举、`AGENTS.md` 验证段）。
+**遗留项已闭合（2026-09-30）**：CI 离线 job 现已安装 devDeps（`npm install
+--legacy-peer-deps`；setup-node 以 `package.json` 为 key 做 npm 缓存——本仓刻意无
+lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI 即红，不再恒 SKIP。
+「无构建」表述已全库同步（`DSH-PLUGIN.md` §7、`ARCHITECTURE.md` 半边表、
+`TESTING.md` 链条枚举、`AGENTS.md` 验证段、`PITFALLS.md` §22）。
 
 ## 6.1 竞品参照：raccoon 的机制点（可选模式范本）
 
