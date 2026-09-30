@@ -1,9 +1,13 @@
 // docs.test.mjs —— 文档与引用一致性钉子（纯文件读取：无网络、无 peer 依赖、干净检出即可跑）
 //
-// 守住两类「一致性纪律」：
+// 守住三类「一致性纪律」：
 //   文档结构（1-6）：内部链接可解析、跨文件表格去重、README 行数上限、
 //                    DSH-PLUGIN.md 教学快照同步、API.md 快照契约、docs/ 孤儿文件
-//   事实引用（N-8）：PITFALLS 条数引用有效、src/ 注释里的模块名引用完整（含伪文件名扫描）
+//   事实引用（N=条目数本身、8）：PITFALLS 条数引用有效、src/ 注释里的模块名引用完整（含伪文件名扫描）
+//   自述面与实际一致（9-11）：README 覆盖每个 tab、声明的 UI 位置与 client 槽位注册一致、
+//                    screenshots.json 声明的图真实存在于磁盘。这三条与 1-8 有本质区别：
+//                    前两组验的是「文档格式对不对」，它们验的是「文档有没有说实话」——
+//                    形式全绿而语义已漂，是本仓库踩过两次的坑（见 PITFALLS §25）。
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -381,6 +385,69 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
     }
   }
   if (wrong === 0) note(`自述面的面板位置与 client 槽位注册一致（受检 ${surfaces.length} 个文件：全量 docs 减 ${HISTORY_FILES.size} 个历史档）`);
+}
+
+// 11) screenshots.json 声明的每一张图必须真实存在于磁盘
+// 实测事故（2026-10-01）：重截截图时文件名从 panel-credit-pools.png /
+// panel-provider-setup.png 换成 panel-credit.png / panel-API-provider.png，
+// assets/ 与 git 都已同步新名，**唯独 screenshots.json 还指着两个已不存在的
+// 文件**——工作树干净、构建通过、其余十条检查全绿，没有任何东西在报错。
+// 而这份清单是市场页取图的唯一依据（也是 npm files 白名单成员），推上去
+// 就是四张图全裂。它与检查 10 是同一类病：**自述面与实际分头走路**，
+// 只不过这次分头的是「清单」与「资产」。
+//
+// 判据全部是硬事实（文件是否存在、是不是图片、条目数在 1–8），不猜语义。
+{
+  const manifest = join(ROOT, "screenshots.json");
+  if (!existsSync(manifest)) {
+    bad("缺少 screenshots.json——市场页靠它取图，没有它市场条目无截图");
+  } else {
+    let list;
+    try {
+      list = JSON.parse(readFileSync(manifest, "utf8"));
+    } catch (e) {
+      bad(`screenshots.json 不是合法 JSON：${e.message}（它是 npm files 白名单成员，坏掉会让市场取不到图）`);
+    }
+    if (list !== undefined) {
+      if (!Array.isArray(list)) {
+        bad(`screenshots.json 顶层必须是数组，实际是 ${typeof list}`);
+      } else if (list.length < 1 || list.length > 8) {
+        bad(`screenshots.json 有 ${list.length} 条，超出市场允许的 1–8 张`);
+      } else {
+        const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+        let missing = 0;
+        let checked = 0;
+        for (const entry of list) {
+          if (typeof entry !== "string") {
+            bad(`screenshots.json 含非字符串条目：${JSON.stringify(entry)}（每项都必须是路径字符串）`);
+            continue;
+          }
+          const rel = entry.trim();
+          if (rel === "") {
+            bad("screenshots.json 含空条目——市场读不到路径");
+            continue;
+          }
+          // 必须是仓库根相对路径：绝对路径与 `..` 逃逸在别人机器上解析不到，
+          // 市场也读不到。
+          if (rel.startsWith("/") || rel.includes("..")) {
+            bad(`screenshots.json 的 "${rel}" 不是仓库根相对路径（绝对路径 / .. 逃逸在别人机器上必裂）`);
+            continue;
+          }
+          if (!existsSync(join(ROOT, rel))) {
+            missing++;
+            bad(`screenshots.json 声明的 ${rel} 不存在——清单指空，市场按它取图必然裂`);
+            continue;
+          }
+          if (!IMAGE_EXT.has(extname(rel).toLowerCase())) {
+            bad(`screenshots.json 的 ${rel} 不是图片扩展名（${[...IMAGE_EXT].join("/")}）`);
+            continue;
+          }
+          checked++;
+        }
+        if (missing === 0) note(`screenshots.json 的 ${checked} 张图全部存在于磁盘且为图片`);
+      }
+    }
+  }
 }
 
 if (fails.length) {
