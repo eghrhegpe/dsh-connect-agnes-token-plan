@@ -14,7 +14,7 @@
  * adapter that parks its first build) still runs against this module, so the
  * race the chain exists to fix cannot reappear as a regression.
  *
- * Peer-free by the same discipline as `llm-modelsts` / `llm-retryts`: this
+ * Peer-free by the same discipline as `llm-models.ts` / `llm-retry.ts`: this
  * file imports no runtime peer. The adapter factory is injected by the caller
  * (`loadAdapterModule`, defaulting to `import("./llm-adapter.ts")` exactly as
  * `indexts` did), so the offline suites can substitute a fake factory without

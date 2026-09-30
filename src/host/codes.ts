@@ -185,7 +185,7 @@ export function isCredentialRefusal(code) {
  *   `console_error` — the console did not answer; usually transient, and the
  *                     text must say so instead of inviting a login.
  *
- * This is the declaration; `clientts` ships its own copy
+ * This is the declaration; `client.js` ships its own copy
  * (`FORM_EXCLUDED_CODES`) because the browser bundle cannot import this
  * module — and `test/panel.test.mjs` asserts the two sets are equal, so the
  * copy cannot fall behind the declaration.

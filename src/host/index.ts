@@ -9,9 +9,9 @@
  * readable orchestrator:
  *
  *   - `host-configts`    config contract + the `isAdmitted` trust fence
- *   - `routests`         the six HTTP route handlers (peer-free, wiring-injected)
- *   - `lifecyclets`      mount seed / draw tool / vision step two / teardown
- *   - `console-clientts` console/catalog fetch with cache + single-flight
+ *   - `routes.ts`         the six HTTP route handlers (peer-free, wiring-injected)
+ *   - `lifecycle.ts`      mount seed / draw tool / vision step two / teardown
+ *   - `console-client.ts` console/catalog fetch with cache + single-flight
  *   - `parsersts`        response normalization + shape-drift detection
  *   - `snapshot-aggregatets` the snapshot body's data aggregation
  *   - `provider-publishts`  the provider registration state machine
@@ -80,7 +80,7 @@ export { catalogSignature } from "./provider-publish.ts";
 /**
  * Host body: assemble the wiring, register the six routes, run the mount
  * side effects, and hang the unmount effect. The route handlers live in
- * `routests`, the side effects in `lifecyclets` — this function only
+ * `routes.ts`, the side effects in `lifecycle.ts` — this function only
  * decides what they may touch.
  * @param ctx - host root context.
  * @param config - the row's raw patch config. There is no DSH Config schema, so
@@ -248,10 +248,10 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   };
 
   // The six route handlers (trust fence, method allowances, body ceilings,
-  // trace writes, publish-after-save) — see routests.
+  // trace writes, publish-after-save) — see routes.ts.
   const offs = registerRoutes(ctx, wiring);
   // Mount-time side effects (persisted-catalog seed, draw tool, vision
-  // step two) — see lifecyclets. Fire-and-forget inside; never awaited.
+  // step two) — see lifecycle.ts. Fire-and-forget inside; never awaited.
   startSideEffects(ctx, wiring, {
     loadToolsModule: deps.loadToolsModule ?? (() => import("@deepseek-ai/dsh-tools")),
     drawFetch: deps.drawFetch ?? ((url, options) => fetch(url, options))

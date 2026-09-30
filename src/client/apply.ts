@@ -1,6 +1,6 @@
 /**
  * The Host-facing mount: dictionary registration, the sidebar row, and the
- * main-slot page. Verbatim logic from the pre-split `clientts`.
+ * main-slot page. Verbatim logic from the pre-split `client.js`.
  */
 import { PanelIcon } from "./cards.ts";
 import { NS, PANEL_ID } from "./const.ts";

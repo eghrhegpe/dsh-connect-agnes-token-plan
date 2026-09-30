@@ -1,4 +1,4 @@
-/** Time and number formatters, verbatim from the pre-split `clientts`. */
+/** Time and number formatters, verbatim from the pre-split `client.js`. */
 
 /** `HH:MM` for one epoch second. */
 export function clock(epoch: unknown): string {

@@ -2,7 +2,7 @@
  * The SenseNova image-generation module ("draw absorption", ARCHITECTURE §5.4
  * route B) — the PEER-FREE half.
  *
- * Like `llm-modelsts` this module imports no runtime peer: it maps catalog
+ * Like `llm-models.ts` this module imports no runtime peer: it maps catalog
  * entries, builds wire bodies and classifies failures as plain functions, so
  * every decision here is testable on a clean checkout. The peer-dependent
  * half lives in `indexts`: the `@deepseek-ai/dsh-tools` import and the

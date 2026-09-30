@@ -5,7 +5,7 @@
  *   `classifyPiAiError` 先跑 `isQuotaExceededError`，其命中面极宽
  *  （`out of ... budget`、`balance/credits exhausted`），凡是商汤 429 体里
  *   带上一两个 "budget/credits/limit" 字眼，就被抢判成 `QUOTA`；于是
- *   `llm-retryts` 的 `retryableCodes()`（刻意排除 QUOTA）对这类 429 不重试，
+ *   `llm-retry.ts` 的 `retryableCodes()`（刻意排除 QUOTA）对这类 429 不重试，
  *   面板又把模型按 `exhaustedModelIds` 静默下线，对用户呈现"额度耗尽"。
  *   而纯 `RATE_LIMIT` 分支（`/\b429\b|rate.?limit/`）是**死代码**——
  *   任何带 429 的体若能进 `isQuotaExceededError` 就被上一行吃了。

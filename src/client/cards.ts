@@ -1,7 +1,7 @@
 /**
  * Hook-free presentational components: the panel icon, the quota pool cards,
  * the exhaustion notice, the trend chart, and the collapsible section card.
- * Verbatim logic from the pre-split `clientts` — the render suite drives
+ * Verbatim logic from the pre-split `client.js` — the render suite drives
  * every one of these in Node, so behavior may not drift by a hair.
  */
 import { PANEL_ID } from "./const.ts";
@@ -47,10 +47,14 @@ export function usageTone(pct: number): { fill: Record<string, unknown>; color: 
 }
 
 /**
- * One quota window as a compact sub-card: the REMAINING balance is the
- * headline number (the panel is opened to see how much is left), the
- * percentage sits beside it in a usage tone, and used/limit is a single
- * quiet caption under the bar.
+ * One quota window as a compact sub-card. The REMAINING PERCENTAGE is the
+ * headline figure — raw credit counts in the tens of thousands are hard to
+ * judge, while "79.4%" answers "还剩多少" at a glance (the shell's own
+ * quota cards lead with a percentage for the same reason). The only raw
+ * figures left are the used/limit caption under the bar: the percentage
+ * already implies the balance, so a third number would be noise. The
+ * headline carries the usage tone (70 warn / 90 error) because a tiny
+ * remaining percentage is the alarm.
  *
  * A window that is not an object at all (a pool row the Host flagged as
  * shape-drifted, or a window field simply absent) renders NOTHING instead
@@ -60,9 +64,13 @@ export function usageTone(pct: number): { fill: Record<string, unknown>; color: 
 export function QuotaCard({ label, window, tt }: { label: string; window: QuotaWindow | null | unknown; tt: Tt }): unknown {
   if (window === null || typeof window !== "object") return null;
   const { limit, used, remaining, resetAt } = window as QuotaWindow;
-  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
-  const tone = usageTone(pct);
+  // A missing/zero limit is UNKNOWN, not "0.0% remaining" — claiming the
+  // window is drained when the platform simply said nothing is a lie, so
+  // the headline reads "—" and the bar stays empty.
+  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : null;
+  const tone = usageTone(pct ?? 0);
   const pctColor = tone.color;
+  const headline = pct === null ? "—" : `${(100 - pct).toFixed(1)}%`;
   return h(
     "div",
     { style: S.quota },
@@ -72,33 +80,27 @@ export function QuotaCard({ label, window, tt }: { label: string; window: QuotaW
       h("span", { style: S.quotaLabel }, label),
       remaining <= 0
         ? h("span", { style: { ...S.chip, color: "var(--dsw-alias-state-error-primary)", borderColor: "var(--dsw-alias-state-error-primary)" } }, tt("pool.exhausted"))
-        // `when` not `clock`: the weekly reset can land on another day, and
-        // a bare HH:MM reads as "later today" — wrong and alarming.
-        : h("span", { style: S.quotaReset }, resetAt ? format(tt("pool.reset"), { time: when(resetAt) }) : "")
+        : null
     ),
+    h("div", { style: { ...S.quotaRemaining, color: pctColor } }, headline),
+    // The bar tracks USAGE (it fills as the window drains), so its width
+    // and its assistive value both carry the used percentage, while the
+    // headline above carries the remaining one: two views of one number.
     h(
       "div",
-      { style: S.quotaFigures },
-      h(
-        "div",
-        { style: { minWidth: 0 } },
-        h("div", { style: S.quotaRemaining }, count(remaining)),
-        h("div", { style: S.quotaRemainLabel }, tt("pool.remaining"))
-      ),
-      // The right column mirrors the left: percentage over the quiet
-      // used/limit caption. `minWidth:0` lets it shrink instead of
-      // pushing the headline number off the card when columns get tight.
-      h(
-        "div",
-        { style: { minWidth: 0, textAlign: "right" } },
-        h("div", { style: { ...S.quotaPct, color: pctColor } }, `${pct.toFixed(1)}%`),
-        h("div", { style: S.quotaUsed }, `${tt("pool.used")} ${count(used)} / ${count(limit)}`)
-      )
+      { style: S.bar, role: "progressbar", "aria-label": `${label} ${tt("pool.used")} ${pct === null ? "—" : `${pct.toFixed(1)}%`}`, "aria-valuenow": pct === null ? 0 : pct.toFixed(1), "aria-valuemin": 0, "aria-valuemax": 100 },
+      h("div", { style: { ...tone.fill, width: `${pct ?? 0}%` } })
     ),
+    // One quiet footer row: the only raw figures (used/limit) on the left,
+    // the reset clock on the right. Both are supporting detail; keeping
+    // them off the top row leaves the window label alone up there.
     h(
       "div",
-      { style: S.bar, role: "progressbar", "aria-label": `${label} ${pct.toFixed(1)}%`, "aria-valuenow": pct.toFixed(1), "aria-valuemin": 0, "aria-valuemax": 100 },
-      h("div", { style: { ...tone.fill, width: `${pct}%` } })
+      { style: S.quotaTop },
+      h("span", { style: S.quotaUsed }, `${tt("pool.used")} ${count(used)} / ${count(limit)}`),
+      // `when` not `clock`: the weekly reset can land on another day, and
+      // a bare HH:MM reads as "later today" — wrong and alarming.
+      remaining > 0 && resetAt ? h("span", { style: S.quotaReset }, format(tt("pool.reset"), { time: when(resetAt) })) : null
     )
   );
 }

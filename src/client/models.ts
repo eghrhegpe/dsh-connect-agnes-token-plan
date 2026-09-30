@@ -1,6 +1,6 @@
 /**
  * The model allow-list algebra, shared by the picker and the roster rows.
- * Verbatim logic from the pre-split `clientts`.
+ * Verbatim logic from the pre-split `client.js`.
  */
 
 /**
@@ -8,7 +8,7 @@
  *
  * An empty list already means "no filter", so "the filter matched
  * nothing" needs its own spelling: one entry naming an id no real model
- * can carry. The Host carries the SAME literal (`llm-modelsts`
+ * can carry. The Host carries the SAME literal (`llm-models.ts`
  * `HIDE_ALL_MODELS`) — the browser bundle cannot import that module, so
  * `test/provider.test.mjs` compares the two and a rename on either side
  * goes red instead of silently un-curating every model.

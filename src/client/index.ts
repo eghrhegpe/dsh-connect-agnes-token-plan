@@ -9,7 +9,7 @@
  * session events of its own.
  *
  * The sources live in `src/client/*.ts` and are bundled into the root
- * `clientts` artifact by tsdown (IIFE, see `tsdown.config.mjs`); the tests
+ * `client.js` artifact by tsdown (IIFE, see `tsdown.config.mjs`); the tests
  * load the ARTIFACT, so what they exercise is what the browser runs.
  * @module dsh-connect-sensenova-token-plan/client
  */
@@ -23,7 +23,7 @@
  * call for module-system syntax — see `runtime.ts`.
  *
  * The Node-side test suites run this exact factory with a stand-in React
- * (`client-surfacets`), so the definitions it sees — the decision, the
+ * (`client-surface.js`), so the definitions it sees — the decision, the
  * tables, the style tokens, the components — are the ones the browser runs,
  * not a copy.
  *
@@ -138,7 +138,7 @@ const REGISTRATION = { id: "dsh-connect-sensenova-token-plan", factory: clientFa
 //   `module.exports`, so the suite can hand a stand-in React to `factory`.
 // - NODE ESM: `import("./client.ts")` — the artifact carries no `import`/
 //   `export` statements, so it is legal ESM; `module` is undefined there, and
-//   `client-surfacets` installs a capturing `window.__ModuleLoader__` BEFORE
+//   `client-surface.js` installs a capturing `window.__ModuleLoader__` BEFORE
 //   the import, which is what runs this branch.
 //
 // In every world the SAME `clientFactory` is what the panel runs, so the Node
@@ -146,7 +146,7 @@ const REGISTRATION = { id: "dsh-connect-sensenova-token-plan", factory: clientFa
 // copy and never a scrape of this source text.
 if (typeof window !== "undefined") {
   // The module table is shell-attached, so the DOM lib does not declare it.
-  // Asserted once here — the same face `client-surfacets` installs before it
+  // Asserted once here — the same face `client-surface.js` installs before it
   // imports this bundle in Node.
   const loader = (window as Window & typeof globalThis & { __ModuleLoader__?: { load: (registration: object) => void } }).__ModuleLoader__;
   if (loader !== undefined) loader.load(REGISTRATION);

@@ -46,11 +46,11 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const meta = texts(tree).join("\n");
   check("the used figure is the USED count against the limit",
     meta.includes("pool.used 12,345 / 60,000"), meta);
-  check("the raw remaining count is still on the card",
-    meta.includes("47,655"), meta);
-  check("the headline is the REMAINING percentage, labelled as such",
-    meta.includes("79.4%") && meta.includes("pool.remaining"), meta);
+  check("the headline is the REMAINING percentage",
+    meta.includes("79.4%"), meta);
   check("the used percentage is not shown as the headline", !meta.includes("20.6%"), meta);
+  check("the raw remaining count is not on the card — the percentage implies it",
+    !meta.includes("47,655"), meta);
 
   const fill = bar(tree);
   check("the bar reports the same percentage to assistive tech",
@@ -89,12 +89,12 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     fillFor(54000).background === S.barFillError.background, JSON.stringify(fillFor(54000)));
 }
 
-// === D. an empty limit is 0%, never NaN ===================================
+// === D. an empty limit is unknown, never a fake percentage ================
 {
   const tree = treeOf(render.QuotaCard, {
     label: "l", window: { limit: 0, used: 0, remaining: 0, resetAt: null }, tt
   });
-  check("a zero limit renders as 0.0%", texts(tree).includes("0.0%"), texts(tree).join("\n"));
+  check("a zero limit renders as an em dash, not 0.0%", texts(tree).includes("—") && !texts(tree).includes("%"), texts(tree).join("\n"));
   check("the bar's reported value stays a number",
     bar(tree)?.props["aria-valuenow"] !== undefined && Number(bar(tree)?.props["aria-valuenow"]) === 0,
     String(bar(tree)?.props["aria-valuenow"]));

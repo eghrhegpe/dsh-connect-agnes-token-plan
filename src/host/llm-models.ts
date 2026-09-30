@@ -112,7 +112,7 @@ export const FALLBACK_CONTEXT_WINDOW = 128_000;
  * `context_length` is the field the platform actually emits (verified against
  * the live catalog, 2026-09); the other spellings are kept as fallbacks in
  * case the platform ever reverts to a different name. SenseNova's `/v1/models`
- * entries are kept whole by `console-clientts`, so a field the platform adds
+ * entries are kept whole by `console-client.ts`, so a field the platform adds
  * later needs no parser change here — only its name has to be added to this
  * list.
  * @param {object} entry - one normalized catalog entry.
@@ -249,7 +249,7 @@ export function filterByEnabled(entries, enabledIds) {
  * an id that matches nothing, which is the offer the user asked for. A bare
  * `[]` cannot mean both "all models" and "no models" at once.
  *
- * The panel carries the SAME literal (`clientts` `HIDE_ALL_MODELS`) because
+ * The panel carries the SAME literal (`client.js` `HIDE_ALL_MODELS`) because
  * the browser bundle cannot import this module; `test/provider.test.mjs` pins
  * the two together so a rename on either side goes red.
  */

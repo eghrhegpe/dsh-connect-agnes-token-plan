@@ -586,7 +586,7 @@ function rejectionDetail(body, status) {
  * substring scan only covers a code this table has not learned yet, and the
  * generic code is the last resort — never a specific-looking guess.
  *
- * The table itself lives in `codests` next to the taxonomy, so that a new
+ * The table itself lives in `codes.ts` next to the taxonomy, so that a new
  * platform reason is recognised in one place rather than three.
  * @param {object} body - the parsed IAM response.
  * @returns {string} a {@link CODE} value.

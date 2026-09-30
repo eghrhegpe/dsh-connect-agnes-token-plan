@@ -1,6 +1,6 @@
 /**
  * Theme-token-only styles; a renamed token degrades looks, never rendering.
- * Verbatim from the pre-split `clientts`.
+ * Verbatim from the pre-split `client.js`.
  */
 export const S = {
   // The shell's center column is `display:flex; flex-direction:column;
@@ -64,12 +64,9 @@ export const S = {
   quotaTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
   quotaLabel: { fontSize: 12, fontWeight: 500, color: "var(--dsw-alias-label-secondary)" },
   quotaReset: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
-  quotaFigures: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 },
-  // Remaining credits are the headline number — that is what the reader
-  // opens the panel for. Tabular figures keep it still while polling.
-  quotaRemaining: { fontSize: 24, lineHeight: "28px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
-  quotaRemainLabel: { fontSize: 11, marginTop: 1, color: "var(--dsw-alias-label-secondary)" },
-  quotaPct: { fontSize: 15, lineHeight: "20px", fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums" },
+  // The remaining PERCENTAGE is the headline — tabular figures keep it
+  // still while polling.
+  quotaRemaining: { fontSize: 18, lineHeight: "22px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
   // used/limit is a single quiet caption under the bar (its own full row,
   // so the figures row never wraps on a narrow twin card).
   quotaUsed: { fontSize: 11, lineHeight: "15px", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums" },

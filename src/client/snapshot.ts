@@ -1,7 +1,7 @@
 /**
  * The decision layer: reading a snapshot response into a view, and the wire-
  * code tables the panel's guidance and forms are keyed by. Verbatim logic
- * from the pre-split `clientts`.
+ * from the pre-split `client.js`.
  */
 import { format } from "./format.ts";
 import type { Tt } from "./runtime.ts";
@@ -39,7 +39,7 @@ export interface SnapshotView {
  *
  * A named function at module scope, not inline branching, so the
  * Node-side tests can drive the panel's REAL reading of a response by
- * loading this bundle as a module (`client-surfacets`) — instead of a
+ * loading this bundle as a module (`client-surface.js`) — instead of a
  * hand-written copy that would drift the moment either side is edited.
  */
 export function interpretSnapshot(body: unknown): SnapshotRead {
@@ -77,7 +77,7 @@ export function errorOfStatus(status: number): SnapshotFailure | string {
  * The panel's guidance line for a wire code, keyed by `body.code`.
  *
  * This is the ONE deliberate copy of the Host's taxonomy: the browser
- * cannot import `codests` (the Client module table resolves package
+ * cannot import `codes.ts` (the Client module table resolves package
  * names only). The copy is therefore pinned, not trusted —
  * `test/panel.test.mjs` asserts every key here exists in `CODE`, so a code
  * renamed on either side fails the suite instead of silently reading as
@@ -102,7 +102,7 @@ export const GUIDANCE_BY_CODE: Readonly<Record<string, string>> = Object.freeze(
  *                   next poll, and the text must say so.
  *
  * Hiding either behind a login box turns "the console is down" into
- * "please sign in". Pinned to `NO_LOGIN_CODES` in `codests` by the same
+ * "please sign in". Pinned to `NO_LOGIN_CODES` in `codes.ts` by the same
  * test: this set is the copy, that one is the declaration.
  */
 export const FORM_EXCLUDED_CODES: ReadonlySet<string> = Object.freeze(new Set(["config_error", "console_error"]));
@@ -126,7 +126,7 @@ export const REFUSAL_TEXT: Readonly<Record<string, string>> = Object.freeze({
  * Deliberately a module-scope pure function in `(data, error, tt)`.
  * `PanelPage` calls it in the browser, and the Node-side tests call the
  * very same function after loading this bundle as a module (see
- * `client-surfacets`): no source text is copied or scraped, so the
+ * `client-surface.js`): no source text is copied or scraped, so the
  * tested logic and the running logic cannot drift apart.
  */
 export function viewOf(

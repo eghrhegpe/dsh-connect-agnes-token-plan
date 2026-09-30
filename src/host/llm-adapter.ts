@@ -3,7 +3,7 @@
  *
  * Everything here runs against Host-shipped peers (`pi-ai`, `dsh-llm`,
  * `dsh-llm-pi-ai`), which is exactly why the descriptor mapping lives in the
- * peer-free `llm-modelsts` instead: this module cannot be imported by the
+ * peer-free `llm-models.ts` instead: this module cannot be imported by the
  * offline unit suite, so it holds only assembly against the runtime and is
  * exercised in wiring/e2e checks.
  *
@@ -144,7 +144,7 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
         // Quota-aware retry policy: explicit (not `undefined`) so a future peer
         // default change cannot silently alter this provider. Excludes the quota
         // codes (a depleted pool cannot be retried into health; see
-        // `llm-retryts`), keeps `RATE_LIMIT` with a gentle shared-pool backoff.
+        // `llm-retry.ts`), keeps `RATE_LIMIT` with a gentle shared-pool backoff.
         retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${LLM_PROVIDER_ID}.retryPolicy`),
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
@@ -182,7 +182,7 @@ export function createSensenovaAdapter({ entries, enabledIds = [], baseUrl, reso
 
   // 429 误判纠正层：peer 的 `classifyPiAiError` 会把带 "budget/credits" 字眼的
   // 限频 429 抢判成 QUOTA（不重试），本 Proxy 把这类误判体在出流前纠正回
-  // RATE_LIMIT，使 `llm-retryts` 的退避重试真正生效。只拦截流出口，不触碰
+  // RATE_LIMIT，使 `llm-retry.ts` 的退避重试真正生效。只拦截流出口，不触碰
   // peer 内部逻辑，也不影响任何正常数据 chunk。详见 `llm-error-fixts`。
   const adapter = new Proxy(inner, {
     get(target, prop, receiver) {

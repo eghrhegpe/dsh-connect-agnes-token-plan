@@ -6,7 +6,7 @@
  * they had inline (the trust fence, the method allowances, the body ceilings,
  * the trace writes, the publish-after-save calls). Nothing here imports a Host
  * peer — the only lazy peer loads (the adapter / tools modules) live in
- * `lifecyclets` and are injected from `apply` via `deps`.
+ * `lifecycle.ts` and are injected from `apply` via `deps`.
  *
  * @module dsh-connect-sensenova-token-plan/routes
  */
