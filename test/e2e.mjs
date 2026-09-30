@@ -200,6 +200,37 @@ async function startFake(port) {
 }
 
 /** Boot the Host and resolve with its launch token once it prints one. */
+/**
+ * Kill the Host AND everything it spawned.
+ *
+ * `spawn(..., { shell: true })` runs the CLI through a shell wrapper, so the
+ * handle we hold is the WRAPPER, not the Host. `child.kill()` therefore reaps
+ * the wrapper and leaves the real `node .../dsh/lib/bin.js` running — observed
+ * on this machine as a 342 MB orphan still holding its port minutes after a
+ * green run, which is exactly the "next run fails for an unrelated reason"
+ * failure the watchdog comment warns about.
+ *
+ * So kill the whole tree: `taskkill /T` on Windows (the wrapper is cmd.exe,
+ * whose child is the real Host), the process group elsewhere. The POSIX branch
+ * needs the spawn to be `detached` — that makes the child a group leader so
+ * `-pid` addresses the group.
+ * @param {import("node:child_process").ChildProcess} child
+ */
+function killHostTree(child) {
+  if (child.pid === undefined) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    // No group (spawn was not detached, or the group is already gone): fall
+    // back to the direct kill we used to rely on.
+    try { child.kill("SIGKILL"); } catch { /* already gone */ }
+  }
+}
+
 function startHost(home, port) {
   return new Promise((resolve, reject) => {
     // The developer's own SenseNova environment is STRIPPED from the child.
@@ -215,6 +246,10 @@ function startHost(home, port) {
     const child = spawn(DSH, ["--profile", "web", "--no-open", "--port", String(port)], {
       env,
       shell: true,
+      // POSIX only: make the child a group leader so the teardown can signal the
+      // whole tree with `-pid`. On Windows the group kill goes through
+      // `taskkill /T` instead (see killHostTree).
+      detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"]
     });
     let out = "";
@@ -306,7 +341,7 @@ const watchdog = setTimeout(() => {
   const last = results.at(-1)?.name ?? "(none)";
   check("the e2e run finished inside its budget", false,
     `exceeded ${RUN_TIMEOUT_MS}ms; the last check reached was: ${last}`);
-  host?.child?.kill();
+  host?.child && killHostTree(host.child);
   console.log(JSON.stringify(results, null, 2));
   console.error(
     `\nthe e2e run exceeded ${RUN_TIMEOUT_MS}ms — failing rather than hanging forever.` +
@@ -552,12 +587,15 @@ try {
   }
 } finally {
   clearTimeout(watchdog);
-  // Kill the Host AND close its pipes. `shell: true` spawns a shell wrapper,
-  // so `kill()` can leave the real process — and its inherited stdout/stderr —
-  // alive. An open pipe on a child keeps this event loop up, which is how a
-  // run printed all 24 results and then sat there for minutes looking busy.
+  // Kill the Host tree AND close its pipes. `shell: true` spawns a shell
+  // wrapper, so the handle we hold is the wrapper: `kill()` alone reaped only
+  // that and left the real Host alive (a 342 MB orphan still holding its port
+  // after a green run). killHostTree takes down the whole tree; destroying the
+  // pipes is still needed because an open pipe on a child keeps this event loop
+  // up, which is how a run printed all its results and then sat there for
+  // minutes looking busy.
   if (host?.child !== undefined) {
-    host.child.kill();
+    killHostTree(host.child);
     for (const stream of [host.child.stdout, host.child.stderr]) {
       try { stream?.destroy(); } catch { /* already gone */ }
     }
