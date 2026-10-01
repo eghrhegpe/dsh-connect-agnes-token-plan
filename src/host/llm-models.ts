@@ -461,7 +461,7 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
       seen.set(id, out.length);
       out.push(undefined);
     }
-    out[seen.get(id)] = toPiDescriptor({ ...entry, id }, { providerId, baseUrl });
+    out[seen.get(id)] = toPiDescriptor({ ...entry, id }, { providerId, ...(baseUrl === undefined ? {} : { baseUrl }) });
   }
   return out;
 }

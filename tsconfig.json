@@ -13,6 +13,8 @@
     "strict": true,
     "noImplicitAny": false,
     "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "noUnusedLocals": true,

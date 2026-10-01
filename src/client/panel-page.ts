@@ -153,7 +153,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       const response = await fetch(SNAPSHOT_PATH, {
         headers: { accept: "application/json" },
         cache: "no-store",
-        signal: controller ? controller.signal : undefined
+        signal: controller ? controller.signal : null
       });
       if (!isCurrent()) return;
       if (!response.ok) {

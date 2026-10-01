@@ -438,7 +438,10 @@ export function parseSubscriptionUsage(subscription) {
   const usage = obj(obj(subscription).usage);
   if (Object.keys(usage).length === 0) return null;
   const out = {};
-  for (const [windowKey, [group, slot]] of Object.entries(USAGE_WINDOW_MAP)) {
+  for (const [windowKey, pair] of Object.entries(USAGE_WINDOW_MAP)) {
+    const group = pair[0];
+    const slot = pair[1];
+    if (group === undefined || slot === undefined) continue;
     const cell = obj(obj(usage[group])[slot]);
     if (Object.keys(cell).length === 0) continue;
     out[windowKey] = {

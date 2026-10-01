@@ -65,7 +65,7 @@ export function readJwtExpiry(token) {
   const parts = str(token, "").split(".");
   if (parts.length !== 3) return null;
   try {
-    const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    const claims = JSON.parse(Buffer.from(parts[1]!, "base64url").toString("utf8"));
     const exp = Number(obj(claims).exp);
     return Number.isFinite(exp) && exp > 0 ? exp * 1000 : null;
   } catch {
@@ -197,7 +197,8 @@ export function parseRetryAfterMs(response, message, nowMs = Date.now()) {
   const stated = STATED_DURATION.exec(str(message, ""));
   if (stated !== null) {
     const amount = Number(stated[1]);
-    const unit = UNIT_MS[stated[2].toLowerCase()] ?? UNIT_MS[stated[2]];
+    const unitRaw = stated[2]!;
+    const unit = UNIT_MS[unitRaw.toLowerCase()] ?? UNIT_MS[unitRaw];
     if (Number.isFinite(amount) && amount > 0 && unit !== undefined) return Math.round(amount * unit);
   }
   return null;

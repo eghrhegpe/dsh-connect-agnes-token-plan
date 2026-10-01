@@ -114,7 +114,7 @@ export function shouldReclassifyQuotaToRate(failure) {
   const message = typeof failure.message === "string" ? failure.message : "";
   const type = extractStructuredType(message);
 
-  if (type !== null) {
+  if (type) {
     const t = type.toLowerCase();
     if (/rate[_\s-]?limit/.test(t)) return true; // 防御：已是限频类型
     if (/quota/.test(t)) {

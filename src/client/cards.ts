@@ -390,7 +390,7 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
       { style: S.usageBars },
       buckets.map((bucket, index) => {
         const value = values[index];
-        const pct = max > 0 ? (value / max) * 100 : 0;
+        const pct = max > 0 ? ((value ?? 0) / max) * 100 : 0;
         const label = String(bucket?.bucket ?? "");
         return h(
           "div",

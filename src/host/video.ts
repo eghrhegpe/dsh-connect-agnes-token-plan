@@ -474,7 +474,7 @@ export const VIDEO25_DEFAULT_ASPECT = "16:9";
 export function nearestAspect25(width, height) {
   const valid = typeof width === "number" && width > 0 && typeof height === "number" && height > 0;
   const target = valid ? width / height : 16 / 9;
-  let best = VIDEO25_ASPECT_TABLE.find((row) => row.ratio === VIDEO25_DEFAULT_ASPECT) ?? VIDEO25_ASPECT_TABLE[0];
+  let best = VIDEO25_ASPECT_TABLE.find((row) => row.ratio === VIDEO25_DEFAULT_ASPECT) ?? VIDEO25_ASPECT_TABLE[0]!;
   for (const row of VIDEO25_ASPECT_TABLE) {
     if (Math.abs(row.value - target) < Math.abs(best.value - target)) best = row;
   }

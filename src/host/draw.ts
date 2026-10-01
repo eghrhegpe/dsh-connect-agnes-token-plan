@@ -364,7 +364,7 @@ export function defineDrawTool({
       }
       const entries = Array.isArray(picked) ? picked : [];
       const model = pickDrawModel(entries, params?.model, settings?.drawModelId);
-      if (model === null) {
+      if (model === null || model === undefined) {
         throw new Error(
           "catalog 中没有出图模型（`output_modalities` 字段与 `agnes-image-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含出图模型"
         );
