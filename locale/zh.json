@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agnes Token Plan 接入全家桶",
+    "description": "Agnes 接入的 DSH Plugins 页全家桶：Token Plan 积分额度面板（额度窗口、累计用量、令牌自动重登），可选的模型 provider 注册与出图路由，外加 Host 侧 429 自愈。"
+  }
+}

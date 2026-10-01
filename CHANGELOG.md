@@ -2,6 +2,14 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [Unreleased]
+
+### 修复：插件卡在中文界面显示英文文案
+
+- **现象**：Plugins 页卡片标题是裸包名、描述是一段英文——全程无报错（`docs/PITFALLS.md` §33）。
+- **根因**：卡片文案由 Host 的 `readPluginMeta()` 读**包元数据**（`locale/*.json` 的 `meta.title`/`meta.description`），不经插件 bundle 渲染。本插件没有 `locale/` 目录、`exports` 也没有该资源子路径——解析抛 `ERR_PACKAGE_PATH_NOT_EXPORTED` 被读取端当「无元数据」吞掉，落回 `package.json.description` 的英文兜底（`displayName` 这条链路根本不读）。
+- **修法**：新增 `locale/en.json` + `locale/zh.json`（标题「Agnes Token Plan 接入全家桶」与中文描述），`exports` 加 `./locale/*.json` 子路径，`files` 白名单加 `locale`（三者缺一即哑，见 PITFALLS §33）；`package.test.mjs` 新增检查 7 把这条链钉死。
+
 ## [0.6.0] — 2026-10-01
 
 **面板信息架构再收一刀**：顶栏从「页面标题栏」降格为「当前 tab 的状态与刷新出口」——撤销假的全局标题，「更新于」/令牌状态/刷新按 tab 归属；额度窗口卡片改以**百分比为主视**并按职责分池；三个 tab 补上常驻的官网入口。**AgnesCode 这条线修掉两个叠加的旧病**：GET 路由的 `lastHarvest` 落在暂时性死区，让「检测本机登录态」点了没反应；以及「开关先开、令牌后到」留下的 `not_configured` 被当作红色错误报警。推理侧把单次输出上限从兜底的 32768 提到实测平台上限 65536，契约基线 seed 一并退役、换真机全阶梯证据。

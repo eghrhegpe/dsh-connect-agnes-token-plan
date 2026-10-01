@@ -221,6 +221,52 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
     "the live tier must not be a default-run check");
 }
 
+// --- 7. the plugin-meta resource chain is exported and shipped ---------------
+// The card title/description on the Plugins page come from `readPluginMeta`
+// (dsh-app-boot), which resolves `${specifier}/locale/en.json` through the Node
+// ESM resolver — so it must be both an `exports` subpath and inside `files`.
+// The reader is the front half of a three-part chain we only partly own:
+//   · en.json is the ANCHOR — `dictionariesOf` scans the directory of the
+//     resolved English resource, so without en.json even a present zh.json is
+//     never read and the card stays English (resolveText zh→["zh","en"]).
+//   · the English fallback lives in package.json.description (string only);
+//     `displayName` is never consulted, so the bare package name is the floor.
+//   · a missing `./locale/*.json` export throws ERR_PACKAGE_PATH_NOT_EXPORTED,
+//     which the reader swallows as "no metadata" — silent English, no warning.
+// This is the same drift class as "ships but missing from files", and it was a
+// real bug (the card rendered English in a Chinese UI until this pin).
+{
+  const exported = manifest.exports ?? {};
+  check("exports exposes the locale resource for readPluginMeta",
+    typeof exported["./locale/*.json"] === "string",
+    "missing — ERR_PACKAGE_PATH_NOT_EXPORTED is swallowed as no-metadata");
+  check("files whitelists the locale directory",
+    shipped.has("locale"),
+    "missing — the card falls back to package.json.description (English)");
+  // en.json is the anchor that makes zh.json readable at all.
+  let enAnchor = false;
+  try {
+    const en = JSON.parse(readFileSync(join(root, "locale", "en.json"), "utf8"));
+    enAnchor = en.meta !== undefined;
+  } catch { enAnchor = false; }
+  check("locale/en.json exists as the dictionary anchor",
+    enAnchor, "absent — zh.json would never be read and the card stays English");
+  // Any locale file's meta fields must be plain non-empty strings (textOf's
+  // contract); an object or empty string throws inside the reader's try/catch
+  // and degrades to an error diagnostic, silently losing all display text.
+  for (const name of readdirSync(join(root, "locale"))) {
+    if (!name.endsWith(".json")) continue;
+    const dict = JSON.parse(readFileSync(join(root, "locale", name), "utf8"));
+    const meta = dict.meta ?? {};
+    for (const field of ["title", "description"]) {
+      if (meta[field] === undefined) continue;
+      check(`locale/${name}: meta.${field} is a non-empty string`,
+        typeof meta[field] === "string" && meta[field].trim() !== "",
+        "must be a plain non-empty string");
+    }
+  }
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.pass);
 if (failed.length > 0) {

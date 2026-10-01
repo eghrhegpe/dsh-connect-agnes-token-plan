@@ -337,3 +337,15 @@
 - **验证**：把 `HOME`/`USERPROFILE`/`LOCALAPPDATA` 指到空目录（模拟 runner：无桌面 runtime、无本地 link）后，`findPeerRoot()` 回落到全局 CLI 的 runtime，`node test/store.test.mjs` 仍全绿；本机常态下仍走 `~/.dsh` 解包 runtime。
 - **修完 CI 后的第一个副产物（同一课的第二个症状）**：链终于跑到底，`docs.test.mjs` 立刻在 CI 报 5 条「注释引用断链：`Agnes-auth.ts`」——而本机同一条命令**一直是绿的**。根因不在注释，在文件系统：**Windows / macOS 大小写不敏感**，`existsSync("Agnes-auth.ts")` 在那边命中真实的 `agnes-auth.ts`，断链只在 Linux 上现形（5 处：`codes.ts`×2、`token-store.ts`、`trace.ts`、`util.ts`）。修法两件：5 处引用改成真实文件名 `agnes-auth.ts`；`docs.test.mjs` 的**链接检查与注释引用检查改用 `existsExact()`**——逐段与目录里的真实条目比对大小写，这类断链从此在本机也红（故意写回 `Agnes-auth.ts` 复跑，本地立刻 `❌ 失败 1 项`）。
 - **教训**：「本机全绿」对门禁给出的信心是假的——**没在 CI 里跑过就不算门禁**。而且「环境缺件」与「真回归」在日志里长得一模一样（第一条断言红 + 大面积级联），所以 runner 上需要的外部件（CLI、runtime、构建产物）只有两种正当处理：在 workflow 里显式供给，或让套件**响亮地 SKIP**；两者都不做，那块红色就没人会看。同理，凡是「这个路径存不存在」的断言，在大小写不敏感的文件系统上都会给出假绿——要比就逐段比大小写。
+
+## 33. 插件卡文案不读 `displayName`——缺 locale 导出时安静地显示英文
+
+- **现象**：中文界面里，Plugins 页的插件卡标题是裸包名 `dsh-connect-agnes-token-plan`、描述是一段英文长文——而 `package.json` 明明写了 `displayName`，README 也全中文。全程无任何报错。
+- **根因**：卡片文案不是插件 bundle 渲染的，是 Host 侧 `readPluginMeta()`（`@deepseek-ai/dsh-app-boot`）读**包元数据**的结果，本插件只提供了它不接受的那一半：
+  - 它按 `${specifier}/locale/en.json` 走 Node ESM 解析器取**英文字典锚点**——`exports` 没有 `./locale/*.json` 子路径时抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`，被 `missingResource()` 归为「资源缺失」**静默吞掉**（不报错、不告警）；而 `dictionariesOf` 是扫**已解析的 en.json 所在目录**，所以 en.json 缺席 ⇒ `zh.json` 永远不会被读到。
+  - 字典缺席后落兜底链：标题 = `package.json.name`（**`displayName` 这条链路根本不读**），描述 = `package.json.description`（只认字符串）。这就是「中文界面显示英文」的全部来源。
+  - 客户端 `resolveText()`（`dsh-client-locale`）按当前语言兜底链取词（zh → `["zh","en"]`），渲染在 `dsh-client-ui-plugin-manager` 的卡片行——**服务端没给映射，客户端拿不到中文**。
+- **修法**：三件齐活，缺一即哑：`exports` 加 `"./locale/*.json": "./locale/*.json"`；`files` 加 `"locale"`（否则 npm 包里没有它，装了等于没发）；`locale/en.json` + `locale/zh.json` 提供 `meta.title` / `meta.description`（**只认非空字符串**，写成对象或留空会在读取端抛错并连累整卡文案）。对照同类已发布插件（`dsh-connect-sensenova-token-plan`）的写法。
+- **验证**：`test/package.test.mjs` 检查 7 把这条链钉死——exports 子路径存在、files 白名单含 locale、en.json 锚点存在、每个 locale 的 meta 字段是非空字符串；直接跑真 `readPluginMeta('dsh-connect-agnes-token-plan', …)` 可看到 `{en, zh}` 双字典。
+- **教训**：读取端把「解析失败」归类为「没有这个东西」的 API，永远不会告诉你你**本该**提供它——症状只是「界面说英文」。凡是宿主平台读包元数据的约定字段，要用**运行时同款的解析器**验证（`optionalResourcePath` 走的是真 ESM resolver，`Test-Path` 绿不代表 exports 通），别拿文件系统的眼睛看模块解析的东西。
+
