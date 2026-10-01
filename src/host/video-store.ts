@@ -41,7 +41,7 @@ export const VIDEO_STORE_VERSION = 1;
  * @param {string|null} [profile] - the profile name; `null` means shared.
  * @returns {string} the directory.
  */
-export function videoStoreDir(profile) {
+export function videoStoreDir(profile: string | null) {
   return profileStateDir(name, profile);
 }
 
@@ -50,7 +50,7 @@ export function videoStoreDir(profile) {
  * @param {unknown} raw - the persisted or posted value.
  * @returns {boolean|null} `true`/`false`, or `null` when nothing usable.
  */
-export function normalizeVideoEnabled(raw) {
+export function normalizeVideoEnabled(raw: unknown) {
   return typeof raw === "boolean" ? raw : null;
 }
 
@@ -60,7 +60,7 @@ export function normalizeVideoEnabled(raw) {
  * @param {unknown} raw - the persisted or posted value.
  * @returns {string|null}
  */
-export function normalizeVideoModelId(raw) {
+export function normalizeVideoModelId(raw: unknown) {
   return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
 }
 
@@ -84,7 +84,7 @@ export function createFileVideoStore(options: StoreOptions = {}) {
    * @param {object} body - the JSON body to persist.
    * @returns {Promise<void>}
    */
-  const writePayload = async (body) => {
+  const writePayload = async (body: unknown) => {
     const temporary = temporaryOf(stateDir, "video.json");
     await ensureStateDir(stateDir);
     await writeStateFile(filePath, JSON.stringify(body, null, 2), { temporary });
@@ -94,7 +94,7 @@ export function createFileVideoStore(options: StoreOptions = {}) {
   // store inherits it once, when its own file is missing. An explicit `dir`
   // (the tests) never inherits.
   const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "video.json") : null;
-  const parseSwitch = (raw) => {
+  const parseSwitch = (raw: unknown) => {
     const source = obj(raw);
     // One read, two answers: the switch AND the model preference live in the
     // same file (they are the same operator decision — "how this profile
@@ -153,7 +153,7 @@ export function createFileVideoStore(options: StoreOptions = {}) {
      * @param {boolean} value - the new switch state.
      * @returns {Promise<void>}
      */
-    async save(value) {
+    async save(value: unknown) {
       const enabled = normalizeVideoEnabled(value);
       if (enabled === null) throw new TypeError("video switch expects a boolean");
       // Write failures PROPAGATE on purpose: a switch the panel ordered must
@@ -175,7 +175,7 @@ export function createFileVideoStore(options: StoreOptions = {}) {
      * @param {string|null} value - the preferred catalog id, or null for auto.
      * @returns {Promise<void>}
      */
-    async saveModel(value) {
+    async saveModel(value: string | null) {
       const modelId = normalizeVideoModelId(value);
       if (modelId === null && value != null) throw new TypeError("video model expects a non-empty string or null");
       const enabled = (await saved()).enabled;
