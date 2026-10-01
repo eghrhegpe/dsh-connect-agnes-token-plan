@@ -349,3 +349,13 @@
 - **验证**：`test/package.test.mjs` 检查 7 把这条链钉死——exports 子路径存在、files 白名单含 locale、en.json 锚点存在、每个 locale 的 meta 字段是非空字符串；直接跑真 `readPluginMeta('dsh-connect-agnes-token-plan', …)` 可看到 `{en, zh}` 双字典。
 - **教训**：读取端把「解析失败」归类为「没有这个东西」的 API，永远不会告诉你你**本该**提供它——症状只是「界面说英文」。凡是宿主平台读包元数据的约定字段，要用**运行时同款的解析器**验证（`optionalResourcePath` 走的是真 ESM resolver，`Test-Path` 绿不代表 exports 通），别拿文件系统的眼睛看模块解析的东西。
 
+## 34. 四个 opt-in 开关互相复制：继承来的值落盘即腐烂，而测试一条都没红
+
+- **现象**：面板把某个 opt-in 开关打开后，**下一次 Host 启动它自己回到配置默认（关）**——没有报错、没有告警，`doctor` 也看不出异常（它只是读到"未设置"）。只在做过 profile 分段迁移（§23）的机器上出现，且**不是所有开关都中**：provider / AgnesCode 正常，draw / video 会丢。
+- **根因**：四个开关商店（provider / draw / video / AgnesCode）是**逐字互抄**的四份代码（`draw-store.ts` 与 `video-store.ts` 连 JSDoc 都只换了单词），`doctor.ts` 又手抄了第五~八份解析器。`state-store.ts` 当初把**底层**原语收敛了（版本载荷、temp+rename、短 TTL 读缓存、§23 一次性继承缝），但真正的重复形状——「一个 bool 开关 + 一个可选 model 偏好 + 未设置三态」——留在每个文件里。于是 §23 的继承回写出现了两份写法：
+  - 布尔-only 的两份（provider / AgnesCode）：`inheritFrom.write` 收到的是布尔，写回 `{version, enabled}` —— 正确；
+  - 带偏好的两份（draw / video）：同一个回调收到的是 `{enabled, modelId}` **对象**，而写回体照抄了布尔版，把整个对象塞进了 `enabled` **字段** → 文件里是 `"enabled": {"enabled": true, …}`，再读时 `normalizeDrawEnabled(对象)` 返回 `null`。
+  **进程内看不出来**：`createStateReadCache` 的继承路径返回的是内存里那份正确对象，所以当次会话 `enabled()` 就是 `true`；只有重开 Host、从磁盘重读才腐烂。所以「没在重启后读一遍」的测试全都绿——`provider.test.mjs` 那条"继承到的值"断言正是只验了内存答案。
+- **修法**：抽 `switch-store.ts`（`createSwitchStore` + `createSwitchParser`），四个 store 只声明各自不同的事实（文件名 / 形状版本号 / 偏好 wire key / 报错措辞），继承回写与 save/forget 走同一个 `writePayload`（按各自 wire key 落位）；`doctor` 的三个 `parse*Payload` 改为 re-export store 的解析器（AgnesCode 那处内联判断同改）。
+- **验证**：新增 `test/switch-store.test.mjs`——**四个商店跑同一组断言**（84 条），其中"继承后重新构造 store 仍读得到"这条在修复前是红的（正是这个坑的复现）。重构前后 `store 112 / routes 190 / provider 204 / draw 70 / video 127 / agnescode 119 / wiring 44 / config 94 / contract 102 / doctor 39` 逐项计数一致。
+- **教训**：**抽原语不等于抽到那一层**——把 `writeStateFile` 收敛了，四个形状完全相同的调用方仍会各自发明"这一格写什么"。凡是"N 个同构文件"的局面，判断收敛是否到位的标准是**有没有一个所有 N 者共用的构造入口**，不是有没有共用函数。同理，"进程内答案正确"永远不能替代"重开一次读回来"——带短 TTL 缓存的状态层尤其如此，缓存会替错误写法遮羞。

@@ -307,6 +307,27 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   黑盒断言无行为变化（131 checks 全绿）。第二步（`dsh-atomic-write` peer 接入，
   拿 `withFileLock` 跨进程写锁）未做，待 peer 依赖评估。
 
+- **落地状态续（2026-10-02）：抽到「开关商店」那一层为止。** 上面只收敛了**底层**
+  原语（原子写 / 读缓存 / 继承缝），真正的重复形状——「一个 bool 开关 + 一个可选
+  model 偏好 + 未设置三态」——仍留在四个文件里，于是 draw / video 是彼此的逐字
+  副本（连 JSDoc 都只换了单词），provider / agnescode 是同一副本的布尔-only 变体，
+  `doctor.ts` 又手写了第三~五份解析器（`parseProviderPayload` /
+  `parseDrawPayload` / `parseVideoPayload` + agnescode 的内联判断）。现新增
+  `switch-store.ts`（`createSwitchStore` + `createSwitchParser`），四个 store 只声明
+  各自不同的事实（文件名 / 形状版本号 / 偏好 wire key / 报错措辞），`doctor` 的解析
+  器改为 re-export store 的那一份。
+  **收敛当场抓到一处复制型漂移**：draw / video 的 §23 继承把整个
+  `{enabled, modelId}` 对象写进了 `enabled` **字段**（`inheritFrom.write` 收到的参数
+  在布尔-only store 里是布尔、在带偏好 store 里是对象，而写回体照抄了布尔版）——进程内
+  读缓存掩盖了它（内存里答案是对的），所以「继承成功」在当次会话成立、**下一次 Host
+  启动就读成未设置**，开关静默回到配置默认。provider / agnescode 因为形状简单从未
+  命中。这就是「三份修了、第四份没修」的实物证据：同一个缺陷在四个副本里只存在于两个。
+  修法与验证：继承回写改为走同一个 `writePayload`（按各自 wire key 落位）；新增
+  `test/switch-store.test.mjs` 对**四个商店跑同一组断言**（含「继承后重开仍读得到」），
+  84 条；重构前后 `store 112 / routes 190 / provider 204 / draw 70 / video 127 /
+  agnescode 119 / wiring 44 / config 94 / contract 102 / doctor 39` 逐项计数一致，
+  `doctor` 39 条全绿（解析器换实现不换语义）。
+
 ### 4.2 契约基线 → 加 CI live-contract job（best-effort，同 e2e 纪律）
 
 - **现状**：`test/live-contract.mjs`（手动 `npm run test:live:contract`）**不进** `npm test`，

@@ -7,12 +7,16 @@
  * one: flipping one provider's switch must never touch another's publish
  * decision (§5.5 isolation).
  *
+ * The switch machinery is shared with the other three opt-in switches in
+ * `switch-store.ts`; this module declares only what makes this file its own:
+ * the name, the shape version, the absence of a model preference, and the
+ * rejection wording.
+ *
  * @module dsh-connect-agnes-token-plan/agnescode-switch-store
  */
-import { obj } from "./util.ts";
-import { join } from "node:path";
+import { createSwitchStore, createSwitchParser, normalizeSwitchEnabled } from "./switch-store.ts";
 import { name } from "./host-config.ts";
-import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, createStateReadCache, STATE_READ_TTL_MS, profileStateDir, stateDir as sharedStateDir } from "./state-store.ts";
+import { profileStateDir } from "./state-store.ts";
 import type { StoreOptions } from "./types.ts";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
@@ -32,66 +36,32 @@ export function agnescodeSwitchDir(profile: string | null) {
  * @param {unknown} raw - the persisted or posted value.
  * @returns {boolean|null} `true`/`false`, or `null` when nothing usable.
  */
-export function normalizeAgnescodeEnabled(raw: unknown) {
-  return typeof raw === "boolean" ? raw : null;
-}
+export const normalizeAgnescodeEnabled = normalizeSwitchEnabled;
+
+/**
+ * The parser `doctor.ts` reuses, so its read-only survey can never disagree
+ * with what this store accepts.
+ */
+export const parseAgnescodePayload = createSwitchParser(AGNESCODE_SWITCH_VERSION, null);
 
 /**
  * The file-backed AgnesCode provider switch.
- * @param {object} [options]
- * @param {string} [options.dir] - override the state directory (tests).
- * @param {string|null} [options.profile] - the profile name; see {@link agnescodeSwitchDir}.
- * @param {number} [options.ttlMs] - reuse window for a parsed value.
+ * @param {object} [options] - see `switch-store.ts`.
  * @returns {object} the store.
  */
 export function createFileAgnescodeStore(options: StoreOptions = {}) {
-  const { dir, profile = null, ttlMs = STATE_READ_TTL_MS } = options;
-  const stateDir = dir ?? agnescodeSwitchDir(profile);
-  const filePath = join(stateDir, "agnescode-provider.json");
-
-  const writePayload = async (body: unknown) => {
-    const temporary = temporaryOf(stateDir, "agnescode-provider.json");
-    await ensureStateDir(stateDir);
-    await writeStateFile(filePath, JSON.stringify(body, null, 2), { temporary });
-  };
-
-  const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "agnescode-provider.json") : null;
-  const parseSwitch = (raw: unknown) => {
-    const source = obj(raw);
-    return source.version === AGNESCODE_SWITCH_VERSION ? normalizeAgnescodeEnabled(source.enabled) : null;
-  };
-
-  const cache = createStateReadCache(async () => parseSwitch(await readStateJson(filePath)), {
-    ttlMs,
-    inheritFrom: legacyFile === null ? null : {
-      read: async () => parseSwitch(await readStateJson(legacyFile)),
-      write: async (enabled) => {
-        await writePayload({ version: AGNESCODE_SWITCH_VERSION, enabled, updatedAt: new Date().toISOString() });
-      }
-    }
+  const base = createSwitchStore({
+    ...options,
+    file: "agnescode-provider.json",
+    version: AGNESCODE_SWITCH_VERSION,
+    modelKey: null,
+    messages: { enabled: "the agnescode switch expects a boolean" }
   });
-  const read = () => cache.read();
-
+  // A plain on/off switch, like the Token Plan provider's: no model preference.
   return {
-    /** The saved switch value. */
-    async enabled() {
-      return read();
-    },
-    /** Whether the panel has ever saved a value here. */
-    async isSet() {
-      return (await read()) !== null;
-    },
-    /** Persist a switch value (atomic). */
-    async save(value: unknown) {
-      const enabled = normalizeAgnescodeEnabled(value);
-      if (enabled === null) throw new TypeError("the agnescode switch expects a boolean");
-      await writePayload({ version: AGNESCODE_SWITCH_VERSION, enabled, updatedAt: new Date().toISOString() });
-      cache.remember(enabled);
-    },
-    /** Forget the panel-saved value. */
-    async forget() {
-      cache.remember(null);
-      await writePayload({ version: AGNESCODE_SWITCH_VERSION, updatedAt: new Date().toISOString() });
-    }
+    enabled: base.enabled,
+    isSet: base.isSet,
+    save: base.save,
+    forget: base.forget
   };
 }

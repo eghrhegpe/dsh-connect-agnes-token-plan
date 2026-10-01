@@ -14,11 +14,24 @@ import { readdir, stat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { name } from "./host-config.ts";
 import { isProfileSegment, dshHome as defaultDshHome } from "./state-store.ts";
-import { PROVIDER_VERSION, normalizeEnabled } from "./provider-store.ts";
-import { DRAW_STORE_VERSION, normalizeDrawEnabled, normalizeDrawModelId } from "./draw-store.ts";
-import { VIDEO_STORE_VERSION, normalizeVideoEnabled, normalizeVideoModelId } from "./video-store.ts";
 import { CATALOG_VERSION, normalizeEntries, normalizeEnabledIds } from "./catalog-store.ts";
-import { AGNESCODE_SWITCH_VERSION, normalizeAgnescodeEnabled } from "./agnescode-switch-store.ts";
+import { parseAgnescodePayload } from "./agnescode-switch-store.ts";
+
+/**
+ * The switch payload parsers, re-exported from the stores that own the files.
+ *
+ * A survey that re-implemented these would be a SECOND opinion about what a
+ * state file means, and the two opinions drift — which is exactly how the draw
+ * and video switches came to adopt their legacy value into the wrong field
+ * (see `switch-store.ts`). The doctor reads through the store's own parser, so
+ * "the file is not ours" and "the file is ours but empty" mean the same thing
+ * to the survey and to the store.
+ */
+import { parseProviderPayload } from "./provider-store.ts";
+import { parseDrawPayload } from "./draw-store.ts";
+import { parseVideoPayload } from "./video-store.ts";
+
+export { parseProviderPayload, parseDrawPayload, parseVideoPayload };
 import { surveyAgnescodeStorage } from "./agnescode.ts";
 
 /** A scope whose state the doctor reported on (a profile name, or "" for shared). */
@@ -75,38 +88,6 @@ async function readJson(file: string) {
   } catch {
     return null;
   }
-}
-
-/** Parse one stored provider switch, or `null` when absent / corrupt / foreign version. */
-export function parseProviderPayload(raw: Record<string, unknown> | null) {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const source = /** @type {Record<string, unknown>} */ (raw);
-  if (source.version !== PROVIDER_VERSION) return null;
-  return { enabled: normalizeEnabled(source.enabled) };
-}
-
-/** Parse one stored draw switch + model preference, or `null` on a bad payload. */
-export function parseDrawPayload(raw: Record<string, unknown> | null) {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const source = /** @type {Record<string, unknown>} */ (raw);
-  if (source.version !== DRAW_STORE_VERSION) return null;
-  return { enabled: normalizeDrawEnabled(source.enabled), modelId: normalizeDrawModelId(source.drawModelId) };
-}
-
-/**
- * Parse one stored video switch + model preference, or `null` on a bad payload.
- *
- * A separate parser rather than a shared one with a key parameter: the two
- * stores carry the same SHAPE but different wire keys (`drawModelId` vs
- * `videoModelId`), and a shared parser that read the wrong key would answer
- * "no preference" for a file that plainly has one — silently, which is the
- * failure mode this whole module exists to end.
- */
-export function parseVideoPayload(raw: Record<string, unknown> | null) {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const source = /** @type {Record<string, unknown>} */ (raw);
-  if (source.version !== VIDEO_STORE_VERSION) return null;
-  return { enabled: normalizeVideoEnabled(source.enabled), modelId: normalizeVideoModelId(source.videoModelId) };
 }
 
 /** Parse one stored catalog record, or `null` when absent / corrupt / foreign version. */
@@ -183,9 +164,8 @@ async function readScope(stateDir: string, profile: string | null) {
   // model preference) — same unreadable discipline as the files above.
   const agnescodeFile = join(stateDir, "agnescode-provider.json");
   if (await present(agnescodeFile)) {
-    const raw = await readJson(agnescodeFile);
-    const parsed = raw?.version === AGNESCODE_SWITCH_VERSION ? normalizeAgnescodeEnabled(raw?.enabled) : null;
-    if (parsed !== null) scope.agnescodePanel = parsed;
+    const parsed = parseAgnescodePayload(await readJson(agnescodeFile));
+    if (parsed !== null) scope.agnescodePanel = parsed.enabled;
     else scope.unreadable.push("agnescode-provider.json");
   }
   const catalogFile = join(stateDir, "catalog.json");

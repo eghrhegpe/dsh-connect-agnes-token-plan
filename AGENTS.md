@@ -41,6 +41,7 @@ node test/agnes-auth.test.mjs  # 一跳登录/失败分类/重登/节流窗口�
 node test/store-baseline.test.mjs # token-store 全行为冻结基线：拆分/改动续期·节流·迁移前后必须零漂移
 node test/panel.test.mjs    # 面板决策、中英字典一致性
 node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shape 漂移、分桶求和、四窗口
+node test/switch-store.test.mjs # 四个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」）
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
 npm test                    # 全量离线测试门禁 + 末尾 build-gate + e2e-gate（套件清单与链以 package.json scripts.test 为准，不在本文件背书数字；各自探到 tsdown / dsh CLI 才实跑，否则 SKIP）
@@ -112,7 +113,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 拍/改裁定、回溯边界与定位沿革（现行表述 vs 历史依据） | `docs/ADR.md`（决策账本；取代关系与举证链在此，现行规则见 `docs/ARCHITECTURE.md` §5）；**现行正文禁内联「修订（日期）」补丁**，`docs.test.mjs` 检查 12 把关 |
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（33 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（34 条现象→根因→修法） |
 | 查某条事实「当初从哪来」 / 要落盘新参照件 | `docs/REFERENCES.md`（`upstream/` 容器清单：来源 / 版本 / 许可 / 承重在哪） |
 | 排查「这条配置到底生效没」 / 改了源码却没变 | `docs/PITFALLS.md` §22（bundles 装载 → patch overlay → `$DSH_HOME/state/<profile>/<name>/` 三层，desktop 是安装副本、web 是 symlink） |
 | 加/改 **state 文件**、读 `profileContext`、判断某状态该不该按 profile 分段 | `docs/PITFALLS.md` §23（catalog/provider/draw 分段；throttle 与凭据 grant **故意共享**，别统一） |
