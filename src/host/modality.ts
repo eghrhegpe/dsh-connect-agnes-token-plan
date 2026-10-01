@@ -97,7 +97,7 @@ const VIDEO_ID_PATTERN = /(?:^|[-_])video(?:[-_]|$)/i;
  * @param {object} entry - one normalized catalog entry.
  * @returns {string[]|null} lowercased modality names, or `null` when absent.
  */
-export function declaredOutputModalities(entry) {
+export function declaredOutputModalities(entry: Record<string, unknown>) {
   if (entry === null || typeof entry !== "object") return null;
   for (const key of OUTPUT_MODALITY_KEYS) {
     const value = entry[key];
@@ -118,7 +118,7 @@ export function declaredOutputModalities(entry) {
  * @param {object} entry - one normalized catalog entry.
  * @returns {{modalities: string[], source: "declared"|"inferred"|"assumed"}}
  */
-export function outputModalitiesOf(entry) {
+export function outputModalitiesOf(entry: Record<string, unknown>) {
   const declared = declaredOutputModalities(entry);
   if (declared !== null) return { modalities: declared, source: "declared" };
   const id = str(entry?.id, "");
@@ -139,7 +139,7 @@ export function outputModalitiesOf(entry) {
  * @param {object} entry - one normalized catalog entry.
  * @returns {boolean}
  */
-export function isImageGenModel(entry) {
+export function isImageGenModel(entry: Record<string, unknown>) {
   return outputModalitiesOf(entry).modalities.includes(IMAGE_MODALITY);
 }
 
@@ -151,7 +151,7 @@ export function isImageGenModel(entry) {
  * @param {object} entry - one normalized catalog entry.
  * @returns {boolean}
  */
-export function isVideoGenModel(entry) {
+export function isVideoGenModel(entry: Record<string, unknown>) {
   return outputModalitiesOf(entry).modalities.includes(VIDEO_MODALITY);
 }
 
@@ -169,7 +169,7 @@ export function isVideoGenModel(entry) {
  * @param {object} entry - one normalized catalog entry.
  * @returns {boolean} whether the entry is usable as a chat model.
  */
-export function isChatModel(entry) {
+export function isChatModel(entry: Record<string, unknown>) {
   const { modalities } = outputModalitiesOf(entry);
   return !modalities.includes(IMAGE_MODALITY) && !modalities.includes(VIDEO_MODALITY);
 }

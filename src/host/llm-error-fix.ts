@@ -50,7 +50,7 @@ export const CODE = Object.freeze({
  * @param {string} message - 平台错误文本（可能含状态码与 JSON）。
  * @returns {boolean} true 表示应纠正为 RATE_LIMIT。
  */
-export function looksLikeRateLimit(message) {
+export function looksLikeRateLimit(message: string) {
   if (typeof message !== "string" || message.length === 0) return false;
   const m = message.toLowerCase();
 
@@ -83,7 +83,7 @@ export function looksLikeRateLimit(message) {
  * @param {string} message
  * @returns {string|null}
  */
-export function extractStructuredType(message) {
+export function extractStructuredType(message: string) {
   if (typeof message !== "string" || message.length === 0) return null;
   const match = /"type"\s*:\s*"([^"]+)"/i.exec(message);
   return match ? match[1] : null;
@@ -109,7 +109,7 @@ export function extractStructuredType(message) {
  * @param {{code?: string, message?: string}} failure
  * @returns {boolean} true 表示应纠正为 RATE_LIMIT。
  */
-export function shouldReclassifyQuotaToRate(failure) {
+export function shouldReclassifyQuotaToRate(failure: { code?: string; message?: string }) {
   if (!failure || failure.code !== CODE.QUOTA) return false;
   const message = typeof failure.message === "string" ? failure.message : "";
   const type = extractStructuredType(message);
@@ -137,7 +137,7 @@ export function shouldReclassifyQuotaToRate(failure) {
  * @param {object} chunk - harness 流协议 chunk。
  * @returns {object} 原 chunk 或 code 被纠正后的新 chunk。
  */
-export function reclassifyFinish(chunk) {
+export function reclassifyFinish(chunk: any) {
   if (chunk === null || typeof chunk !== "object") return chunk;
   if (chunk.type !== "finish") return chunk;
   const reason = chunk.reason;
@@ -162,7 +162,7 @@ export function reclassifyFinish(chunk) {
  * @param {AsyncIterableIterator<object>} source - 内层 adapter 的流。
  * @returns {AsyncGenerator<object>} 纠正后的流。
  */
-export async function* reclassifyStream(source) {
+export async function* reclassifyStream(source: AsyncIterableIterator<any>) {
   for await (const chunk of source) {
     yield reclassifyFinish(chunk);
   }

@@ -135,18 +135,18 @@ export function createAgnescodeAdapter({
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (prop === "stream") {
-        return (options) => reclassifyStream(target.stream(options));
+        return (options: any) => reclassifyStream(target.stream(options));
       }
       if (typeof value === "function" && prop === "prepareCall") {
-        return (...args) => {
+        return (...args: any[]) => {
           const prepared = value.apply(target, args);
           if (prepared && typeof prepared.then === "function") {
-            return prepared.then((p) => p && typeof p.stream === "function"
-              ? { ...p, stream: (o) => reclassifyStream(p.stream(o)) }
+            return prepared.then((p: any) => p && typeof p.stream === "function"
+              ? { ...p, stream: (o: any) => reclassifyStream(p.stream(o)) }
               : p);
           }
           return prepared && typeof prepared.stream === "function"
-            ? { ...prepared, stream: (o) => reclassifyStream(prepared.stream(o)) }
+            ? { ...prepared, stream: (o: any) => reclassifyStream(prepared.stream(o)) }
             : prepared;
         };
       }

@@ -23,7 +23,7 @@ export const AGNESCODE_SWITCH_VERSION = 1;
  * @param {string|null} [profile] - the profile name; `null` means shared.
  * @returns {string} the directory.
  */
-export function agnescodeSwitchDir(profile) {
+export function agnescodeSwitchDir(profile: string | null) {
   return profileStateDir(name, profile);
 }
 
@@ -32,7 +32,7 @@ export function agnescodeSwitchDir(profile) {
  * @param {unknown} raw - the persisted or posted value.
  * @returns {boolean|null} `true`/`false`, or `null` when nothing usable.
  */
-export function normalizeAgnescodeEnabled(raw) {
+export function normalizeAgnescodeEnabled(raw: unknown) {
   return typeof raw === "boolean" ? raw : null;
 }
 
@@ -49,14 +49,14 @@ export function createFileAgnescodeStore(options: StoreOptions = {}) {
   const stateDir = dir ?? agnescodeSwitchDir(profile);
   const filePath = join(stateDir, "agnescode-provider.json");
 
-  const writePayload = async (body) => {
+  const writePayload = async (body: unknown) => {
     const temporary = temporaryOf(stateDir, "agnescode-provider.json");
     await ensureStateDir(stateDir);
     await writeStateFile(filePath, JSON.stringify(body, null, 2), { temporary });
   };
 
   const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "agnescode-provider.json") : null;
-  const parseSwitch = (raw) => {
+  const parseSwitch = (raw: unknown) => {
     const source = obj(raw);
     return source.version === AGNESCODE_SWITCH_VERSION ? normalizeAgnescodeEnabled(source.enabled) : null;
   };
@@ -82,7 +82,7 @@ export function createFileAgnescodeStore(options: StoreOptions = {}) {
       return (await read()) !== null;
     },
     /** Persist a switch value (atomic). */
-    async save(value) {
+    async save(value: unknown) {
       const enabled = normalizeAgnescodeEnabled(value);
       if (enabled === null) throw new TypeError("the agnescode switch expects a boolean");
       await writePayload({ version: AGNESCODE_SWITCH_VERSION, enabled, updatedAt: new Date().toISOString() });

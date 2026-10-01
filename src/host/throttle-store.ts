@@ -52,9 +52,9 @@ export function throttleDir() {
  * @param {() => number} now - clock source.
  * @returns {{code: string, parked: boolean, until: number|null, attempt: number}|null}
  */
-function parse(raw, now) {
+function parse(raw: unknown, now: () => number) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const body = /** @type {{ version?: unknown, code?: unknown, parked?: unknown, until?: unknown, attempt?: unknown }} */ (raw);
+  const body = raw as { version?: unknown; code?: unknown; parked?: unknown; until?: unknown; attempt?: unknown };
   if (num(body.version, 0) !== THROTTLE_VERSION) return null;
   const code = str(body.code, "");
   if (code === "") return null;
@@ -94,7 +94,7 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
       // returns null): the safe direction for a time window.
       return parse(await readStateJson(file), now);
     },
-    async write(state) {
+    async write(state: Record<string, unknown>) {
       const temporary = temporaryOf(dir, "throttle.json");
       try {
         await ensureStateDir(dir);
@@ -140,7 +140,7 @@ export function createMemoryThrottleStore(now = Date.now) {
     async read() {
       return parse(held, now);
     },
-    async write(state) {
+    async write(state: Record<string, unknown>) {
       held = { version: THROTTLE_VERSION, ...state };
     },
     async clear() {

@@ -35,7 +35,7 @@ export const AGNESCODE_CREDENTIAL_REF = "AGNESCODE_CREDENTIAL";
  * @param {unknown} value - the reference value.
  * @returns {object|null} `{ accessToken, bffBase, userId, nickname, expiresAtMs? }` or `null`.
  */
-export function parseAgnescodeCredential(value) {
+export function parseAgnescodeCredential(value: unknown) {
   if (typeof value !== "string" || value.trim() === "") return null;
   let parsed;
   try {
@@ -63,7 +63,7 @@ export function parseAgnescodeCredential(value) {
  * @param {object} credential - `{ accessToken, bffBase, userId?, nickname?, expiresAtMs? }`.
  * @returns {string} the JSON document.
  */
-export function serializeAgnescodeCredential(credential) {
+export function serializeAgnescodeCredential(credential: Record<string, unknown>) {
   const source = obj(credential);
   return JSON.stringify({
     version: 1,
@@ -91,7 +91,7 @@ export function createAgnescodeStore({ credentials = null }: { credentials?: (()
     return value ?? null;
   };
 
-  const storeNow = async (credential) => {
+  const storeNow = async (credential: Record<string, unknown>) => {
     const serialized = serializeAgnescodeCredential(credential);
     const service = resolveService();
     if (service !== null && typeof service.set === "function") {
@@ -108,7 +108,7 @@ export function createAgnescodeStore({ credentials = null }: { credentials?: (()
      * degraded entry.
      * @param {object} credential - `{ accessToken, bffBase, userId?, nickname?, expiresAtMs? }`.
      */
-    async save(credential) {
+    async save(credential: Record<string, unknown>) {
       const accessToken = str(credential?.accessToken, "");
       const bffBase = trustAgnescodeBffBase(credential?.bffBase);
       if (accessToken === "") throw new Error("an AgnesCode access token is required");
