@@ -9,7 +9,7 @@
  * mirror did not model at all: the greying-out added to stop a bad password
  * becoming a lockout was, as a consequence, entirely uncovered.
  */
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { decidePanelView, dictionaries, interpretSnapshot, tables, RENDER } from "./panel-decision.js";
 import { AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS, NO_LOGIN_CODES } from "../src/host/codes.ts";
 
@@ -243,6 +243,50 @@ const healthy = {
   const onlyEn = enKeys.filter((key) => !zhKeys.includes(key));
   check("no key exists only in Chinese", onlyZh.length === 0, onlyZh.join(", "));
   check("no key exists only in English", onlyEn.length === 0, onlyEn.join(", "));
+}
+
+// === F3b. every dictionary key is reachable from the client ================
+// The reverse of F3: a key nobody reads. Unlike the parity gap it never shows a
+// symptom — a dead key renders nothing, so it is invisible in the UI and can
+// keep asserting a state nobody sees. `entry.label` sat there for several
+// releases naming a sidebar card the panel stopped having, and a dozen
+// refactored keys (`quota.vision*` left behind by the `pool.` rename, the
+// `badgeAuto`/`badgePinned` pair that `badge` + `effective` replaced) had
+// collected around it. Reachability is checked the three ways the client
+// actually reaches a key:
+//   · the key's quoted form in src/client — covers `tt("k")`, a
+//     `tt(cond ? "a" : "b")` branch, and the code→key tables (REFUSAL_TEXT,
+//     GUIDANCE_BY_CODE) that hand a key to the caller's own `tt`
+//   · a dynamic head from `tt(`head${x}`)` — the head is a live prefix, its
+//     suffix comes from the Host's data and cannot be enumerated here
+//   · `k("s")` = `tt(`${prefix}.${s}`)` composed with the prefix literals the
+//     shared ToolSwitch receives at its two call sites ("draw", "video")
+// A fourth indirection is a change to make here, not a reason to let the
+// dictionary rot again.
+{
+  const source = (await Promise.all(
+    (await readdir(new URL("../src/client/", import.meta.url)))
+      .filter((name) => name.endsWith(".ts") && name !== "i18n.ts")
+      .map((name) => readFile(new URL(`../src/client/${name}`, import.meta.url), "utf8"))
+  )).join("\n");
+  // `k()` in ToolSwitch is `tt(`${prefix}.${suffix}`)`, whose captured head is
+  // EMPTY — and `key.startsWith("")` is true for every key, so an unfiltered
+  // empty head makes this check able to fail on nothing. Those keys are the
+  // `composed` set below, so the empty head is dropped, not kept.
+  const dynHeads = [...new Set([...source.matchAll(/tt\(\s*`([^`$]*)\$\{/g)].map((m) => m[1]))]
+    .filter((head) => head !== "");
+  const composed = new Set(
+    [...new Set([...source.matchAll(/\bk\(\s*"([^"]+)"/g)].map((m) => m[1]))].flatMap((suffix) =>
+      [...new Set([...source.matchAll(/prefix:\s*"([^"]+)"/g)].map((m) => m[1]))]
+        .map((prefix) => `${prefix}.${suffix}`)
+    )
+  );
+  const dead = Object.keys(dictionaries.zh).sort().filter(
+    (key) => !source.includes(`"${key}"`)
+      && dynHeads.some((head) => key.startsWith(head)) === false
+      && !composed.has(key)
+  );
+  check("every dictionary key is reachable from the client", dead.length === 0, dead.join(", "));
 }
 
 // === F4. the panel's rhythm comes from the Host, not from a literal ======
