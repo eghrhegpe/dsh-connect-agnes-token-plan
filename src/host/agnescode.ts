@@ -89,7 +89,7 @@ export const AGNESCODE_HARVEST_TIER = Object.freeze({
  * @param {unknown} value - the `bffPublicBaseUrl` from the session file.
  * @returns {string|null} the normalized base (no trailing slash), or `null`.
  */
-export function trustAgnescodeBffBase(value) {
+export function trustAgnescodeBffBase(value: unknown) {
   if (typeof value !== "string" || value.trim() === "") return null;
   let url;
   try {
@@ -118,7 +118,7 @@ export function trustAgnescodeBffBase(value) {
  * @param {unknown} raw - the decrypted JSON value.
  * @returns {{accessToken: string, userId: string, nickname: string, bffBase: string}|null}
  */
-export function parseAgnescodeSession(raw) {
+export function parseAgnescodeSession(raw: unknown) {
   const source = obj(raw);
   const accessToken = str(source.accessToken, "");
   if (accessToken === "") return null;
@@ -144,13 +144,13 @@ export function parseAgnescodeSession(raw) {
  * @param {string} bffBase - a {@link trustAgnescodeBffBase}-normalized base.
  * @returns {string} the origin (plus any non-`/v1` prefix, preserved).
  */
-export function agnescodeApiRoot(bffBase) {
+export function agnescodeApiRoot(bffBase: string) {
   const base = str(bffBase, "").replace(/\/+$/, "");
   return base.endsWith("/v1") ? base.slice(0, -3) : base;
 }
 
 /** Decode a JWT's `exp` claim to MILLISECONDS; `undefined` on any failure. */
-export function decodeAgnescodeJwtExpMs(token) {
+export function decodeAgnescodeJwtExpMs(token: string) {
   if (typeof token !== "string" || token.length === 0) return undefined;
   const parts = token.split(".");
   if (parts.length < 2) return undefined;
@@ -190,7 +190,7 @@ export function agnescodeHeaders(credential: any) {
  * @returns {Buffer} the decrypted bytes.
  * @throws when the prefix, the key size, or the auth tag does not match.
  */
-export function decryptAgnescodeSessionBlob(blob, key) {
+export function decryptAgnescodeSessionBlob(blob: Buffer | Uint8Array, key: Buffer | Uint8Array) {
   const bytes = Buffer.isBuffer(blob) ? blob : Buffer.from(blob ?? []);
   const keyBytes = Buffer.isBuffer(key) ? key : Buffer.from(key ?? []);
   if (keyBytes.length !== 32) throw new Error(`os_crypt key must be 32 bytes, got ${keyBytes.length}`);
@@ -215,7 +215,7 @@ export function decryptAgnescodeSessionBlob(blob, key) {
  * @returns {Promise<Buffer>} the 32-byte os_crypt key.
  * @throws on any shape mismatch — the caller maps it to `NO_KEY`/`DECRYPT_FAILED`.
  */
-export async function unwrapAgnescodeLocalStateKey(localStateRaw, dpapiUnprotect) {
+export async function unwrapAgnescodeLocalStateKey(localStateRaw: string | Buffer | Uint8Array, dpapiUnprotect: (wrapped: Buffer) => Promise<Buffer>) {
   // The injected reader returns a Buffer (the production shape) or a string;
   // route BOTH through text before JSON.parse — an `obj()` on a Buffer would
   // read its numeric byte properties and "find" no os_crypt key.
@@ -252,7 +252,7 @@ export async function unwrapAgnescodeLocalStateKey(localStateRaw, dpapiUnprotect
  * @param {Buffer} wrapped - the DPAPI-protected key bytes.
  * @returns {Promise<Buffer>} the unwrapped key bytes.
  */
-export async function defaultDpapiUnprotect(wrapped) {
+export async function defaultDpapiUnprotect(wrapped: Buffer) {
   const { spawn } = await import("node:child_process");
   const script = [
     "Add-Type -AssemblyName System.Security",
@@ -327,8 +327,8 @@ export async function harvestAgnescodeLocalSession(
 > {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
-  const readFile = options.readFile ?? (async (path) => (await import("node:fs/promises")).readFile(path));
-  const readDir = options.readDir ?? (async (path) => (await import("node:fs/promises")).readdir(path));
+  const readFile = options.readFile ?? (async (path: string) => (await import("node:fs/promises")).readFile(path));
+  const readDir = options.readDir ?? (async (path: string) => (await import("node:fs/promises")).readdir(path));
   const dpapiUnprotect = options.dpapiUnprotect ?? defaultDpapiUnprotect;
 
   /** One tier row: {file, tier, detail?} — detail carries shapes, never values. */
@@ -358,7 +358,7 @@ export async function harvestAgnescodeLocalSession(
   for (const appDir of appDirs) {
     let fileNames: string[] = [];
     try {
-      fileNames = (await readDir(appDir)).filter((name) => AGNESCODE_SESSION_FILE_PATTERN.test(name));
+      fileNames = (await readDir(appDir)).filter((name: string) => AGNESCODE_SESSION_FILE_PATTERN.test(name));
     } catch {
       attempts.push({ file: appDir, tier: AGNESCODE_HARVEST_TIER.FILE_MISSING, detail: "the AgnesCode app directory is absent" });
       continue;
@@ -521,7 +521,7 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
 }
 
 /** Read a finite non-negative number, else `null`. */
-function numOrNullSafe(value) {
+function numOrNullSafe(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
