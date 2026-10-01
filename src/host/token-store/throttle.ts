@@ -49,7 +49,7 @@ export const MAX_LOGIN_BACKOFF_MS = 30 * 60_000;
  * @param {Error} [cause] - the original refusal, when it is still current.
  * @returns {Error} the error to throw.
  */
-export function throttleError(held, cause) {
+export function throttleError(held: { code: string; parked: boolean; until: number | null; attempt: number }, cause?: Error) {
   if (cause !== undefined) return cause;
   const error = new Error(
     held.parked
@@ -69,7 +69,7 @@ export function throttleError(held, cause) {
  * @param {number} attempt - how many self-imposed waits have been served.
  * @returns {number} milliseconds to wait.
  */
-export function localBackoffMs(attempt) {
+export function localBackoffMs(attempt: number) {
   const doubled = DEFAULT_LOGIN_BACKOFF_MS * 2 ** Math.max(0, attempt - 1);
   return Math.min(doubled, MAX_LOGIN_BACKOFF_MS);
 }
@@ -82,7 +82,7 @@ export function localBackoffMs(attempt) {
  * legitimately absent.
  * @returns {Promise<{code: string, parked: boolean, until: number|null, attempt: number}|null>}
  */
-export async function readThrottle(wiring, _state) {
+export async function readThrottle(wiring: { throttleStore: { read: () => Promise<any> } }, _state: unknown) {
   const { throttleStore } = wiring;
   return await throttleStore.read().catch(() => null);
 }
@@ -97,7 +97,12 @@ export async function readThrottle(wiring, _state) {
  * @returns {Promise<{code: string, parked: boolean, until: number|null, attempt: number}>}
  *   the throttle now in force.
  */
-export async function writeThrottle(wiring, state, error, previousAttempt) {
+export async function writeThrottle(
+  wiring: { throttleStore: { write: (t: any) => Promise<unknown> }; now: () => number },
+  state: { consecutiveRefusals: number; throttle: { code: string; parked: boolean; until: number | null; attempt: number } | null },
+  error: { code?: unknown; retryAfterMs?: unknown } | undefined,
+  previousAttempt?: number
+) {
   const { throttleStore, now } = wiring;
   const code = str(error?.code, CODE.LOGIN_FAILED);
   const parked = isCredentialRefusal(code);
@@ -123,7 +128,10 @@ export async function writeThrottle(wiring, state, error, previousAttempt) {
  * Drop the throttle, so the next sign-in is allowed to try.
  * @returns {Promise<void>}
  */
-export async function clearThrottle(wiring, state) {
+export async function clearThrottle(
+  wiring: { throttleStore: { clear: () => Promise<unknown> }; backend: () => { deleteRecord: (key: string) => Promise<unknown> }; THROTTLE_KEY: string },
+  state: { throttle: { code: string; parked: boolean; until: number | null; attempt: number } | null }
+) {
   const { throttleStore, backend, THROTTLE_KEY } = wiring;
   state.throttle = null;
   await throttleStore.clear().catch(() => {
@@ -144,8 +152,8 @@ export async function clearThrottle(wiring, state) {
  * @param {{parked: boolean, until: number|null}|null} held - the throttle.
  * @returns {number|null} milliseconds remaining.
  */
-export function inForceWaitMs(wiring, held) {
+export function inForceWaitMs(wiring: { now: () => number }, held: { parked: boolean; until: number | null } | null) {
   const { now } = wiring;
   if (held === null || held.parked) return null;
-  return Math.max(0, held.until - now());
+  return Math.max(0, held.until! - now());
 }
