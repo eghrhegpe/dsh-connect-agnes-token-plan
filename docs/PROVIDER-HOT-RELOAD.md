@@ -87,7 +87,7 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 | 文件 | 改动 |
 |---|---|
 | `video-store.ts`（新增） | 视频开关状态文件 `$DSH_HOME/state/<profile>/<plugin>/video.json`，与 `draw-store.ts` 逐字镜像 |
-| `video.ts`（新增） | 视频纯逻辑层：`agnes_video_generate` 工具定义、建任务/轮询状态机、V2.0 请求体构造与校验 |
+| `video.ts`（新增） | 视频纯逻辑层：`agnes_video_generate` 工具定义、建任务/轮询状态机、V2.0 与 2.5 两套请求体构造与校验（按模型家族分派） |
 | `index.ts` | wiring 里增补 `videoStore` |
 | `lifecycle.ts` | `registerVideoTool` 与 `registerDrawTool` 是同一私有 `mountAgentTool` 的两层薄包装（共享降级阶梯，二者不可能降级不同） |
 | `routes.ts` | 新增 `POST /api/<name>/video`，与 `/draw` 共用 `registerToolSwitchRoute` |

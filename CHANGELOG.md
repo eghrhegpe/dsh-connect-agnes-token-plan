@@ -2,6 +2,18 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.4.4] — 2026-10-01
+
+### 视频工具支持 2.5 系列：秒数制参数，agent 可直接出片
+
+此前 `agnes_video_generate` 只覆盖 V2.0 参数体系（`width`/`height`/`num_frames`/`frame_rate`），2.5 系列（`agnes-video-2.5` / `agnes-video-2.5-flash`，秒数制 `seconds`/`size`/`aspect_ratio`）被有意排除、面板只报「选不到」。本版把 2.5 半边补齐（参考实现取自上游 `dsh-agnes` 的 2.5 参数契约）：
+
+- **双家族请求体分派**（`src/host/video.ts`）：新增 `buildVideoBody25`（`mode`/`seconds` 4–12 / `size` 720P·960P·2K / `aspect_ratio` 白名单 + `image`/`keyframes` → media、flash 收敛仅 720P 且 reference ≤5），`defineVideoTool` 按 `isVideo25Family(model)` 选构造器——两套互斥字段永不同时发给同一模型。
+- **`pickVideoModel` 认全量视频模型**：显式请求 / 面板偏好可指 2.5；自动选择仍 V2.0 优先，**目录没有 V2.0 时回落到第一个 2.5 模型**（此前这类目录只能报错）。
+- **帧数字段自动换算**：agent 对 2.5 模型照传 `num_frames`/`frame_rate` 时换算为最接近的整秒（`121@24fps → 5s`），也可显式传 `seconds`；`negative_prompt` 是 V2.0 字段，不转发给 2.5（多一个未知顶层字段即 400）。
+- **面板候选含 2.5**：`videoCandidateIds` 从「仅 V2.0」改为**全部视频模型**，`video25ModelIds` 仍单独点名秒数制家族，文案从「未纳入、会被拒绝」改为「已支持、自动换算」。
+- **测试**：`test/video.test.mjs` 新增 2.5 请求体 / 选型回落 / 工具端到端分派用例；`test/routes.test.mjs` M2 组与 `test/render.test.mjs` G10 组按新候选语义更新。
+
 ## [0.4.3] — 2026-10-01
 
 第二个上游（小浣熊）、面板从侧边栏归位到 Plugins 页、模型花名册重排，外加一批「状态翻成某个值后操作入口跟着消失」的可见性修复。

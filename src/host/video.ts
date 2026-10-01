@@ -35,13 +35,21 @@
  * ABOVE `/v1`. `buildVideoQueryEndpoint` strips the version segment for
  * exactly this reason; appending `/v1` there would 404.
  *
- * SCOPE — V2.0 ONLY. The catalog also lists a 2.5 family
- * (`agnes-video-2.5`, `agnes-video-2.5-flash`) that speaks a DIFFERENT,
- * mutually exclusive parameter system (`mode` / `seconds` / `size` /
- * `aspect_ratio`); it rejects `width` / `height` / `num_frames` / `frame_rate`
- * with a 400. So {@link pickVideoModel} selects among V2.0-family ids only and
- * the tool explains the gap when the catalog holds nothing else, rather than
- * dispatching a request that is guaranteed to fail.
+ * BOTH VIDEO PARAMETER FAMILIES ARE COVERED. The catalog lists two families
+ * that speak MUTUALLY EXCLUSIVE parameter systems, and the tool drives both:
+ *
+ *   - the V2.0 family (`agnes-video-v2.0`) speaks `width` / `height` /
+ *     `num_frames` (8n+1) / `frame_rate`;
+ *   - the 2.5 family (`agnes-video-2.5` / `agnes-video-2.5-flash`) speaks a
+ *     different, OpenAI-Videos-compatible scheme — `mode` / `seconds` /
+ *     `size` / `aspect_ratio` — and rejects the V2.0 fields with a 400, and
+ *     vice versa.
+ *
+ * So {@link pickVideoModel} may address EITHER family, and the tool picks the
+ * matching body builder per model: {@link buildVideoBody} for V2.0,
+ * {@link buildVideoBody25} for 2.5. `2.5-flash` is tighter (720P only, ≤5
+ * reference images) and is converged by `isVideo25Flash` rather than being
+ * silently sent a 400.
  *
  * WHY NO COOLDOWN GATE, unlike `draw.ts`: that gate exists to stop an agent
  * hammering a drained pool with attempts that cost seconds each. One video
@@ -207,6 +215,19 @@ export function isVideo25Family(model) {
 }
 
 /**
+ * Whether a model id is the `-flash` variant of the 2.5 family.
+ *
+ * Flash is the same parameter system with TIGHTER limits (720P only, ≤5
+ * reference images); the split is by name, the same no-table approach as
+ * {@link isVideo25Family}.
+ * @param {string} model - the catalog id.
+ * @returns {boolean}
+ */
+export function isVideo25Flash(model) {
+  return isVideo25Family(model) && /flash/i.test(str(model, ""));
+}
+
+/**
  * The video-generation model ids of one catalog, de-duplicated in first-seen order.
  *
  * Recognition is delegated to `modality.ts`, so this list and the chat roster
@@ -241,14 +262,26 @@ export function videoV2ModelIds(entries) {
 }
 
 /**
+ * The subset of video ids that speak the 2.5 parameter system
+ * (`mode` / `seconds` / `size` / `aspect_ratio`).
+ * @param {object[]} entries - the normalized catalog entries.
+ * @returns {string[]}
+ */
+export function video25ModelIds(entries) {
+  return videoGenModelIds(entries).filter((id) => isVideo25Family(id));
+}
+
+/**
  * Choose the model one video call addresses.
  *
  * Precedence mirrors `pickDrawModel`: an explicitly requested id wins even when
  * the catalog does not list it (a manual override — the platform answers the
  * error itself if the id is wrong), then the configured preference when the
- * catalog confirms it, then the first V2.0 id. An empty V2.0 list yields
- * `null`, and the caller turns that into an actionable message rather than
- * dispatching a request the 2.5 parameter system would reject.
+ * catalog confirms it (ANY family — a 2.5 preference is honoured, because the
+ * tool now drives both systems), then the auto-pick: the first V2.0 id, and
+ * only when the catalog holds NO V2.0 model at all does it fall through to the
+ * first 2.5 id. An empty catalog yields `null`, and the caller turns that into
+ * an actionable message rather than dispatching a request.
  * @param {object[]} entries - the normalized catalog entries.
  * @param {string} [requested] - the tool call's `model` parameter.
  * @param {string} [preferred] - the configured default (`videoModelId`).
@@ -257,11 +290,13 @@ export function videoV2ModelIds(entries) {
 export function pickVideoModel(entries, requested, preferred) {
   const want = str(requested, "").trim();
   if (want !== "") return want;
-  const ids = videoV2ModelIds(entries);
-  if (ids.length === 0) return null;
+  const allVideo = videoGenModelIds(entries);
+  if (allVideo.length === 0) return null;
   const config = str(preferred, "").trim();
-  if (config !== "" && ids.includes(config)) return config;
-  return ids[0];
+  if (config !== "" && allVideo.includes(config)) return config;
+  const v2 = videoV2ModelIds(entries);
+  if (v2.length > 0) return v2[0];
+  return allVideo[0];
 }
 
 /**
@@ -320,6 +355,259 @@ export function buildVideoBody(options: Record<string, any> = {}) {
       throw new Error(`无效的 image "${source.slice(0, 64)}"：必须是平台可直接抓取的公共 HTTP(S) 图片 URL`);
     }
     body.image = source;
+  }
+  return body;
+}
+
+/* ------------------------------------------------------------------------
+ * 2.5 family — the OpenAI-Videos-compatible whole-second scheme.
+ *
+ * Mutually exclusive with the V2.0 body: `mode` / `seconds` / `size` /
+ * `aspect_ratio` (plus `first_frame` / `last_frame` / `images` media fields
+ * and `seed`). Sending the V2.0 `width` / `height` / `num_frames` /
+ * `frame_rate` fields to a 2.5 model is a 400, and the reverse is too — so
+ * `buildVideoBody25` never emits a V2.0 field, and the V2.0 builder never
+ * emits a 2.5 one. The two builders are dispatched per model by
+ * `isVideo25Family` inside `defineVideoTool`.
+ * ---------------------------------------------------------------------- */
+
+/** The resolution tiers the 2.5 family documents. */
+export const VIDEO25_SIZES = Object.freeze(["720P", "960P", "2K"]);
+
+/** `2.5-flash` only supports this tier; anything else is a 400. */
+export const VIDEO25_FLASH_ONLY_SIZE = "720P";
+
+/** The whole-second range the 2.5 family accepts (submitted as a string). */
+export const VIDEO25_SECONDS_MIN = 4;
+
+export const VIDEO25_SECONDS_MAX = 12;
+
+/** The `2.5-flash` reference-mode image ceiling. */
+export const VIDEO25_FLASH_REFERENCE_LIMIT = 5;
+
+/** The 2.5 aspect whitelist and their width/height values, for nearest-match. */
+export const VIDEO25_ASPECT_TABLE = Object.freeze([
+  { ratio: "21:9", value: 21 / 9 },
+  { ratio: "16:9", value: 16 / 9 },
+  { ratio: "4:3", value: 4 / 3 },
+  { ratio: "1:1", value: 1 },
+  { ratio: "3:4", value: 3 / 4 },
+  { ratio: "9:16", value: 9 / 16 }
+]);
+
+/** The 2.5 mode whitelist. */
+export const VIDEO25_MODES = Object.freeze(["text", "keyframe", "reference"]);
+
+/** Documented default duration (whole seconds). */
+export const VIDEO25_DEFAULT_SECONDS = 5;
+
+/** Documented default resolution tier. */
+export const VIDEO25_DEFAULT_SIZE = "720P";
+
+/**
+ * The resolution tier one 2.5 call resolves to.
+ *
+ * An EXPLICIT `size` must be whitelisted — and a flash variant may only be
+ * `720P` — so an illegal value throws, matching the V2.0 throw-not-clamp
+ * discipline. When nothing is given, the flash variant is pinned to its only
+ * legal tier, and every other 2.5 model defaults to 720P.
+ * @param {unknown} explicit - the requested size.
+ * @param {string} model - the catalog id (decides the flash pinning).
+ * @returns {string} a whitelisted tier.
+ * @throws {Error} on a non-whitelisted explicit value, or a flash value above 720P.
+ */
+export function resolveVideo25Size(explicit, model) {
+  if (explicit !== undefined && explicit !== null) {
+    const tier = String(explicit).trim().toUpperCase();
+    if (!VIDEO25_SIZES.includes(tier)) {
+      throw new Error(`无效的 size ${String(explicit)}：2.5 系列支持 ${VIDEO25_SIZES.join(" / ")}${isVideo25Flash(model) ? `，且 2.5-flash 仅支持 ${VIDEO25_FLASH_ONLY_SIZE}` : ""}`);
+    }
+    if (isVideo25Flash(model) && tier !== VIDEO25_FLASH_ONLY_SIZE) {
+      throw new Error(`无效的 size ${String(explicit)}：2.5-flash 仅支持 ${VIDEO25_FLASH_ONLY_SIZE}`);
+    }
+    return tier;
+  }
+  return isVideo25Flash(model) ? VIDEO25_FLASH_ONLY_SIZE : VIDEO25_DEFAULT_SIZE;
+}
+
+/** Documented default aspect (the "16:9" a call with no width/height steers to). */
+export const VIDEO25_DEFAULT_ASPECT = "16:9";
+
+/**
+ * Match any width/height to the 2.5 aspect whitelist, nearest ratio.
+ *
+ * The 2.5 family does not take `width` / `height` — those are a 400. This is
+ * how an operator's preferred dimensions still steer the output: nearest
+ * whitelisted aspect. A call with NO usable dimensions lands exactly on the
+ * documented default 16:9 (the target IS 16/9, which is a whitelisted value —
+ * no tie-break involved). Invalid dimensions likewise fall back to that
+ * default.
+ * @param {unknown} width - the candidate width.
+ * @param {unknown} height - the candidate height.
+ * @returns {string} a whitelisted aspect ratio.
+ */
+export function nearestAspect25(width, height) {
+  const valid = typeof width === "number" && width > 0 && typeof height === "number" && height > 0;
+  const target = valid ? width / height : 16 / 9;
+  let best = VIDEO25_ASPECT_TABLE.find((row) => row.ratio === VIDEO25_DEFAULT_ASPECT);
+  for (const row of VIDEO25_ASPECT_TABLE) {
+    if (Math.abs(row.value - target) < Math.abs(best.value - target)) best = row;
+  }
+  return best.ratio;
+}
+
+/**
+ * Frame count / frame rate → whole seconds, clamped to the 2.5 range.
+ *
+ * This is the bridge that lets a caller who thinks in frames (the V2.0
+ * mental model) still steer a 2.5 call's DURATION: `121 @ 24fps` → `5`
+ * seconds. Bad frame rate falls back to the documented 24; a bad frame count
+ * to 121 (≈5s). The clamp is deliberate here (unlike the V2.0 frame-count
+ * throw): the 2.5 platform only accepts whole seconds 4–12, so a frame count
+ * that would imply 3s or 15s must land on a legal value rather than a 400.
+ * @param {unknown} numFrames - the candidate frame count.
+ * @param {unknown} frameRate - the candidate frame rate.
+ * @returns {number} a whole second in `4–12`.
+ */
+export function secondsFromFrameTiming(numFrames, frameRate) {
+  const fps = typeof frameRate === "number" && Number.isFinite(frameRate) && frameRate > 0 ? frameRate : VIDEO_DEFAULT_FRAME_RATE;
+  const frames = typeof numFrames === "number" && Number.isFinite(numFrames) && numFrames > 0 ? numFrames : VIDEO_DEFAULT_NUM_FRAMES;
+  return Math.min(VIDEO25_SECONDS_MAX, Math.max(VIDEO25_SECONDS_MIN, Math.round(frames / fps)));
+}
+
+/**
+ * Build the `videos` request body for the 2.5 parameter system.
+ *
+ * The 2.5 family is OpenAI-Videos-compatible: `mode` (`text` / `keyframe` /
+ * `reference`) + `seconds` (whole, `4–12`) + `size` (720P/960P/2K) +
+ * `aspect_ratio` (whitelist), with media fields `first_frame` / `last_frame`
+ * / `images` and an optional `seed`. It does NOT accept the V2.0
+ * `width` / `height` / `num_frames` / `frame_rate` fields — sending them is a
+ * 400 — so those are translated, not passed through:
+ *
+ *   - an EXPLICIT `seconds` wins (and must be a whole 4–12, else throw);
+ *   - otherwise `num_frames` / `frame_rate` are converted to the nearest
+ *     whole second via {@link secondsFromFrameTiming};
+ *   - `size` resolves through {@link resolveVideo25Size} (flash pinned to
+ *     720P, illegal values throw);
+ *   - `aspect_ratio` takes an EXPLICIT whitelisted value, or falls back to
+ *     the nearest match of `width` / `height` via {@link nearestAspect25};
+ *   - the media inputs map to a mode: `image` alone → `keyframe`
+ *     (`first_frame`); two `keyframes` → `keyframe` (`first_frame` +
+ *     `last_frame`); three or more `keyframes` → `reference` (`images`,
+ *     ≤5 on flash); no media → `text`.
+ *
+ * `negative_prompt` is a V2.0 field and is intentionally NOT forwarded: the
+ * 2.5 system has no equivalent, and an unknown top-level field is a 400.
+ * @param {object} options - `{ model, prompt, mode, seconds, size, aspectRatio, width, height, numFrames, frameRate, image, keyframes, seed }`.
+ * @returns {object} the wire body.
+ * @throws {Error} on an out-of-range explicit value (seconds / size / aspect /
+ *   seed) or a conflicting media combination.
+ */
+export function buildVideoBody25(options: Record<string, any> = {}) {
+  const { model, prompt, mode, seconds, size, aspectRatio, width, height, numFrames, frameRate, image, keyframes, seed } = options;
+  const flash = isVideo25Flash(model);
+
+  // ---- media: image / keyframes are mutually exclusive, both must be public.
+  const frameUrls = Array.isArray(keyframes)
+    ? keyframes.filter((item) => typeof item === "string" && item !== "")
+    : [];
+  const imageUrl = typeof image === "string" && image.trim() !== "" ? image.trim() : undefined;
+  if (frameUrls.length > 0 && imageUrl !== undefined) {
+    throw new Error("image 与 keyframes 不能同时使用：图生视频传单张 image，关键帧动画传 keyframes 数组");
+  }
+  const mediaUrls = [...frameUrls, ...(imageUrl === undefined ? [] : [imageUrl])];
+  for (const url of mediaUrls) {
+    if (!VIDEO_IMAGE_PATTERN.test(url)) {
+      throw new Error(`无效的参考图 "${url.slice(0, 64)}"：必须是平台可直接抓取的公共 HTTP(S) 图片 URL`);
+    }
+  }
+
+  // ---- mode: explicit value must be whitelisted; otherwise derived from media.
+  // An explicit mode also carries the media into the body: `keyframe` with two
+  // keyframes → first/last, `reference` with a pool → images.
+  let resolvedMode: string;
+  const media: Record<string, unknown> = {};
+  const explicitMode = mode !== undefined && mode !== null && String(mode).trim() !== ""
+    ? String(mode).trim()
+    : undefined;
+  if (explicitMode !== undefined) {
+    if (!VIDEO25_MODES.includes(explicitMode)) {
+      throw new Error(`无效的 mode "${explicitMode}"：2.5 系列支持 ${VIDEO25_MODES.join(" / ")}`);
+    }
+    resolvedMode = explicitMode;
+    if (frameUrls.length >= 2) {
+      if (frameUrls.length === 2) {
+        media.first_frame = frameUrls[0];
+        media.last_frame = frameUrls[1];
+      } else {
+        if (flash && frameUrls.length > VIDEO25_FLASH_REFERENCE_LIMIT) {
+          throw new Error(`${str(model, "")} 的 reference 图片最多 ${VIDEO25_FLASH_REFERENCE_LIMIT} 张，收到 ${frameUrls.length} 张；请减少关键帧数量`);
+        }
+        media.images = frameUrls;
+      }
+    } else if (imageUrl !== undefined) {
+      media.first_frame = imageUrl;
+    }
+  } else if (frameUrls.length >= 2) {
+    if (frameUrls.length === 2) {
+      resolvedMode = "keyframe";
+      media.first_frame = frameUrls[0];
+      media.last_frame = frameUrls[1];
+    } else {
+      resolvedMode = "reference";
+      if (flash && frameUrls.length > VIDEO25_FLASH_REFERENCE_LIMIT) {
+        throw new Error(`${str(model, "")} 的 reference 图片最多 ${VIDEO25_FLASH_REFERENCE_LIMIT} 张，收到 ${frameUrls.length} 张；请减少关键帧数量`);
+      }
+      media.images = frameUrls;
+    }
+  } else if (imageUrl !== undefined) {
+    resolvedMode = "keyframe";
+    media.first_frame = imageUrl;
+  } else {
+    resolvedMode = "text";
+  }
+
+  // ---- seconds: explicit whole 4–12, else derived from frame timing.
+  let resolvedSeconds: number;
+  if (seconds !== undefined && seconds !== null) {
+    const explicit = Number(seconds);
+    if (!Number.isInteger(explicit) || explicit < VIDEO25_SECONDS_MIN || explicit > VIDEO25_SECONDS_MAX) {
+      throw new Error(`无效的 seconds ${String(seconds)}：2.5 系列须为 ${VIDEO25_SECONDS_MIN}–${VIDEO25_SECONDS_MAX} 的整数秒`);
+    }
+    resolvedSeconds = explicit;
+  } else {
+    resolvedSeconds = secondsFromFrameTiming(numFrames, frameRate);
+  }
+
+  // ---- size: explicit whitelisted (flash pinned to 720P), else the default.
+  const resolvedSize = resolveVideo25Size(size, model);
+
+  // ---- aspect_ratio: explicit whitelisted, else nearest width/height match.
+  let resolvedAspect: string;
+  if (aspectRatio !== undefined && aspectRatio !== null && String(aspectRatio).trim() !== "") {
+    const a = String(aspectRatio).trim();
+    const known = VIDEO25_ASPECT_TABLE.some((row) => row.ratio === a);
+    if (!known) {
+      throw new Error(`无效的 aspect_ratio "${a}"：2.5 系列支持 ${VIDEO25_ASPECT_TABLE.map((row) => row.ratio).join(" / ")}`);
+    }
+    resolvedAspect = a;
+  } else {
+    resolvedAspect = nearestAspect25(width, height);
+  }
+
+  const body: Record<string, unknown> = {
+    model: str(model, ""),
+    prompt: str(prompt, ""),
+    mode: resolvedMode,
+    seconds: String(resolvedSeconds),
+    size: resolvedSize,
+    aspect_ratio: resolvedAspect
+  };
+  Object.assign(body, media);
+  if (seed !== undefined && seed !== null) {
+    if (!Number.isInteger(seed)) throw new Error(`无效的 seed ${seed}：必须是整数`);
+    body.seed = seed;
   }
   return body;
 }
@@ -590,19 +878,32 @@ export function defineVideoTool({
   return defineTool({
     name: VIDEO_TOOL_NAME,
     description:
-      "Generate a video with the Agnes Token Plan key (Agnes Video V2.0, asynchronous: this creates a task and then polls it, so one call can take minutes). " +
+      "Generate a video with the Agnes Token Plan key (asynchronous: this creates a task and then polls it, so one call can take minutes). " +
       "Models are auto-discovered from this key's catalog; pass `model` only when you specifically need one. " +
-      `num_frames must satisfy 8n+1 and be ≤ ${VIDEO_MAX_FRAMES} (81≈3s, 121≈5s, 241≈10s at ${VIDEO_DEFAULT_FRAME_RATE}fps).`,
+      "Two parameter families exist and the tool picks the matching one per model: " +
+      "V2.0 (`agnes-video-v2.0`) takes `width` / `height` / `num_frames` (8n+1, ≤ " + VIDEO_MAX_FRAMES +
+      "; 81≈3s, 121≈5s, 241≈10s at " + VIDEO_DEFAULT_FRAME_RATE + "fps) / `frame_rate`; " +
+      "2.5 (`agnes-video-2.5` / `2.5-flash`) takes the whole-second scheme instead — `seconds` (" +
+      VIDEO25_SECONDS_MIN + "–" + VIDEO25_SECONDS_MAX + "), `size` (" + VIDEO25_SIZES.join("/") + ", flash is 720P only) and `aspect_ratio` " +
+      "(21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16); passing V2.0 frame fields to a 2.5 model is a 400, and the " +
+      "tool translates `num_frames` / `frame_rate` to the nearest whole second when `seconds` is omitted. " +
+      "Image-to-video: `image` (one URL); keyframe animation on 2.5: `keyframes` (≥2 URLs, or a single `image` " +
+      "as the first frame).",
     parameters: {
       prompt: { type: "string", required: true, description: "Video content description" },
-      model: { type: "string", description: "Agnes V2.0 video model id; defaults to the first discovered one" },
-      image: { type: "string", description: "Optional public HTTPS image URL for image-to-video" },
-      width: { type: "number", description: `Video width in pixels, default ${VIDEO_DEFAULT_WIDTH}` },
-      height: { type: "number", description: `Video height in pixels, default ${VIDEO_DEFAULT_HEIGHT}` },
-      num_frames: { type: "number", description: `Frame count, ≤ ${VIDEO_MAX_FRAMES} and 8n+1; default ${VIDEO_DEFAULT_NUM_FRAMES}` },
-      frame_rate: { type: "number", description: `Frames per second, ${VIDEO_MIN_FRAME_RATE}-${VIDEO_MAX_FRAME_RATE}; default ${VIDEO_DEFAULT_FRAME_RATE}` },
+      model: { type: "string", description: "Agnes video model id; defaults to the first V2.0 model, or the first 2.5 model when the catalog holds no V2.0 one" },
+      image: { type: "string", description: "Optional public HTTPS image URL for image-to-video (2.5: used as the keyframe first frame); never combined with keyframes" },
+      keyframes: { type: "array", items: { type: "string" }, description: "2.5 only: keyframe image URLs, ≥2; exactly 2 becomes a first/last-frame keyframe animation, 3+ a reference set (2.5-flash: ≤5); never combined with image" },
+      width: { type: "number", description: `V2.0: video width in pixels, default ${VIDEO_DEFAULT_WIDTH}; on 2.5 models it only feeds the aspect-ratio nearest-match` },
+      height: { type: "number", description: `V2.0: video height in pixels, default ${VIDEO_DEFAULT_HEIGHT}; on 2.5 models it only feeds the aspect-ratio nearest-match` },
+      num_frames: { type: "number", description: `V2.0: frame count, ≤ ${VIDEO_MAX_FRAMES} and 8n+1, default ${VIDEO_DEFAULT_NUM_FRAMES}; on 2.5 models it converts to the nearest whole second when seconds is omitted` },
+      frame_rate: { type: "number", description: `V2.0: frames per second, ${VIDEO_MIN_FRAME_RATE}-${VIDEO_MAX_FRAME_RATE}, default ${VIDEO_DEFAULT_FRAME_RATE}; on 2.5 models it only joins the seconds conversion` },
+      seconds: { type: "number", description: `2.5 only: duration in whole seconds, ${VIDEO25_SECONDS_MIN}-${VIDEO25_SECONDS_MAX}; omitted = derived from num_frames/frame_rate or the documented default ${VIDEO25_DEFAULT_SECONDS}` },
+      size: { type: "string", description: `2.5 only: resolution tier ${VIDEO25_SIZES.join(" / ")}; 2.5-flash accepts ${VIDEO25_FLASH_ONLY_SIZE} only; omitted = ${VIDEO25_DEFAULT_SIZE}` },
+      aspect_ratio: { type: "string", description: `2.5 only: aspect ratio ${VIDEO25_ASPECT_TABLE.map((row) => row.ratio).join(" / ")}; omitted = nearest match of width/height` },
+      mode: { type: "string", description: `2.5 only: generation mode ${VIDEO25_MODES.join(" / ")}; omitted = derived from image/keyframes (none → text, one → keyframe, 2 → keyframe first/last, 3+ → reference)` },
       seed: { type: "number", description: "Integer seed for reproducible output; omit for a random one" },
-      negative_prompt: { type: "string", description: "Content to avoid" }
+      negative_prompt: { type: "string", description: "V2.0 only: content to avoid (the 2.5 system has no equivalent and it is not forwarded)" }
     },
     output: {
       schema: {
@@ -641,22 +942,38 @@ export function defineVideoTool({
       const entries = Array.isArray(picked) ? picked : [];
       const model = pickVideoModel(entries, params?.model, settings?.videoModelId);
       if (model === null) {
-        const anyVideo = videoGenModelIds(entries).length > 0;
-        throw new Error(anyVideo
-          ? `catalog 里的视频模型全是 2.5 系列（seconds/size/aspect_ratio 参数体系），本版本只实现了 V2.0 体系：请传一个 V2.0 模型 id（如 ${VIDEO_DEFAULT_MODEL}），或在「视频工具」卡里指定`
-          : "catalog 中没有视频模型（`output_modalities` 字段与 `agnes-video-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含视频模型");
+        throw new Error("catalog 中没有视频模型（`output_modalities` 字段与 `agnes-video-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含视频模型");
       }
-      const body = buildVideoBody({
-        model,
-        prompt,
-        width: params?.width ?? defaults.width,
-        height: params?.height ?? defaults.height,
-        numFrames: params?.num_frames ?? defaults.numFrames,
-        frameRate: params?.frame_rate ?? defaults.frameRate,
-        seed: params?.seed,
-        negativePrompt: params?.negative_prompt,
-        image: params?.image
-      });
+      // The two families are mutually exclusive at the wire level: pick the
+      // matching body builder per model so a V2.0 field set never reaches a 2.5
+      // model (a guaranteed 400) and vice versa.
+      const body = isVideo25Family(model)
+        ? buildVideoBody25({
+          model,
+          prompt,
+          mode: params?.mode,
+          seconds: params?.seconds,
+          size: params?.size,
+          aspectRatio: params?.aspect_ratio,
+          width: params?.width,
+          height: params?.height,
+          numFrames: params?.num_frames,
+          frameRate: params?.frame_rate,
+          image: params?.image,
+          keyframes: params?.keyframes,
+          seed: params?.seed
+        })
+        : buildVideoBody({
+          model,
+          prompt,
+          width: params?.width ?? defaults.width,
+          height: params?.height ?? defaults.height,
+          numFrames: params?.num_frames ?? defaults.numFrames,
+          frameRate: params?.frame_rate ?? defaults.frameRate,
+          seed: params?.seed,
+          negativePrompt: params?.negative_prompt,
+          image: params?.image
+        });
       const created = await createVideoTask({
         fetchImpl,
         endpoint: buildVideoEndpoint(settings?.apiBase),

@@ -933,7 +933,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 // most of what G9 pins is shared by construction. What this section adds is
 // everything that is NOT shared: the fields it reads (`video*`, never `draw*`),
 // the radio group name, and the one line the draw card has no counterpart for
-// — the 2.5-series exclusion note.
+// — the 2.5-series note (the seconds/size/aspect family the tool adapts to).
 {
   check("the video switch component is exported by the client surface",
     typeof render.VideoSwitch === "function", String(typeof render.VideoSwitch));
@@ -941,11 +941,13 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   // Both candidate lists are present on the SAME `llm` object on purpose: the
   // card must render its own and never the sibling's, which is the client-side
   // half of the isolation check `routes.test.mjs` group S makes on the Host.
+  // The candidate list now holds EVERY video model (V2.0 AND 2.5): the tool
+  // drives both families and builds the matching body per model.
   const videoLlm = {
     videoEnabled: true,
     hasApiKey: true,
     videoModel: "agnes-video-v2.0",
-    videoCandidateIds: ["agnes-video-v2.0", "agnes-video-v2.0-flash"],
+    videoCandidateIds: ["agnes-video-v2.0", "agnes-video-2.5", "agnes-video-2.5-flash"],
     video25ModelIds: ["agnes-video-2.5", "agnes-video-2.5-flash"],
     videoPreferredModel: "agnes-video-v2.0",
     drawEnabled: true,
@@ -957,7 +959,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 
   const rows = findAll(videoTree, (props) => props.style?.borderBottom !== undefined);
   check("the video picker draws the auto row plus every candidate",
-    rows.length === 3, `rows=${rows.length}`);
+    rows.length === 4, `rows=${rows.length}`);
   check("the video section says it is on and names the list it introduces",
     texts(videoTree).includes("video.onList"), texts(videoTree).join("\n"));
   check("the video auto row offers the auto option",
@@ -972,10 +974,12 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
       typeof surface.dictionaries.zh["video.note25"] === "string",
     JSON.stringify(Object.keys(surface.dictionaries.zh).filter((key) => key.startsWith("video."))));
 
-  // The catalogue split: the rows are the V2.0 ids, and the image models on the
-  // same object must not leak in.
-  check("the video rows list the video candidates, never the draw ones",
-    videoText.includes("agnes-video-v2.0-flash") && !videoText.includes("Agnes-image-2.1-flash"),
+  // The rows now cover BOTH families: the 2.5 ids sit in the candidate list
+  // (the tool drives them), and the image models on the same object must not
+  // leak in.
+  check("the video rows list every video model, including the 2.5 family, never the draw ones",
+    videoText.includes("agnes-video-2.5-flash") && videoText.includes("agnes-video-2.5") &&
+      !videoText.includes("Agnes-image-2.1-flash"),
     videoText);
   check("the video card never borrows a draw.* label",
     !videoText.includes("draw."), videoText);
@@ -985,18 +989,18 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   // selection (and vice versa). Both cards can be open at once.
   const radios = findAll(videoTree, (props) => props.type === "radio");
   check("the video radios form their own group",
-    radios.length === 3 && radios.every((radio) => radio.props.name === "video-model"),
+    radios.length === 4 && radios.every((radio) => radio.props.name === "video-model"),
     radios.map((radio) => radio.props.name).join(","));
 
-  // The 2.5 exclusion note: it must appear when the catalogue holds excluded
-  // models, and must NOT appear as an empty line when it holds none.
-  check("the video card names the excluded 2.5 models when there are any",
+  // The 2.5 note: it must appear when the catalogue holds 2.5 models, and must
+  // NOT appear as an empty line when it holds none.
+  check("the video card names the 2.5 seconds-scheme family when there are any",
     videoText.includes("video.note25"), videoText);
   {
     const noExcluded = treeOf(render.VideoSwitch, {
       llm: { ...videoLlm, video25ModelIds: [] }, tt
     });
-    check("no excluded 2.5 models means no note line",
+    check("no 2.5 models means no note line",
       !texts(noExcluded).join("").includes("video.note25"), texts(noExcluded).join(" | "));
     // Absent field and empty array are the same answer — a snapshot that omits
     // the key (older Host, or a catalogue with no 2.5 entry) must not crash.
@@ -1014,7 +1018,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     const columnRows = findAll(videoTree, (props) => props.style?.flexDirection === "column"
       && props.style?.borderBottom !== undefined);
     check("the video rows are the roster's column shape",
-      columnRows.length === 3, `column rows=${columnRows.length}`);
+      columnRows.length === 4, `column rows=${columnRows.length}`);
     const bare = columnRows.filter((row) => {
       const kids = (Array.isArray(row.children) ? row.children.flat(Infinity) : [row.children ?? []])
         .filter((child) => child && typeof child === "object");
@@ -1023,7 +1027,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     check("no video row leaves its name or badge outside modelRowHead",
       bare.length === 0, `${bare.length} row(s) stack their name/badge`);
     check("every video row wraps its head in modelRowHead",
-      findAll(videoTree, (props) => props.style === S.modelRowHead).length === 3,
+      findAll(videoTree, (props) => props.style === S.modelRowHead).length === 4,
       `heads=${findAll(videoTree, (props) => props.style === S.modelRowHead).length}`);
   }
 
@@ -1039,15 +1043,15 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
       findAll(noKey, (props) => props.type === "checkbox").length === 1, texts(noKey).join(" | "));
   }
 
-  // A key whose catalogue holds no V2.0 model: the list is empty AND the card
+  // A key whose catalogue holds no video model: the list is empty AND the card
   // says why, rather than leaving an "on" switch over blank space.
   {
     const noCandidates = treeOf(render.VideoSwitch, {
-      llm: { videoEnabled: true, hasApiKey: true, videoCandidateIds: [], video25ModelIds: ["agnes-video-2.5"] }, tt
+      llm: { videoEnabled: true, hasApiKey: true, videoCandidateIds: [] }, tt
     });
     const text = texts(noCandidates).join(" | ");
     check("an empty video catalogue is named, not left blank",
-      text.includes("video.noCandidates") && text.includes("video.note25"), text);
+      text.includes("video.noCandidates"), text);
   }
 }
 

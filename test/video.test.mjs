@@ -28,10 +28,15 @@ import {
   isValidFrameCount,
   nearestFrameCount,
   isVideo25Family,
+  isVideo25Flash,
   videoGenModelIds,
   videoV2ModelIds,
+  video25ModelIds,
   pickVideoModel,
   buildVideoBody,
+  buildVideoBody25,
+  nearestAspect25,
+  secondsFromFrameTiming,
   parseVideoTask,
   videoTaskIdOf,
   parseVideoQuery,
@@ -113,6 +118,9 @@ function errResponse(status, text) {
     isVideo25Family("agnes-video-2.5") && isVideo25Family("agnes-video-2.5-flash"));
   check("V2.0 is not the 2.5 family",
     isVideo25Family("agnes-video-v2.0") === false && isVideo25Family(VIDEO_DEFAULT_MODEL) === false);
+  check("the flash variant is recognised inside the 2.5 family",
+    isVideo25Flash("agnes-video-2.5-flash") && isVideo25Flash("agnes-video-2.5") === false &&
+    isVideo25Flash("agnes-video-v2.0") === false);
 
   const live = [
     { id: "agnes-2.0-flash" },
@@ -124,21 +132,155 @@ function errResponse(status, text) {
   check("video models are found through the shared modality resolver",
     JSON.stringify(videoGenModelIds(live)) === JSON.stringify(["agnes-video-2.5", "agnes-video-2.5-flash", "agnes-video-v2.0"]),
     JSON.stringify(videoGenModelIds(live)));
-  check("only the V2.0 family is addressable by this module",
+  check("only the V2.0 family is addressable by the V2.0 helper",
     JSON.stringify(videoV2ModelIds(live)) === JSON.stringify(["agnes-video-v2.0"]),
     JSON.stringify(videoV2ModelIds(live)));
+  check("the 2.5 subset is reported separately",
+    JSON.stringify(video25ModelIds(live)) === JSON.stringify(["agnes-video-2.5", "agnes-video-2.5-flash"]),
+    JSON.stringify(video25ModelIds(live)));
 
   check("an explicit request wins even when unlisted (manual override)",
     pickVideoModel(live, "custom-video", "") === "custom-video");
-  check("auto-pick skips the 2.5 family it cannot address",
+  check("auto-pick prefers V2.0 when both families are present",
     pickVideoModel(live, "", "") === "agnes-video-v2.0");
   check("a configured preference is honoured when the catalog confirms it",
     pickVideoModel(live, "", "agnes-video-v2.0") === "agnes-video-v2.0");
-  check("a 2.5 preference is ignored rather than dispatched",
-    pickVideoModel(live, "", "agnes-video-2.5-flash") === "agnes-video-v2.0");
-  check("a catalog with only 2.5 video models picks nothing",
-    pickVideoModel([{ id: "agnes-video-2.5-flash" }], "", "") === null);
+  check("a 2.5 preference is honoured — the tool drives both families now",
+    pickVideoModel(live, "", "agnes-video-2.5-flash") === "agnes-video-2.5-flash");
+  check("a 2.5 request is honoured through the tool call",
+    pickVideoModel(live, "agnes-video-2.5", "") === "agnes-video-2.5");
+  check("a stale preference outside the catalog falls back to auto-pick",
+    pickVideoModel(live, "", "not-a-model") === "agnes-video-v2.0");
+  check("a 2.5-only catalog falls back to the first 2.5 model",
+    pickVideoModel([{ id: "agnes-video-2.5" }, { id: "agnes-video-2.5-flash" }], "", "") === "agnes-video-2.5");
   check("an empty catalog picks nothing", pickVideoModel([], "", "") === null);
+}
+
+// --- 3b. 2.5 helpers: seconds conversion, size resolution, aspect match -----
+{
+  check("frame timing converts to whole seconds, clamped to 4-12",
+    secondsFromFrameTiming(81, 24) === 4 &&
+    secondsFromFrameTiming(121, 24) === 5 &&
+    secondsFromFrameTiming(241, 24) === 10 &&
+    secondsFromFrameTiming(441, 24) === 12,
+    JSON.stringify({
+      a: secondsFromFrameTiming(81, 24), b: secondsFromFrameTiming(121, 24),
+      c: secondsFromFrameTiming(241, 24), d: secondsFromFrameTiming(441, 24)
+    }));
+  check("junk frame timing falls back to the documented 5s",
+    secondsFromFrameTiming(undefined, undefined) === 5 && secondsFromFrameTiming("x", 0) === 5);
+
+  check("aspect nearest-match picks the closest whitelisted ratio (landscape on a tie)",
+    nearestAspect25(1152, 768) === "4:3" && nearestAspect25(768, 1152) === "3:4" &&
+    nearestAspect25(1024, 1024) === "1:1" && nearestAspect25(1280, 960) === "4:3",
+    JSON.stringify({ a: nearestAspect25(1152, 768), b: nearestAspect25(768, 1152), c: nearestAspect25(1024, 1024), d: nearestAspect25(1280, 960) }));
+  check("invalid dimensions fall back to the documented 16:9 default",
+    nearestAspect25(undefined, undefined) === "16:9" && nearestAspect25(0, 768) === "16:9" &&
+    nearestAspect25("x", 768) === "16:9",
+    JSON.stringify({ a: nearestAspect25(undefined, undefined), b: nearestAspect25(0, 768), c: nearestAspect25("x", 768) }));
+}
+
+// --- 3c. buildVideoBody25: the seconds scheme, mode/media, flash limits -----
+// Note: the 2.5 wire body carries `first_frame` / `last_frame` / `images`
+// media fields, never `image` — the image URL is mapped INTO the media slot,
+// not sent as a top-level key.
+//
+// Aspect default: with no width/height the target ratio is exactly 16/9, and
+// the aspect table stores 16:9 as a whitelisted value — so a minimal call
+// lands on 16:9 (an EXACT table entry, not the nearest neighbour 4:3 which
+// `nearestAspect25(1152, 768)` would resolve to).
+//
+// The builder emits the V2.0 fields FIRST (`model`, `prompt`), then the 2.5
+// system fields (`mode`, `seconds`, `size`, `aspect_ratio`), and media/seed
+// last — so the key-set check below is ORDER-INSENSITIVE (uses a Set), while
+// the individual value checks pin each field's exact value.
+{
+  const text = buildVideoBody25({ model: "agnes-video-2.5-flash", prompt: "a cat" });
+  const textKeys = new Set(Object.keys(text));
+  check("a minimal 2.5 call is text mode, 5s, flash-pinned 720P, default 16:9 aspect",
+    text.mode === "text" && text.seconds === "5" && text.size === "720P" &&
+    text.aspect_ratio === "16:9" && textKeys.size === 6 &&
+    textKeys.has("model") && textKeys.has("prompt") && textKeys.has("mode") &&
+    textKeys.has("seconds") && textKeys.has("size") && textKeys.has("aspect_ratio") &&
+    !textKeys.has("first_frame") && !textKeys.has("last_frame") &&
+    !textKeys.has("images") && !textKeys.has("image") && !textKeys.has("negative_prompt") &&
+    !textKeys.has("width") && !textKeys.has("height") &&
+    !textKeys.has("num_frames") && !textKeys.has("frame_rate"),
+    JSON.stringify(text));
+
+  const full = buildVideoBody25({
+    model: "agnes-video-2.5",
+    prompt: "p",
+    mode: "reference",
+    seconds: 8,
+    size: "960P",
+    aspectRatio: "9:16",
+    keyframes: ["https://img/a.png", "https://img/b.png", "https://img/c.png"],
+    seed: 3
+  });
+  check("explicit 2.5 fields travel (seed included, reference media from keyframes)",
+    full.seconds === "8" && full.size === "960P" && full.aspect_ratio === "9:16" &&
+    full.mode === "reference" && JSON.stringify(full.images) ===
+    JSON.stringify(["https://img/a.png", "https://img/b.png", "https://img/c.png"]) && full.seed === 3,
+    JSON.stringify(full));
+
+  check("an explicit seconds is submitted as a string",
+    buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", seconds: 12 }).seconds === "12");
+
+  check("num_frames/frame_rate convert to seconds when seconds is omitted",
+    buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", numFrames: 241, frameRate: 24 }).seconds === "10");
+
+  check("width/height steer the aspect nearest-match on 2.5",
+    buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", width: 768, height: 1365 }).aspect_ratio === "9:16");
+
+  check("a single image maps to keyframe first_frame (aspect resolves to the 16:9 default)",
+    JSON.stringify(buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", image: "https://img/a.png" })) ===
+    JSON.stringify({ model: "agnes-video-2.5", prompt: "p", mode: "keyframe", seconds: "5", size: "720P", aspect_ratio: "16:9", first_frame: "https://img/a.png" }));
+
+  check("exactly two keyframes map to keyframe first/last (the mode derives even when one is forced)",
+    (() => {
+      const a = buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", keyframes: ["https://a/1.png", "https://b/2.png"] });
+      const b = buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", keyframes: ["https://a/1.png", "https://b/2.png"], mode: "keyframe" });
+      const expected = (body) => body.mode === "keyframe" &&
+        body.first_frame === "https://a/1.png" && body.last_frame === "https://b/2.png" &&
+        !("images" in body);
+      return expected(a) && expected(b);
+    })());
+
+  // throw-not-clamp for the explicit 2.5 values:
+  check("an out-of-range seconds throws",
+    (await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", seconds: 3 }))) !== null);
+  check("a non-whitelisted size throws",
+    (await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", size: "480P" }))) !== null);
+  check("a non-whitelisted aspect_ratio throws",
+    (await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", aspectRatio: "5:4" }))) !== null);
+
+  check("an illegal mode string throws",
+    (await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", mode: "video" }))) !== null);
+
+  check("an explicit valid mode is honoured even when media would derive a different one",
+    buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", mode: "reference", image: "https://img/a.png" }).mode === "reference");
+
+  check("a non-integer seed throws",
+    (await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", seed: 1.5 }))) !== null);
+  check("image and keyframes together throw",
+    (await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", image: "https://i/1.png", keyframes: ["https://i/1.png"] }))) !== null);
+  check("a non-URL reference image throws",
+    (await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", image: "local.png" }))) !== null);
+
+  // the flash variant is pinned to 720P and capped at 5 reference images:
+  check("flash accepts 720P and rejects a higher tier",
+    buildVideoBody25({ model: "agnes-video-2.5-flash", prompt: "p", size: "720P" }).size === "720P" &&
+    (await rejects(() => buildVideoBody25({ model: "agnes-video-2.5-flash", prompt: "p", size: "2K" }))) !== null);
+  check("flash caps reference images at 5",
+    (await rejects(() => buildVideoBody25({
+      model: "agnes-video-2.5-flash", prompt: "p",
+      keyframes: ["https://1/x.png", "https://2/x.png", "https://3/x.png", "https://4/x.png", "https://5/x.png", "https://6/x.png"]
+    }))) !== null &&
+    buildVideoBody25({
+      model: "agnes-video-2.5-flash", prompt: "p",
+      keyframes: ["https://1/x.png", "https://2/x.png", "https://3/x.png", "https://4/x.png", "https://5/x.png"]
+    }).images !== undefined);
 }
 
 // --- 4. buildVideoBody: valid shapes and the throw-not-clamp rule -----------
@@ -450,11 +592,62 @@ function errResponse(status, text) {
     check("an empty catalog degrades with the catalog hint", /没有视频模型/.test(message ?? ""), message);
   }
   {
-    const message = await rejects(() => makeTool({
-      getEntries: async () => [{ id: "agnes-video-2.5-flash" }]
-    }).execute({ prompt: "x" }));
-    check("a 2.5-only catalog explains the parameter-system gap instead of dispatching",
-      /2\.5 系列/.test(message ?? "") && /V2\.0/.test(message ?? ""), message);
+    // A 2.5-only catalog now DISPATCHES through the 2.5 body builder (whole
+    // seconds / 720P / 16:9 / text mode) instead of explaining the gap.
+    let seenBody;
+    const tool25 = makeTool({
+      getEntries: async () => [{ id: "agnes-video-2.5-flash" }],
+      fetchImpl: async (url, options) => {
+        if (url.includes("/agnesapi")) return okResponse({ status: "completed", url: "https://cdn/v.mp4", seconds: "5" });
+        seenBody = JSON.parse(options.body);
+        return okResponse({ video_id: "v-25", status: "queued" });
+      }
+    });
+    const result25 = await tool25.execute({ prompt: "x" });
+    check("a 2.5-only catalog addresses the 2.5 model, not an error",
+      result25.model === "agnes-video-2.5-flash" && result25.url === "https://cdn/v.mp4",
+      JSON.stringify(result25));
+    check("the 2.5 body is the seconds scheme with no V2.0 fields",
+      seenBody?.mode === "text" && seenBody?.seconds === "5" && seenBody?.size === "720P" &&
+      seenBody?.aspect_ratio === "16:9" && seenBody?.model === "agnes-video-2.5-flash" &&
+      !("width" in seenBody) && !("num_frames" in seenBody) && !("frame_rate" in seenBody) &&
+      !("height" in seenBody),
+      JSON.stringify(seenBody));
+  }
+  {
+    // V2.0 keeps its own body when explicitly selected from a mixed catalog;
+    // 2.5-style frame timing on a 2.5 model converts to seconds.
+    let seenBody;
+    const toolBoth = makeTool({
+      fetchImpl: async (url, options) => {
+        if (url.includes("/agnesapi")) return okResponse({ status: "completed", url: "https://cdn/v.mp4" });
+        seenBody = JSON.parse(options.body);
+        return okResponse({ video_id: "v-25", status: "queued" });
+      }
+    });
+    await toolBoth.execute({ prompt: "x", model: "agnes-video-v2.0", num_frames: 121, frame_rate: 24, width: 1152, height: 768 });
+    check("a V2.0 model still gets the V2.0 frame fields, never the 2.5 scheme",
+      seenBody?.num_frames === 121 && seenBody?.frame_rate === 24 && seenBody?.width === 1152 &&
+      seenBody?.height === 768 && !("seconds" in seenBody) && !("mode" in seenBody) &&
+      !("aspect_ratio" in seenBody) && seenBody?.model === "agnes-video-v2.0",
+      JSON.stringify(seenBody));
+
+    seenBody = null;
+    await toolBoth.execute({ prompt: "x", model: "agnes-video-2.5-flash", num_frames: 81, frame_rate: 24, width: 768, height: 1365 });
+    check("num_frames/frame_rate on a 2.5 model convert to seconds, width/height to aspect",
+      seenBody?.seconds === "4" && seenBody?.aspect_ratio === "9:16" &&
+      !("num_frames" in seenBody) && !("frame_rate" in seenBody) &&
+      !("width" in seenBody) && !("height" in seenBody),
+      JSON.stringify(seenBody));
+
+    let v2Err;
+    try {
+      await makeTool().execute({ prompt: "x", model: "agnes-video-v2.0", num_frames: 100 });
+    } catch (error) {
+      v2Err = error?.message ?? String(error);
+    }
+    check("an illegal V2.0 frame count still throws before any request on a V2.0 model",
+      /8n\+1/.test(v2Err ?? ""), String(v2Err));
   }
   {
     // The create call must still succeed here — only the QUERY reports failure.

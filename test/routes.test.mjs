@@ -854,14 +854,13 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("M: vision publish without settings service", error));
 }
 
-// === M2. the snapshot splits the video catalog into V2.0 and 2.5 ===========
-// The one decision the video block encodes: `agnes_video_generate` drives the
-// V2.0 parameter family only, because the 2.5 family's body schema
-// (`mode`/`seconds`/`size`) is disjoint and mixing them is a 400. So the
-// candidate list must hold the V2.0 ids and NOT the 2.5 ones, while
-// `video25ModelIds` reports the excluded set so the card can name it. A
-// wiring mistake here (passing the unfiltered list) would produce a picker
-// whose every option fails at call time.
+// === M2. the snapshot reports the full video catalog and names the 2.5 ======
+// The tool now drives BOTH parameter families: V2.0 (`width`/`num_frames`/
+// `frame_rate`) and 2.5 (`mode`/`seconds`/`size`/`aspect_ratio`). They are
+// mutually exclusive on the wire, and `defineVideoTool` picks the matching
+// body builder per model — so the panel's picker must offer EVERY video model
+// (`videoCandidateIds` = all of them), and `video25ModelIds` names the 2.5
+// subset so the card can say which ones take the seconds scheme.
 {
   const credentials = makeCredentials(null);
   credentials.refs.set("AGNES_TOKEN_PLAN_API_KEY", "sk-test-key-for-routing-only");
@@ -888,20 +887,20 @@ async function withNetwork(stub, body) {
     const llm = snapshot.payload.llm;
     check("M2 the poll succeeds against a mixed catalog", snapshot.payload.ok === true,
       JSON.stringify(snapshot.payload).slice(0, 120));
-    check("M2 the video candidates are the V2.0 family only",
-      JSON.stringify(llm.videoCandidateIds) === JSON.stringify(["agnes-video-v2.0", "agnes-video-v2.0-flash"]) &&
-        llm.videoCandidateCount === 2,
+    check("M2 the video candidates are ALL video models (both families are drivable)",
+      JSON.stringify(llm.videoCandidateIds) === JSON.stringify(["agnes-video-v2.0", "agnes-video-v2.0-flash", "agnes-video-2.5", "agnes-video-2.5-flash"]) &&
+        llm.videoCandidateCount === 4,
       JSON.stringify({ ids: llm.videoCandidateIds, count: llm.videoCandidateCount }));
-    check("M2 the excluded 2.5 family is reported separately",
+    check("M2 the 2.5 family is named separately as the seconds-scheme subset",
       JSON.stringify(llm.video25ModelIds) === JSON.stringify(["agnes-video-2.5", "agnes-video-2.5-flash"]),
       JSON.stringify(llm.video25ModelIds));
-    check("M2 auto-pick addresses a V2.0 model",
+    check("M2 auto-pick still prefers a V2.0 model when one is present",
       llm.videoModel === "agnes-video-v2.0", String(llm.videoModel));
     check("M2 no video id is a chat model, and no image id is a video candidate",
       JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["Agnes-6.8-flash-lite"]) &&
         JSON.stringify(llm.drawCandidateIds) === JSON.stringify(["agnes-image-2.1-flash"]),
       JSON.stringify({ roster: llm.models?.map((m) => m.id), draw: llm.drawCandidateIds }));
-  }).catch((error) => fail("M2: the video catalog split", error));
+  }).catch((error) => fail("M2: the video catalog report", error));
 }
 
 // === N. the inference API-key route: save / state / forget / fence =========

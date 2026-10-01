@@ -314,11 +314,14 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 - 图片**同步**返回、视频是**异步任务**：`video.ts` 的执行体是 `createVideoTask` →
   `pollVideoResult` 状态机，而不是 `draw.ts` 的一次 `drawOnce`。端点构造与查询响应解析
   见 [AGNES-API.md](./AGNES-API.md) §7.5。
-- **只覆盖 V2.0 参数体系**（`width`/`height`/`num_frames`/`frame_rate`）。名字含 `2.5`
-  的家族（`agnes-video-2.5` / `agnes-video-2.5-flash`）走 `mode`/`seconds`/`size`/
-  `aspect_ratio`，与 V2.0 **互斥**，混发会被 400 拒绝——所以 `pickVideoModel` 只在 V2.0
-  家族里选，2.5 家族进 `video25ModelIds` 单独上报给面板说明「为什么选不到」。`test/video.test.mjs`
-  9 段直接覆盖这条分派。
+- 工具覆盖**两个参数家族**：V2.0（`width`/`height`/`num_frames`/`frame_rate`）与
+  2.5（`mode`/`seconds`/`size`/`aspect_ratio`，OpenAI 秒数制）。两套字段互斥，混发
+  400——所以 `defineVideoTool` 按 `isVideo25Family(model)` 分派到 `buildVideoBody`
+  或 `buildVideoBody25`，两套字段永不同时发给同一模型。`pickVideoModel` 认全量
+  视频模型（自动选择 V2.0 优先、无 V2.0 回落 2.5；面板偏好可指任一家族），
+  2.5 家族仍进 `video25ModelIds` 单独上报，面板据此点名「这些走秒数制参数，
+  工具已支持、自动换算」（flash 收敛：仅 720P、reference ≤5）。`test/video.test.mjs`
+  直接覆盖这条分派。
 - 视频**没有 30s 冷却门**：一次视频尝试耗时分钟级、且与出图共用同一视频限频池，
   协议自身延迟已远宽于 30 秒；冷却门在此是死代码（决策见 AGNES-API.md §7.5.1）。
 - 快照契约新增视频键（仍是 `llm` 块内的子键，顶层键数不变）：`videoEnabled` / `videoSource`

@@ -179,12 +179,13 @@ export interface LlmData {
   drawCandidateIds?: string[];
   drawPreferredModel?: string;
   /**
-   * The video tool (V2.0 single-family). `videoCandidateIds` lists ONLY the
-   * models this tool can drive — the 2.5 series is excluded on purpose,
-   * because its body schema (`mode`/`seconds`/`size`) is disjoint from V2.0's
-   * (`width`/`height`/`num_frames`/`frame_rate`) and mixing them is a 400.
-   * `video25ModelIds` carries the excluded ones so the card can say so
-   * instead of leaving the reader wondering where they went.
+   * The video tool. `videoCandidateIds` lists EVERY video model in the
+   * catalogue — both the V2.0 family (`width`/`height`/`num_frames`/
+   * `frame_rate` body) and the 2.5 family (`mode`/`seconds`/`size`/
+   * `aspect_ratio` body) — because the tool drives both and builds the
+   * matching body per model. `video25ModelIds` carries the 2.5 subset so
+   * the card can name it as the seconds/size/aspect family the tool adapts
+   * to automatically.
    */
   videoEnabled?: boolean;
   videoSource?: string;

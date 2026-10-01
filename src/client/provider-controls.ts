@@ -321,13 +321,15 @@ export function DrawSwitch({ llm, onDone, tt }: {
 /**
  * The live video-tool switch — `DrawSwitch`'s twin, on `/video`.
  *
- * The one thing it says that the draw card does not: the catalogue may hold
- * 2.5-series video models this tool deliberately will not drive. Their body
+ * The one thing it says that the draw card does not: the catalogue mixes two
+ * video PARAMETER families. `videoCandidateIds` lists ALL of them (the tool
+ * drives both), and `video25ModelIds` names the 2.5-series subset, whose body
  * schema (`mode`/`seconds`/`size`/`aspect_ratio`) is disjoint from V2.0's
- * (`width`/`height`/`num_frames`/`frame_rate`), and sending one family's
- * fields to the other is a 400 — so the Host filters them out of the
- * candidates and the card names them, rather than letting a reader wonder
- * why a model they can see in the catalogue is missing here.
+ * (`width`/`height`/`num_frames`/`frame_rate`). The tool adapts automatically:
+ * when a 2.5 model is selected it builds the 2.5 body (whole seconds,
+ * resolution tier, aspect whitelist) and translates any frame fields to the
+ * nearest whole second. The card's note line says so, rather than leaving a
+ * reader wondering why a seconds-based model sits next to a frame-based one.
  */
 export function VideoSwitch({ llm, onDone, tt }: {
   llm?: LlmData | null;

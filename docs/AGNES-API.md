@@ -307,9 +307,32 @@ safe-set，保证选择器不空：
 （`agnes-video-2.5` / `agnes-video-2.5-flash`）走 `mode` / `seconds` / `size` /
 `aspect_ratio`（OpenAI Videos 兼容的秒数制），把 V2.0 的
 `width` / `height` / `num_frames` / `frame_rate` 发给它会被 **400** 拒绝，反之亦然。
-所以 `pickVideoModel` **只在 V2.0 家族里选**，2.5 家族进
-`video25ModelIds` 单独上报给面板（面板据此说明「为什么目录里看得见的模型这里选不到」），
-而不是发一个注定失败的请求。
+所以 `pickVideoModel` 可以选中**任一**家族（显式请求 / 面板偏好认全量视频模型；
+自动选择优先 V2.0，目录没有 V2.0 时回落到第一个 2.5），`defineVideoTool` 按
+`isVideo25Family(model)` 分派到对应的请求体构造器（V2.0 → `buildVideoBody`，
+2.5 → `buildVideoBody25`），两套字段永不同时发给同一模型。2.5 家族仍单独进
+`video25ModelIds` 上报面板，面板据此点名「这些走秒数制参数，工具已支持、自动换算」。
+
+#### 7.5.1b 视频 2.5 请求体与校验规则（`buildVideoBody25`）
+
+| 字段 | 类型 / 范围 | 缺省 | 非法时的行为 |
+|---|---|---|---|
+| `model` | 字符串 | 2.5 家族 id | 直传 |
+| `prompt` | 字符串 | — | 直传 |
+| `mode` | `text` / `keyframe` / `reference` | 按 media 推导 | 白名单外抛错 |
+| `seconds` | 整数 4–12（wire 上为字符串） | `5`（或由 `num_frames` / `frame_rate` 就近换算） | 抛错 |
+| `size` | `720P` / `960P` / `2K`；**flash 仅 `720P`** | `720P` | 抛错（flash 非 720P 也抛错） |
+| `aspect_ratio` | `21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16` | 由 `width` / `height` 就近匹配 | 白名单外抛错 |
+| `first_frame` / `last_frame` / `images` | 公共 `http(s)://` URL；flash 的 reference ≤ 5 张 | 按 media 推导 | 抛错 |
+| `seed` | 整数 | 不发送 | 抛错 |
+
+翻译规则（工具参数 → 2.5 wire）：显式 `seconds` 优先；未给 `seconds` 时由
+`num_frames` / `frame_rate` 就近换算（`121 @ 24fps → 5s`，夹取到 4–12——这是**刻意夹取**，
+因为 2.5 平台只收整秒，夹取落在合法值上而非 400）；`image` / `keyframes` 推导
+`mode`（无 media → `text`，单张 image / 两张 keyframes → `keyframe`，3+ 张 →
+`reference`，且与 image 互斥）；`negative_prompt` **不转发**（2.5 无对应字段，
+多一个顶层未知字段就是 400）。参考约束取自上游 `dsh-agnes` 的 2.5 实现
+（flash 仅 720P、reference ≤5、秒数 4–12）。
 
 #### 7.5.2 视频任务的状态机与响应
 

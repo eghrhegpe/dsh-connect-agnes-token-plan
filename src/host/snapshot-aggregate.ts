@@ -58,7 +58,7 @@ import {
 import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
 import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
-import { pickVideoModel, videoGenModelIds, videoV2ModelIds, isVideo25Family } from "./video.ts";
+import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video.ts";
 import { str } from "./util.ts";
 
 /** The authenticated console paths this poll reads. */
@@ -472,21 +472,23 @@ export async function buildSnapshotBody({
       : {}),
     videoEnabled: (await videoSwitch?.().catch(() => null) ?? settings.videoEnabled) === true,
     videoSource: await videoSwitch?.().catch(() => null) === null ? "config" : "panel",
-    // Same shape as the draw block above, with ONE difference that the panel
-    // has to be able to explain: this version implements only the V2.0
-    // parameter system, while the catalog may also list a 2.5 family that
-    // speaks a mutually exclusive one. So `videoCandidateIds` holds the
-    // addressable (V2.0) models only, and `video25ModelIds` carries the rest —
-    // a silent drop would make the panel look like it had lost models.
+    // Same shape as the draw block above, with ONE extra fact the panel has to
+    // be able to explain: the catalog may list a 2.5 family that speaks a
+    // MUTUALLY EXCLUSIVE parameter system (`mode`/`seconds`/`size`/
+    // `aspect_ratio` vs V2.0's `width`/`num_frames`/`frame_rate`). The tool
+    // now drives BOTH — `videoCandidateIds` holds every video model (both
+    // families, so the panel's picker offers them all) and `video25ModelIds`
+    // carries the 2.5 subset, which the card names as the seconds/size/aspect
+    // family the tool adapts to automatically. A silent drop would make the
+    // panel look like it had lost models.
     ...(Array.isArray(catalog)
       ? (() => {
-          const candidates = videoV2ModelIds(catalog);
-          const allVideo = videoGenModelIds(catalog);
+          const candidates = videoGenModelIds(catalog);
           return {
             videoModel: pickVideoModel(catalog, "", effectiveVideoModelId) ?? undefined,
             videoCandidateCount: candidates.length,
             videoCandidateIds: candidates,
-            video25ModelIds: allVideo.filter((id) => isVideo25Family(id)),
+            video25ModelIds: video25ModelIds(catalog),
             ...(effectiveVideoModelId !== "" ? { videoPreferredModel: effectiveVideoModelId } : {})
           };
         })()

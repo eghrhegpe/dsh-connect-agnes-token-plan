@@ -102,13 +102,14 @@
     // 目录里判定为出图模型的条目：自动选择藏掉同侪时，候选让它可见
     "drawCandidateCount": 1,
     "drawCandidateIds": ["agnes-image-2.5-flash"],
-    // 视频工具（0.4.3）：与 draw 同构，但候选集**只含 V2.0 家族**
+    // 视频工具（0.4.3）：与 draw 同构；工具同时驱动 V2.0 与 2.5 两个参数家族，
+    // 候选集含**全部**视频模型（两家族都在选择器里），工具按选中模型构造对应请求体
     "videoEnabled": false, "videoSource": "config",
     "videoModel": "agnes-video-v2.0",
-    "videoCandidateCount": 1,
-    "videoCandidateIds": ["agnes-video-v2.0"],
-    // 被排除的 2.5 家族单独上报：参数体系与 V2.0 互斥（见 AGNES-API.md §7.5.1），
-    // 面板据此说明「目录里看得见的模型为什么这里选不到」，而不是让它们凭空消失
+    "videoCandidateCount": 4,
+    "videoCandidateIds": ["agnes-video-v2.0", "agnes-video-2.5", "agnes-video-2.5-flash"],
+    // 2.5 家族（秒数制 seconds/size/aspect_ratio）单独点名：工具已支持并自动换算
+    // （见 AGNES-API.md §7.5.1 / §7.5.1b），面板据此说明这些模型走哪套参数
     "video25ModelIds": ["agnes-video-2.5", "agnes-video-2.5-flash"]
   },
   "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
@@ -187,7 +188,7 @@
 
 > ⚠️ **键名是承重的**：两条路由共用一份处理器实现，把它们的状态分开的**只有键名**（`drawModelId` / `videoModelId`）与各自闭包捕获的 store。`routes.test.mjs` 组 S 专门钉了这条隔离（S6/S6b 交叉投递、S7 各自回读），因为一次复制粘贴把键名写错，会让两个工具**静默地**共用一个模型。
 
-`videoModelId` 只应填 V2.0 家族的 id；把 2.5 家族的 id 存进去**不会被拒绝**（处理器只校验**形状**——非空字符串或 `null`），但 `pickVideoModel` 只在自己的 V2.0 候选集里认这个偏好，认不出就退回目录里第一个 V2.0 模型（**不会**把 2.5 的 id 发出去换来一个 400）。是否存在于目录里是**调用时**的事实，不是保存时能断言的。
+`videoModelId` 可填**任一**视频家族（V2.0 或 2.5）的 id；把 2.5 家族的 id 存进去同样合法（处理器只校验**形状**——非空字符串或 `null`）。`pickVideoModel` 认全量视频模型：面板指到 2.5 就寻址 2.5，工具随之走 `buildVideoBody25` 的秒数制请求体。认不出的 id（不在目录里）退回自动选择（目录第一个 V2.0 模型，无 V2.0 则第一个 2.5 模型）。是否存在于目录里是**调用时**的事实，不是保存时能断言的。
 
 ### `GET|POST /api/dsh-connect-agnes-token-plan/raccoon`
 
