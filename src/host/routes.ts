@@ -11,8 +11,8 @@
  * @module dsh-connect-sensenova-token-plan/routes
  */
 import { isAdmitted, name } from "./host-config.ts";
-import { buildSnapshotBody } from "./snapshot-aggregate.ts";
-import { CODE, isAuthFailure } from "./codes.ts";
+import { buildSnapshotBody, failureCode } from "./snapshot-aggregate.ts";
+import { CODE } from "./codes.ts";
 import { writeLoginTrace } from "./trace.ts";
 import { str, redactSecrets } from "./util.ts";
 import { normalizeEnabledIds } from "./catalog-store.ts";
@@ -143,24 +143,6 @@ async function readJsonBodyOr400(request, response) {
     return null;
   }
   return body;
-}
-
-/**
- * Map a thrown console/auth error to the one code the panel branches on.
- *
- * A raw error message carries no intent, so the panel keys its guidance off
- * this taxonomy instead: `not_configured` (the user can fix it) and
- * `jwt_expired` (renewal already failed) pass through verbatim because the
- * panel words them differently from every other case; an auth-shaped failure
- * becomes `auth_error`; anything else is a console failure, which usually
- * self-heals on the next poll.
- * @param {unknown} error - the error a fetch or parse threw.
- * @returns {string} the panel-facing code.
- */
-function failureCode(error) {
-  const code = error && typeof error === "object" ? /** @type {{code?: string}} */ (error).code : undefined;
-  if (code === CODE.NOT_CONFIGURED || code === CODE.JWT_EXPIRED) return code;
-  return isAuthFailure(error) ? CODE.AUTH_ERROR : CODE.CONSOLE_ERROR;
 }
 
 /**

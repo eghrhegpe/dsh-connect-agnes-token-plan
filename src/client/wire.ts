@@ -4,8 +4,8 @@
  * Every type here mirrors a field the Host's `buildSnapshotBody` returns
  * (see `src/host/snapshot-aggregate.ts`); keeping them in the client half
  * is a deliberate duplication CONSTRAINT: the client bundles unbuilt, so it
- * cannot import the Host's types, and `test/contract.test.mjs` asserts the
- * snapshot's 14-key shape against the same names.
+ * cannot import the Host's types, and `test/docs.test.mjs` asserts the
+ * snapshot's 15-key shape against the same names.
  *
  * The shapes stay forgiving on purpose: a missing field must render as
  * "no data yet", never throw — so every property is optional, and reading
@@ -128,6 +128,18 @@ export interface ShapeWarningData {
 }
 
 /**
+ * Why the quota block is empty: the console could not be reached.
+ *
+ * Carried INSIDE an `ok:true` snapshot — a signed-out or unreachable console
+ * no longer blanks the whole body. The `code` is the same taxonomy the
+ * `ok:false` failure path uses, so the panel words it with the same guidance.
+ */
+export interface QuotaErrorData {
+  code?: string;
+  message?: string;
+}
+
+/**
  * The whole snapshot body `buildSnapshotBody` returns, as the panel reads it.
  *
  * `pollSeconds`/`cacheSeconds` are quoted into the header and footnote;
@@ -148,5 +160,6 @@ export interface SnapshotData {
   llm?: LlmData | null;
   pools?: PoolsData | null;
   trend?: TrendData | null;
+  quotaError?: QuotaErrorData | null;
   shapeWarnings?: ShapeWarningData[];
 }

@@ -1772,7 +1772,7 @@
           "ephemeral": false,
           "retryAfterMs": null,
           "needsUserAction": false,
-          "error": "sign-in is not being retried automatically: the account needs to be entered again"
+          "error": null
         }
       }
     ]

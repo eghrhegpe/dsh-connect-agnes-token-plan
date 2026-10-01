@@ -28,7 +28,10 @@ import {
   describeDrawFailure,
   drawOnce,
   createDrawCooldown,
-  defineDrawTool
+  defineDrawTool,
+  DRAW_OUTPUT_FORMATS,
+  normalizeDrawOutputFormat,
+  normalizeDrawWatermark
 } from "../src/host/draw.ts";
 
 const results = [];
@@ -110,22 +113,43 @@ async function rejects(fn) {
     pickDrawModel([], "", "") === null);
 }
 
-// --- 4. buildDrawBody clamps -----------------------------------------------
+// --- 4. buildDrawBody clamps -------------------------------------------------
 {
   const body = buildDrawBody({ model: "sensenova-u1-fast", prompt: "a cat" });
   check("defaults are n=1 and response_format=url",
     body.n === 1 && body.response_format === "url");
+  check("documented output_format and watermark defaults travel",
+    body.output_format === "png" && body.watermark === true);
   check("no size field travels when unset", !Object.prototype.hasOwnProperty.call(body, "size"));
   check("size travels when set",
     buildDrawBody({ model: "m", prompt: "p", size: "1024x1024" }).size === "1024x1024");
-  check("n clamps high (a hostile value must not burn the pool)",
-    buildDrawBody({ model: "m", prompt: "p", n: 99 }).n === 4);
-  check("n clamps low and floors fractions",
+  check("n clamps to the platform's single-image cap (a hostile value must not burn the pool)",
+    buildDrawBody({ model: "m", prompt: "p", n: 99 }).n === 1);
+  check("n clamps low and floors fractions to the single-image cap",
     buildDrawBody({ model: "m", prompt: "p", n: 0 }).n === 1 &&
-    buildDrawBody({ model: "m", prompt: "p", n: 2.9 }).n === 2);
+    buildDrawBody({ model: "m", prompt: "p", n: 2.9 }).n === 1);
   check("junk n falls back to 1", buildDrawBody({ model: "m", prompt: "p", n: "many" }).n === 1);
   check("a custom response_format travels",
     buildDrawBody({ model: "m", prompt: "p", responseFormat: "b64_json" }).response_format === "b64_json");
+  check("documented output_format values travel through",
+    buildDrawBody({ model: "m", prompt: "p", outputFormat: "webp" }).output_format === "webp" &&
+    buildDrawBody({ model: "m", prompt: "p", outputFormat: "JPG" }).output_format === "jpg");
+  check("junk output_format falls back to png",
+    buildDrawBody({ model: "m", prompt: "p", outputFormat: "svg" }).output_format === "png" &&
+    buildDrawBody({ model: "m", prompt: "p", outputFormat: 42 }).output_format === "png");
+  check("watermark accepts documented boolean values and falls back to true",
+    buildDrawBody({ model: "m", prompt: "p", watermark: false }).watermark === false &&
+    buildDrawBody({ model: "m", prompt: "p", watermark: "false" }).watermark === false &&
+    buildDrawBody({ model: "m", prompt: "p", watermark: "true" }).watermark === true &&
+    buildDrawBody({ model: "m", prompt: "p", watermark: "no" }).watermark === true &&
+    buildDrawBody({ model: "m", prompt: "p", watermark: 0 }).watermark === true);
+  check("the documented output_format list matches the platform docs",
+    JSON.stringify(DRAW_OUTPUT_FORMATS) === JSON.stringify(["png", "jpg", "jpeg", "webp"]));
+  check("normalize helpers export the documented defaults",
+    normalizeDrawOutputFormat("") === "png" &&
+    normalizeDrawOutputFormat("WEBP") === "webp" &&
+    normalizeDrawWatermark() === true &&
+    normalizeDrawWatermark(false) === false);
 }
 
 // --- 5. parseDrawResponse ----------------------------------------------------
@@ -317,12 +341,141 @@ async function rejects(fn) {
     ];
     const tool = makeTool({ getEntries: async () => liveCatalog });
     const result = await tool.execute({ prompt: "a cat" });
+    check("the tool exposes the documented extra fields",
+      tool.parameters.outputFormat.type === "string" &&
+      tool.parameters.watermark.type === "boolean" &&
+      /png/.test(tool.parameters.outputFormat.description) &&
+      /watermark/.test(tool.parameters.watermark.description));
     check("an async getEntries (the index.js shape) is awaited and used",
       result.model === "sensenova-u1-fast");
   }
   {
     const message = await rejects(() => makeTool({ isDisposed: () => true }).execute({ prompt: "a cat" }));
     check("a disposed plugin refuses draws", /no longer mounted/.test(message ?? ""), message);
+  }
+}
+
+// --- N. the mount-time service seam: a service that registers late --------
+// lifecycle.ts read two optional Host services exactly ONCE per mount, and
+// neither capability can be re-established later: the tools registry has no
+// unregister call, and the settings row is only written by a poll that finds
+// `visionPublish.current` already filled. A service that arrives a moment
+// after this plugin mounts was therefore missed for the whole session, with
+// the draw switch visibly on and nothing on any panel naming the reason.
+// The read retries; the registration must stay exactly once.
+{
+  const { resolveServiceWithRetry, registerDrawTool, startSideEffects } = await import(
+    "../src/host/lifecycle.ts"
+  );
+  try {
+    {
+      let reads = 0;
+      const service = { late: true };
+      const ctx = { get: () => { reads += 1; return reads >= 2 ? service : undefined; } };
+      const value = await resolveServiceWithRetry(ctx, "tools");
+      check("a service that registers late is picked up inside the window",
+        value === service, `reads=${reads}`);
+      check("the retry stops as soon as the service appears", reads === 2, `reads=${reads}`);
+    }
+    {
+      let reads = 0;
+      const ctx = { get: () => { reads += 1; return undefined; } };
+      const value = await resolveServiceWithRetry(ctx, "tools", { delayMs: 1 });
+      check("a service that never appears reads as null after the window",
+        value === null && reads === 3, `value=${value} reads=${reads}`);
+    }
+    {
+      let reads = 0;
+      const ctx = { get: () => { reads += 1; return undefined; } };
+      const value = await resolveServiceWithRetry(ctx, "tools", { isDisposed: () => true });
+      check("a withdrawing plugin stops reading immediately", value === null && reads === 0,
+        `reads=${reads}`);
+    }
+    // registerDrawTool: the switch is on, the tools service only appears on
+    // the second read. The tool must land exactly once — retrying the
+    // registration would register a tool the registry cannot unregister twice.
+    {
+      let reads = 0;
+      const registered = [];
+      const ctx = {
+        get: (service) => {
+          if (service !== "tools") return undefined;
+          reads += 1;
+          return reads >= 2 ? { register: (tool) => { registered.push(tool); } } : undefined;
+        }
+      };
+      const wiring = {
+        settings: { drawEnabled: true, drawModelId: "" },
+        configError: null,
+        providerState: { entries: [{ id: "sensenova-u1-fast", output_modalities: ["image"] }] },
+        catalogStore: { list: async () => [] },
+        resolveApiKey: async () => "sk-live",
+        publisher: { isDisposed: () => false },
+        drawStore: { enabled: async () => null, modelId: async () => null }
+      };
+      const side = {
+        loadToolsModule: async () => ({ defineTool: (tool) => ({ name: tool.name }) }),
+        drawFetch: async () => ({})
+      };
+      await registerDrawTool(ctx, wiring, side);
+      check("a late tools service still registers the draw tool",
+        registered.length === 1 && typeof registered[0] === "object",
+        `registered=${registered.length} reads=${reads}`);
+      check("the draw tool is registered exactly once despite the retry",
+        registered.length === 1 && reads === 2, `registered=${registered.length} reads=${reads}`);
+    }
+    // startSideEffects: vision step two's writer is only filled once the
+    // settings service can actually be reached. A poll after the late fill
+    // writes the row, and an unchanged list still writes nothing.
+    {
+      let reads = 0;
+      const visionPublish = { current: null };
+      const settingsService = {
+        describe: () => [{ ns: "dsh-connect-sensenova-token-plan", revision: 7 }],
+        updates: [],
+        async update(ns, value, revision) {
+          this.updates.push({ ns, value, revision });
+        }
+      };
+      const ctx = {
+        get: (service) => {
+          if (service !== "settings") return undefined;
+          reads += 1;
+          return reads >= 2 ? settingsService : undefined;
+        }
+      };
+      const wiring = {
+        settings: { writeImageModelIds: true, imageModelIds: [] },
+        visionPublish,
+        publisher: {
+          publish: async () => ({ ok: true }),
+          dispose: () => {},
+          isDisposed: () => false,
+          state: {}
+        },
+        catalogStore: { list: async () => [], listEnabledIds: async () => [] },
+        logger: { warn: () => {} }
+      };
+      startSideEffects(ctx, wiring, {
+        loadToolsModule: async () => ({ defineTool: () => ({ name: "x" }) }),
+        drawFetch: async () => ({})
+      });
+      // The retry window is real time (300ms × attempt index).
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      check("the vision writer is filled once the settings service appears",
+        typeof visionPublish.current === "function" && reads === 2, `reads=${reads}`);
+      await visionPublish.current([{ id: "vision-1" }], ["vision-1"]);
+      check("a poll after the late service writes the settings row",
+        settingsService.updates.length === 1
+          && JSON.stringify(settingsService.updates[0].value.imageModelIds) === JSON.stringify(["vision-1"])
+          && settingsService.updates[0].revision === 7,
+        JSON.stringify(settingsService.updates));
+      await visionPublish.current([{ id: "vision-1" }], ["vision-1"]);
+      check("an unchanged vision list writes nothing on the next poll",
+        settingsService.updates.length === 1, JSON.stringify(settingsService.updates));
+    }
+  } catch (error) {
+    fail("the mount-time service seam", error);
   }
 }
 

@@ -23,6 +23,13 @@ const restoreHostEnv = isolateHostEnv();
 
 const { Context } = await loadPeer("cordis");
 
+// The Raccoon "second upstream provider" stores (ROADMAP §6.1): the switch's
+// state file is shared with the plugin's own instance through `$DSH_HOME`
+// (isolated below), and the credential is a credentials-service reference.
+import { createFileRaccoonStore } from "../src/host/raccoon-switch-store.ts";
+import { RACCOON_CREDENTIAL_REF, serializeRaccoonCredential } from "../src/host/raccoon-store.ts";
+import { RACCOON_PROVIDER_ID } from "../src/host/raccoon-models.ts";
+
 /** After the peers are found: mounting must not write into the real Home. */
 const restoreStateDir = isolateStateDir();
 
@@ -281,13 +288,14 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   const { webServer, stop } = await bootPlugin();
   const handler = webServer.registered.get("/api/dsh-connect-sensenova-token-plan/snapshot");
   const res = response();
-  // No account is configured, so this is the not_configured path — the one
-  // that carries the `auth` block the panel needs to reach the form.
+  // No account is configured, so this is the quota-unavailable path — the
+  // body still answers `ok:true` with an in-body `quotaError` and carries the
+  // `auth` block the panel needs to offer the sign-in form.
   await handler(request(), res);
   check("the snapshot route answers 200", res.statusCode === 200, String(res.statusCode));
   check("it reports a payload", res.payload !== null);
   check("an unconfigured Host is not an error state",
-    res.payload?.ok === false && res.payload?.code === "not_configured",
+    res.payload?.ok === true && res.payload?.quotaError?.code === "not_configured",
     JSON.stringify(res.payload ?? {}).slice(0, 140));
   check("the answer carries the auth block the panel reads",
     res.payload?.auth !== undefined && res.payload?.auth?.needsAccount === true,
@@ -486,6 +494,179 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   await stop();
   check("disposing released every registration pair",
     llm.calls.released === llm.calls.adapter + llm.calls.directory, JSON.stringify(llm.calls));
+}
+
+// === F5. the Raccoon mount seed re-registers the provider on restart =====
+// The Raccoon publisher's `state.rows` is in-memory only, so a fresh process
+// starts with an EMPTY roster. The old seed gated on `state.rows.length > 0`
+// and therefore never republished after a restart: the tab said "logged in"
+// and listed models (its GET refetches the catalogue live), but the DSH
+// model picker saw none. Pin the fixed behavior: a stored switch + a stored
+// credential must register `sensenova-raccoon` again at mount, with no
+// switch/login POST in between — the exact "restart" shape the user hit.
+{
+  // The switch file lives in the same `$DSH_HOME` the plugin reads
+  // (`isolateStateDir` above points it at a scratch dir for this whole run).
+  // profile is null in this container, so the shared dir is where the plugin
+  // will look too.
+  const raccoonSwitch = createFileRaccoonStore({});
+  await raccoonSwitch.save(true);
+  // A credential as the credentials service would hold it after a QR login.
+  const credentials = makeCredentials();
+  credentials.refs.set(RACCOON_CREDENTIAL_REF, serializeRaccoonCredential({
+    accessToken: "seed-token",
+    refreshToken: "seed-refresh",
+    expiresAtMs: Date.now() + 3_600_000,
+    nickname: "seed-nick"
+  }));
+  const webServer = makeWebServer();
+  const llm = makeLlm();
+  const ctx = new Context();
+  ctx.provide("webServer", webServer);
+  ctx.provide("credentials", credentials);
+  ctx.provide("llm", llm);
+  const host = await import(`../src/host/index.ts?wiring=${Math.random()}`);
+  // The real raccoon adapter imports the llm peers; substitute a fake factory
+  // like the other groups do for the Token Plan adapter, so the check stays
+  // offline on a clean checkout.
+  const raccoonDeps = {
+    loadRaccoonAdapterModule: async () => ({
+      createRaccoonAdapter: async (options) => ({
+        adapter: { raccoonSeed: true },
+        providerIds: [RACCOON_PROVIDER_ID]
+      })
+    })
+  };
+  // The mount seed (and the /raccoon GET) refetch the live catalogue and the
+  // balance through `globalThis.fetch`. The network guard records-and-throws
+  // rather than serving, so serve the two gateway routes here (the same fake
+  // response shape the raccoon suite uses) and fall through to the guard for
+  // anything else; restore the guard when the group is done.
+  const guardFetch = globalThis.fetch;
+  const fakeGatewayResponse = (body, status = 200) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body
+  });
+  globalThis.fetch = async (input) => {
+    const url = typeof input === "string" ? input : String(input?.url ?? input);
+    if (url.includes("/api/web/llm/v2/model_catalog")) {
+      return fakeGatewayResponse({ code: 0, data: { categories: [{ type: "chat", models: [{ id: "sn-live-1", name: "Live 1", visible: true }] }] } });
+    }
+    if (url.includes("/api/web/points/v1/balance")) {
+      return fakeGatewayResponse({ code: 0, data: { balance: 300 } });
+    }
+    return guardFetch(input);
+  };
+  const plugin = { name: host.name, inject: host.inject, apply: (fiberCtx, row) => host.apply(fiberCtx, row, raccoonDeps) };
+  const fiber = await ctx.plugin(plugin, {});
+  // The mount seed crosses several awaits before it publishes; settle like F.
+  await settle();
+  check("the raccoon seed re-registers the provider at mount",
+    llm.calls.adapter === 1 && llm.calls.lastIds?.[0] === RACCOON_PROVIDER_ID,
+    JSON.stringify(llm.calls));
+  // The panel route must agree: logged in, provider registered, models offered.
+  const res = response();
+  await webServer.registered.get("/api/dsh-connect-sensenova-token-plan/raccoon")(request(), res);
+  check("the raccoon route confirms the provider is registered after restart",
+    res.statusCode === 200 && res.payload?.ok === true && res.payload?.loggedIn === true
+      && res.payload?.providerRegistered === true
+      && Array.isArray(res.payload?.models) && res.payload.models.length > 0,
+    JSON.stringify(res.payload).slice(0, 220));
+  await fiber?.dispose?.();
+  // Leave no switch behind for later groups (the file persists in the scratch
+  // DSH_HOME; forgetting it makes the next boot read "not set" again).
+  await raccoonSwitch.forget();
+  globalThis.fetch = guardFetch;
+}
+
+// === F6. switch on + NO credential keeps the tab's "scan to log in" state =
+// The seed publishes only when a credential survived the restart. Without one
+// there is nothing to offer, so the publisher stays pristine — the tab keeps
+// its designed "switch on — scan to log in" line instead of a raw
+// `not_configured` error that the restart never earned.
+{
+  const raccoonSwitch = createFileRaccoonStore({});
+  await raccoonSwitch.save(true);
+  const webServer = makeWebServer();
+  const llm = makeLlm();
+  const ctx = new Context();
+  ctx.provide("webServer", webServer);
+  ctx.provide("credentials", makeCredentials()); // no RACCOON_CREDENTIAL ref
+  ctx.provide("llm", llm);
+  const host = await import(`../src/host/index.ts?wiring=${Math.random()}`);
+  const raccoonDeps = {
+    loadRaccoonAdapterModule: async () => ({
+      createRaccoonAdapter: async () => ({ adapter: {}, providerIds: [RACCOON_PROVIDER_ID] })
+    })
+  };
+  const plugin = { name: host.name, inject: host.inject, apply: (fiberCtx, row) => host.apply(fiberCtx, row, raccoonDeps) };
+  const fiber = await ctx.plugin(plugin, {});
+  await settle();
+  check("no credential means no raccoon registration at mount",
+    llm.calls.adapter === 0 && llm.calls.lastIds === undefined,
+    JSON.stringify(llm.calls));
+  await fiber?.dispose?.();
+  await raccoonSwitch.forget();
+}
+
+// === F7. a transient seed failure retries instead of leaving the picker empty
+// Raccoon has no poll to heal a missed registration (the Token Plan provider
+// republishes on every catalogue poll). A transient failure at boot must
+// therefore be retried: the fake adapter factory throws once, then succeeds,
+// and the seed's bounded retry must still land the registration.
+{
+  const raccoonSwitch = createFileRaccoonStore({});
+  await raccoonSwitch.save(true);
+  const credentials = makeCredentials();
+  credentials.refs.set(RACCOON_CREDENTIAL_REF, serializeRaccoonCredential({
+    accessToken: "retry-token",
+    refreshToken: "retry-refresh",
+    expiresAtMs: Date.now() + 3_600_000,
+    nickname: "retry-nick"
+  }));
+  const webServer = makeWebServer();
+  const llm = makeLlm();
+  const ctx = new Context();
+  ctx.provide("webServer", webServer);
+  ctx.provide("credentials", credentials);
+  ctx.provide("llm", llm);
+  const host = await import(`../src/host/index.ts?wiring=${Math.random()}`);
+  // The seed refetches the catalogue through the guard; serve it like F5.
+  const guardFetch = globalThis.fetch;
+  const fakeGatewayResponse = (body, status = 200) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body
+  });
+  globalThis.fetch = async (input) => {
+    const url = typeof input === "string" ? input : String(input?.url ?? input);
+    if (url.includes("/api/web/llm/v2/model_catalog")) {
+      return fakeGatewayResponse({ code: 0, data: { categories: [{ type: "chat", models: [{ id: "sn-live-1", name: "Live 1", visible: true }] }] } });
+    }
+    return guardFetch(input);
+  };
+  let factoryCalls = 0;
+  const raccoonDeps = {
+    loadRaccoonAdapterModule: async () => ({
+      createRaccoonAdapter: async () => {
+        factoryCalls += 1;
+        if (factoryCalls === 1) throw new Error("transient build failure");
+        return { adapter: { retried: true }, providerIds: [RACCOON_PROVIDER_ID] };
+      }
+    })
+  };
+  const plugin = { name: host.name, inject: host.inject, apply: (fiberCtx, row) => host.apply(fiberCtx, row, raccoonDeps) };
+  const fiber = await ctx.plugin(plugin, {});
+  // The retry backoff is real time (300ms × attempt); wait it out.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  await settle();
+  check("a transient seed failure retries into a registration",
+    factoryCalls === 2 && llm.calls.adapter === 1 && llm.calls.lastIds?.[0] === RACCOON_PROVIDER_ID,
+    JSON.stringify({ factoryCalls, calls: llm.calls }));
+  await fiber?.dispose?.();
+  await raccoonSwitch.forget();
+  globalThis.fetch = guardFetch;
 }
 
 // === G. the wiring test itself stayed offline ===========================

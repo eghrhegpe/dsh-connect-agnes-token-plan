@@ -15,17 +15,19 @@
 import { ACCOUNT_PATH, SENSENOVA_SIGNUP_URL } from "./const.ts";
 import { format } from "./format.ts";
 import { postJson } from "./http.ts";
-import { h, useCallback, useEffect, useState } from "./runtime.ts";
+import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { REFUSAL_TEXT } from "./snapshot.ts";
 import { S } from "./styles.ts";
 import type { AuthData } from "./wire.ts";
 
-export function AccountForm({ auth, onDone, tt, bare }: {
+export function AccountForm({ auth, onDone, tt, bare, snapshotAt }: {
   auth?: AuthData | null;
   onDone?: () => void;
   tt: Tt;
   bare?: boolean;
+  /** Epoch millis of the last snapshot the parent read; 0 until one lands. */
+  snapshotAt?: number;
 }): unknown {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -46,6 +48,12 @@ export function AccountForm({ auth, onDone, tt, bare }: {
   // account" button announce "saved and signed in, reading quota…".
   const [saved, setSaved] = useState(false);
   const [forgotten, setForgotten] = useState(false);
+  // When the LAST submit/forget outcome was produced. The outcome notes
+  // ("已保存并登录，正在读取额度…" / "已清除账号…") are transient claims:
+  // they must land once a snapshot AFTER them arrives. Without a marker,
+  // `saved`/`forgotten` never reset and the in-progress sentence hangs
+  // forever even though the quota is already on screen above it.
+  const outcomeAt = useRef(0);
   // Epoch millis until which the platform asked us not to retry. While
   // this is in the future the submit button stays disabled, because a
   // retry inside the window is what extends a lockout.
@@ -61,6 +69,17 @@ export function AccountForm({ auth, onDone, tt, bare }: {
     }, 1000);
     return () => clearInterval(timer);
   }, [cooldownUntil]);
+
+  // The outcome notes land when a snapshot AFTER them arrives. The parent
+  // (PanelPage) stamps every successful snapshot read; once one is newer
+  // than the last submit/forget, the "正在读取额度…"/"已清除账号…" claim has
+  // been superseded by real data and must not hang around.
+  useEffect(() => {
+    if (typeof snapshotAt === "number" && snapshotAt > outcomeAt.current) {
+      setSaved(false);
+      setForgotten(false);
+    }
+  }, [snapshotAt]);
 
   const cooling = now < cooldownUntil;
   const coolingMinutes = Math.max(1, Math.ceil((cooldownUntil - now) / 60_000));
@@ -90,6 +109,9 @@ export function AccountForm({ auth, onDone, tt, bare }: {
         setSaved(true);
         // A fresh sign-in supersedes any earlier "account cleared" note.
         setForgotten(false);
+        // Stamp the outcome: the "正在读取额度…" note stays until a snapshot
+        // newer than this lands (the parent's `snapshotAt` clears it).
+        outcomeAt.current = Date.now();
         onDone?.();
         return;
       }
@@ -137,6 +159,9 @@ export function AccountForm({ auth, onDone, tt, bare }: {
       setSaved(false);
       setUsername("");
       setPassword("");
+      // Stamp the outcome: the "已清除账号" note stays until a snapshot
+      // newer than this lands.
+      outcomeAt.current = Date.now();
       onDone?.();
     } catch {
       setFormError(tt("auth.network"));
@@ -240,13 +265,17 @@ export function AccountForm({ auth, onDone, tt, bare }: {
         ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } },
             format(tt("auth.retryAfter"), { minutes: coolingMinutes }))
         : null,
-      h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved")),
-      // The auto-recovery readiness is a boolean from the Host (`state()`):
-      // whether the environment carries `SENSENOVA_PASSWORD`. The value
-      // itself never reaches the bundle; the line only tells the user
-      // whether a dead refresh token re-signs in by itself or asks again.
+      // One note carries the persistence facts. The auto-recovery variant
+      // REPLACES the saved line when armed: the saved line's "需重新输入一次"
+      // would contradict an automatic re-login. When not armed, the saved
+      // line already covers the manual path — a second "自动恢复：未开启" line
+      // would be jargon that says the same thing twice.
       h("p", { style: S.formNote },
-        auth?.autoRecoverArmed === true ? tt("auth.autoRecoverOn") : tt("auth.autoRecoverOff"))
+        auth?.ephemeral === true
+          ? tt("auth.ephemeral")
+          : auth?.autoRecoverArmed === true
+            ? tt("auth.autoRecoverOn")
+            : tt("auth.saved"))
     )
   );
 }

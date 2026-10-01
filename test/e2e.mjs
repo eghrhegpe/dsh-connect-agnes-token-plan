@@ -380,8 +380,8 @@ try {
   {
     const res = await call("/api/dsh-connect-sensenova-token-plan/snapshot");
     check("the snapshot route answers through the real webserver", res.status === 200, String(res.status));
-    check("an unconfigured panel asks for the account",
-      res.body?.ok === false && res.body?.code === "not_configured", JSON.stringify(res.body ?? {}).slice(0, 120));
+    check("an unconfigured panel reports the quota unavailable, not an error",
+      res.body?.ok === true && res.body?.quotaError?.code === "not_configured", JSON.stringify(res.body ?? {}).slice(0, 120));
     check("it demands no user action on a fresh install",
       res.body?.auth?.needsUserAction === false, String(res.body?.auth?.needsUserAction));
   }

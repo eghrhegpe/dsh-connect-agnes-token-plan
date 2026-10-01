@@ -118,7 +118,7 @@ IAM 拒绝登录时返回 `google.rpc.Status` 信封：顶层 `message` 是泛�
 
 | 场景 | code | 处理 |
 |---|---|---|
-| 无账号 | `not_configured` | 面板提示配置；**不计入节流**（不是拒绝） |
+| 无账号 | `not_configured` | 快照额度区提示配置（不阻塞 API / Raccoon tab）；**不计入节流**（不是拒绝） |
 | 缺 username/password | `missing_credentials` | 拒绝，不重试 |
 | refresh_token 被吊销/失效（token 端点 400） | `refresh_rejected` | 回落密码登录；若无密码则报错 |
 | refresh 其它失败 | `refresh_failed` | 抛出 |

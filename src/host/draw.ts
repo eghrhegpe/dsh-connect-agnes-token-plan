@@ -38,8 +38,26 @@ export const DRAW_COOLDOWN_MS = 30_000;
 /** Default deadline for one image request; image models are slow, chat deadlines do not apply. */
 export const DRAW_DEFAULT_TIMEOUT_MS = 120_000;
 
-/** Hard ceiling on `n`: the wire field is forwarded verbatim, a hostile/large value must not burn the pool. */
-export const DRAW_MAX_IMAGES = 4;
+/** The platform's per-request image cap: its official docs pin `n` to 1 for both image models. */
+export const DRAW_MAX_IMAGES = 1;
+
+/** The documented `output_format` choices for `images/generations` (png/jpg/jpeg/webp). */
+export const DRAW_OUTPUT_FORMATS = ["png", "jpg", "jpeg", "webp"];
+
+/** Normalize a caller-supplied `output_format` value to the documented set. */
+export function normalizeDrawOutputFormat(value) {
+  const format = str(value, "").trim().toLowerCase();
+  if (format === "") return "png";
+  return DRAW_OUTPUT_FORMATS.includes(format) ? format : "png";
+}
+
+/** Normalize a caller-supplied `watermark` flag. Only documented boolean forms travel; everything else keeps the documented default `true`. */
+export function normalizeDrawWatermark(value) {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return true;
+}
 
 /**
  * Build the `images/generations` endpoint from the OpenAI-compatible base.
@@ -134,17 +152,22 @@ export function pickDrawModel(entries, requested, preferred) {
  * sane range (a fraction floors, junk and out-of-range values fall back to 1)
  * and `response_format` defaults to `url` — the panel/agent-facing shape that
  * renders as a Markdown image without the client having to handle base64.
- * @param {object} options - `{ model, prompt, n, size, responseFormat }`.
+ * `output_format` and `watermark` are always explicit (defaults `png` and
+ * `true`), because the official docs recommend pinning them to survive a
+ * future platform default change.
+ * @param {object} options - `{ model, prompt, n, size, responseFormat, outputFormat, watermark }`.
  * @returns {object} the wire body.
  */
 export function buildDrawBody(options: Partial<DrawRequest> = {}) {
-  const { model, prompt, n, size, responseFormat } = options;
+  const { model, prompt, n, size, responseFormat, outputFormat, watermark } = options;
   const count = Math.floor(num(n, 1));
   const body: Record<string, unknown> = {
     model: str(model, ""),
     prompt: str(prompt, ""),
     n: Number.isFinite(count) ? Math.min(DRAW_MAX_IMAGES, Math.max(1, count)) : 1,
-    response_format: str(responseFormat, "url") || "url"
+    response_format: str(responseFormat, "url") || "url",
+    output_format: normalizeDrawOutputFormat(outputFormat),
+    watermark: normalizeDrawWatermark(watermark)
   };
   const dims = str(size, "").trim();
   if (dims !== "") body.size = dims;
@@ -302,13 +325,16 @@ export function defineDrawTool({
   return defineTool({
     name: DRAW_TOOL_NAME,
     description:
-      "Generate an image with the SenseNova Token Plan key (e.g. sensenova-u1-fast). " +
-      "Models are auto-discovered from this key's catalog; pass `model` only when you specifically need one.",
+      "Generate an image with the SenseNova Token Plan key. " +
+      "Omit `model` to let the catalog's default image model be used; pass `model` only when you need a particular one — " +
+      "the available image model ids are reported in the result after the first successful call.",
     parameters: {
       prompt: { type: "string", required: true, description: "Image generation prompt" },
       model: { type: "string", description: "SenseNova image model id; defaults to the first discovered one" },
-      size: { type: "string", description: "Image size, e.g. 1024x1024" },
-      n: { type: "number", description: `Number of images, 1-${DRAW_MAX_IMAGES}, default 1` }
+      size: { type: "string", description: "Image size as WIDTHxHEIGHT, e.g. 1024x1024; platform range 512-4096 in multiples of 32, ratio up to 3:1; omit for auto" },
+      n: { type: "number", description: "Number of images — the platform only supports 1; default 1" },
+      outputFormat: { type: "string", description: "Image file format: png (default), jpg, jpeg, or webp" },
+      watermark: { type: "boolean", description: "Add the SenseNova logo watermark. Defaults to true; false means no watermark" }
     },
     output: {
       schema: {
@@ -352,7 +378,7 @@ export function defineDrawTool({
           "catalog 中没有出图模型（output_modalities 含 image 的条目为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含出图模型"
         );
       }
-      const body = buildDrawBody({ model, prompt, n: params?.n, size: params?.size });
+      const body = buildDrawBody({ model, prompt, n: params?.n, size: params?.size, outputFormat: params?.outputFormat, watermark: params?.watermark });
       let result;
       try {
         result = await drawOnce({
@@ -366,9 +392,16 @@ export function defineDrawTool({
         cooldown.trip();
         throw error;
       }
+      // The success hint reports the CURRENTLY available image models: the
+      // tool description is static (the registry has no re-register), so this
+      // is the one channel that carries the dynamic catalog to the model —
+      // after the first successful call it can deliberately pick a specific
+      // model instead of always taking the default.
+      const drawModelIds = imageGenModelIds(entries).join(", ");
+      const available = drawModelIds !== "" ? `\n可用出图模型: ${drawModelIds}` : "";
       const hint = result.url !== ""
-        ? `图片已生成!\n模型: ${result.model}\nURL: ${result.url}\n请直接输出 Markdown: ![图](${result.url})`
-        : `图片已生成!\n模型: ${result.model}\n(base64 图片数据，请以 data:image/png;base64,… 形式在对话中展示)`;
+        ? `图片已生成!\n模型: ${result.model}\nURL: ${result.url}\n请直接输出 Markdown: ![图](${result.url})${available}`
+        : `图片已生成!\n模型: ${result.model}\n(base64 图片数据，请以 data:image/png;base64,… 形式在对话中展示)${available}`;
       return {
         source: "sensenova",
         model: result.model,

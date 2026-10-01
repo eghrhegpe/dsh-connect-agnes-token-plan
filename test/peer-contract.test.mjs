@@ -40,7 +40,7 @@
  */
 import { findPeerRoot, installNetworkGuard } from "./peer-roots.mjs";
 import { pathToFileURL } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   extractStructuredType,
@@ -185,6 +185,44 @@ for (const message of misjudgedMessages) {
   check("peer 已判 RATE_LIMIT 的体幂等放行", reclassifyFinish(rate) === rate);
   const rate2 = { type: "finish", reason: { kind: "error", failure: { code: CODE.RATE_LIMIT, message: noQuotaWordingMessage } } };
   check("无额度措辞的限频体幂等放行", reclassifyFinish(rate2) === rate2);
+}
+
+// --- D. peer 分类结构漂移护栏（整层前提的「源」）--------------------------------
+// 本纠正层存在的唯一理由：peer `classifyPiAiError` 里 `isQuotaExceededError`
+// 排在 `rate.?limit` 分支**之前**（额度措辞抢判 QUOTA，限频够不到）。C 段用
+// 「额度+速率」组合 message 间接钉了这个顺序的**效果**；这里再从 peer 源码
+// **文本**直接钉**结构**——锚函数名 + 判定的相对顺序，不碰行号（行号会随
+// runtime 重生成漂）。上游一旦调序或收紧 `isQuotaExceededError`，QUOTA 抢判
+// 消失、llm-error-fix 退化为 no-op：这里先于线上红。
+{
+  const piSrcPath = join(root, "@deepseek-ai", "dsh-llm-pi-ai", "lib", "index.js");
+  if (existsSync(piSrcPath)) {
+    let piSrc = "";
+    try {
+      piSrc = readFileSync(piSrcPath, "utf8");
+    } catch (error) {
+      fail("读取 peer classifyPiAiError 源码", error);
+    }
+    const fnStart = piSrc.indexOf("function classifyPiAiError");
+    const fnEnd = fnStart === -1 ? -1 : piSrc.indexOf("PI_AI_ERROR", fnStart); // 兜底分支是函数最后一行
+    const body = fnEnd === -1 ? "" : piSrc.slice(fnStart, fnEnd);
+    check(
+      "peer classifyPiAiError 仍可定位（函数名未改名/移除）",
+      fnStart !== -1 && fnEnd !== -1,
+      fnStart === -1 ? "找不到 `function classifyPiAiError`" : "找不到 `PI_AI_ERROR` 兜底分支"
+    );
+    const iQuota = body.indexOf("isQuotaExceededError(");
+    const iRate = body.indexOf("rate.?limit");
+    check(
+      "peer 结构：isQuotaExceededError 调用先于 rate.?limit 分支（QUOTA 抢判前提仍在）",
+      iQuota !== -1 && iRate !== -1 && iQuota < iRate,
+      `isQuotaExceededError@${iQuota}, rate.?limit@${iRate}` +
+        "（若 -1 或顺序翻转：QUOTA 不再抢判 429，llm-error-fix 退化为 no-op 兼容层，" +
+        "按 §3.3②/③ 收紧 peer 范围并更新本契约与本层注释）"
+    );
+  } else {
+    console.log("SKIP: 未找到 peer `dsh-llm-pi-ai/lib/index.js`——结构护栏跳过（不红）。");
+  }
 }
 
 console.log(JSON.stringify(results, null, 2));

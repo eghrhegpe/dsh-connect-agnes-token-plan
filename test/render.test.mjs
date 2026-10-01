@@ -628,7 +628,10 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   // a configured user saw the sign-in form flash on every mount. The
   // `loadedOnce` gate (set in the load's finally) is invisible to `viewOf`;
   // only driving the mounted page proves the gate is wired. The stand-in
-  // returns useState's INITIAL value, so this is the true first frame.
+  // returns useState's INITIAL value, so this is the true first frame. The
+  // tab bar is part of it: the loading / error / setup states live INSIDE the
+  // quota tab, so the api and raccoon tabs (both independent of the Token
+  // Plan console) stay reachable before a snapshot lands.
   {
     const firstFrame = rendered(render.PanelPage, {
       onClose: () => {}, tt, localeSubscribe: undefined
@@ -636,6 +639,9 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     check("the first frame shows the loading line", firstFrame.includes("panel.loading"),
       firstFrame.join("\n"));
     check("the first frame does NOT show the sign-in form", !firstFrame.includes("auth.title"),
+      firstFrame.join("\n"));
+    check("the tab bar renders before the first snapshot lands",
+      firstFrame.includes("tab.quota") && firstFrame.includes("tab.api") && firstFrame.includes("tab.raccoon"),
       firstFrame.join("\n"));
   }
 }

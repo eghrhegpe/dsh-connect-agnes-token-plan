@@ -151,6 +151,7 @@ function panelDecision(body) {
     failure: decided.failure,
     auth: decided.auth,
     needsSetup: decided.needsSetup,
+    canManageAccount: decided.canManageAccount,
     renders: decided.render
   };
 }
@@ -355,7 +356,11 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("B: 401 recovery", error));
 }
 
-// === C. a persistent rejection reports jwt_expired =======================
+// === C. a persistent rejection degrades the quota block ==================
+// A console that keeps refusing the token no longer blanks the whole
+// snapshot: the body answers `ok:true` with an in-body `quotaError`, so the
+// API and Raccoon tabs (independent of the console) stay usable while the
+// quota tab asks for a re-login.
 {
   const dead = jwtExpiring(120);
   const credentials = makeCredentials(storedGrant(dead, "old", 7200));
@@ -371,9 +376,12 @@ async function withNetwork(stub, body) {
     return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } });
   }, async () => {
     const response = await (await mount(credentials))(SNAPSHOT_PATH, makeRequest());
-    check("a persistent rejection fails cleanly", response.payload.ok === false);
-    check("the code is jwt_expired", response.payload.code === "jwt_expired", response.payload.code);
+    check("a persistent rejection still answers", response.payload.ok === true,
+      JSON.stringify(response.payload).slice(0, 160));
+    check("the quota block names jwt_expired", response.payload.quotaError?.code === "jwt_expired",
+      String(response.payload.quotaError?.code));
     check("the failure carries auth state", response.payload.auth !== undefined);
+    check("the API tab block still arrives", response.payload.llm !== undefined);
     check("no refresh storm", refreshes <= 2, `refreshes=${refreshes}`);
   }).catch((error) => fail("C: persistent 401", error));
 }
@@ -462,10 +470,12 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("D2: DNS rebinding", error));
 }
 
-// === E. THE REPORTED BUG: a Host without the credentials service ========
+// === E. a Host without the credentials service degrades, not dead-ends ===
 // Before this fix the snapshot answered `auth_unavailable`, which the panel
 // rendered as plain text with no way to sign in, and a response with no
 // `auth` field at all left `auth === null` and so never reached the form.
+// The signed-out host now answers `ok:true` with an in-body `quotaError`: the
+// quota tab offers the sign-in form, while the API/Raccoon tabs stay usable.
 {
   const net = await loginNetwork();
   await withNetwork(net, async () => {
@@ -474,13 +484,19 @@ async function withNetwork(stub, body) {
     check("a Host without credentials still answers", snapshot.statusCode === 200, String(snapshot.statusCode));
     check("it is not the auth_unavailable dead end", snapshot.payload.code !== "auth_unavailable",
       String(snapshot.payload.code));
-    check("it reports not_configured", snapshot.payload.code === "not_configured", String(snapshot.payload.code));
+    check("it still answers ok:true", snapshot.payload.ok === true,
+      JSON.stringify(snapshot.payload ?? {}).slice(0, 140));
+    check("the quota block names not_configured", snapshot.payload.quotaError?.code === "not_configured",
+      String(snapshot.payload.quotaError?.code));
     check("the response carries auth state", snapshot.payload.auth !== undefined);
     check("it is marked ephemeral", snapshot.payload.auth?.ephemeral === true, JSON.stringify(snapshot.payload.auth));
+    check("the API tab block still arrives (key/provider/draw are console-independent)",
+      snapshot.payload.llm !== undefined);
 
     const decision = panelDecision(snapshot.payload);
-    check("THE FORM IS REACHABLE", decision.renders === "AccountForm", decision.renders);
-    check("the panel is told to ask for the account", decision.needsSetup === true);
+    check("the quota tab offers the sign-in form", decision.canManageAccount === true && decision.renders === "pools",
+      decision.renders);
+    check("the panel is not asked for a full-screen setup", decision.needsSetup === false);
 
     // And the account route must accept a post, so the form can do its job.
     const posted = await call(ACCOUNT_PATH, makePost({ username: "u", password: "p" }));

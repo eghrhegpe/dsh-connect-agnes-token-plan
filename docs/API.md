@@ -30,6 +30,9 @@
   "pools": { "plan": {...}, "pools": [/* 每池 5h/7d 窗口、返赠、callableModels / lockedModels */] },
   "trend": { "hours": 24, "models": [/* 每模型消耗；命中 trendMultipliers 配置的行附 multiplier: number（伪倍率，非官方） */] },
   "uncountedModels": [/* 在模型目录但不在任何池中的模型 */],
+  // 控制台不可达（未登录 / 令牌被拒 / 控制台故障）时非空：额度区显示原因并给出
+  // 修复入口，API 与 Raccoon tab 不受影响；正常时为 null
+  "quotaError": null,
   "llm": {
     // 推理 Key 状态（永远不回显 Key 本身）
     "hasApiKey": true, "keySource": "credentials", "ephemeral": false,
@@ -67,7 +70,8 @@
 }
 ```
 
-- `ok:false` 时 body 带 `code`（`not_configured` / `jwt_expired` / `auth_error` / `config_error` / `account_locked` 等）与 `auth` 块。
+- 控制台不可达（未登录 / 令牌被拒 / 控制台故障）时快照**仍为 `ok:true`**：额度数据为空并携带 `quotaError: {code, message}`（`not_configured` / `jwt_expired` / `auth_error` / `console_error`）。额度区据此提示原因并给出登录入口；**接入 API 与 Raccoon tab 不依赖控制台登录**，照常可用。
+- `ok:false` 仅剩配置错误（`config_error`）与意外抛错，body 带 `code` 与 `auth` 块。
 - Host 内部：临近过期或收到 401 时自动用 `refresh_token` 续期并重试一次。
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
 

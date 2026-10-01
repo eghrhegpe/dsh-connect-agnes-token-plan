@@ -22,6 +22,59 @@ import { defineDrawTool } from "./draw.ts";
 import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.ts";
 import { name } from "./host-config.ts";
 
+/** How many times a mount-time optional-service read is retried. */
+const SERVICE_RETRY_ATTEMPTS = 3;
+/** Base backoff between service-read attempts (× attempt index). */
+const SERVICE_RETRY_DELAY_MS = 300;
+
+/**
+ * Read an optional Host service with a bounded retry.
+ *
+ * A service may register AFTER this plugin mounts — the note on vision step
+ * two below said so — and a mount-time read is the only window for a
+ * capability the Host cannot later remove: the tools registry has no
+ * unregister call, and the settings row is only written by a poll that finds
+ * `visionPublish.current` already filled. A one-shot read therefore misses a
+ * service that arrives a moment late for the WHOLE session, silently — the
+ * draw tool would be absent with the switch visibly on, the vision list never
+ * written, and no line on any panel naming the reason. The Raccoon publisher
+ * got the same bounded retry for its mount seed.
+ *
+ * This retries the READ ONLY. Whatever it returns is used exactly once by the
+ * caller: retrying a call that mutates (a tool registration) would register
+ * the same tool twice, and the tools registry cannot tell.
+ * @param {object} ctx - the host root context.
+ * @param {string} service - the service name for `ctx.get`.
+ * @param {object} [options]
+ * @param {() => boolean} [options.isDisposed] - stop early when the plugin is
+ *   withdrawing; a late registration into a withdrawing Host is worse than
+ *   absence.
+ * @param {number} [options.attempts] - test seam for the attempt count.
+ * @param {number} [options.delayMs] - test seam for the backoff base.
+ * @returns {Promise<unknown|null>} the service, or `null` when it never
+ *   appeared inside the window.
+ */
+export async function resolveServiceWithRetry(ctx, service, options = {}) {
+  const {
+    isDisposed = () => false,
+    attempts = SERVICE_RETRY_ATTEMPTS,
+    delayMs = SERVICE_RETRY_DELAY_MS
+  } = options;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (isDisposed()) return null;
+    try {
+      const value = ctx.get?.(service) ?? ctx[service] ?? null;
+      if (value !== null && value !== undefined) return value;
+    } catch {
+      // A resolver that refuses a read is treated like an absent service.
+    }
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+    }
+  }
+  return null;
+}
+
 /**
  * Register the `sensenova_draw_image` agent tool (ARCHITECTURE.md §5.4,
  * route B). Opt-in (`drawEnabled`, default off) and doubly degraded — a Host
@@ -45,7 +98,13 @@ export async function registerDrawTool(ctx, wiring, side) {
   // patch's `drawModelId` (empty string = auto-pick from the catalog).
   const panelModelId = drawStore ? await drawStore.modelId().catch(() => null) : null;
   const effectiveSettings = panelModelId !== null ? { ...settings, drawModelId: panelModelId } : settings;
-  const tools = ctx.get("tools") ?? ctx.tools ?? null;
+  // The tools service is optional and may register a moment AFTER this
+  // plugin mounts; retry the read, never the registration — a tool cannot be
+  // unregistered, so registering it twice would be a worse failure than
+  // missing it.
+  const tools = await resolveServiceWithRetry(ctx, "tools", {
+    isDisposed: () => publisher.isDisposed()
+  });
   if (tools === null || typeof tools.register !== "function") return;
   let defineTool;
   try {
@@ -132,13 +191,20 @@ export function startSideEffects(ctx, wiring, side) {
   // pass costs one revision read and no write.
   //
   // `visionPublish.current` is filled in here from `ctx.get("settings")`
-  // (the resolver-not-snapshot pattern: the service may register after
-  // this plugin mounts); a Host without one leaves it null and the
-  // publish simply never runs.
+  // (the resolver-not-snapshot pattern: the service may register after this
+  // plugin mounts, so the read retries a bounded number of times before the
+  // plugin gives up); a Host without one leaves it null and the publish
+  // simply never runs. Wrapped in a fire-and-forget IIFE so a settings
+  // service that arrives a moment later is still picked up before the next
+  // poll — the write itself is idempotent per poll, so a late fill costs
+  // nothing.
   // ------------------------------------------------------------------
-  {
-    const settingsService = ctx.get("settings") ?? null;
-    if (settingsService !== null && typeof settingsService.update === "function") {
+  void (async () => {
+    try {
+      const settingsService = await resolveServiceWithRetry(ctx, "settings", {
+        isDisposed: () => publisher.isDisposed()
+      });
+      if (settingsService === null || typeof settingsService.update !== "function") return;
       const descriptorOf = () => {
         try {
           const view = settingsService.describe?.({ redactSecrets: true });
@@ -169,8 +235,12 @@ export function startSideEffects(ctx, wiring, side) {
           publishing = false;
         }
       };
+    } catch {
+      // A settings service that never appears, or a resolver that throws on
+      // every attempt: `visionPublish.current` stays null and the poll never
+      // writes, exactly as a Host without the service.
     }
-  }
+  })();
 }
 
 /**

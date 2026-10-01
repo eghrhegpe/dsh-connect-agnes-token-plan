@@ -19,6 +19,7 @@
  * @module dsh-connect-sensenova-token-plan/snapshot-aggregate
  */
 
+import { CODE, isAuthFailure } from "./codes.ts";
 import { fetchConsole, fetchModelCatalog } from "./console-client.ts";
 import { parsePools, parseTrend, checkShape, identifyVisionModel } from "./parsers.ts";
 import { summarizeCatalog, filterByEnabled, rosterWithAvailability, exhaustedModelIds, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
@@ -66,6 +67,45 @@ export function applyTrendMultipliers(trend, multipliers) {
     return multiplier === undefined ? row : { ...row, multiplier };
   });
   return trend;
+}
+
+/**
+ * Run one fetch, reporting its failure instead of throwing.
+ *
+ * The snapshot must NOT be all-or-nothing on the console: a signed-out or
+ * unreachable console still leaves the llm block and the model catalog —
+ * neither of which needs the console token — deliverable. The failed source
+ * is named in `quotaError`; the panel says why instead of showing nothing,
+ * and the API / Raccoon tabs stay fully usable without a console login.
+ * @param {() => Promise<unknown>} fn - the fetch.
+ * @returns {Promise<{value: unknown, error: unknown}>} `value` or `error`, never both.
+ */
+async function soft(fn) {
+  try {
+    return { value: await fn(), error: null };
+  } catch (error) {
+    return { value: null, error };
+  }
+}
+
+/**
+ * Map a thrown console/auth error to the one code the panel branches on.
+ *
+ * A raw error message carries no intent, so the panel keys its guidance off
+ * this taxonomy instead: `not_configured` (the user can fix it) and
+ * `jwt_expired` (renewal already failed) pass through verbatim because the
+ * panel words them differently from every other case; an auth-shaped failure
+ * becomes `auth_error`; anything else is a console failure, which usually
+ * self-heals on the next poll. The same mapping answers both the snapshot's
+ * in-body `quotaError` and the route's `ok:false` catch — one copy, one
+ * taxonomy.
+ * @param {unknown} error - the error a fetch or parse threw.
+ * @returns {string} the panel-facing code.
+ */
+export function failureCode(error) {
+  const code = error && typeof error === "object" ? /** @type {{code?: string}} */ (error).code : undefined;
+  if (code === CODE.NOT_CONFIGURED || code === CODE.JWT_EXPIRED) return code;
+  return isAuthFailure(error) ? CODE.AUTH_ERROR : CODE.CONSOLE_ERROR;
 }
 
 /**
@@ -121,9 +161,14 @@ export async function buildSnapshotBody({
   const granularity = settings.trendHours <= 72
     ? "TOKEN_PLAN_CREDIT_TREND_GRANULARITY_HOUR"
     : "TOKEN_PLAN_CREDIT_TREND_GRANULARITY_DAY";
-  const [poolBody, trendBody, catalog] = await Promise.all([
-    fetchConsole(settings, "/lite/console/v1/tokenplan/pool-usage", undefined, settings.cacheSeconds * 1000, cache, inflight, tokenStore),
-    fetchConsole(
+  const [poolResult, trendResult, catalog] = await Promise.all([
+    // The two console sources are SOFT, not fatal: a signed-out or unreachable
+    // console must not blank the whole snapshot. The quota section says why it
+    // is empty (`quotaError`), while the llm block and the model catalog —
+    // neither of which needs the console token — still arrive, so the API and
+    // Raccoon tabs stay usable without a console login.
+    soft(() => fetchConsole(settings, "/lite/console/v1/tokenplan/pool-usage", undefined, settings.cacheSeconds * 1000, cache, inflight, tokenStore)),
+    soft(() => fetchConsole(
       settings,
       "/lite/console/v1/tokenplan/credit-usage-trend",
       { start_time: String(start), end_time: String(endBucket), granularity },
@@ -131,24 +176,41 @@ export async function buildSnapshotBody({
       cache,
       inflight,
       tokenStore
-    ),
+    )),
     // Optional: a missing API key degrades the model lists, not the quota.
     (async () => {
       const apiKey = await resolveApiKey();
       return apiKey === "" ? null : fetchModelCatalog(settings, 3600_000, cache, inflight, apiKey).catch(() => null);
     })()
   ]);
-  const pools = parsePools(poolBody);
-  const trend = parseTrend(trendBody, settings.trendHours);
+  const pools = parsePools(poolResult.value);
+  const trend = parseTrend(trendResult.value, settings.trendHours);
   // Pseudo multipliers ride on the rows the Host computes, so the client
   // never re-implements the matching (and the tests drive the same math).
   applyTrendMultipliers(trend, settings.trendMultipliers);
+  // The console could not be reached (no account, a rejected token, the
+  // console down): the quota block is empty and says WHY, keyed by the same
+  // taxonomy the failure path uses. Pool is the auth probe — its failure wins
+  // the code when both sources missed.
+  const consoleFailure = poolResult.error ?? trendResult.error ?? null;
+  const quotaError = consoleFailure === null
+    ? null
+    : {
+        code: failureCode(consoleFailure),
+        message: consoleFailure instanceof Error ? consoleFailure.message : String(consoleFailure)
+      };
   // A shape drift does not fail the poll — the parsers still return what they
   // understood — but it must reach the panel, or a renamed field would read
-  // as "no usage" forever.
+  // as "no usage" forever. A source that failed outright is reported through
+  // `quotaError` instead, so it is skipped here: reporting both would blame
+  // the shape for a network error.
   const shapeWarnings = [
-    ...checkShape(poolBody, "pool-usage").missing.map((key) => ({ api: "pool-usage", missing: key })),
-    ...checkShape(trendBody, "credit-usage-trend").missing.map((key) => ({ api: "credit-usage-trend", missing: key }))
+    ...(poolResult.error === null
+      ? checkShape(poolResult.value, "pool-usage").missing.map((key) => ({ api: "pool-usage", missing: key }))
+      : []),
+    ...(trendResult.error === null
+      ? checkShape(trendResult.value, "credit-usage-trend").missing.map((key) => ({ api: "credit-usage-trend", missing: key }))
+      : [])
   ];
   // Split each pool's advertised coverage into what this key can call and
   // what the plan lists but the key has no permission for yet.
@@ -299,7 +361,10 @@ export async function buildSnapshotBody({
     // `undefined` (no API key) vs `[]` (key present, no vision models) — the
     // panel must not say "no vision models" when it simply never asked.
     ...(visionModels !== undefined ? { visionModels } : {}),
-    uncountedModels: Array.isArray(catalog)
+    // With the console unreachable the pools are empty, so every catalogue
+    // model would read as "uncounted" — noise that blames the models for the
+    // missing quota data. The `quotaError` line already explains the blank.
+    uncountedModels: quotaError === null && Array.isArray(catalog)
       ? catalogIds.filter((model) => !pools.pools.some((pool) => pool.modelIds.includes(model)))
       : [],
     // Step three status: key presence/source, opt-in, registration state, and
@@ -307,6 +372,7 @@ export async function buildSnapshotBody({
     llm: llmStatus,
     pools,
     trend,
+    quotaError,
     shapeWarnings
   };
 }

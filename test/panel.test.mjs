@@ -97,6 +97,32 @@ const healthy = {
     deadResult.render === RENDER.PANELS, deadResult.render);
 }
 
+// === B3. a console-less snapshot degrades, not dead-ends ==================
+// The Host answers `ok:true` with an in-body `quotaError` when the console is
+// unreachable (no account, a rejected token, the console down): the panel
+// must keep rendering the tabs (the API and Raccoon tabs are independent of
+// the console) and keep the account editor reachable on the quota tab —
+// never a full-screen dead end.
+{
+  const signedOut = {
+    ok: true,
+    pools: { pools: [] },
+    trend: { models: [] },
+    quotaError: { code: "not_configured", message: "no console account is configured" },
+    llm: { hasApiKey: false, keySource: null, ephemeral: false, registerProvider: false },
+    auth: { configured: false, hasAccount: false, hasRefreshToken: false, needsAccount: true, ephemeral: false, retryAfterMs: null }
+  };
+  const result = view(signedOut);
+  check("a console-less snapshot still renders the panel", result.render === RENDER.PANELS, result.render);
+  check("a console-less snapshot is not a full-screen setup", result.needsSetup === false);
+  check("the account editor stays reachable on the quota tab", result.canManageAccount === true);
+
+  const consoleDown = view({ ...signedOut, quotaError: { code: "console_error", message: "console down" } });
+  check("a transient console outage also keeps the panel",
+    consoleDown.render === RENDER.PANELS && consoleDown.canManageAccount === true, consoleDown.render);
+  check("a transient console outage is not a sign-in ask", consoleDown.needsSetup === false);
+}
+
 // === C. a config error must NOT hide behind the form ====================
 {
   const result = view({ ok: false, error: "bad endpoint override", code: "config_error" });

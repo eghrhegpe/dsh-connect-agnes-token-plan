@@ -252,6 +252,13 @@ export function createTokenStore(options) {
         // in this closure, so the env-based `readAccount` must not be asked
         // for it here.
         await loginFromAccount({ username, password });
+        // A successful manual sign-in supersedes whatever failure the panel
+        // last saw. `state.lastError` is otherwise cleared only inside
+        // `acquire`'s success path — which never runs while the fresh grant
+        // short-circuits `getToken` — so without this line an old
+        // `login_rejected` would keep the header claiming "needs login" long
+        // after the account works.
+        state.lastError = null;
       } catch (error) {
         // A deliberate submit is the one path allowed to spend an attempt, but
         // a REFUSED one must still be recorded. This call's caller reads
@@ -274,7 +281,11 @@ export function createTokenStore(options) {
      * @returns {Promise<void>}
      */
     async forgetAccount() {
-      return forgetAccountImpl(wiring, state);
+      const result = await forgetAccountImpl(wiring, state);
+      // Clearing the account supersedes any earlier login failure: the grant
+      // (or its absence) is what the panel should read, not an old error.
+      state.lastError = null;
+      return result;
     },
 
     /**

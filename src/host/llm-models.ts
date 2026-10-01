@@ -260,13 +260,13 @@ export function thinkingLevelMapFor(entry) {
   };
 }
 
-/** pi-ai's escalation ladder (`EXTENDED_THINKING_LEVELS`, dist/models.js:550). */
+/** pi-ai's escalation ladder (`EXTENDED_THINKING_LEVELS`). */
 const THINKING_LADDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /**
  * The thinking levels DSH's selector will actually offer for one model.
  *
- * This mirrors pi-ai's `getSupportedThinkingLevels` (dist/models.js:551)
+ * This mirrors pi-ai's `getSupportedThinkingLevels`
  * against OUR map: walk the ladder, drop levels the map pins to `null`, and
  * treat `xhigh`/`max` as opt-in (they must be present and non-null). DSH
  * builds the model-settings effort list through exactly that function, so a

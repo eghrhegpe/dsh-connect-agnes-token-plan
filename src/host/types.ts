@@ -82,6 +82,8 @@ export interface DrawRequest {
   n: number;
   size: string;
   responseFormat: string;
+  outputFormat: string;
+  watermark: boolean;
 }
 
 /** A provider/adapter configuration object. */

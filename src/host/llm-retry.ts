@@ -9,8 +9,9 @@
  * where the peer is not resolvable. Keeping the config here means
  * `test/retry.test.mjs` can pin its shape without importing `@deepseek-ai/dsh-llm`.
  *
- * The peer already classifies a SenseNova 429 into two codes (verified in the
- * 429 spike, `dsh-llm-pi-ai/lib/indexts` `classifyPiAiError`):
+ * The peer already classifies a SenseNova 429 into two codes (the classification
+ * order `isQuotaExceededError` → `rate.?limit` inside `classifyPiAiError`, pinned
+ * against the real peer source by `test/peer-contract.test.mjs`):
  *
  *   - `QUOTA` / `ACCOUNT_QUOTA` — the Token Plan pool is depleted. Retrying
  *     cannot refill it, and because the pool is SHARED across every model on
