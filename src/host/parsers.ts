@@ -81,8 +81,8 @@ export function timestampSeconds(value) {
  * @param {string} kind - a key of {@link EXPECTED_SHAPES}.
  * @returns {{ok: boolean, missing: string[]}} the drift report.
  */
-export function checkShape(body, kind) {
-  const expected = EXPECTED_SHAPES[kind] ?? [];
+export function checkShape(body: unknown, kind: string): { ok: boolean; missing: string[] } {
+  const expected: string[] = (EXPECTED_SHAPES as Record<string, string[] | undefined>)[kind] ?? [];
   const source = obj(body);
   const missing = expected.filter((key) => source[key] === undefined);
   return { ok: missing.length === 0, missing };
@@ -434,10 +434,21 @@ function numOrNull(value) {
  * @param {unknown} subscription - the unwrapped `/api/cn/user/subscription` data.
  * @returns {Record<string, {used: number|null, limit: number, usagePct: number|null, rangeStart: number|null, rangeEnd: number|null, resetAt: number|null, resetInSeconds: number|null}>|null}
  */
-export function parseSubscriptionUsage(subscription) {
+/** One subscription usage cell: the platform's per-window reading. */
+export interface SubscriptionUsageCell {
+  used: number | null;
+  limit: number;
+  usagePct: number | null;
+  rangeStart: number | null;
+  rangeEnd: number | null;
+  resetAt: number | null;
+  resetInSeconds: number | null;
+}
+
+export function parseSubscriptionUsage(subscription: unknown): Record<string, SubscriptionUsageCell> | null {
   const usage = obj(obj(subscription).usage);
   if (Object.keys(usage).length === 0) return null;
-  const out = {};
+  const out: Record<string, SubscriptionUsageCell> = {};
   for (const [windowKey, pair] of Object.entries(USAGE_WINDOW_MAP)) {
     const group = pair[0];
     const slot = pair[1];

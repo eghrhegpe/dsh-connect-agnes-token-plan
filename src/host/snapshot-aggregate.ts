@@ -59,6 +59,11 @@ import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
 import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video.ts";
 import { str } from "./util.ts";
+import type { CacheMap, InflightMap, Settings } from "./types.ts";
+import type { createTokenStore } from "./token-store.ts";
+import type { createApiKeyStore } from "./api-key-store.ts";
+import type { createFileCatalogStore } from "./catalog-store.ts";
+import type { createProviderPublisher } from "./provider-publish.ts";
 
 /** The authenticated console paths this poll reads. */
 const USAGE_OVERVIEW_PATH = "/api/usage/overview";
@@ -77,9 +82,9 @@ const SUBSCRIPTION_PATH = "/api/cn/user/subscription";
  * @param {number} [nowMs] - the reference instant (injectable for tests).
  * @returns {{startDate: string, endDate: string}} the window bounds.
  */
-export function usageWindow(days, nowMs = Date.now()) {
+export function usageWindow(days: number, nowMs = Date.now()) {
   const span = Math.max(1, Math.floor(days)) - 1;
-  const format = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const format = (ms: number) => new Date(ms).toISOString().slice(0, 10);
   return { startDate: format(nowMs - span * 86_400_000), endDate: format(nowMs) };
 }
 
@@ -102,7 +107,7 @@ export function usageWindow(days, nowMs = Date.now()) {
  * @param {() => Promise<unknown>} run - the fetch to attempt.
  * @returns {Promise<{value: unknown, error: Error|null}>} the outcome.
  */
-async function soft(run) {
+async function soft(run: () => Promise<unknown>) {
   try {
     return { value: await run(), error: null };
   } catch (error) {
@@ -116,7 +121,7 @@ async function soft(run) {
  * @param {object} plan - one {@link parsePlans} entry.
  * @returns {object} the projection.
  */
-export function planSummary(plan) {
+export function planSummary(plan: Record<string, unknown> | null | undefined) {
   return {
     uuid: str(plan?.uuid, ""),
     planId: Number(plan?.planId) || 0,
@@ -141,7 +146,7 @@ export function planSummary(plan) {
  * @param {Array<[string, {error: Error|null}]>} sources - name/outcome pairs.
  * @returns {{source: string, code: string|null, message: string}|null} the report.
  */
-function firstFailure(sources) {
+function firstFailure(sources: Array<[string, { error: (Error & { code?: unknown }) | null }]>) {
   for (const [source, outcome] of sources) {
     if (outcome.error !== null) {
       return {
@@ -167,7 +172,7 @@ function firstFailure(sources) {
  * @param {Record<string, number>} multipliers - the sanitized config map.
  * @returns {number|undefined} the hit value, or undefined when nothing matched.
  */
-export function matchMultiplier(modelId, multipliers) {
+export function matchMultiplier(modelId: unknown, multipliers: Record<string, number>) {
   const id = String(modelId ?? "").toLowerCase();
   for (const [key, value] of Object.entries(multipliers || {})) {
     if (id.includes(key.toLowerCase())) return value;
@@ -220,6 +225,19 @@ export async function buildSnapshotBody({
   drawModelId,
   videoSwitch,
   videoModelId
+}: {
+  settings: Settings;
+  cache: CacheMap;
+  inflight: InflightMap;
+  tokenStore: ReturnType<typeof createTokenStore>;
+  apiKeyStore: ReturnType<typeof createApiKeyStore>;
+  publisher: ReturnType<typeof createProviderPublisher>;
+  catalogStore: ReturnType<typeof createFileCatalogStore>;
+  panelSwitch: () => Promise<boolean | null>;
+  drawSwitch?: () => Promise<boolean | null>;
+  drawModelId?: () => Promise<string | null>;
+  videoSwitch?: () => Promise<boolean | null>;
+  videoModelId?: () => Promise<string | null>;
 }) {
   const providerState = publisher.state;
   const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
