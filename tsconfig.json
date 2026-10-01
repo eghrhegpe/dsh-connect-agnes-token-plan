@@ -1,5 +1,5 @@
 {
-  "$comment": "Progressive checkJs. checkJs is OFF: only files carrying a top-level '// @ts-check' pragma are type-checked, so adding one is a per-file opt-in. Start with strict:false; raise per-module as the backlog clears. noEmit:true means this never produces build artifacts — the shipped .js files stay exactly as they are (see docs/ARCHITECTURE.md: source is the publishable).",
+  "$comment": "Type-check only (npm run typecheck -> tsc -p tsconfig.json). Source is src/**/*.ts; the shipped lib/ and root client.js are gitignored build artifacts produced by tsdown (npm run build) — never committed, never hand-edited (docs/ARCHITECTURE.md). checkJs/allowJs only keep stray .js helpers from erroring and do NOT gate the .ts sources, which are always checked. Start with strict:false; raise per-module as the backlog clears.",
   "compilerOptions": {
     "target": "ES2023",
     "module": "NodeNext",
