@@ -86,13 +86,46 @@ if (registration === undefined) {
 }
 
 /**
+ * What a snapshot body is known to carry. Declares only the member these
+ * checks read, so a client-side rename fails here instead of silently.
+ * @typedef {{quota?: {consoleConnected?: boolean|null}}} SnapshotLike
+ */
+
+/**
+ * The view model one snapshot is read into, as the browser defines it.
+ * `auth` declares only what is read (with optional chaining and a shape
+ * check), not the whole block.
+ * @typedef {{
+ *   failure: object|null,
+ *   auth: {retryAfterMs?: number, needsUserAction?: boolean} | null,
+ *   needsSetup: boolean,
+ *   guidanceKey: string|null, guidance: string|null, render: string,
+ *   consoleConnected: boolean|null, canManageAccount: boolean,
+ *   coolingMs: number|null, needsUserAction: boolean
+ * }} PanelView
+ */
+
+/**
+ * The members of the panel surface the checked suites consume. Narrow on
+ * purpose: naming only what is actually read means a member the client renames
+ * or drops fails here instead of silently, while an untouched member costs
+ * nothing to leave out. Extend when a checked consumer needs another.
+ * @typedef {{
+ *   interpretSnapshot: (body: unknown) => {data: SnapshotLike|null, error: object|string|null},
+ *   viewOf: (data: SnapshotLike|null, error: object|string|null, tt: Function) => PanelView,
+ *   dictionaries: object, tables: object, styles: object,
+ *   components: {QuotaCard: Function, PoolCard: Function, TrendTable: Function, SectionCard: Function}
+ * }} PanelSurface
+ */
+
+/**
  * The materialized `panel` test surface of the shipped client module.
  *
  * The factory returns `{ inject, apply, panel }`: the first two are what the
  * Host reads, and `panel` is the module's own test surface (dictionaries, the
  * decision function, tables, style tokens, components) — all definitions the
  * browser runs, exposed rather than copied.
- * @type {{inject: Function, apply: Function, panel: object}}
+ * @type {{inject: Function, apply: Function, panel: PanelSurface}}
  */
 const materialized = registration.factory((specifier) => {
   if (specifier === "react") return React;
@@ -101,4 +134,4 @@ const materialized = registration.factory((specifier) => {
       "The shipped bundle must stay dependency-free apart from react."
   );
 });
-export const surface = Object.freeze(/** @type {object} */ (materialized.panel ?? materialized));
+export const surface = Object.freeze(/** @type {PanelSurface} */ (materialized.panel ?? materialized));

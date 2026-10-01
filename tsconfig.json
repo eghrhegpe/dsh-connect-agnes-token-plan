@@ -1,5 +1,5 @@
 {
-  "$comment": "Type-check only (npm run typecheck -> tsc -p tsconfig.json). Source is src/**/*.ts; the shipped lib/ and root client.js are gitignored build artifacts produced by tsdown (npm run build) — never committed, never hand-edited (docs/ARCHITECTURE.md). checkJs/allowJs only keep stray .js helpers from erroring and do NOT gate the .ts sources, which are always checked. Start with strict:false; raise per-module as the backlog clears.",
+  "$comment": "Type-check only (npm run typecheck -> tsc -p tsconfig.json). Source is src/**/*.ts; the shipped lib/ and root client.js are gitignored build artifacts produced by tsdown (npm run build) — never committed, never hand-edited (docs/ARCHITECTURE.md). checkJs:false means a .js/.mjs input is checked only where a top-level '// @ts-check' opts it in (test/, tsdown.config.mjs); outside this scope such a pragma is inert, so add it when adding a JS helper that should be checked. The .ts sources are always checked. Start with strict:false; raise per-module as the backlog clears.",
   "compilerOptions": {
     "target": "ES2023",
     "module": "NodeNext",
@@ -16,6 +16,6 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["src/host", "src/client", "types/*.d.ts"],
-  "exclude": ["node_modules", "upstream", "lib", "test", "assets", "docs", ".github", ".box-agent", ".box-agent-scratch"]
+  "include": ["src/host", "src/client", "types/*.d.ts", "test", "tsdown.config.mjs"],
+  "exclude": ["node_modules", "upstream", "lib", "assets", "docs", ".github", ".box-agent", ".box-agent-scratch"]
 }

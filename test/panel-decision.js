@@ -46,13 +46,14 @@ export const RENDER = {
 
 /**
  * The panel's own reading of a snapshot body, as the browser defines it.
- * @type {(body: unknown) => {data: object|null, error: object|string|null}}
+ * The signature lives on `PanelSurface` so it stays in one place with the
+ * surface it describes.
  */
 export const interpretSnapshot = surface.interpretSnapshot;
 
 /**
- * The panel's own decision function, as the browser defines it.
- * @type {(data: object|null, error: any, tt: Function) => object}
+ * The panel's own decision function, as the browser defines it. Returns a
+ * `PanelView` (see `client-surface.js`): the shape these checks assert on.
  */
 export const viewOf = surface.viewOf;
 
@@ -85,10 +86,10 @@ const identity = (value) => value;
  * key applies, not the text behind it, and the dictionary is exercised
  * separately through {@link dictionaries}.
  *
- * @param {object|null} data - the snapshot, or null when none was read.
+ * @param {import("./client-surface.js").SnapshotLike | null} data - the snapshot, or null when none was read.
  * @param {object|string|null} error - a transport string or a structured failure.
- * @returns {{failure: object|null, auth: object|null, needsSetup: boolean,
- *   guidanceKey: string|null, guidance: string|null, render: string,
+ * @returns {{failure: object|null, auth: import("./client-surface.js").PanelView["auth"],
+ *   needsSetup: boolean, guidanceKey: string|null, guidance: string|null, render: string,
  *   consoleConnected: boolean|null, canManageAccount: boolean,
  *   coolingMs: number|null, needsUserAction: boolean}}
  */

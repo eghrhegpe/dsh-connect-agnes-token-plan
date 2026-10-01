@@ -52,11 +52,14 @@ export default defineConfig([
     format: "esm",
     platform: "node",
     target: "es2023",
-    // A single self-contained bundle: no code-splitting, one entry file. The
-    // published surface is one entry point (`package.json#main` +
-    // `exports["."]`), and the offline suites import the SOURCES directly, so a
-    // per-module `lib/` output is needed by neither the runtime nor the tests.
-    splitting: false,
+    // One entry, one `lib/index.js`, with the peer-dependent modules arriving
+    // as dynamic chunks: the published surface is one entry point
+    // (`package.json#main` + `exports["."]`), and the offline suites import the
+    // SOURCES directly, so a per-module `lib/` output is needed by neither the
+    // runtime nor the tests. Code splitting stays on (the rolldown default for
+    // the sources' dynamic `import()`s); a single-bundle build would need
+    // `outputOptions.inlineDynamicImports` instead — don't add a top-level
+    // `splitting` key, tsdown has no such option and it is silently ignored.
     clean: true,
     minify: false,
     sourcemap: false,
