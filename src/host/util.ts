@@ -37,7 +37,7 @@ export function str(value: any, fallback?: any): string {
  * error message, or a panel-facing response.
  *
  * AGENTS.md's red line: "凭据不入库" — a credential never reaches a log or a
- * response. The login trace already sanitizes in `Agnes-auth.ts`; this is
+ * response. The login trace already sanitizes in `agnes-auth.ts`; this is
  * the counterpart for the LLM route, where an HTTP error object's `message`
  * often embeds the request headers it was built from (axios/fetch errors do),
  * and a Agnes 4xx body may echo the `sk-` key back. Without this gate a

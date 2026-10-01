@@ -4,7 +4,7 @@
  * Before this module the same codes were spelled out in three places, and the
  * three copies disagreed:
  *
- * - `Agnes-auth.ts` PRODUCED them (its `IAM_REASON_CODES` table);
+ * - `agnes-auth.ts` PRODUCED them (its `IAM_REASON_CODES` table);
  * - `token-store.ts` kept its own list of the ones that describe a bad
  *   credential (`CREDENTIAL_REFUSALS`);
  * - `index.ts` kept a third list of the ones that mean "we never got a token"
@@ -78,7 +78,7 @@ export const CODE = Object.freeze({
  * IAM answers with a `google.rpc.Status` envelope whose real cause sits in
  * `details[].reason` (`invalidAccountOrPassword`, `accountLocked`,
  * `tooManyAttempts`, …). Matching that code exactly — and treating the
- * substring scan in `Agnes-auth.ts` as a fallback for a reason this table
+ * substring scan in `agnes-auth.ts` as a fallback for a reason this table
  * has not learned yet — is the difference between a reworded message and a
  * silently reclassified lockout.
  *

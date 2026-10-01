@@ -136,7 +136,7 @@ const THROTTLE_ID = "agnes-console-throttle";
  * @param {function(?object[], ?(Error & {code?: unknown})): void} [options.onTrace] - called with
  *   the sanitized hop list when a sign-in attempt ENDS, success or failure;
  *   the second argument is `null` on success and the thrown error otherwise
- *   (matching the contract `Agnes-auth.ts` uses).
+ *   (matching the contract `agnes-auth.ts` uses).
  * @returns the store: `getToken`, `invalidate`, `saveAccount`,
  *   `forgetAccount`, and `state`.
  */

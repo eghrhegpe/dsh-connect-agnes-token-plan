@@ -9,13 +9,43 @@
 //                    前两组验的是「文档格式对不对」，它们验的是「文档有没有说实话」——
 //                    形式全绿而语义已漂，是本仓库踩过两次的坑（见 PITFALLS §25）。
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, dirname, extname, resolve } from "node:path";
+import { join, dirname, extname, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fails = [];
 const note = (m) => console.log(`  ok - ${m}`);
 const bad = (m) => fails.push(m);
+
+/**
+ * Case-SENSITIVE existence, segment by segment.
+ *
+ * `existsSync` is case-insensitive on Windows and macOS, so a reference written
+ * `Agnes-auth.ts` resolved to the real `agnes-auth.ts` on the developer's
+ * machine and both the link check and the reference check stayed green — while
+ * CI (Linux) reported five broken references the moment the offline chain got
+ * far enough to run this suite at all (docs/PITFALLS.md §32). Every segment is
+ * therefore matched against the directory's REAL entries.
+ * @param {string} path - absolute path to test.
+ * @returns {boolean} whether every segment exists with that exact case.
+ */
+function existsExact(path) {
+  const rel = relative(ROOT, path);
+  if (rel.startsWith("..")) return existsSync(path);
+  let current = ROOT;
+  for (const segment of rel.split(sep)) {
+    if (segment === "" || segment === ".") continue;
+    let entries;
+    try {
+      entries = readdirSync(current);
+    } catch {
+      return false;
+    }
+    if (!entries.includes(segment)) return false;
+    current = join(current, segment);
+  }
+  return true;
+}
 
 function collectMd(dir) {
   const out = [];
@@ -44,7 +74,7 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
       const pathPart = raw.split("#")[0];
       if (!pathPart) continue;
       checked++;
-      if (!existsSync(resolve(dirname(f), pathPart))) bad(`断链：${f} -> ${raw}`);
+      if (!existsExact(resolve(dirname(f), pathPart))) bad(`断链：${f} -> ${raw}`);
     }
   }
   note(`内部链接 ${checked} 条全部可解析`);
@@ -255,9 +285,9 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
     // （仓库根相对，wire.ts 就这么写）；按惯例的基准全部枚举一遍
     const plain = ref.startsWith("./") ? ref.slice(2) : ref;
     const bases = [join(ROOT, "src"), join(ROOT, "src", "host"), join(ROOT, "src", "client"), ROOT];
-    return bases.map((b) => join(b, plain)).filter((c) => existsSync(c));
+    return bases.map((b) => join(b, plain)).filter((c) => existsExact(c));
   };
-  const fileCandidates = (ref, baseDir) => [join(baseDir, ref), ...srcCandidate(ref)].filter((c) => existsSync(c));
+  const fileCandidates = (ref, baseDir) => [join(baseDir, ref), ...srcCandidate(ref)].filter((c) => existsExact(c));
   let pseudo = 0, checked = 0, known = 0;
   for (const f of tsFiles) {
     const text = readFileSync(f, "utf8");

@@ -4,7 +4,7 @@
  * Every sign-in attempt (success included) leaves one sanitized trace file in
  * `$DSH_HOME/logs/`: a "browser works but the panel does not" report is only
  * debuggable by diffing a working trace against a failing one. The sanitizing
- * itself happens in `Agnes-auth.ts` — no password, token, cookie, or
+ * itself happens in `agnes-auth.ts` — no password, token, cookie, or
  * authorization code ever reaches this module — so the only concern here is
  * I/O failures, which must never break the login response.
  * @module dsh-connect-agnes-token-plan/trace
