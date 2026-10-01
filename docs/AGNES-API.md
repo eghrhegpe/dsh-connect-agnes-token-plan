@@ -424,7 +424,7 @@ peer 误判的**官方依据**：
 | 视频建任务 | `POST {apiBase}/videos` | 返回任务标识，**异步** |
 | 视频查任务 | `GET {host}/agnesapi?video_id=…&model_name=…` | 查询任务状态；空查询回 `{"code":"task_not_exist"}` |
 
-**查任务的路径不在 `/v1` 下**——它在站点根上多一级 `agnesapi`。`video.ts` 的
+**查任务的路径不在 `/v1` 下**——它在站点根上多一级 `agnesapi`。`video-protocol.ts` 的
 `buildVideoQueryEndpoint` 专门剥掉版本段（`hostRootOf`）就是为了这个：把 `/v1`
 拼上去会 404。建任务侧，`POST /v1/video/generations`（单数）与
 `POST /v1/videos` 都通，但 `POST /v1/videos/generations`（复数 + `generations`）

@@ -57,7 +57,7 @@ import {
 import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT, visionOf } from "./llm-models.ts";
 import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
-import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video.ts";
+import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video-models.ts";
 import { str } from "./util.ts";
 import type { CacheMap, InflightMap, Settings } from "./types.ts";
 import type { createTokenStore } from "./token-store.ts";

@@ -35,7 +35,7 @@
 
 | 半边 | 文件 | 加载时机 | 改动后如何生效 |
 |---|---|---|---|
-| **Host（服务端）** | `src/host/*.ts`（36 个模块，另有 `src/host/token-store/` 子目录 6 个；经 `npm run build` 构建为 `lib/`） | 启动时加载一次 | **重新构建 + 完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
+| **Host（服务端）** | `src/host/*.ts`（模块清单以该目录为准，另有 `src/host/token-store/` 与 video 家族等子级拆分；经 `npm run build` 构建为 `lib/`） | 启动时加载一次 | **重新构建 + 完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
 | **Client（前端）** | `src/client/*.ts`（18 个模块，构建为根 `client.js`） | 浏览器侧，随页面加载 | `npm run build:client` 重建后浏览器刷新即可 |
 
 - `index.ts`：注册只读路由 `/api/dsh-connect-agnes-token-plan/snapshot`（聚合控制台数据，401 自动重登重试一次）+ 账号 / API Key / 模型清单 / 出图开关 / 视频开关 / AgnesCode 配置路由；模块装配与生命周期接线在 `lifecycle.ts`。
@@ -53,6 +53,7 @@
 - `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` 经此模块注入并发 publish 门控。
 - `llm-models.ts` / `llm-adapter.ts` / `llm-retry.ts` / `llm-error-fix.ts`：推理侧的纯逻辑映射（无 peer，离线可测）、依赖 peer 的适配器半边、429 退避策略、以及 peer 对限频 429 的误判纠正（`isQuotaExceededError` 命中面过宽，带额度措辞的 429 被抢判成 `QUOTA` 而不重试）。
 - `draw.ts` / `draw-store.ts`：出图工具（`agnes_draw_image`）与它的面板开关。
+- `video.ts` 家族（2026-10 四刀拆分，照 token-store 术式先冻结行为再搬——`test/video.test.mjs` 拆分前后对同一 barrel 全绿零漂移）：`video.ts` 保留 `agnes_video_generate` 工具定义与兼容 barrel 全表面；`video-protocol.ts` 装端点构造（含「国际站陷阱」与 `/v1` vs `/agnesapi` 路径不对称）、V2.0 帧制请求体、任务应答解析与失败分诊；`video-protocol-25.ts` 装 2.5 秒数制请求体（与 V2.0 字段互斥，混发必 400）；`video-models.ts` 装目录花名册与家族选型；`video-client.ts` 装「建任务 → 轮询」异步状态机（含刻意不设 30s 冷却门的裁定）。
 - `agnescode*.ts`：桌面端上游（AgnesCode）——本机登录态采集（Chromium os_crypt + DPAPI，逐文件分诊）、逐账号 BFF base 钉域、独立 store / publisher / provider id / 开关，与主链路完全隔离（ROADMAP §6.3）。
 - `client.js`：Plugins 页内的配置卡与三个 tab（积分额度 / 接入 API / AgnesCode）+ 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
 - 测试基建：`client-surface.js` / `panel-decision.js` / `panel-render.js` —— 把 `src/client/` 作为模块加载后物化 `panel` 测试面，供 `panel.test.mjs` / `render.test.mjs` 直接调用。不进运行时、不进 `files` 打包清单。
@@ -328,8 +329,9 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
   `videoTimeoutMs` / `videoWidth` / `videoHeight` / `videoNumFrames` / `videoFrameRate`；
   与 `agnes_draw_image` 同一挂载阶梯（`lifecycle.ts` 的 `mountAgentTool` 私有包装），
   **同一套降级**（无 tools 服务 / peer 加载失败 / 注册被拒 → 工具缺席、面板照常）。
-- 图片**同步**返回、视频是**异步任务**：`video.ts` 的执行体是 `createVideoTask` →
-  `pollVideoResult` 状态机，而不是 `draw.ts` 的一次 `drawOnce`。端点构造与查询响应解析
+- 图片**同步**返回、视频是**异步任务**：执行体是 `createVideoTask` →
+  `pollVideoResult` 状态机（2026-10 拆分后在 `video-client.ts`，原 `video.ts`
+  保留工具定义与兼容入口），而不是 `draw.ts` 的一次 `drawOnce`。端点构造与查询响应解析
   见 [AGNES-API.md](./AGNES-API.md) §7.5。
 - 工具覆盖**两个参数家族**：V2.0（`width`/`height`/`num_frames`/`frame_rate`）与
   2.5（`mode`/`seconds`/`size`/`aspect_ratio`，OpenAI 秒数制）。两套字段互斥，混发
