@@ -26,11 +26,20 @@
 import { str, num } from "./util.ts";
 import { AGNESCODE_FALLBACK_MODELS } from "./agnescode.ts";
 
-/** The provider id this plugin registers under for AgnesCode. */
-export const AGNESCODE_PROVIDER_ID = "sensenova-agnescode";
+/**
+ * The provider id this plugin registers under for AgnesCode.
+ *
+ * `agnes-*` by design: the sibling plugin `dsh-connect-sensenova-token-plan`
+ * registers `sensenova-*` ids, and a duplicated id is rejected by
+ * `registerAdapter` as DUPLICATE_ADAPTER — one of the two would silently
+ * vanish from the picker (ARCHITECTURE.md §5). This plugin is all-Agnes, so
+ * its ids stay in the `agnes-` namespace and cannot collide with the
+ * sibling's `sensenova-` namespace.
+ */
+export const AGNESCODE_PROVIDER_ID = "agnes-agnescode";
 
 /** What the DSH model picker shows as the AgnesCode provider's name. */
-export const AGNESCODE_DISPLAY_NAME = "SenseNova AgnesCode";
+export const AGNESCODE_DISPLAY_NAME = "Agnes AgnesCode";
 
 /** The zero-cost sentinel: per-token prices are unknowable (credit-gated). */
 const NO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });

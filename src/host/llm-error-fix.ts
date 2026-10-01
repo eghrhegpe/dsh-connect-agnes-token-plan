@@ -3,12 +3,19 @@
  *
  * 根因（见 dsh-llm-pi-ai/lib/index.js:1376 与 dsh-llm/lib/index.js:181）：
  *   `classifyPiAiError` 先跑 `isQuotaExceededError`，其命中面极宽
- *  （`out of ... budget`、`balance/credits exhausted`），凡是商汤 429 体里
+ *  （`out of ... budget`、`balance/credits exhausted`），凡是 429 体里
  *   带上一两个 "budget/credits/limit" 字眼，就被抢判成 `QUOTA`；于是
  *   `llm-retry.ts` 的 `retryableCodes()`（刻意排除 QUOTA）对这类 429 不重试，
  *   面板又把模型按 `exhaustedModelIds` 静默下线，对用户呈现"额度耗尽"。
  *   而纯 `RATE_LIMIT` 分支（`/\b429\b|rate.?limit/`）是**死代码**——
  *   任何带 429 的体若能进 `isQuotaExceededError` 就被上一行吃了。
+ *
+ * 这个误判最初在**商汤线**上观测到；本插件现走 Agnes 网关
+ * （`api.agnes-ai.cn`），判据刻意写成**方言无关**（状态码、rate limit、
+ * too many requests、限流/频率 + rpm/tpm），并保留 `hardQuota` 守卫——
+ * 真配额耗尽绝不会被误拉去重试。Agnes 是否透传结构化 `type` 字段**待实测**；
+ * 缺失时下面的结构化分支不命中，自然退回本模块的纯文本启发，行为与
+ * 没有结构化信号时一致。
  *
  * 本模块在 host 侧把"看似限频却被误判为 QUOTA 的 429"纠正回 `RATE_LIMIT`，
  * 让退避重试真正生效；真配额耗尽（明确余额/积分耗尽的硬额度措辞）保留 `QUOTA`。
@@ -54,7 +61,7 @@ export function looksLikeRateLimit(message: string) {
   if (typeof message !== "string" || message.length === 0) return false;
   const m = message.toLowerCase();
 
-  // 显式限频信号：任意一个即够。rpm/tpm 是商汤速率上限（requests/tokens per
+  // 显式限频信号：任意一个即够。rpm/tpm 是速率上限（requests/tokens per
   // minute），不是 token 配额（配额耗尽会说 quota/credit/balance/额度）。
   const hasRateSignal =
     /\b429\b/.test(m) ||
@@ -76,7 +83,12 @@ export function looksLikeRateLimit(message: string) {
 }
 
 /**
- * 从错误文本里抽出商汤结构化 `type` 字段（如 `"type":"quota_exceeded_error"`）。
+ * 从错误文本里抽出平台结构化 `type` 字段（形如 `"type":"quota_exceeded_error"`）。
+ *
+ * 该 `type` / `code` 词汇最初在**商汤线**观测到并记入夹具；判据本身读的是
+ * `type` **字段名**与消息词，不依赖特定平台码值（`code:"8"`/`429003` 只出现在
+ * 注释与测试夹具里，未进判定逻辑）。Agnes 网关是否透传 `type` 待实测，缺失时
+ * 调用方退回 `looksLikeRateLimit` 的纯文本启发。
  *
  * peer 把整条错误 JSON 拼进 `failure.message`，所以这里能从文本回捞结构信号，
  * 而不依赖 peer 是否单独透传了 `type`。抓不到返回 null。
@@ -93,7 +105,7 @@ export function extractStructuredType(message: string) {
  * 一个被 peer 判为 QUOTA 的失败，是否其实是限频、应纠正为 RATE_LIMIT。
  *
  * 这是修正 v1（纯文本启发）漏判的核心：`{"message":"rpm exhausted",
- * "type":"quota_exceeded_error","code":"8"}` 这种体——商汤把**请求速率上限**
+ * "type":"quota_exceeded_error","code":"8"}` 这种体——有的平台把**请求速率上限**
  * 复用 `quota_exceeded_error` 这个名字，纯文本里没有 "rate limit" 字样，v1 的
  * `looksLikeRateLimit` 既没命中限频信号也没命中硬额度，于是留在 QUOTA、不重试、
  * 直接失败。本函数改读结构化 `type`：

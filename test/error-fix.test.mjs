@@ -118,10 +118,11 @@ function fail(name, error) {
   }
 }
 
-// --- 4. 真实商汤线格式：quota_exceeded_error 误命名速率上限 -----------------
-// 线上实际打出的两条体（见会话日志）：code:8 是"rpm exhausted"——请求速率上限，
-// 却被商汤复用 quota_exceeded_error 这个名字；code:429003 是 rate_limit_error，
-// peer 已判 RATE_LIMIT。v1 纯文本启发漏判了 code:8，本层靠结构化 type 纠正。
+// --- 4. 商汤线格式（方言样本）：quota_exceeded_error 误命名速率上限 ----------
+// 线上实际打出的两条体（见会话日志，商汤线观测）：code:8 是"rpm exhausted"——
+// 请求速率上限，却被复用 quota_exceeded_error 这个名字；code:429003 是
+// rate_limit_error，peer 已判 RATE_LIMIT。v1 纯文本启发漏判了 code:8，本层靠
+// 结构化 type 纠正。这些是**方言样本**——Agnes 网关是否透传 `type` 字段待实测。
 {
   const bodies = [
     // 请求速率上限，错命名为 quota_exceeded_error：必须纠正为 RATE_LIMIT。
@@ -149,6 +150,19 @@ function fail(name, error) {
   for (const failure of realQuota) {
     check(`shouldReclassifyQuotaToRate false (true quota): ${failure.message.slice(0, 40)}`,
       shouldReclassifyQuotaToRate(failure) === false);
+  }
+
+  // Agnes 平台无关路径：网关不保证透传结构化 `type`。这类体必须仍被纯文本
+  // 启发接住——否则 Agnes 上「被错命名为 quota 的限频」会退回 v1 的漏判，
+  // 而那不是 bug，是我们唯一没实测过的一面。
+  const agnesNoType = [
+    { code: CODE.QUOTA, message: "HTTP 429: requests rate limit exceeded, please retry after 1s" },
+    { code: CODE.QUOTA, message: "429 请求过于频繁，请稍后再试" },
+    { code: CODE.QUOTA, message: '429: {"message":"inference exceeds tpm/rpm limit"}' }
+  ];
+  for (const failure of agnesNoType) {
+    check(`Agnes no-type fallback → RATE_LIMIT: ${failure.message.slice(0, 40)}`,
+      shouldReclassifyQuotaToRate(failure) === true);
   }
 
   // 端到端：整条流里 code:8/rpm 的 finish 被纠正为 RATE_LIMIT。

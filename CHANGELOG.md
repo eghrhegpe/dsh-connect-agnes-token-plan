@@ -10,6 +10,13 @@
 - **根因**：卡片文案由 Host 的 `readPluginMeta()` 读**包元数据**（`locale/*.json` 的 `meta.title`/`meta.description`），不经插件 bundle 渲染。本插件没有 `locale/` 目录、`exports` 也没有该资源子路径——解析抛 `ERR_PACKAGE_PATH_NOT_EXPORTED` 被读取端当「无元数据」吞掉，落回 `package.json.description` 的英文兜底（`displayName` 这条链路根本不读）。
 - **修法**：新增 `locale/en.json` + `locale/zh.json`（标题「Agnes Token Plan 接入全家桶」与中文描述），`exports` 加 `./locale/*.json` 子路径，`files` 白名单加 `locale`（三者缺一即哑，见 PITFALLS §33）；`package.test.mjs` 新增检查 7 把这条链钉死。
 
+### 破坏性改动：AgnesCode provider id 改入 `agnes-` 命名空间（避免与兄弟插件撞名）
+
+- **改动**：provider id `sensenova-agnescode` → `agnes-agnescode`，显示名 `SenseNova AgnesCode` → `Agnes AgnesCode`。
+- **为什么**：兄弟插件 `dsh-connect-sensenova-token-plan` 注册 `sensenova-*` id；重复 id 会被 `registerAdapter` 以 `DUPLICATE_ADAPTER` 拒绝，其中一个 provider 会从选择器**静默消失**（`docs/ARCHITECTURE.md` §5）。本插件走 Agnes 体系，id 统一 `agnes-*`，与 `sensenova-*` 命名空间不相交，撞名不可能；`test/agnescode.test.mjs` 把 `agnes-agnescode` 字面量钉死，防止有人改回去。
+- **对已有安装的影响**：曾启用 AgnesCode 提供方的安装需**重新勾选一次**（provider id 变了，旧注册不再认领）。凭据引用 `AGNESCODE_CREDENTIAL`、switch-store、publisher 全部不变，**无需重新采集登录态**。
+- **一并**：`llm-error-fix.ts` 的 429 分诊注释把「商汤方言」定位改为「判据方言无关 + Agnes 未实测但有兜底」（判定逻辑未动——它本就只读 `type` 字段名与消息词，未硬编码商汤码值）；`test/error-fix.test.mjs` 补一组「无结构化 `type` 的 Agnes 兜底」夹具。
+
 ## [0.6.0] — 2026-10-01
 
 **面板信息架构再收一刀**：顶栏从「页面标题栏」降格为「当前 tab 的状态与刷新出口」——撤销假的全局标题，「更新于」/令牌状态/刷新按 tab 归属；额度窗口卡片改以**百分比为主视**并按职责分池；三个 tab 补上常驻的官网入口。**AgnesCode 这条线修掉两个叠加的旧病**：GET 路由的 `lastHarvest` 落在暂时性死区，让「检测本机登录态」点了没反应；以及「开关先开、令牌后到」留下的 `not_configured` 被当作红色错误报警。推理侧把单次输出上限从兜底的 32768 提到实测平台上限 65536，契约基线 seed 一并退役、换真机全阶梯证据。

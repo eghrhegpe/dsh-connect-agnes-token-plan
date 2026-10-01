@@ -21,9 +21,10 @@
  *     retries this by default, and we keep doing so, with a backoff biased
  *     longer than default so an immediate re-hit against the one shared pool
  *     is less likely. Agnes's daytime rate ceiling (rpm/tpm) is aggressive
- *     (see `llm-error-fix.ts`: its `quota_exceeded_error` code 8 is actually a
- *     per-minute rate cap), so we ride it out with more attempts and a gentler
- *     initial step than the peer default.
+ *     (see `llm-error-fix.ts`: a body named `quota_exceeded_error` can actually
+ *     be a per-minute rate cap — observed on the SenseNova line, still
+ *     unverified on Agnes's gateway), so we ride it out with more attempts and
+ *     a gentler initial step than the peer default.
  *
  * @module dsh-connect-agnes-token-plan/llm-retry
  */
