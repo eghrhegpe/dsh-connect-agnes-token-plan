@@ -18,6 +18,35 @@ import { loadPeer, installNetworkGuard, isolateHostEnv, isolateStateDir } from "
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
+
+/**
+ * Serve the ONE anonymous request the snapshot route makes on its own.
+ *
+ * Since the panel learned to degrade, a signed-out Host still ANSWERS — which
+ * means it still asks for the PUBLIC plan catalogue. That request needs no
+ * login, and it is what the quota tab has left to show when the console is
+ * silent, so it is deliberate rather than a leak. Before the change the
+ * `not_configured` throw happened before any fetch at all, so this suite never
+ * had to serve anything.
+ *
+ * Only this URL is answered. Everything else falls through to the guard, which
+ * records it and throws exactly as before — the canary at the bottom of this
+ * file still means what it says.
+ */
+function stubPublicPlans() {
+  const real = globalThis.fetch;
+  const plansPath = "/api/cn/user/subscription/plans";
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : String(input?.url ?? input);
+    if (url.includes(plansPath)) {
+      return new Response(JSON.stringify({ code: 200, message: "ok", data: [] }),
+        { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return real(input, init);
+  };
+  return () => { globalThis.fetch = real; };
+}
+const releasePlansStub = stubPublicPlans();
 /** This machine's own Agnes keys must not steer a check. */
 const restoreHostEnv = isolateHostEnv();
 
@@ -283,12 +312,20 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   const res = response();
   // No account is configured, so this is the not_configured path — the one
   // that carries the `auth` block the panel needs to reach the form.
+  //
+  // It DEGRADES rather than refusing: `ok:true` with the reason on the quota
+  // source. The whole-body `ok:false` this used to pin was the all-or-nothing
+  // shape that took the API-key tab and the Raccoon tab down with the console.
   await handler(request(), res);
   check("the snapshot route answers 200", res.statusCode === 200, String(res.statusCode));
   check("it reports a payload", res.payload !== null);
   check("an unconfigured Host is not an error state",
-    res.payload?.ok === false && res.payload?.code === "not_configured",
-    JSON.stringify(res.payload ?? {}).slice(0, 140));
+    res.payload?.ok === true && res.payload?.quota?.error?.code === "not_configured",
+    JSON.stringify(res.payload ?? {}).slice(0, 200));
+  check("the console is reported as not connected",
+    res.payload?.quota?.consoleConnected === false, String(res.payload?.quota?.consoleConnected));
+  check("the totals are absent, not zeroed",
+    res.payload?.quota?.totals === null, JSON.stringify(res.payload?.quota?.totals));
   check("the answer carries the auth block the panel reads",
     res.payload?.auth !== undefined && res.payload?.auth?.needsAccount === true,
     JSON.stringify(res.payload?.auth));
@@ -489,6 +526,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 }
 
 // === G. the wiring test itself stayed offline ===========================
+releasePlansStub();
 const unstubbed = releaseNetworkGuard();
 restoreHostEnv();
 check("no check escaped its stub to the network", unstubbed.length === 0, unstubbed.join(", "));

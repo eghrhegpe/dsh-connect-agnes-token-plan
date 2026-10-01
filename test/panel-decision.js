@@ -28,7 +28,15 @@ import { surface } from "./client-surface.js";
 
 /** What the panel can render in its empty state. */
 export const RENDER = {
-  /** Show the account form: the user can fix this themselves. */
+  /**
+   * The account is the next action: the user can fix this themselves.
+   *
+   * With NO snapshot the quota tab IS the form. With a degraded snapshot — a
+   * console nobody signed in to, which arrives as `ok:true` with
+   * `quota.consoleConnected:false` — the tab renders whatever did arrive (the
+   * public plan catalogue) and auto-expands the account card instead. Same
+   * verdict, different layout; `data === null` is what tells them apart.
+   */
   FORM: "AccountForm",
   /** Show the read-only panel body (pools and trend). */
   PANELS: "pools",
@@ -81,7 +89,8 @@ const identity = (value) => value;
  * @param {object|string|null} error - a transport string or a structured failure.
  * @returns {{failure: object|null, auth: object|null, needsSetup: boolean,
  *   guidanceKey: string|null, guidance: string|null, render: string,
- *   canManageAccount: boolean, coolingMs: number|null, needsUserAction: boolean}}
+ *   consoleConnected: boolean|null, canManageAccount: boolean,
+ *   coolingMs: number|null, needsUserAction: boolean}}
  */
 export function decidePanelView(data, error) {
   const view = viewOf(data, error, identity);
@@ -92,6 +101,11 @@ export function decidePanelView(data, error) {
     guidanceKey: view.guidanceKey,
     guidance: view.guidance,
     render: view.needsSetup ? RENDER.FORM : (data === null ? RENDER.TEXT : RENDER.PANELS),
+    // Whether the console half of the snapshot answered. `false` is the state
+    // that used to blank the whole panel: the quota tab now says so in place
+    // (and keeps the API-key tab and the Raccoon tab reachable, neither of
+    // which reads the console). `null` means a Host too old to say.
+    consoleConnected: data?.quota?.consoleConnected ?? null,
     // Mirrors `panel-page.ts` `authManage`: the login state and its editor
     // are shown UNCONDITIONALLY whenever the snapshot carries the Host's
     // auth block. Gating on `hasAccount` / `needsAccount` made the "middle

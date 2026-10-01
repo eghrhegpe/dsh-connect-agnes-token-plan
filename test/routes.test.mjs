@@ -210,7 +210,8 @@ function panelDecision(body) {
     failure: decided.failure,
     auth: decided.auth,
     needsSetup: decided.needsSetup,
-    renders: decided.render
+    renders: decided.render,
+    consoleConnected: decided.consoleConnected
   };
 }
 
@@ -416,6 +417,12 @@ async function withNetwork(stub, body) {
 // === C. a persistent rejection reports auth state, not a refresh storm =====
 // Agnes has no refresh token to storm with: a console that keeps refusing the
 // token, with no account to re-sign-in from, degrades to "needs an account".
+//
+// DEGRADES, not refuses. The whole-body `ok:false` this block used to pin was
+// the all-or-nothing shape: one missing module (the console) took down three
+// tabs, two of which never read it. The reason now rides on the quota source
+// (`quota.error.code`) with `quota.consoleConnected:false`, and the panel says
+// so in place — ARCHITECTURE.md §5.
 {
   const dead = jwtExpiring(120);
   const credentials = makeCredentials(storedGrant(dead, "", 7200));
@@ -427,10 +434,23 @@ async function withNetwork(stub, body) {
     return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } });
   }, async () => {
     const response = await (await mount(credentials))(SNAPSHOT_PATH, makeRequest());
-    check("a persistent rejection fails cleanly", response.payload.ok === false);
-    check("it reports not_configured (Agnes cannot refresh)",
-      response.payload.code === "not_configured", String(response.payload.code));
+    check("a persistent rejection degrades cleanly", response.payload.ok === true,
+      JSON.stringify(response.payload).slice(0, 160));
+    check("it reports not_configured on the quota source (Agnes cannot refresh)",
+      response.payload.quota?.error?.code === "not_configured", String(response.payload.quota?.error?.code));
+    check("it says the console is not connected",
+      response.payload.quota?.consoleConnected === false, String(response.payload.quota?.consoleConnected));
+    // The honesty patch: a usage figure nobody could read must NOT come out as
+    // a zeroed block. `parseUsageOverview({})` would print "0 requests /
+    // 0 tokens" and turn a failure into a measurement.
+    check("the totals are absent, not zeroed", response.payload.quota?.totals === null,
+      JSON.stringify(response.payload.quota?.totals));
     check("the failure carries auth state", response.payload.auth !== undefined);
+
+    const decision = panelDecision(response.payload);
+    check("the panel is still told the account is the next action", decision.needsSetup === true);
+    check("the panel reads the console as not connected", decision.consoleConnected === false,
+      String(decision.consoleConnected));
   }).catch((error) => fail("C: persistent rejection", error));
 }
 
@@ -522,21 +542,34 @@ async function withNetwork(stub, body) {
 // Before this fix the snapshot answered `auth_unavailable`, which the panel
 // rendered as plain text with no way to sign in, and a response with no
 // `auth` field at all left `auth === null` and so never reached the form.
+//
+// Since the panel learned to degrade, the same situation answers `ok:true`
+// with `quota.consoleConnected:false` — the account is still the next action,
+// but the two tabs that never read the console stay reachable.
 {
   const net = await loginNetwork();
   await withNetwork(net, async () => {
     const call = await mount(null);
     const snapshot = await call(SNAPSHOT_PATH, makeRequest());
     check("a Host without credentials still answers", snapshot.statusCode === 200, String(snapshot.statusCode));
+    check("it degrades instead of refusing", snapshot.payload.ok === true,
+      JSON.stringify(snapshot.payload).slice(0, 140));
     check("it is not the auth_unavailable dead end", snapshot.payload.code !== "auth_unavailable",
       String(snapshot.payload.code));
-    check("it reports not_configured", snapshot.payload.code === "not_configured", String(snapshot.payload.code));
+    check("it reports not_configured on the quota source",
+      snapshot.payload.quota?.error?.code === "not_configured", String(snapshot.payload.quota?.error?.code));
+    check("it says the console is not connected",
+      snapshot.payload.quota?.consoleConnected === false, String(snapshot.payload.quota?.consoleConnected));
+    check("the totals are absent, not zeroed", snapshot.payload.quota?.totals === null,
+      JSON.stringify(snapshot.payload.quota?.totals));
     check("the response carries auth state", snapshot.payload.auth !== undefined);
     check("it is marked ephemeral", snapshot.payload.auth?.ephemeral === true, JSON.stringify(snapshot.payload.auth));
 
     const decision = panelDecision(snapshot.payload);
     check("THE FORM IS REACHABLE", decision.renders === "AccountForm", decision.renders);
     check("the panel is told to ask for the account", decision.needsSetup === true);
+    check("the panel reads the console as not connected", decision.consoleConnected === false,
+      String(decision.consoleConnected));
 
     // And the account route must accept a post, so the form can do its job.
     const posted = await call(ACCOUNT_PATH, makePost({ username: "u", password: "p" }));

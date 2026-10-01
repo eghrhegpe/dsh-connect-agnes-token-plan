@@ -23,11 +23,15 @@
  *    does not exist here, so `unavailableModelIds` is empty by design rather
  *    than by omission — see `rosterWithAvailability`.
  *
- * Each console source is fetched with the failure policy it deserves: the
- * account's usage overview is FATAL (it is the auth probe, and its failure is
- * what puts the sign-in form on screen), while the series, the subscription
- * and the public catalogue degrade — a partial screen beats a full-page error,
- * and each degradation is reported through `quota.error`.
+ * Every console source is fetched with the SAME failure policy: all five
+ * degrade, and each degradation is reported through `quota.error` while the
+ * sources that answered still render. The account's usage overview is not
+ * exempt — it is the auth probe (`quota.consoleConnected` is its outcome), but
+ * letting it reject the snapshot made the panel all-or-nothing: a console that
+ * was never signed in blanked the API-key tab and the Raccoon tab too, and the
+ * Raccoon tab does not read this snapshot at all. A partial screen beats a
+ * full-page error, and an absent module must leave the rest usable
+ * (ARCHITECTURE.md §5).
  *
  * Pure by design: it takes the resolved `settings`, the shared `cache` /
  * `inflight` maps, the `tokenStore`, the `apiKeyStore`, the `publisher` (from
@@ -82,11 +86,20 @@ export function usageWindow(days, nowMs = Date.now()) {
 /**
  * Run one console fetch, reporting its failure instead of throwing.
  *
- * Used for every quota source EXCEPT the account's usage overview — that one
- * is the auth probe and must stay fatal, because the route's catch is what
- * puts the sign-in form on screen. For the rest, a failure becomes
- * `{value: null, error}`: the panel renders the sources that did arrive and
- * names the one that did not, instead of showing a full-page error for a chart.
+ * Used for EVERY source, the account's usage overview included. It once
+ * excepted the overview, on the theory that the auth probe should stay fatal
+ * because the route's catch is what puts the sign-in form on screen — but that
+ * made the whole panel all-or-nothing: one missing module (the console) took
+ * down three tabs, including the Raccoon tab, which reaches a DIFFERENT
+ * upstream with its own credential and never reads this snapshot at all. That
+ * is the exact shape ARCHITECTURE.md §5 forbids: a module that is absent must
+ * leave the panel usable, not blank it.
+ *
+ * So a failure becomes `{value: null, error}` everywhere. The panel renders the
+ * sources that did arrive, names the one that did not, and keeps the tabs
+ * reachable — and a signed-out Host still serves the API-key half (the model
+ * catalogue and the provider/draw switches), which is the one combination that
+ * made "I only want the models, not the quota" impossible.
  * @param {() => Promise<unknown>} run - the fetch to attempt.
  * @returns {Promise<{value: unknown, error: Error|null}>} the outcome.
  */
@@ -206,19 +219,27 @@ export async function buildSnapshotBody({
 
   const now = Math.floor(Date.now() / 1000);
   const { startDate, endDate } = usageWindow(settings.usageDays);
-  // THE AUTH PROBE, and the only fatal source here. `overview` is the cheapest
-  // authenticated call and every signed-in account can make it, so its failure
-  // is the one signal that means "no usable token" — which must reach the
-  // route's catch, because that is what puts the sign-in form on screen
-  // (`viewOf` reads a null body as `needsSetup`).
+  // THE AUTH PROBE — and, since the panel learned to degrade, one source among
+  // five rather than the gate on all of them.
   //
-  // Awaited ALONE, before the rest, for two reasons. Everything below is
-  // pointless without a token, and on a signed-out Host a parallel batch would
-  // still fire the anonymous catalogue request on every poll — a platform
-  // round-trip nobody asked for, for a panel that is about to show a form.
-  // In the steady state this costs nothing: the overview is usually a cache
-  // hit, so the sequential step is free and only the first poll pays it.
-  const overview = await fetchConsole(
+  // It still runs FIRST and ALONE, for the reason it always did. It is the one
+  // call that heals a dead token — the store renews on its 401, so by the time
+  // the batch below goes out the token is live again — and it is the cheapest
+  // way to learn that nobody is signed in, because that failure is a local
+  // `not_configured` with no network round-trip and therefore costs the batch
+  // nothing. Folding it into the `Promise.all` would present the same dead
+  // token to three authenticated endpoints at once and buy back a single
+  // round-trip on a path that is usually served from cache anyway;
+  // `test/routes.test.mjs` group B pins that trade ("the dead token is
+  // presented exactly once").
+  //
+  // What changed is only that it no longer THROWS. `soft` turns its failure
+  // into `{value: null, error}`, so the batch runs regardless: a signed-out
+  // Host still serves the public catalogue, the plan list and the API-key
+  // half instead of rejecting the whole snapshot and blanking every tab.
+  // `quota.consoleConnected` is this outcome, and `auth` says whether a login
+  // would fix it.
+  const overview = await soft(() => fetchConsole(
     settings,
     USAGE_OVERVIEW_PATH,
     undefined,
@@ -226,7 +247,7 @@ export async function buildSnapshotBody({
     cache,
     inflight,
     tokenStore
-  );
+  ));
   const [series, subscription, plans, catalog] = await Promise.all([
     // Everything below degrades. A signed-in account that simply has no plan,
     // or a console whose series endpoint is having a bad day, must still show
@@ -268,12 +289,28 @@ export async function buildSnapshotBody({
     // Cumulative usage. Deliberately NOT subtracted from the limits above: the
     // two are measured over different periods, so a difference would be a
     // number nobody can defend.
-    totals: parseUsageOverview(overview),
+    //
+    // `null` when the overview did not arrive — and NOT a zeroed block. Every
+    // counter in `parseUsageOverview` defaults through `countOf`, so handing it
+    // the `{}` that `obj(null)` returns would print "0 requests / 0 tokens" for
+    // an account whose usage nobody managed to read: the failure would come out
+    // as a measurement. The panel already renders `null` as "not read yet"
+    // (`quota.usageMissing`), which is why the wire contract declares this
+    // nullable.
+    totals: overview.value === null ? null : parseUsageOverview(overview.value),
     plans: catalogue.map(planSummary),
     expiresAt: readSubscriptionExpiry(subscription.value),
-    // Why a source is missing, when one is. `overview` is absent from this
-    // list because it is fatal — its failure never reaches here.
+    // Whether the console half answered at all. `false` means every
+    // authenticated source is missing and what follows is the PUBLIC catalogue
+    // plus whatever degraded source happened to answer — the panel says so
+    // rather than letting the absence read as "you have used nothing".
+    consoleConnected: overview.value !== null,
+    // Why a source is missing, when one is. `overview` leads the list now that
+    // it degrades: its code (`not_configured` on a fresh install, `auth_error`
+    // on a dead token, `console_error` when the platform is down) is what tells
+    // the panel whether a login would fix this or patience would.
     error: firstFailure([
+      ["usage-overview", overview],
       ["series", series],
       ["subscription", subscription],
       ["plans", plans]
@@ -292,7 +329,12 @@ export async function buildSnapshotBody({
   // `quota.error` instead, so it is skipped here: reporting both would blame
   // the shape for a network error.
   const shapeWarnings = [
-    ...checkShape(overview, "usage-overview").missing.map((key) => ({ api: "usage-overview", missing: key })),
+    // Same rule as the series below: a source that failed outright is reported
+    // through `quota.error`, so checking the shape of a null body would blame a
+    // renamed field for a network error.
+    ...(overview.value === null
+      ? []
+      : checkShape(overview.value, "usage-overview").missing.map((key) => ({ api: "usage-overview", missing: key }))),
     ...(series.value === null
       ? []
       : checkShape(series.value, "usage-series").missing.map((key) => ({ api: "usage-series", missing: key }))),

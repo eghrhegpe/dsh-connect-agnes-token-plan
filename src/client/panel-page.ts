@@ -46,12 +46,16 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // closed — it holds a secret field, and it is a prerequisite the two
   // cards above point at rather than the thing being configured.
   const [openSections, setOpenSections] = useState({ quota: true, usage: true, account: false, provider: true, draw: true, llm: false });
-  // Three fixed perspectives: "quota" is the daily reading (pools, trend,
-  // account), "api" is the Token Plan wiring (key, provider push, draw), and
-  // "raccoon" is the SECOND upstream provider (ROADMAP §6.1) — an independent
-  // credential + switch that shares no pool semantics with the first two. The
-  // tab bar itself only renders once a snapshot has landed — the loading,
-  // error and setup views are full-screen and know no tabs.
+  // Three fixed perspectives: "quota" is the daily reading (plan, windows,
+  // account totals), "api" is the Token Plan wiring (key, provider push,
+  // draw), and "raccoon" is the SECOND upstream provider (ROADMAP §6.1) — an
+  // independent credential + switch that shares no pool semantics with the
+  // first two.
+  //
+  // The tab bar renders from the FIRST FRAME, whatever the snapshot says. It
+  // used to appear only once a body had landed, which meant a console nobody
+  // had signed in to replaced the whole page with a form — including the two
+  // tabs that never read the console.
   const [activeTab, setActiveTab] = useState<"quota" | "api" | "raccoon">("quota");
 
   // The Host half registers the dictionaries, but a runtime language switch
@@ -181,6 +185,22 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     };
   }, [load, cadenceMs]);
 
+  // The account editor starts collapsed — it is a maintenance action, one
+  // click away. The one case where that is the wrong default is a console that
+  // is not connected at all: then signing in IS the next action, and a
+  // collapsed card is the dead end the old full-screen form existed to avoid.
+  //
+  // Opened ONCE, on the first snapshot that says so, and never again — a plain
+  // `open: openSections.account || needsSetup` would make the card impossible
+  // to collapse while the console is down, since `open` is a controlled prop.
+  const openedAccountOnce = useRef(false);
+  useEffect(() => {
+    if (openedAccountOnce.current) return;
+    if (data?.quota?.consoleConnected !== false) return;
+    openedAccountOnce.current = true;
+    setOpenSections((current) => ({ ...current, account: true }));
+  }, [data]);
+
   const quota = data?.quota;
   const usage = data?.usage;
   // The decision is `viewOf`'s (module scope): the Node-side tests invoke
@@ -209,30 +229,46 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // vanished with `hasAccount` — the user was locked out of their own account
   // with no re-entry path until the grant died.
   const authManage = auth !== null;
-  const body = !data
-    ? showSetupForm
-      ? h(AccountForm, { auth, onDone: () => void load(), tt })
-      : h(
-          "div",
-          { style: S.empty },
-          failure === null
-            ? tt("panel.loading")
-            : h(
-                "div",
-                null,
-                h("div", { role: "alert" }, guidance ?? format(tt("panel.error"), { error: failure.message }))
-              )
-        )
+  // The tab bar renders UNCONDITIONALLY, and that is the point of this block.
+  // It used to live inside the `data` branch, so a console that had never been
+  // signed in took all three tabs down with it — two of which do not read the
+  // console at all. The API tab works off the stored API key; the Raccoon tab
+  // reaches a DIFFERENT upstream with its own credential. Gating them on the
+  // quota snapshot blanked three independent modules because one was missing,
+  // which is what ARCHITECTURE.md §5 forbids.
+  const tabBar = h(
+    "div",
+    { style: S.tabBar, role: "tablist" },
+    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: { ...S.tab, ...(activeTab === "quota" ? S.tabActive : {}) }, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
+    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api")),
+    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "raccoon", style: { ...S.tab, ...(activeTab === "raccoon" ? S.tabActive : {}) }, onClick: () => setActiveTab("raccoon") }, tt("tab.raccoon"))
+  );
+
+  // What the quota tab shows when no snapshot landed at all — a transport
+  // failure, or a Host that never answered. The sign-in form still leads when
+  // the fix is the account, but it is a TAB's content now rather than the whole
+  // page, so the other two stay one click away: that is the difference between
+  // "the console is unreachable" and "the plugin is broken". `bare` because the
+  // tab body is not itself a card.
+  const quotaPlaceholder = showSetupForm
+    ? h(AccountForm, { auth, onDone: () => void load(), tt, bare: true })
     : h(
         "div",
+        { style: S.empty },
+        failure === null
+          ? tt("panel.loading")
+          : h(
+              "div",
+              null,
+              h("div", { role: "alert" }, guidance ?? format(tt("panel.error"), { error: failure.message }))
+            )
+      );
+
+  const body =
+    h(
+        "div",
         null,
-        h(
-          "div",
-          { style: S.tabBar, role: "tablist" },
-          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: { ...S.tab, ...(activeTab === "quota" ? S.tabActive : {}) }, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
-          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api")),
-          h("button", { type: "button", role: "tab", "aria-selected": activeTab === "raccoon", style: { ...S.tab, ...(activeTab === "raccoon" ? S.tabActive : {}) }, onClick: () => setActiveTab("raccoon") }, tt("tab.raccoon"))
-        ),
+        tabBar,
         // The shape-drift banner belongs with the daily reading: it warns
         // about the numbers themselves, not about the wiring below.
         activeTab === "quota" && shapeWarnings.length > 0
@@ -242,7 +278,9 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               }))
           : null,
         activeTab === "quota"
-          ? h(
+          ? data === null
+            ? quotaPlaceholder
+            : h(
               "div",
               null,
               // Both content sections are collapsible card headers, auto-expanded
@@ -251,13 +289,40 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               h(
                 SectionCard,
                 { title: tt("section.quota"), open: openSections.quota, onToggle: () => toggleSection("quota"), tt },
-                // A source that failed outright (the series, the subscription,
-                // the catalogue) is named here rather than left to read as
-                // "no data yet" — the sources that DID arrive still render.
-                quota?.error
-                  ? h("div", { style: { ...S.formNote, marginTop: 0, marginBottom: 12 }, role: "status" },
-                      format(tt("quota.error"), { source: String(quota.error.source ?? ""), message: String(quota.error.message ?? "") }))
-                  : null,
+                // The console never answered at all — the one case where the
+                // absence of numbers is not "not read yet" but "nobody is
+                // signed in". Named BEFORE the generic source line and
+                // INSTEAD of it: `quota.error` would name "usage-overview" as
+                // a failed source, which reads like a transient network fault,
+                // and the reader answers a network fault by hitting refresh
+                // forever instead of by signing in.
+                //
+                // The text is `guidance` (viewOf), which already picks the
+                // right advice per code — no account, dead token, platform
+                // outage, bad endpoint override — so the panel does not
+                // re-derive that here. `quota.consoleOffline` is only the
+                // fallback for a Host too old to send a code.
+                quota?.consoleConnected === false
+                  ? h(
+                      "div",
+                      { style: { ...S.formNote, marginTop: 0, marginBottom: 12 }, role: "status" },
+                      h("div", null, guidance ?? tt("quota.consoleOffline")),
+                      // Where to fix it — but only when signing in IS the fix.
+                      // `needsSetup` is exactly that verdict (viewOf), and it
+                      // already auto-expanded the account card below; a
+                      // platform outage is a `console_error`, where pointing
+                      // at the login form would be wrong advice.
+                      needsSetup
+                        ? h("div", { style: { marginTop: 6 } }, format(tt("quota.consoleOfflineHint"), { section: tt("auth.title") }))
+                        : null
+                    )
+                  // A source that failed outright (the series, the subscription,
+                  // the catalogue) is named here rather than left to read as
+                  // "no data yet" — the sources that DID arrive still render.
+                  : quota?.error
+                    ? h("div", { style: { ...S.formNote, marginTop: 0, marginBottom: 12 }, role: "status" },
+                        format(tt("quota.error"), { source: String(quota.error.source ?? ""), message: String(quota.error.message ?? "") }))
+                    : null,
                 h(PlanCard, { quota, tt }),
                 // The one thing the reader would otherwise get wrong: the
                 // windows above and the totals below are measured over

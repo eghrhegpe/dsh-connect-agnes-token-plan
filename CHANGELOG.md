@@ -118,6 +118,20 @@ deepseek-flash 的 low、kimi-k3 的 low。
 - **构建修复**：`qr.ts` 内 8 处 `x?.y = v`（可选链左值赋值）是解析错误，tsdown 直接挂掉——改为先索引后赋值。
 - **测试**：`test/panel.test.mjs` B2 组翻转（中间态/死 grant 态都钉 `canManageAccount === true`）；`panel-decision.js` 镜像同步去门控；`render.test.mjs` 新增 pending 态与 error 优先序 2 项 pin。
 
+### 修复：全新安装时面板只剩「连接 Agnes 控制台」，连 tab 栏都不渲染
+
+上报现象：全新装好插件打开面板，看不到三个 tab，整页只有一个登录表单——**API Key tab 和小浣熊 tab 也一起消失了**，尽管它们一个根本不读控制台、一个连的是另一个上游。
+
+根因是**结构性设计缺陷，不是移植失误**（源版同样存在）：控制台探针 `overview` 被当作**唯一致命源**，失败即整个快照走 `ok:false`；客户端又把 tab 栏放在 `data` 分支里，于是「控制台没登录」这一件事把三个互相独立的模块全埋了。这正是 `AGENTS.md` 模块独立性不变量禁止的形状。
+
+两层修复 + 一条诚实性补丁：
+
+- **Host（`snapshot-aggregate.ts`）**：`overview` 从致命源降级为五个可降级源之一（`soft()`），新增 `quota.consoleConnected`；失败原因（`not_configured` / `auth_error` / `console_error`）走 `quota.error.code`。它仍**串行先取**——401 时先换新令牌，后面批量才拿活令牌出门（`test/routes.test.mjs` B 组的「死令牌只被出示一次」仍是绿的）。
+- **客户端（`panel-page.ts`）**：tab 栏从 `data` 分支提到顶层，**第一帧就渲染**；`data === null` 时登录表单变成额度 tab 的**内容**而不是整页。控制台未连接时额度 tab 内点名原因，并一次性自动展开账号卡（用 `useRef` + `useEffect`，因为 `open` 是受控 prop，写成 `open: openSections.account || needsSetup` 会让卡片再也收不起来）。
+- **诚实性补丁**：`quota.totals` 在读不到时是 **`null`，不是零值块**。`parseUsageOverview(null)` 的每个计数器都经 `countOf` 落到 `0`，直接渲染会把一次读取失败伪装成「0 次请求 / 0 token」——把失败变成测量。面板本就有 `null` → 「暂未读到」的分支，所以这一条只改 Host 侧。
+- **顺带暴露的副作用**：未登录的 Host 现在也会去取**公开套餐目录**（它是控制台静默时唯一还剩的额度内容），`test/wiring.test.mjs` 此前从未 stub 过它，已补。
+- **测试**：`routes` +8、`wiring` +2、`e2e` +2、`render` +2（含「第一帧就带三个 tab」的回归）；`docs/API.md` / `ARCHITECTURE.md` §3 §5 同步。客户端两个 tab 的行为未变，只是重新可达。
+
 ### 运维诊断 doctor（PITFALLS §22 的欠账）
 
 回答「这台机器的 provider / 出图开关到底开没开」——此前唯一答案在一个 JSON 状态文件里，不在任何配置文件、任何路由、任何 CLI。

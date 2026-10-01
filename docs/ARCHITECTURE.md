@@ -65,8 +65,8 @@
    ▼
 GET /api/dsh-connect-agnes-token-plan/snapshot   ← Host 半边
    │  1) 取令牌；临近过期或控制台回 401 时重登一次（Agnes 没有 refresh token）
-   │  2) 先单独取 /api/usage/overview —— 认证探针，也是唯一致命源
-   │     再并行取 series / subscription / 公开 plans / GET /v1/models（后四者可降级）
+   │  2) 先单独取 /api/usage/overview —— 认证探针（五个源之一，失败不再致命）
+   │     再并行取 series / subscription / 公开 plans / GET /v1/models（五个源一律可降级）
    │  3) 按 consoleBase 等配置聚合，Host 缓存 cacheSeconds 秒
    ▼
 {snapshot}  ──HTTP 200，body 内 ok:true/false 区分成败──►
@@ -77,14 +77,18 @@ client.js: interpretSnapshot(body) → {data, error}
    ▼
 决策块（panel-decision.js 从同一模块取的 viewOf）决定渲染：
    - 有数据 → 额度上限（四窗口）/ 账号累计用量 / 分桶柱图 / 套餐对比
-   - 需配置账号 → AccountForm（用户自己填一次）
+   - 控制台未连接（quota.consoleConnected:false）→ 额度 tab 内明说，
+     并把登录卡展开；另两个 tab 不受影响
+   - 需配置账号且完全没有 body → 额度 tab 内是 AccountForm
    - config_error / console_error → 纯文本提示（登录解不了的问题：
      前者是配置写错，后者是控制台没应答，下一轮通常自愈）
 ```
 
 关键点：**HTTP 永远 200**，成败靠 body 里的 `ok` 与 `code` 区分；`auth` 块会随失败一起下发，所以连不上控制台时面板也能说出「令牌是否能自愈」。
 
-**为什么 `overview` 单独先取、且是唯一致命的**：它是认证探针（最便宜的认证调用，任何已登录账号都能发），它的失败是"令牌不可用"的唯一信号，必须冒泡到路由的 catch——那里才决定显示登录表单（`viewOf` 把 null body 读作 `needsSetup`）。同时它被**串行**放在其余取数之前：未登录时并行批量会白发一次匿名目录请求，而那是一个即将显示表单的面板不该花的往返。稳态下这一步通常命中缓存，只有第一次轮询付出代价。
+**为什么 `overview` 仍然单独先取、却不再是唯一致命的**：单独先取的理由没变——它是认证探针（最便宜的认证调用，任何已登录账号都能发），且**串行**放在其余取数之前，是因为它 401 时会先把令牌换新，后面的批量才拿着活令牌出门（`test/routes.test.mjs` B 组钉死了「死令牌只被出示一次」）；未登录时它失败在本地（`not_configured`，不发请求），所以这个串行不花任何往返，稳态下也通常命中缓存。
+
+变的是它**不再把失败变成整个快照的失败**。它曾经是唯一致命源：失败即冒泡到路由的 catch，整个 body 走 `ok:false`，面板只剩登录表单——把 API Key tab（不读控制台）和小浣熊 tab（连的是另一个上游、有自己的凭据）一起埋掉，正是 §5 不变量 3 禁止的形状。现在它失败只意味着 `quota.consoleConnected:false`：`quota.totals` 是 `null` 而不是零值块（否则一次读取失败会被渲染成「0 次请求」——把失败伪装成测量），面板在额度 tab 内点名「控制台未连接」，另两个 tab 一个点击之外。
 
 ---
 
@@ -124,6 +128,11 @@ client.js: interpretSnapshot(body) → {data, error}
   >（实测见 [ROADMAP.md](./ROADMAP.md) §6.1.1 的两次复测）。
   > 界定依据改为**厂商归属**而非域名或认证域，第二上游因此属**界内**，裁定详情见 §5.5。
   > 另外两条不变量（opt-in 默认关、凭据红线）不受本次修订影响。
+- **一个模块缺席，不许把别的模块一起埋掉**（2026-10-01 补记）：第一条不变量的推论，
+  本插件自己违反过一次——控制台（地基）读不到时整个快照走 `ok:false`，面板只剩登录表单，
+  把 API Key tab（根本不读控制台）和小浣熊 tab（另一个上游、另一套凭据）一起带走。
+  现已改为 `quota.consoleConnected:false` 的软降级 + 客户端 tab 栏无条件渲染，
+  数据流见 §3；诚实性要求同时成立：读不到的用量是 `null`，不是零值块。
 
 变更前的三层分工，改作吸收路线图：
 

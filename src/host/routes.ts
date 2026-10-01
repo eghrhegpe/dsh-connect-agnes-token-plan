@@ -246,8 +246,15 @@ export function registerRoutes(ctx, wiring) {
         }
         writeJson(response, 200, body, { "cache-control": "no-store" });
       } catch (error) {
-        // Distinguish "we cannot get a token" from "the console call failed":
-        // the first is fixed by logging in, the second is usually transient.
+        // The LAST-RESORT path, and a narrow one: `buildSnapshotBody` degrades
+        // every console source on its own, so a signed-out console or a dead
+        // token answers `ok:true` with `quota.consoleConnected:false` and never
+        // reaches here. What does is a failure outside that set — a store read,
+        // a catalogue write, a provider publish, `tokenStore.state()` itself.
+        // The shape stays `ok:false` because the panel still reads it as "no
+        // numbers this time"; `failureCode` keeps `not_configured` /
+        // `jwt_expired` distinguishable from a plain console error so the
+        // guidance line still names the right fix.
         writeJson(response, 200, {
           ok: false,
           error: error instanceof Error ? error.message : String(error),

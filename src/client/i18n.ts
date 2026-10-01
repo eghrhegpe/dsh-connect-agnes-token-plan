@@ -67,6 +67,8 @@ export const zh = {
   "quota.expires": "到期 {time}",
   "quota.none": "暂无额度数据。",
   "quota.planUnknown": "未能识别当前套餐——控制台没有返回可匹配的套餐信息。下方「套餐对比」是平台公开的套餐目录，不依赖登录。",
+  "quota.consoleOffline": "Agnes 控制台未连接，本页的额度与用量都读不到。",
+  "quota.consoleOfflineHint": "登录入口在本页下方的「{section}」卡片里。",
   "quota.error": "读取 {source} 失败：{message}",
   "quota.catalogue": "套餐对比（{count} 档）",
   // 这一句是整个额度区的诚实声明，不是装饰：上限是「每 N 小时/天/周」的窗口，
@@ -256,6 +258,8 @@ export const en: typeof zh = {
   "quota.expires": "expires {time}",
   "quota.none": "No quota data yet.",
   "quota.planUnknown": "Could not identify the current plan — the console returned nothing matchable. The plan comparison below is the platform's public catalogue and needs no sign-in.",
+  "quota.consoleOffline": "The Agnes console is not connected, so the quota and usage on this page could not be read.",
+  "quota.consoleOfflineHint": "The sign-in form is in the \"{section}\" card further down this page.",
   "quota.error": "Could not read {source}: {message}",
   "quota.catalogue": "Compare plans ({count})",
   "quota.windowNote": "Agnes rate-limits by window: the limits above are counts per N hours / day / week. The console publishes cumulative account usage only, never a per-window figure — so the totals below cover a different period and must not be subtracted from the limits above.",

@@ -83,11 +83,28 @@ export interface UsageBucketData {
 export interface QuotaData {
   plan?: PlanData | null;
   windows?: QuotaWindowData[];
-  /** Cumulative account usage. NOT a per-window balance — see `QuotaWindowData`. */
+  /**
+   * Cumulative account usage. NOT a per-window balance — see `QuotaWindowData`.
+   *
+   * `null` (or absent) means the Host could not read it, which the panel
+   * renders as "not read yet". It must never be a zeroed block: a `0` there
+   * would present an unread figure as a measurement.
+   */
   totals?: UsageTotalsData | null;
   /** The public plan catalogue (needs no login) — what upgrading would buy. */
   plans?: PlanData[];
   expiresAt?: number | null;
+  /**
+   * Whether the authenticated console half answered at all.
+   *
+   * `false` means every authenticated source is missing and `plans` — the
+   * PUBLIC catalogue, which needs no login — is the only quota content there
+   * is. The panel says so rather than letting the absence read as "you have
+   * used nothing". Distinct from `auth.configured`: an account that is
+   * configured while the platform is down is `consoleConnected:false` with
+   * `configured:true`, and the two want different advice.
+   */
+  consoleConnected?: boolean;
   /** Why the authenticated half is missing, when it is. */
   error?: { source?: string; code?: string | null; message?: string } | null;
 }

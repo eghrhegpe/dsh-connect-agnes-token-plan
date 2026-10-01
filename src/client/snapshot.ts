@@ -149,14 +149,33 @@ export function viewOf(
   // page holds it behind its `loadedOnce` gate until the first attempt has
   // concluded, so the true first frame shows the loading line, not the
   // form (pinned by `test/render.test.mjs` group H2).
-  const needsSetup = data === null && !FORM_EXCLUDED_CODES.has((failure?.code ?? null) as string);
+  //
+  // "The fix is the account" no longer requires a NULL body. A Host that
+  // degrades answers `ok:true` with `quota.consoleConnected:false`, which is
+  // the same situation the full-screen form used to answer: nothing on this
+  // screen is readable until someone signs in. Reading it off `data === null`
+  // alone would have retired the form the moment the Host learned to degrade,
+  // leaving a fresh install with no way in.
+  //
+  // A Host too old to emit `consoleConnected` is not a hazard: it answers
+  // `ok:false` for this case, so `data === null` still covers it.
+  const code = failure?.code ?? data?.quota?.error?.code ?? null;
+  const needsSetup = (data === null || data.quota?.consoleConnected === false)
+    && !FORM_EXCLUDED_CODES.has(code as string);
   // The dictionary key, resolved with the caller's `tt`; returned as a key
   // so tests can assert the decision without owning a dictionary.
-  const guidanceKey = failure === null ? null : GUIDANCE_BY_CODE[failure.code as string] ?? null;
+  //
+  // Keyed off the SAME `code` as `needsSetup`, which is `failure.code` when the
+  // Host refused the whole body and `quota.error.code` when it degraded one
+  // source instead. The degraded case is the one that needs this: a console
+  // that is unreachable for want of an account, a dead token, or a platform
+  // outage all arrive as `ok:true` now, and the code is the only thing that
+  // says which of the three the reader is looking at.
+  const guidanceKey = code === null ? null : GUIDANCE_BY_CODE[code as string] ?? null;
   const guidance = guidanceKey === null
     ? null
     : guidanceKey === "panel.configError"
-      ? format(tt(guidanceKey), { error: failure?.message })
+      ? format(tt(guidanceKey), { error: failure?.message ?? data?.quota?.error?.message })
       : tt(guidanceKey);
   // The Host's own contract check: a renamed upstream field would otherwise
   // look identical to "no usage yet".

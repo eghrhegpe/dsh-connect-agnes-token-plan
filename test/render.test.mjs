@@ -646,6 +646,21 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
       firstFrame.join("\n"));
     check("the first frame does NOT show the sign-in form", !firstFrame.includes("auth.title"),
       firstFrame.join("\n"));
+    // The tab bar is part of the FIRST FRAME too, and that is a separate bug
+    // from the one above. It used to live INSIDE the `data` branch, so a
+    // console nobody had signed in to replaced the whole page with a form —
+    // taking the API-key tab and the Raccoon tab down with it, neither of
+    // which reads the console at all (ARCHITECTURE.md §5). "No snapshot yet"
+    // and "no console account" must both leave the three tabs reachable.
+    check("the first frame already carries all three tabs",
+      firstFrame.includes("tab.quota") && firstFrame.includes("tab.api") && firstFrame.includes("tab.raccoon"),
+      firstFrame.join("\n"));
+    // …and the quota tab's body is a TAB's content, not the page: the loading
+    // line renders inside the tab strip, so switching tabs is possible before
+    // the first answer arrives.
+    check("the first frame keeps the loading line inside the tab strip",
+      firstFrame.indexOf("tab.raccoon") < firstFrame.indexOf("panel.loading"),
+      firstFrame.join("\n"));
   }
 }
 

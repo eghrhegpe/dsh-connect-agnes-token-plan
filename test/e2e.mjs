@@ -383,8 +383,17 @@ try {
   {
     const res = await call("/api/dsh-connect-agnes-token-plan/snapshot");
     check("the snapshot route answers through the real webserver", res.status === 200, String(res.status));
+    // DEGRADED, not refused: the snapshot answers `ok:true` with the reason on
+    // the quota source and `consoleConnected:false`. The whole-body `ok:false`
+    // this used to pin blanked all three tabs, including the two that never
+    // read the console (the API-key half and the Raccoon upstream).
     check("an unconfigured panel asks for the account",
-      res.body?.ok === false && res.body?.code === "not_configured", JSON.stringify(res.body ?? {}).slice(0, 120));
+      res.body?.ok === true && res.body?.quota?.error?.code === "not_configured",
+      JSON.stringify(res.body ?? {}).slice(0, 200));
+    check("the console is reported as not connected",
+      res.body?.quota?.consoleConnected === false, String(res.body?.quota?.consoleConnected));
+    check("the totals are absent, not zeroed",
+      res.body?.quota?.totals === null, JSON.stringify(res.body?.quota?.totals));
     check("it demands no user action on a fresh install",
       res.body?.auth?.needsUserAction === false, String(res.body?.auth?.needsUserAction));
   }
