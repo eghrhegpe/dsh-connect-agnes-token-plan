@@ -1,19 +1,31 @@
 /**
- * The frozen SenseNova inference contract — peer-free offline gate.
+ * The frozen Agnes inference contract — peer-free offline gate.
  *
- * `test/baselines/sensenova-contract.json` pins the 2026-09-29 live probe of
- * `https://token.sensenova.cn/v1` (9 catalog models, thinking-field dialects,
- * reasoning_effort support surface, sampling parameters, modality fields).
- * This suite asserts that the code the panel and the provider run
- * (`llm-models.js` descriptors / vision / chat / quota logic, `parsers.js`
- * normalization, `codes.js` 429/quota classification) still matches that
- * frozen contract. A red here means the CODE drifted from the platform
- * dialect, not the platform changed — the platform side is covered by
- * `test/live-contract.mjs` (manual, `npm run test:live:contract`).
+ * `test/baselines/agnes-contract.json` records what the platform's
+ * `https://api.agnes-ai.cn/v1` catalogue and thinking dialect are known to be.
+ * Its `meta` half is SOURCE-DERIVED (`baseUrl` from `CONFIG_DEFAULTS.apiBase`,
+ * `apiKeyRef` from `api-key-store.API_KEY_REF`), and this suite asserts that
+ * link: a baseline pointing at a different origin than the code would replay a
+ * clean run against the wrong platform, which is the one failure a drift guard
+ * must never have.
+ *
+ * The per-model half is still a SEED until `npm run test:live:contract` is run
+ * with a real key (the baseline's own `meta.note` says so; `docs/AGNES-API.md`
+ * §7 is the human mirror). So every cell is read in BOTH directions:
+ *
+ *   - `true`      → the code MUST offer that level (a probe answered 200);
+ *   - `false`     → the code MUST NOT offer it (probed and refused);
+ *   - `"pending"` → never probed, and the code must treat it exactly like
+ *     `false` — a level nobody proved stays CLOSED. That conservative
+ *     direction is what lets a seed baseline drive real assertions instead of
+ *     a suite full of maybes.
+ *
+ * Any other cell value fails, so a half-filled baseline cannot pass as frozen.
  *
  * Everything here imports no Host peer, so the contract stays covered on a
- * clean checkout. The baseline JSON is the single source of truth for the
- * dialect facts; `docs/SENSENOVA-API.md` §7 is the human-readable mirror.
+ * clean checkout. A red here means the CODE drifted from the recorded dialect,
+ * not that the platform changed — the platform side is `test/live-contract.mjs`
+ * (manual, `npm run test:live:contract`).
  */
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -22,18 +34,21 @@ import {
   toPiDescriptor,
   buildDescriptors,
   isChatModel,
-  exhaustedModelIds,
-  contextWindowOf,
+  rosterWithAvailability,
+  supportedThinkingLevels,
   thinkingLevelMapFor,
+  FALLBACK_CONTEXT_WINDOW,
   LLM_PROVIDER_ID
 } from "../src/host/llm-models.ts";
-import { credits, epochSeconds, parsePools, parseTrend, checkShape, identifyVisionModel } from "../src/host/parsers.ts";
+import { countOf, timestampSeconds, checkShape, identifyVisionModel } from "../src/host/parsers.ts";
 import { retryableCodes, QUOTA_CODES } from "../src/host/llm-retry.ts";
 import { isCredentialRefusal, CODE } from "../src/host/codes.ts";
+import { CONFIG_DEFAULTS } from "../src/host/host-config.ts";
+import { API_KEY_REF } from "../src/host/api-key-store.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contract = JSON.parse(
-  readFileSync(join(ROOT, "test", "baselines", "sensenova-contract.json"), "utf8")
+  readFileSync(join(ROOT, "test", "baselines", "agnes-contract.json"), "utf8")
 );
 const baseUrl = contract.meta.baseUrl;
 
@@ -45,7 +60,34 @@ function fail(name, error) {
   results.push({ name, pass: false, detail: String(error?.message ?? error) });
 }
 
-// --- 1. catalog entry shape from the contract ----------------------------
+/** The thinking levels the baseline freezes, in the picker's ladder order. */
+const EFFORT_CELLS = ["off", "low", "medium", "high", "xhigh", "max"];
+
+// --- 0. the baseline's own discipline -------------------------------------
+// The two `meta` facts are not opinions: they are read off the source, so the
+// baseline and the code cannot describe different platforms. And every effort
+// cell must be a real verdict — a missing or misspelled cell would silently
+// read as "not true" and close a level nobody ever probed.
+{
+  check("the baseline's baseUrl is the code's apiBase",
+    baseUrl === CONFIG_DEFAULTS.apiBase, `${baseUrl} vs ${CONFIG_DEFAULTS.apiBase}`);
+  check("the baseline's apiKeyRef is the credential name the code stores under",
+    contract.meta.apiKeyRef === API_KEY_REF, `${contract.meta.apiKeyRef} vs ${API_KEY_REF}`);
+  check("the baseline carries a drift log", Array.isArray(contract.meta.driftLog),
+    JSON.stringify(contract.meta.driftLog));
+  check("the baseline declares at least one model", contract.models.length > 0,
+    String(contract.models.length));
+
+  for (const model of contract.models) {
+    for (const level of EFFORT_CELLS) {
+      const cell = model.reasoningEffort?.[level];
+      check(`${model.id} reasoningEffort.${level} is a frozen verdict or "pending"`,
+        cell === true || cell === false || cell === "pending", JSON.stringify(cell));
+    }
+  }
+}
+
+// --- 1. catalog entry shape from the contract -----------------------------
 // The contract's `models` entries are the normalized catalog rows
 // (`console-client.js` keeps each `/v1/models` row whole, plus the plugin's
 // `id`). Build them exactly the way the provider would see them.
@@ -60,7 +102,7 @@ function entryFor(model) {
 
 // --- 2. toPiDescriptor against the frozen contract ------------------------
 for (const model of contract.models) {
-  if (model.chat !== true) continue; // 404/403 models are asserted in §3
+  if (model.chat !== true) continue; // 403/404 models are asserted in §3
   try {
     const entry = entryFor(model);
     const descriptor = toPiDescriptor(entry, { baseUrl });
@@ -72,52 +114,44 @@ for (const model of contract.models) {
       descriptor.reasoning === true && typeof descriptor.thinkingLevelMap === "object",
       JSON.stringify({ reasoning: descriptor.reasoning }));
     const map = thinkingLevelMapFor(entry);
+    // `off` is the one level whose wire spelling is pinned platform-wide: the
+    // picker's 关闭 must send `none`, because `off` itself is refused.
     check(`${model.id} thinkingLevelMap.off === "none" (platform off spelling)`,
-      map.off === "none", JSON.stringify(map));
-    // reasoning_effort dialect: the frozen surface decides which wire
-    // spellings are platform-valid on THIS model.
-    if (model.reasoningEffort?.max === true) {
-      check(`${model.id} thinkingLevelMap.max === "max" (platform accepts it)`,
-        map.max === "max", JSON.stringify(map.max));
-    } else {
-      check(`${model.id} thinkingLevelMap.max === null (platform rejects / unverified)`,
-        map.max === null, JSON.stringify(map.max));
-    }
-    // xhigh is gated the same way: offered only where the baseline recorded a
-    // 200 probe, closed everywhere else (including models the baseline never
-    // probed — absence means "proven on nothing").
-    if (model.reasoningEffort?.xhigh === true) {
-      check(`${model.id} thinkingLevelMap.xhigh === "xhigh" (platform accepts it)`,
-        map.xhigh === "xhigh", JSON.stringify(map.xhigh));
-    } else {
-      check(`${model.id} thinkingLevelMap.xhigh === null (rejected / unverified)`,
-        map.xhigh === null, JSON.stringify(map.xhigh));
-    }
-    // low/medium: the 2026-09-30 probe round recorded them per-model. `true`
-    // (a 200) opens the level; `false` or `"indefinite"` (a 429 rhythm
-    // answer, not a 400 — "not measured" not "unsupported") keeps it
-    // closed until a clean re-run flips the baseline cell.
-    for (const level of ["low", "medium"]) {
-      if (model.reasoningEffort?.[level] === true) {
+      map.off === "none", JSON.stringify(map.off));
+    check(`${model.id} thinkingLevelMap.high === "high" (platform default, always offered)`,
+      map.high === "high", JSON.stringify(map.high));
+    check(`${model.id} thinkingLevelMap.minimal === null (unverified on this gateway)`,
+      map.minimal === null, JSON.stringify(map.minimal));
+    // low/medium/xhigh/max are per-model, gated on the baseline's own cells: a
+    // level is offered ONLY where the cell says a probe answered 200. `false`
+    // and `"pending"` both stay closed — "not measured" is never "supported".
+    for (const level of ["low", "medium", "xhigh", "max"]) {
+      const cell = model.reasoningEffort?.[level];
+      if (cell === true) {
         check(`${model.id} thinkingLevelMap.${level} === "${level}" (probed 200)`,
           map[level] === level, JSON.stringify(map[level]));
       } else {
-        check(`${model.id} thinkingLevelMap.${level} === null (unprobed / indefinite)`,
-          map[level] === null, JSON.stringify({ cell: model.reasoningEffort?.[level], got: map[level] }));
+        check(`${model.id} thinkingLevelMap.${level} === null (${cell === false ? "probed and refused" : "unprobed"})`,
+          map[level] === null, JSON.stringify({ cell, got: map[level] }));
       }
     }
-    check(`${model.id} thinkingLevelMap.minimal === null (unverified on this gateway)`,
-      map.minimal === null, JSON.stringify(map.minimal));
-    // vision: the descriptor's input array mirrors the contract's
-    // visionInput flag (structured `input_modalities` wins).
+    // vision: the descriptor's input array mirrors the contract's visionInput
+    // flag (structured `input_modalities` wins).
     const expectedInput = model.visionInput ? ["text", "image"] : ["text"];
     check(`${model.id} descriptor.input matches contract visionInput`,
       JSON.stringify(descriptor.input) === JSON.stringify(expectedInput),
       JSON.stringify({ got: descriptor.input, want: expectedInput }));
+    // The window: a declared `context_length` wins, and an entry that declares
+    // none gets the SAME fallback pi-ai is handed — never undefined, which
+    // pi-ai's options builder would treat as zero.
     if (model.contextLength !== undefined) {
       check(`${model.id} descriptor.contextWindow reads catalog context_length`,
         descriptor.contextWindow === model.contextLength,
         `${descriptor.contextWindow} vs ${model.contextLength}`);
+    } else {
+      check(`${model.id} descriptor.contextWindow falls back to the shipped default`,
+        descriptor.contextWindow === FALLBACK_CONTEXT_WINDOW,
+        `${descriptor.contextWindow} vs ${FALLBACK_CONTEXT_WINDOW}`);
     }
   } catch (error) { fail(`${model.id} descriptor`, error); }
 }
@@ -128,18 +162,11 @@ for (const model of contract.models) {
   if (model.imageGen === true) {
     check(`${model.id} (image-gen) is NOT a chat model (excluded from picker)`,
       isChatModel(entry) === false, "isChatModel should be false");
-  }
-  if (model.status === "404" || model.status === "403") {
-    // 404/403 models are still catalog rows; the panel greys them via
-    // `exhaustedModelIds` only when their POOL is depleted, not when the
-    // endpoint 404s. The contract records them as non-chat (image-gen 404)
-    // or as a plan-restriction (403). Assert the code agrees on the
-    // image-gen 404 family: `output_modalities:["image"]` is the load-bearing
-    // signal, not the status code.
-    if (model.imageGen === true) {
-      check(`${model.id} (404 image-gen) is excluded from the chat offer`,
-        isChatModel(entry) === false, "isChatModel should be false");
-    }
+  } else if (model.chat === true) {
+    // A 403 plan restriction is NOT an image-gen model: it stays in the offer
+    // (the panel greys it with the reason instead of hiding it).
+    check(`${model.id} stays a chat model despite its plan status (${model.status})`,
+      isChatModel(entry) === true, "isChatModel should be true");
   }
 }
 
@@ -152,72 +179,118 @@ for (const model of contract.models) {
     JSON.stringify({ got: verdict.vision, want: model.visionInput === true }));
 }
 
-// --- 5. buildDescriptors: the picker offer matches the contract -----------
-// The offer is every chat model NOT in a depleted pool, filtered by the
-// allow-list. With an empty pool and an empty allow-list, the offer is the
-// whole chat set. `isChatModel` is PERMISSIVE (a missing/unknown
-// `output_modalities` is treated as chat, and `deepseek-v4.1-flash` is a 403
-// plan restriction, not an image-gen model), so the picker still lists it —
-// the panel greys it via the quota/availability roster instead of dropping it
-// from the offer. The image-gen U-series (404) is the only family excluded.
+// --- 5. the thinking gate: a probed id rides the table, an unknown one the safe-set
+// This is the distinction the whole per-model gate rests on. A model PRESENT
+// in the probe table gets exactly the levels its cells proved; a model ABSENT
+// from it (an id Agnes added this morning) is given the OpenAI-compatible
+// safe-set so the picker is never empty, while the extended levels stay closed.
+{
+  // The contract's own known id: `deepseek-v4.1-flash` has every extended cell
+  // closed, and it must NOT silently inherit the safe-set just because those
+  // cells are false.
+  const known = thinkingLevelMapFor({ id: "deepseek-v4.1-flash" });
+  check("a known id with unproven levels does NOT inherit the safe-set",
+    known.low === null && known.medium === null, JSON.stringify(known));
+  check("a known id still gets the platform default + the off spelling",
+    known.high === "high" && known.off === "none", JSON.stringify(known));
+
+  const unknown = thinkingLevelMapFor({ id: "a-model-added-tomorrow" });
+  check("an unprobed id is offered the OpenAI-compatible safe-set",
+    unknown.off === "none" && unknown.low === "low" && unknown.medium === "medium" && unknown.high === "high",
+    JSON.stringify(unknown));
+  check("an unprobed id keeps the extended levels closed",
+    unknown.minimal === null && unknown.xhigh === null && unknown.max === null,
+    JSON.stringify(unknown));
+  check("an id-less entry is treated as unprobed, not as a known one",
+    thinkingLevelMapFor({}).low === "low", JSON.stringify(thinkingLevelMapFor({})));
+}
+
+// --- 6. buildDescriptors / rosterWithAvailability: offer vs greyed -------
+// The picker DROPS a model the Host declares unavailable (so no doomed request
+// is dispatched) while the panel roster KEEPS it, greyed, with the reason. On
+// Agnes nothing is ever handed in — there is no per-model quota to deplete —
+// and that is pinned here so a future change has to be deliberate.
 {
   const allEntries = contract.models.map(entryFor);
-  // No pool depletion, no allow-list: the picker offers every chat model the
-  // contract marks `chat: true` (including the 403-restricted v4.1-flash,
-  // which is a plan restriction, not a non-chat model).
   const chatIds = contract.models.filter((m) => m.chat === true).map((m) => m.id);
   const offered = buildDescriptors(allEntries, { baseUrl, enabledIds: [], unavailableModelIds: [] });
   const offeredIds = offered.map((d) => d.id);
-  check("buildDescriptors offers exactly the contract's chat models (no pool depletion)",
+  check("buildDescriptors offers exactly the contract's chat models",
     JSON.stringify(offeredIds) === JSON.stringify(chatIds),
     JSON.stringify({ offered: offeredIds, want: chatIds }));
+  check("every descriptor carries the plugin's own provider id",
+    offered.every((d) => d.provider === LLM_PROVIDER_ID), JSON.stringify(offered.map((d) => d.provider)));
 
-  // The image-gen U-series (404 on the chat endpoint) is the only family the
-  // picker excludes: `output_modalities: ["image"]` is the load-bearing signal.
+  // The image-gen family (404 on the chat endpoint) is the only one the picker
+  // excludes: `output_modalities: ["image"]` is the load-bearing signal, never
+  // a name pattern or a status code.
   const imageGenIds = contract.models.filter((m) => m.imageGen === true).map((m) => m.id);
   check("buildDescriptors excludes every image-gen model from the offer",
     imageGenIds.every((id) => !offeredIds.includes(id)),
     JSON.stringify({ offered: offeredIds, imageGen: imageGenIds }));
 
-  // A depleted pool covering `deepseek-v4-flash` must drop it from the offer
-  // while the panel roster still lists it (greyed).
-  const pools = parsePools({
-    plan: { id: "p", name: "Token Plan", type: "monthly" },
-    pools: [{
-      id: "pool-1", name: "default", pool_type: "default",
-      model_ids: ["deepseek-v4-flash"],
-      window_5h: { limit: "100", used: "100", remaining: "0", reset_at: "1700000000" },
-      window_7d: { limit: "1000", used: "500", remaining: "500", reset_at: "1700000000" }
-    }]
-  });
-  const blocked = exhaustedModelIds(pools);
-  check("exhaustedModelIds flags the depleted pool's models",
-    JSON.stringify(blocked) === JSON.stringify(["deepseek-v4-flash"]),
-    JSON.stringify(blocked));
-  const offeredBlocked = buildDescriptors(allEntries, { baseUrl, enabledIds: [], unavailableModelIds: blocked });
-  check("buildDescriptors drops the quota-depleted model from the offer",
-    offeredBlocked.every((d) => d.id !== "deepseek-v4-flash") &&
-      offeredBlocked.some((d) => d.id === "deepseek-v4-pro"),
-    JSON.stringify(offeredBlocked.map((d) => d.id)));
+  // Nothing handed in: the offer is the whole chat set and every roster row is
+  // available. Agnes allocates no quota per model, so an empty blocked set is
+  // the DESIGN, not a missing derivation.
+  const roster = rosterWithAvailability(allEntries, []);
+  check("with nothing handed in, every roster row is available",
+    roster.length === chatIds.length && roster.every((row) => row.available === true && row.quotaExhausted === false),
+    JSON.stringify(roster.map((row) => [row.id, row.available])));
+  check("the roster quotes the same levels the descriptor will dispatch",
+    roster.every((row) => {
+      const entry = allEntries.find((candidate) => candidate.id === row.id);
+      return JSON.stringify(row.thinkingLevels) === JSON.stringify(supportedThinkingLevels(entry));
+    }),
+    JSON.stringify(roster.map((row) => [row.id, row.thinkingLevels.join("/")])));
+
+  // Handed in: the offer drops it, the roster keeps it greyed. This is the
+  // mechanism the second absorbed upstream (raccoon) reuses.
+  const blockedId = chatIds[0];
+  const blockedOffer = buildDescriptors(allEntries, { baseUrl, enabledIds: [], unavailableModelIds: [blockedId] });
+  check("buildDescriptors drops a handed-in unavailable id from the offer",
+    blockedOffer.every((d) => d.id !== blockedId), JSON.stringify(blockedOffer.map((d) => d.id)));
+  const greyed = rosterWithAvailability(allEntries, [blockedId]);
+  check("the roster keeps the unavailable model, greyed with a reason",
+    greyed.some((row) => row.id === blockedId && row.available === false && row.quotaExhausted === true),
+    JSON.stringify(greyed.filter((row) => !row.available)));
+  check("the roster's unavailable set is exactly what was handed in",
+    greyed.filter((row) => !row.available).map((row) => row.id).join(",") === blockedId,
+    JSON.stringify(greyed.filter((row) => !row.available).map((row) => row.id)));
 }
 
-// --- 6. parsers: the contract's numeric/epoch spellings -------------------
+// --- 7. parsers: the console's numeric/epoch spellings -------------------
+// The Agnes console mixes real JSON numbers (plan limits) with numeric STRINGS
+// (usage counters on the sibling gateway routes), and its timestamps arrive as
+// epoch seconds, epoch millis or an ISO date depending on the route. Both
+// coercions are pinned here against the same helpers the poll uses.
 {
-  check("credits() normalizes a string number (the platform's spelling)",
-    credits("12345") === 12345, String(credits("12345")));
-  check("credits() returns 0 for an absent value", credits(undefined) === 0, String(credits(undefined)));
-  check("epochSeconds() reads a decimal-seconds STRING (not ms)",
-    epochSeconds("1700000000") === 1700000000, String(epochSeconds("1700000000")));
-  check("epochSeconds() returns null for absent/0",
-    epochSeconds(null) === null && epochSeconds("0") === null,
-    JSON.stringify([epochSeconds(null), epochSeconds("0")]));
-  // The pool-usage shape the panel parses: a missing `pools` key is a drift.
-  const drift = checkShape({ plan: { id: "p" } }, "pool-usage");
-  check("checkShape flags a pool-usage body missing `pools` (drift, not 'no data')",
-    drift.ok === false && drift.missing.includes("pools"), JSON.stringify(drift));
+  check("countOf normalizes a string number (the platform's spelling)",
+    countOf("12345") === 12345, String(countOf("12345")));
+  check("countOf returns 0 for an absent value", countOf(undefined) === 0, String(countOf(undefined)));
+  check("countOf returns 0 for a non-numeric string", countOf("n/a") === 0, String(countOf("n/a")));
+  check("timestampSeconds reads a decimal-seconds STRING",
+    timestampSeconds("1700000000") === 1700000000, String(timestampSeconds("1700000000")));
+  check("timestampSeconds reads an epoch in MILLIS",
+    timestampSeconds(1700000000000) === 1700000000, String(timestampSeconds(1700000000000)));
+  check("timestampSeconds returns null for absent/0",
+    timestampSeconds(null) === null && timestampSeconds("0") === null,
+    JSON.stringify([timestampSeconds(null), timestampSeconds("0")]));
+
+  // The drift shapes the poll checks: the account overview's two totals and the
+  // series' `items` array. A missing key is a drift, never "no usage".
+  const drift = checkShape({ total_requests: 1 }, "usage-overview");
+  check("checkShape flags an overview body missing `total_tokens` (drift, not 'no data')",
+    drift.ok === false && drift.missing.includes("total_tokens"), JSON.stringify(drift));
+  check("checkShape flags a series body missing `items`",
+    checkShape({}, "usage-series").missing.includes("items"));
+  // `subscription` declares NO expectations on purpose: the payload was never
+  // observed with a session token, and inventing one would report drift on
+  // every poll. Pin the empty list so nobody "helpfully" fills it in.
+  check("checkShape expects nothing of the unobserved subscription payload",
+    checkShape({ anything: 1 }, "subscription").ok === true);
 }
 
-// --- 7. 429 / quota classification matches the frozen retry policy --------
+// --- 8. 429 / quota classification matches the frozen retry policy --------
 {
   const codes = retryableCodes();
   check("retryableCodes keeps RATE_LIMIT (transient throttle self-clears)",
@@ -233,7 +306,7 @@ for (const model of contract.models) {
     "login_rejected is the credential-shaped refusal");
 }
 
-// --- 8. vision model roster mirrors the contract's visionInput -----------
+// --- 9. vision model roster mirrors the contract's visionInput -----------
 {
   const allEntries = contract.models.map(entryFor);
   // The vision LIST is asserted through `identifyVisionModel` in §4 against the

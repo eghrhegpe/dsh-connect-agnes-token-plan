@@ -67,12 +67,12 @@ async function rejects(fn) {
 // --- 2. image-model identification is STRUCTURED, never a name guess -------
 {
   const catalog = [
-    { id: "sensenova-u1-fast", output_modalities: ["image"] },
-    { id: "sensenova-6.8-flash-lite", input_modalities: ["text", "image"] },
-    { id: "sensenova-u1.5-lite", output_modalities: ["text", "image"] },
+    { id: "Agnes-u1-fast", output_modalities: ["image"] },
+    { id: "Agnes-6.8-flash-lite", input_modalities: ["text", "image"] },
+    { id: "Agnes-u1.5-lite", output_modalities: ["text", "image"] },
     { id: "no-field-model" },
     { id: "" , output_modalities: ["image"] },
-    { id: "sensenova-u1-fast", output_modalities: ["image", "text"] }
+    { id: "Agnes-u1-fast", output_modalities: ["image", "text"] }
   ];
   check("output_modalities with image is a draw model",
     isImageGenModel(catalog[0]) === true);
@@ -82,7 +82,7 @@ async function rejects(fn) {
     isImageGenModel(catalog[3]) === false);
   const ids = imageGenModelIds(catalog);
   check("both u1 models are found — the regex route missed u1.5-lite",
-    JSON.stringify(ids) === JSON.stringify(["sensenova-u1-fast", "sensenova-u1.5-lite"]),
+    JSON.stringify(ids) === JSON.stringify(["Agnes-u1-fast", "Agnes-u1.5-lite"]),
     JSON.stringify(ids));
   check("duplicate ids keep first-seen position (last occurrence wins)",
     imageGenModelIds([{ id: "a", output_modalities: ["image"] }, { id: "b", output_modalities: ["image"] }, { id: "a", output_modalities: ["image"] }]).join(",") === "a,b");
@@ -93,26 +93,26 @@ async function rejects(fn) {
 // --- 3. pickDrawModel precedence -------------------------------------------
 {
   const entries = [
-    { id: "sensenova-u1-fast", output_modalities: ["image"] },
-    { id: "sensenova-u1.5-lite", output_modalities: ["image"] }
+    { id: "Agnes-u1-fast", output_modalities: ["image"] },
+    { id: "Agnes-u1.5-lite", output_modalities: ["image"] }
   ];
   check("an explicit request wins even off-catalog (manual override)",
-    pickDrawModel(entries, "sensenova-u1.5-lite", "sensenova-u1-fast") === "sensenova-u1.5-lite");
+    pickDrawModel(entries, "Agnes-u1.5-lite", "Agnes-u1-fast") === "Agnes-u1.5-lite");
   check("an off-catalog request still wins (platform answers the error)",
     pickDrawModel(entries, "custom-model", "") === "custom-model");
   check("the configured preferred model wins when listed",
-    pickDrawModel(entries, "", "sensenova-u1.5-lite") === "sensenova-u1.5-lite");
+    pickDrawModel(entries, "", "Agnes-u1.5-lite") === "Agnes-u1.5-lite");
   check("an unlisted preferred model falls back to the first",
-    pickDrawModel(entries, "", "not-in-catalog") === "sensenova-u1-fast");
+    pickDrawModel(entries, "", "not-in-catalog") === "Agnes-u1-fast");
   check("no request and no preference picks the first",
-    pickDrawModel(entries, "", "") === "sensenova-u1-fast");
+    pickDrawModel(entries, "", "") === "Agnes-u1-fast");
   check("an empty catalog with nothing requested yields null (actionable error upstream)",
     pickDrawModel([], "", "") === null);
 }
 
 // --- 4. buildDrawBody clamps -----------------------------------------------
 {
-  const body = buildDrawBody({ model: "sensenova-u1-fast", prompt: "a cat" });
+  const body = buildDrawBody({ model: "Agnes-u1-fast", prompt: "a cat" });
   check("defaults are n=1 and response_format=url",
     body.n === 1 && body.response_format === "url");
   check("no size field travels when unset", !Object.prototype.hasOwnProperty.call(body, "size"));
@@ -171,14 +171,14 @@ async function rejects(fn) {
       fetchImpl: okFetch,
       endpoint,
       apiKey: "sk-test",
-      body: buildDrawBody({ model: "sensenova-u1-fast", prompt: "a cat" })
+      body: buildDrawBody({ model: "Agnes-u1-fast", prompt: "a cat" })
     });
     check("success returns the parsed image + model",
-      result.url === "https://img/x.png" && result.model === "sensenova-u1-fast");
+      result.url === "https://img/x.png" && result.model === "Agnes-u1-fast");
     check("the endpoint and Bearer key hit the wire",
       seen.url === endpoint && seen.options.headers.Authorization === "Bearer sk-test");
     check("the body travels as JSON with the model",
-      JSON.parse(seen.options.body).model === "sensenova-u1-fast");
+      JSON.parse(seen.options.body).model === "Agnes-u1-fast");
   } catch (error) {
     fail("drawOnce success path", error);
   }
@@ -236,8 +236,8 @@ async function rejects(fn) {
 {
   const passthrough = (definition) => definition; // no peer: the plain object comes back
   const entries = [
-    { id: "sensenova-u1-fast", output_modalities: ["image"] },
-    { id: "sensenova-u1.5-lite", output_modalities: ["image"] }
+    { id: "Agnes-u1-fast", output_modalities: ["image"] },
+    { id: "Agnes-u1.5-lite", output_modalities: ["image"] }
   ];
   const settings = { apiBase: "https://api.agnes-ai.cn/v1", drawModelId: "", drawTimeoutMs: 5000 };
   const makeTool = (overrides = {}) => defineDrawTool({
@@ -260,9 +260,9 @@ async function rejects(fn) {
       result.source === "agnes" && result.url === "https://img/ok.png" &&
       /!\[图\]\(https:\/\/img\/ok\.png\)/.test(result.hint), result.hint);
     check("the default model is the first discovered",
-      result.model === "sensenova-u1-fast");
+      result.model === "Agnes-u1-fast");
     check("a manual model override travels",
-      (await tool.execute({ prompt: "a cat", model: "sensenova-u1.5-lite" })).model === "sensenova-u1.5-lite");
+      (await tool.execute({ prompt: "a cat", model: "Agnes-u1.5-lite" })).model === "Agnes-u1.5-lite");
   } catch (error) {
     fail("defineDrawTool success path", error);
   }
@@ -311,14 +311,14 @@ async function rejects(fn) {
   }
   {
     const liveCatalog = [
-      { id: "sensenova-u1-fast", output_modalities: ["image"] },
-      { id: "sensenova-u1.5-lite", output_modalities: ["image"] },
-      { id: "sensenova-6.8", input_modalities: ["text"] }
+      { id: "Agnes-u1-fast", output_modalities: ["image"] },
+      { id: "Agnes-u1.5-lite", output_modalities: ["image"] },
+      { id: "Agnes-6.8", input_modalities: ["text"] }
     ];
     const tool = makeTool({ getEntries: async () => liveCatalog });
     const result = await tool.execute({ prompt: "a cat" });
     check("an async getEntries (the index.js shape) is awaited and used",
-      result.model === "sensenova-u1-fast");
+      result.model === "Agnes-u1-fast");
   }
   {
     const message = await rejects(() => makeTool({ isDisposed: () => true }).execute({ prompt: "a cat" }));

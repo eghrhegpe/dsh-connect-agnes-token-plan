@@ -2,16 +2,17 @@
  * The panel's rendered output, checked against the code the browser loads.
  *
  * The decision tests assert WHICH view renders; nothing asserted WHAT that
- * view says. The known blind spot was a numeric swap — a `WindowRow` that
- * renders `limit/used` instead of `used/limit`, or drops the remaining
- * figure, passed the whole suite. These checks feed arithmetic the reader can
- * verify by hand (12345 of 60000 is 20.575%) into the panel's REAL rendering
- * components and inspect what would reach the screen.
+ * view says. The known blind spot was a numeric swap — a window card that
+ * renders `limit/used` instead of `used/limit`, or that fabricates a
+ * "remaining" figure the platform never reported, passed the whole suite.
+ * These checks feed arithmetic the reader can verify by hand (12345 of 60000 is
+ * 20.575%) into the panel's REAL rendering components and inspect what would
+ * reach the screen.
  *
- * There is no DOM and no React here: `panel-render.js` lifts the components
- * out of client.js and evaluates them with a recording `h`, so function
- * components stay uncalled until a check expands them — the tree a check sees
- * is the tree React would receive.
+ * There is no DOM and no React here: `panel-render.js` lifts the components out
+ * of client.js and evaluates them with a recording `h`, so function components
+ * stay uncalled until a check expands them — the tree a check sees is the tree
+ * React would receive.
  */
 import { render, styles as S, texts, findElement, findAll } from "./panel-render.js";
 import { surface } from "./client-surface.js";
@@ -33,42 +34,68 @@ const rendered = (component, props) => texts(treeOf(component, props));
 /** The panel's progress-bar element, wherever it sits in the tree. */
 const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== undefined);
 
-// === A. the quota card's arithmetic is the one the reader can verify ======
-// 12345 of 60000 is 20.575%. Any swap of used/limit/remaining turns these
-// figures into different numbers, so this block is the anti-mirror for the
-// exact bug the decision tests could not see.
+// === A. the window card's headline is the LIMIT, and its bar is real ======
+// The inversion is the point of the Agnes rewrite. The SenseNova card led with
+// "remaining %" because the platform reported a live balance per pool; Agnes
+// reports none — it caps four dimensions over sliding windows and its console
+// publishes only CUMULATIVE usage — so the limit is the headline, and a
+// percentage appears only when the platform itself stated a `used` figure for
+// that window. 12345 of 60000 is 20.575%: any swap of used/limit changes the
+// bar width, so this block is the anti-mirror for that exact bug.
 {
-  const tree = treeOf(render.QuotaCard, {
-    label: "pool.window5h",
-    window: { limit: 60000, used: 12345, remaining: 47655, resetAt: 1800000000 },
+  const tree = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 60000, windowHours: 5, used: 12345 },
     tt
   });
   const meta = texts(tree).join("\n");
+  check("the headline is the LIMIT, with its unit",
+    meta.includes("60,000 quota.unit.requests"), meta);
+  check("the headline is not a percentage",
+    !meta.includes("79.4%") && !meta.includes("20.6%"), meta);
   check("the used figure is the USED count against the limit",
-    meta.includes("pool.used 12,345 / 60,000"), meta);
-  check("the headline is the REMAINING percentage",
-    meta.includes("79.4%"), meta);
-  check("the used percentage is not shown as the headline", !meta.includes("20.6%"), meta);
-  check("the raw remaining count is not on the card — the percentage implies it",
-    !meta.includes("47,655"), meta);
+    meta.includes("quota.used 12,345 / 60,000"), meta);
+  check("the window's PERIOD is named — there is no reset instant to print",
+    meta.includes("quota.perHours"), meta);
 
   const fill = bar(tree);
-  check("the bar reports the same percentage to assistive tech",
+  check("the bar reports the used fraction to assistive tech",
     Number(fill?.props["aria-valuenow"]) === 20.6, String(fill?.props["aria-valuenow"]));
   const inner = findElement(fill, (props) => typeof props.style?.width === "string");
-  check("the bar's width is the same fraction the text shows",
+  check("the bar's width is the same fraction the caption shows",
     inner?.props.style.width === "20.575%", String(inner?.props.style.width));
-  check("the reset time is rendered when present", meta.includes("pool.reset"), meta);
 }
 
-// === B. a window without a reset time stays quiet about resets ============
+// === B. a window with no stated consumption draws NO bar ==================
+// An absent `used` is not `used: 0`. Drawing an empty bar would claim the
+// window is untouched, which the platform never said — and the video window is
+// exactly that case today: the limit field exists (`video_daily_limit`) while
+// the console's usage side counts `video_seconds`, so there is nothing to pair.
 {
-  const out = rendered(render.QuotaCard, {
-    label: "pool.window7d",
-    window: { limit: 60000, used: 1, remaining: 59999, resetAt: null },
+  const tree = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.videoDaily",
+    window: { key: "videoDaily", unit: "video", limit: 500, windowHours: 24 },
     tt
   });
-  check("no reset time means no reset line", !out.includes("pool.reset"), out.join("\n"));
+  const meta = texts(tree).join("\n");
+  check("the limit still renders without a used figure", meta.includes("500"), meta);
+  check("no bar is drawn when no consumption was stated", bar(tree) === null, JSON.stringify(bar(tree)));
+  check("no used caption either", !meta.includes("quota.used"), meta);
+  // Video is deliberately UNITLESS: the platform never says whether the cap is
+  // in clips or in seconds, so the panel prints the bare number rather than
+  // asserting one. The image window, by contrast, has a unit the platform's own
+  // `feature_texts` uses ("张").
+  check("the video window claims no unit at all",
+    texts(tree).includes("500"), JSON.stringify(texts(tree)));
+  check("the image window does carry its unit",
+    texts(treeOf(render.QuotaWindowCard, {
+      label: "quota.win.imagesDaily",
+      window: { key: "imagesDaily", unit: "images", limit: 4000, windowHours: 24 }, tt
+    })).includes("4000 quota.unit.images"),
+    JSON.stringify(texts(treeOf(render.QuotaWindowCard, {
+      label: "quota.win.imagesDaily",
+      window: { key: "imagesDaily", unit: "images", limit: 4000, windowHours: 24 }, tt
+    }))));
 }
 
 // === C. the bar's tone escalates as the window fills ======================
@@ -76,8 +103,8 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 // a colour would pass a tone swap. The values come from the lifted S instead.
 {
   const fillFor = (used) => {
-    const fill = bar(treeOf(render.QuotaCard, {
-      label: "l", window: { limit: 60000, used, remaining: 60000 - used, resetAt: null }, tt
+    const fill = bar(treeOf(render.QuotaWindowCard, {
+      label: "l", window: { limit: 60000, windowHours: 5, used }, tt
     }));
     return findElement(fill, (p) => typeof p.style?.width === "string")?.props.style;
   };
@@ -89,101 +116,193 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     fillFor(54000).background === S.barFillError.background, JSON.stringify(fillFor(54000)));
 }
 
-// === D. an empty limit is unknown, never a fake percentage ================
+// === D. an absent limit is UNKNOWN, never a fake zero ====================
 {
-  const tree = treeOf(render.QuotaCard, {
-    label: "l", window: { limit: 0, used: 0, remaining: 0, resetAt: null }, tt
+  const tree = treeOf(render.QuotaWindowCard, {
+    label: "l", window: { key: "requests5h", unit: "requests", limit: 0, windowHours: 5, used: 0 }, tt
   });
-  check("a zero limit renders as an em dash, not 0.0%", texts(tree).includes("—") && !texts(tree).includes("%"), texts(tree).join("\n"));
-  check("the bar's reported value stays a number",
-    bar(tree)?.props["aria-valuenow"] !== undefined && Number(bar(tree)?.props["aria-valuenow"]) === 0,
-    String(bar(tree)?.props["aria-valuenow"]));
+  check("a zero limit renders as an em dash, not a 0",
+    texts(tree).includes("—") && !texts(tree).some((line) => line.includes("0")), texts(tree).join("\n"));
+  // limit 0 means there is no fraction to draw, so there is no bar at all —
+  // an `aria-valuenow=0` bar would read as "0% used" instead of "unknown".
+  check("a zero limit draws no bar at all", bar(tree) === null, JSON.stringify(bar(tree)));
 }
 
-// === E. the trend table lists rows in order, with the credited amounts ====
+// === E. the usage chart draws one bar per platform bucket =================
+// The bars are scaled to the BUSIEST bucket, so the tallest always fills the
+// track. That answers "when was the heavy day", and the legend says plainly
+// that the height is not a fraction of the quota limit — a full track would
+// otherwise be misread as "at the cap".
 {
-  const out = rendered(render.TrendTable, {
-    trend: { models: [{ model: "Alpha", credits: 42.5 }, { model: "Beta", credits: 0 }] },
-    tt
-  });
-  const alpha = out.indexOf("Alpha");
-  check("the table carries both models", alpha !== -1 && out.includes("Beta"), out.join("\n"));
-  check("row order follows the data", alpha !== -1 && alpha < out.indexOf("42.5") && out.indexOf("42.5") < out.indexOf("Beta"),
-    out.join("\n"));
-  check("a zero-credit row still renders", out.includes("0"), out.join("\n"));
-  check("the table is a table, not the empty note", !out.includes("trend.none"), out.join("\n"));
-}
-
-// === E2. the trend card visualises which model consumed the most ========
-// The bare table earned a card and a per-row bar: each bar is relative to
-// the LARGEST consumer, so the top model fills the track and the rest
-// shrink proportionally — that is the "who is burning credits" answer.
-{
-  const tree = treeOf(render.TrendTable, {
-    trend: { models: [{ model: "Alpha", credits: 42.5 }, { model: "Beta", credits: 0 }] },
-    tt
-  });
-  check("the trend rows sit inside a card like the quota cards",
-    tree.props?.style?.background === S.card.background && tree.props?.style?.borderRadius === S.card.borderRadius,
-    JSON.stringify(tree.props?.style ?? {}));
-  const bars = findAll(tree, (props) => props["aria-valuenow"] !== undefined);
-  check("each model row carries its own bar", bars.length === 2, `found ${bars.length}`);
-  const widths = bars.map((bar) => findElement(bar, (p) => typeof p.style?.width === "string")?.props.style?.width);
-  check("the biggest consumer fills the track", widths.includes("100%"), JSON.stringify(widths));
-  check("a zero-credit model gets an empty track", widths.includes("0%"), JSON.stringify(widths));
+  const usage = {
+    days: 30,
+    windowTotals: { totalRequests: 50, totalTokens: 500, totalImages: 1, totalVideoSeconds: 0 },
+    buckets: [
+      { bucket: "2026-09-29", requestCount: 40, textTokens: 400, imageCount: 0, videoSeconds: 0 },
+      { bucket: "2026-09-30", requestCount: 10, textTokens: 100, imageCount: 1, videoSeconds: 0 }
+    ]
+  };
+  const tree = treeOf(render.UsageChart, { usage, tt });
+  const fills = findAll(tree, (props) => props.role === "progressbar");
+  check("one bar per bucket", fills.length === 2, `found ${fills.length}`);
+  check("the busiest bucket fills the track",
+    fills[0]?.props.style.height === "100%", String(fills[0]?.props.style.height));
+  check("a quieter bucket is scaled to the busiest",
+    fills[1]?.props.style.height === "25%", String(fills[1]?.props.style.height));
   check("the bars report the same fractions to assistive tech",
-    bars[0]?.props["aria-valuenow"] === 100 && bars[1]?.props["aria-valuenow"] === 0,
-    bars.map((bar) => bar.props["aria-valuenow"]).join(", "));
-  check("the absolute amount still sits beside the model name",
-    texts(tree).includes("42.5") && texts(tree).includes("0"), texts(tree).join("\n"));
+    fills.map((fill) => fill.props["aria-valuenow"]).join(",") === "100,25",
+    fills.map((fill) => fill.props["aria-valuenow"]).join(","));
+  check("each bar names its bucket and count for the hover",
+    findAll(tree, (props) => props.style === S.usageBar)[0]?.props.title === "2026-09-29: 40 quota.unit.requests",
+    String(findAll(tree, (props) => props.style === S.usageBar)[0]?.props.title));
+  const meta = texts(tree).join("\n");
+  check("the axis prints the platform's own first and last bucket labels",
+    meta.includes("2026-09-29") && meta.includes("2026-09-30"), meta);
+  check("the chart says what it counts and how it is bucketed",
+    meta.includes("usage.requests") && meta.includes("usage.perBucket"), meta);
+  check("the legend names the scaling convention",
+    meta.includes("usage.legend"), meta);
+  check("the chart sits in a card like the other sections",
+    tree.props?.style?.background === S.card.background, JSON.stringify(tree.props?.style ?? {}));
 }
 
-// === F. an empty trend says so instead of rendering an empty table ========
+// === E2. a flat series must not divide by zero ===========================
+// Every bucket at zero means there is no maximum to scale against; the bars
+// must collapse to nothing instead of producing NaN heights.
 {
-  const out = rendered(render.TrendTable, { trend: { models: [] }, tt });
-  check("an empty trend shows the empty note", out.includes("trend.none"), out.join("\n"));
-  const none = rendered(render.TrendTable, { trend: null, tt });
-  check("a missing trend shows the empty note too", none.includes("trend.none"), none.join("\n"));
-  const emptyTree = treeOf(render.TrendTable, { trend: { models: [] }, tt });
+  const tree = treeOf(render.UsageChart, {
+    usage: { buckets: [{ bucket: "a", requestCount: 0 }, { bucket: "b", requestCount: 0 }] }, tt
+  });
+  const fills = findAll(tree, (props) => props.role === "progressbar");
+  check("an all-zero series still draws its bars", fills.length === 2, `found ${fills.length}`);
+  check("an all-zero series produces no NaN height",
+    fills.every((fill) => fill.props.style.height === "0%"),
+    JSON.stringify(fills.map((fill) => fill.props.style.height)));
+  check("an all-zero series reports zero to assistive tech",
+    fills.every((fill) => fill.props["aria-valuenow"] === 0),
+    JSON.stringify(fills.map((fill) => fill.props["aria-valuenow"])));
+}
+
+// === E3. the usage totals row names the period it covers ==================
+// The account total and the window total use the SAME figures with different
+// meanings, so the label is what stops the reader taking a lifetime total for
+// a window total. `activeDays` exists only on the account row, and an absent
+// cell is not drawn rather than shown as 0.
+{
+  const totals = { totalRequests: 12000, totalTokens: 340000, totalImages: 40, totalVideoSeconds: 610, activeDays: 12 };
+  const out = rendered(render.UsageTotals, { totals, label: "quota.accountTotals", tt });
+  check("the period label leads the row", out[0] === "quota.accountTotals", out.join("\n"));
+  check("every dimension gets its own labelled cell",
+    ["quota.total.requests", "quota.total.tokens", "quota.total.images", "quota.total.video", "quota.total.activeDays"]
+      .every((key) => out.includes(key)), out.join("\n"));
+  check("the figures reach the screen with thousands separators",
+    out.includes("12,000") && out.includes("340,000"), out.join("\n"));
+
+  const sparse = rendered(render.UsageTotals, { totals: { totalRequests: 1 }, label: "l", tt });
+  check("a missing activeDays cell is not drawn as a zero",
+    !sparse.includes("quota.total.activeDays"), sparse.join("\n"));
+
+  const missing = rendered(render.UsageTotals, { totals: null, label: "l", tt });
+  check("a totals block that never arrived names the label it could not read",
+    missing.length === 1 && missing[0].includes("quota.usageMissing"), missing.join("\n"));
+}
+
+// === F. an empty series says so instead of drawing an empty chart ========
+{
+  const out = rendered(render.UsageChart, { usage: { buckets: [] }, tt });
+  check("an empty series shows the empty note", out.includes("usage.none"), out.join("\n"));
+  const none = rendered(render.UsageChart, { usage: null, tt });
+  check("a missing series shows the empty note too", none.includes("usage.none"), none.join("\n"));
+  const emptyTree = treeOf(render.UsageChart, { usage: { buckets: [] }, tt });
   check("the empty note sits inside a card too",
     emptyTree.props?.style?.background === S.card.background, JSON.stringify(emptyTree.props?.style ?? {}));
 }
 
-// === G. the pool card assembles its own sections ==========================
+// === G. the plan card assembles its own sections ==========================
 {
-  const pool = {
-    name: "通用池", poolType: "default",
-    modelIds: ["Model-A", "Model-B"],
-    lockedModels: ["Model-C"],
-    window5h: { limit: 60000, used: 1, remaining: 59999, resetAt: null },
-    window7d: { limit: 600000, used: 2, remaining: 599998, resetAt: null },
-    grantBalance: 0
+  const quota = {
+    plan: {
+      uuid: "u-1", planId: 3, name: "高级版", displayName: "高级版",
+      billingCycle: "monthly", displayCycle: "月付",
+      priceMinor: 9900, currency: "CNY",
+      usageLimitText: "30000 次模型请求 / 5 小时",
+      limits: { requests5h: 30000, requestsWindowH: 5, requestsWeekly: 300000, imagesDaily: 4000, videoDaily: 500 }
+    },
+    windows: [
+      { key: "requests5h", unit: "requests", limit: 30000, windowHours: 5 },
+      { key: "requestsWeekly", unit: "requests", limit: 300000, windowHours: 168 },
+      { key: "imagesDaily", unit: "images", limit: 4000, windowHours: 24 },
+      { key: "videoDaily", unit: "video", limit: 500, windowHours: 24 }
+    ],
+    totals: { totalRequests: 1200, totalTokens: 340000, totalImages: 40, totalVideoSeconds: 610, activeDays: 12 },
+    plans: [],
+    expiresAt: 1800003600,
+    error: null
   };
-  const out = rendered(render.PoolCard, { pool, tt });
-  check("the pool's name is rendered", out.includes("通用池"), out.join("\n"));
-  check("a default pool is labelled as such", out.includes("pool.default"), out.join("\n"));
-  check("both quota windows are present",
-    out.includes("pool.window5h") && out.includes("pool.window7d"), out.join("\n"));
-  check("the fold carries the details summary", out.includes("pool.details"), out.join("\n"));
-  check("every callable model is listed (inside the fold)",
-    out.includes("Model-A") && out.includes("Model-B"), out.join("\n"));
-  check("locked models are summarised, not listed", out.includes("pool.locked") && !out.includes("Model-C"),
-    out.join("\n"));
-  check("no grant text when the balance is zero", !out.includes("pool.grant"), out.join("\n"));
+  const out = rendered(render.PlanCard, { quota, tt });
+  check("the plan's display name is rendered", out.includes("高级版"), out.join("\n"));
+  check("the billing cycle is labelled", out.includes("quota.cycle.monthly"), out.join("\n"));
+  check("the price reads as money with its period",
+    out.join("\n").includes("¥99.00") && out.join("\n").includes("quota.perMonth"), out.join("\n"));
+  // The platform's own one-line summary is quoted verbatim rather than
+  // re-derived, so it can never disagree with the four window cards below it.
+  check("the platform's own limit sentence is quoted verbatim",
+    out.includes("30000 次模型请求 / 5 小时"), out.join("\n"));
+  check("all four windows are present",
+    ["quota.win.requests5h", "quota.win.requestsWeekly", "quota.win.imagesDaily", "quota.win.videoDaily"]
+      .every((key) => out.includes(key)), out.join("\n"));
+  check("the subscription expiry is rendered when present", out.includes("quota.expires"), out.join("\n"));
+  // The card is about the READER's plan; the other tiers fold away so they
+  // cannot crowd it, but they stay one click from the answer to "is upgrading
+  // worth it" — using the platform's own numbers rather than a link.
+  check("no catalogue fold is drawn when no catalogue arrived",
+    !out.includes("quota.catalogue"), out.join("\n"));
 
-  const dedicated = rendered(render.PoolCard, { pool: { ...pool, poolType: "dedicated" }, tt });
-  check("a dedicated pool is labelled as such", dedicated.includes("pool.dedicated"), dedicated.join("\n"));
-
-  const granted = rendered(render.PoolCard, { pool: { ...pool, grantBalance: 500 }, tt });
-  check("a grant balance is rendered when present", granted.includes("pool.grant"), granted.join("\n"));
-
-  // `callableModels` (the /v1/models truth) outranks `modelIds` (the plan's
-  // list): a model the plan covers but this key cannot call is NOT callable.
-  const scoped = rendered(render.PoolCard, {
-    pool: { ...pool, callableModels: ["Model-A"] }, tt
+  const withCatalogue = rendered(render.PlanCard, {
+    quota: {
+      ...quota,
+      plans: [
+        { uuid: "a", planId: 1, name: "入门版", displayName: "入门版", billingCycle: "monthly", displayCycle: "月付", priceMinor: 2500, currency: "CNY", usageLimitText: "", limits: { requests5h: 1500, requestsWindowH: 5, requestsWeekly: 15000, imagesDaily: 4000, videoDaily: 500 } },
+        { uuid: "b", planId: 3, name: "高级版", displayName: "高级版", billingCycle: "monthly", displayCycle: "月付", priceMinor: 9900, currency: "CNY", usageLimitText: "", limits: { requests5h: 30000, requestsWindowH: 5, requestsWeekly: 300000, imagesDaily: 4000, videoDaily: 500 } }
+      ]
+    },
+    tt
   });
-  check("the callable list wins over the plan list",
-    scoped.includes("Model-A") && !scoped.includes("Model-B"), scoped.join("\n"));
+  check("the catalogue fold is drawn when a catalogue arrived",
+    withCatalogue.includes("quota.catalogue"), withCatalogue.join("\n"));
+  check("every catalogue tier becomes a comparable row",
+    withCatalogue.includes("入门版") && withCatalogue.includes("高级版"), withCatalogue.join("\n"));
+  check("a catalogue row states its limits, not just its name",
+    withCatalogue.join("\n").includes("5h") && withCatalogue.join("\n").includes("15,000"),
+    withCatalogue.join("\n"));
+}
+
+// === G1b. an unrecognised or absent plan degrades, never guesses ==========
+// The console's plan payload was never observed with a session token, so the
+// matcher may well come back empty. Printing the entry tier "as a default"
+// would be a fabricated fact about the reader's account; the panel says it
+// could not tell, and keeps showing what it DOES know (the windows, and the
+// public catalogue).
+{
+  const bare = rendered(render.PlanCard, {
+    quota: {
+      plan: null,
+      windows: [{ key: "requests5h", unit: "requests", limit: 1500, windowHours: 5 }],
+      totals: null, plans: [], expiresAt: null, error: null
+    },
+    tt
+  });
+  check("an unrecognised plan says so instead of guessing a tier",
+    bare.includes("quota.planUnknown") && !bare.includes("入门版"), bare.join("\n"));
+  check("the windows still render without a plan", bare.includes("quota.win.requests5h"), bare.join("\n"));
+
+  const nothing = rendered(render.PlanCard, { quota: null, tt });
+  check("no quota block at all shows the empty note", nothing.includes("quota.none"), nothing.join("\n"));
+  const empty = rendered(render.PlanCard, {
+    quota: { plan: null, windows: [], totals: null, plans: [], expiresAt: null, error: null }, tt
+  });
+  check("an entirely empty quota block shows the empty note too",
+    empty.includes("quota.none"), empty.join("\n"));
 }
 
 // === G2. sections are collapsible card headers, expanded by default ======
@@ -194,7 +313,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 {
   const children = ["inner"];
   const openTree = treeOf(render.SectionCard, {
-    title: "section.pools", open: true, onToggle: () => {}, tt, children
+    title: "section.quota", open: true, onToggle: () => {}, tt, children
   });
   check("the section sits in a card like the quota cards",
     openTree.props?.style?.background === S.card.background && openTree.props?.style?.borderRadius === S.card.borderRadius,
@@ -204,7 +323,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("an open section reports aria-expanded=true", head?.props["aria-expanded"] === true,
     String(head?.props["aria-expanded"]));
   check("the header announces the collapse action",
-    head?.props["aria-label"] === "section.collapse: section.pools", String(head?.props["aria-label"]));
+    head?.props["aria-label"] === "section.collapse: section.quota", String(head?.props["aria-label"]));
   check("the header hands the click to the toggle", typeof head?.props.onClick === "function", "");
   check("an open section renders its body", texts(openTree).includes("inner"), texts(openTree).join("\n"));
   check("an open body is not hidden",
@@ -215,13 +334,13 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     chev?.props.style?.transform === "rotate(180deg)", String(chev?.props.style?.transform));
 
   const closedTree = treeOf(render.SectionCard, {
-    title: "section.trend", open: false, onToggle: () => {}, tt, children
+    title: "section.usage", open: false, onToggle: () => {}, tt, children
   });
   const closedHead = findElement(closedTree, (props) => props["aria-expanded"] !== undefined);
   check("a closed section reports aria-expanded=false", closedHead?.props["aria-expanded"] === false,
     String(closedHead?.props["aria-expanded"]));
   check("the header announces the expand action",
-    closedHead?.props["aria-label"] === "section.expand: section.trend", String(closedHead?.props["aria-label"]));
+    closedHead?.props["aria-label"] === "section.expand: section.usage", String(closedHead?.props["aria-label"]));
   check("a closed section hides its body", !texts(closedTree).includes("inner"), texts(closedTree).join("\n"));
   check("the body stays mounted but hidden when closed",
     findElement(closedTree, (props) => props.hidden !== undefined)?.props.hidden === true, "");
@@ -463,164 +582,54 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     boxes(treeOf(render.ModelRoster, { models: "nope", enabledIds: [], tt })).length === 0);
 }
 
-// === G5. the exhaustion notice explains WHY models vanish and WHEN back ===
-// When a pool hits zero the host drops its models from the picker; without this
-// line the reader sees models disappear with no cause or recovery expectation.
-// The component is hook-free and reads only the snapshot's pools, so the render
-// suite drives the real one. It must stay silent when nothing is exhausted, and
-// must surface the EARLIEST reset among the exhausted windows.
-{
-  const zh = surface.dictionaries.zh;
-  const ttZh = (key) => zh[key] ?? key;
-  const when = surface.helpers.when;
-
-  const clean = rendered(render.PoolExhaustionNotice, { pools: { pools: [
-    { window5h: { limit: 100, used: 1, remaining: 99, resetAt: null }, window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } }
-  ] }, tt: ttZh });
-  check("a fully-stocked plan renders no exhaustion notice", clean.length === 0, clean.join("\n"));
-
-  const exhausted = rendered(render.PoolExhaustionNotice, { pools: { pools: [
-    { window5h: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 },
-      window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } }
-  ] }, tt: ttZh });
-  check("an exhausted pool surfaces the notice",
-    exhausted.some((line) => line.includes("部分积分池已耗尽") && line.includes("暂不可选")), exhausted.join("\n"));
-  check("the notice carries the earliest reset time",
-    exhausted.some((line) => line.includes(when(1800003600))), exhausted.join("\n"));
-  check("the notice is marked as a status role for assistive tech",
-    treeOf(render.PoolExhaustionNotice, { pools: { pools: [
-      { window5h: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 }, window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } }
-    ] }, tt: ttZh })?.props?.role === "status");
-
-  // Two exhausted windows across pools: the EARLIEST reset wins, not the latest.
-  const two = rendered(render.PoolExhaustionNotice, { pools: { pools: [
-    { window5h: { limit: 100, used: 100, remaining: 0, resetAt: 1800007200 }, window7d: { limit: 100, used: 1, remaining: 99, resetAt: null } },
-    { window5h: { limit: 100, used: 1, remaining: 99, resetAt: null }, window7d: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 } }
-  ] }, tt: ttZh });
-  check("the earliest of multiple exhausted resets is shown",
-    two.some((line) => line.includes(when(1800003600))) && !two.some((line) => line.includes(when(1800007200))),
-    two.join("\n"));
-}
-
-// === G6. a zeroed quota window is labelled "已耗尽", not just 0 ============
-// The bare "0 / 100%" left the reader to infer exhaustion; a chip names it, and
-// the reset line is suppressed on that window (the notice above carries recovery).
-{
-  const zh = surface.dictionaries.zh;
-  const ttZh = (key) => zh[key] ?? key;
-  const when = surface.helpers.when;
-  const tree = treeOf(render.QuotaCard, {
-    label: "pool.window5h",
-    window: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 },
-    tt: ttZh
-  });
-  check("a zeroed window is labelled 已耗尽",
-    texts(tree).includes(zh["pool.exhausted"]), texts(tree).join("\n"));
-  // The reset line must NOT appear on the exhausted window (the notice owns it).
-  check("the exhausted window does not also print its own reset line",
-    !texts(tree).includes(zh["pool.reset"]), texts(tree).join("\n"));
-
-  const ok = treeOf(render.QuotaCard, {
-    label: "pool.window7d",
-    window: { limit: 100, used: 1, remaining: 99, resetAt: 1800003600 },
-    tt: ttZh
-  });
-  check("a non-zero window keeps its reset line and no exhausted chip",
-    texts(ok).includes(zh["pool.reset"].replace("{time}", when(1800003600))) && !texts(ok).includes(zh["pool.exhausted"]),
-    texts(ok).join("\n"));
-  // 1800003600 is 2027-01-15 17:00 local, months from now, so the day must
-  // travel with the time. The old assertion pinned the bare "重置 17:00", which
-  // read as "resets later TODAY" — the weekly-reset bug.
-  check("a cross-day weekly reset carries its MM-DD date",
-    texts(ok).join("\n").includes("01-15 17:00") && !texts(ok).join("\n").includes("重置 17:00"),
-    texts(ok).join("\n"));
-}
-
-// === G7. a reset clock that crosses midnight carries its day ==============
-// `clock` yields HH:MM only. That is honest for the 5-hour window, but it
-// rendered the WEEKLY reset — an absolute instant days away — as "重置 18:10",
-// which reads as "today at 18:10". `when` keeps the compact form on the current
-// local day and adds the MM-DD date once the instant falls on another day.
-{
-  const when = surface.helpers.when;
-  const pad = (value) => String(value).padStart(2, "0");
-  // A local instant `daysOut` days from now, at hour:minute.
-  const at = (daysOut, hour, minute) => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysOut, hour, minute).getTime() / 1000;
-  };
-
-  check("a reset still due today stays a compact HH:MM", when(at(0, 18, 10)) === "18:10", when(at(0, 18, 10)));
-
-  const tomorrow = at(1, 18, 10);
-  const tomorrowDate = new Date(tomorrow * 1000);
-  check("a reset on another day carries its MM-DD date",
-    when(tomorrow) === `${pad(tomorrowDate.getMonth() + 1)}-${pad(tomorrowDate.getDate())} 18:10`,
-    when(tomorrow));
-
-  check("a far-off weekly reset still carries its MM-DD date",
-    when(1800003600) === "01-15 17:00", when(1800003600));
-
-  check("a junk reset time degrades to the em dash",
-    when(null) === "—" && when(0) === "—" && when(-1) === "—",
-    `${when(null)}|${when(0)}|${when(-1)}`);
-
-  // The card and the notice agree with the helper they share.
-  const zh = surface.dictionaries.zh;
-  const ttZh = (key) => zh[key] ?? key;
-  const weeklyCard = texts(treeOf(render.QuotaCard, {
-    label: "pool.window7d",
-    window: { limit: 100, used: 1, remaining: 99, resetAt: 1800003600 },
-    tt: ttZh
-  })).join(" ");
-  check("the weekly quota card prints the date-aware reset",
-    weeklyCard.includes(`重置 ${when(1800003600)}`), weeklyCard);
-
-  const notice = rendered(render.PoolExhaustionNotice, { pools: { pools: [
-    { window5h: { limit: 100, used: 1, remaining: 99, resetAt: null },
-      window7d: { limit: 100, used: 100, remaining: 0, resetAt: 1800003600 } }
-  ] }, tt: ttZh });
-  check("the exhaustion notice carries the same date-aware weekly reset",
-    notice.some((line) => line.includes(when(1800003600))), notice.join("\n"));
-}
-
 // === G8. a drifted payload degrades to a line, never a crash ==============
-// The Host flags top-level shape drift but still passes the data through, so
-// a pool row whose window is absent — or a trend block with no models — must
-// render nothing/empty instead of throwing and blanking the whole panel. One
-// malformed pool must not take the quota view (and its shape warning) down.
+// The Host flags top-level shape drift but still passes the data through, so a
+// window row that is not an object, a plan block with nothing recognised, or a
+// usage block with no buckets must render nothing/empty instead of throwing and
+// blanking the whole panel. One malformed row must not take the quota view (and
+// its shape warning) down with it.
 {
   const zh = surface.dictionaries.zh;
   const ttZh = (key) => zh[key] ?? key;
 
   check("a quota window that is not an object renders nothing",
-    texts(treeOf(render.QuotaCard, { label: "pool.window5h", window: null, tt: ttZh })).length === 0
-      && texts(treeOf(render.QuotaCard, { label: "pool.window5h", window: undefined, tt: ttZh })).length === 0,
-    texts(treeOf(render.QuotaCard, { label: "pool.window5h", window: null, tt: ttZh })).join("\n"));
+    texts(treeOf(render.QuotaWindowCard, { label: "quota.win.requests5h", window: null, tt: ttZh })).length === 0
+      && texts(treeOf(render.QuotaWindowCard, { label: "quota.win.requests5h", window: undefined, tt: ttZh })).length === 0,
+    texts(treeOf(render.QuotaWindowCard, { label: "quota.win.requests5h", window: null, tt: ttZh })).join("\n"));
 
-  const barePool = rendered(render.PoolCard, {
-    pool: { name: "通用池", poolType: "default", grantBalance: 0 }, tt: ttZh
+  const barePlan = rendered(render.PlanCard, {
+    quota: { plan: null, windows: [], plans: [], totals: null, expiresAt: null, error: "series" },
+    tt: ttZh
   });
-  check("a pool missing both windows still renders its identity",
-    barePool.includes("通用池") && barePool.includes(zh["pool.default"]), barePool.join("\n"));
+  check("a quota block with nothing recognised says so rather than blanking",
+    barePlan.includes(zh["quota.none"]), barePlan.join("\n"));
 
-  const emptyTrend = rendered(render.TrendTable, { trend: {}, tt: ttZh });
-  check("a trend block without models shows the empty note, not a crash",
-    emptyTrend.includes(zh["trend.none"]), emptyTrend.join("\n"));
+  const emptyChart = rendered(render.UsageChart, { usage: {}, tt: ttZh });
+  check("a usage block without buckets shows the empty note, not a crash",
+    emptyChart.includes(zh["usage.none"]), emptyChart.join("\n"));
+
+  const missingTotals = rendered(render.UsageTotals, { totals: undefined, label: "l", tt: ttZh });
+  check("an absent totals block names itself instead of printing NaN",
+    missingTotals.length === 1 && !missingTotals.join("").includes("NaN"), missingTotals.join("\n"));
 }
 
 // === H. the rendering came from the shipped client ========================
-// Reaching here means every extraction marker was found. These checks pin the
-// lifted pieces themselves, so a refactor that silently empties one of them
-// cannot read as a green suite.
+// Reaching here means the real components were lifted off the shipped bundle.
+// These checks pin the lifted pieces themselves, so a refactor that silently
+// empties one of them cannot read as a green suite.
 {
   check("the style tokens were lifted from the client", S.card?.borderRadius === 12 && S.bar?.height === 6,
     JSON.stringify(S.card ?? {}));
-  check("the number formatter was lifted", render.PoolCard instanceof Function && render.TrendTable instanceof Function
-    && render.QuotaCard instanceof Function);
-  check("count renders its input unchanged for small numbers",
-    rendered(render.TrendTable, { trend: { models: [{ model: "m", credits: 12.345 }] }, tt }).includes("12.35"),
+  check("the components were lifted from the shipped bundle",
+    render.PlanCard instanceof Function && render.QuotaWindowCard instanceof Function
+      && render.UsageTotals instanceof Function && render.UsageChart instanceof Function
+      && render.SectionCard instanceof Function, JSON.stringify(Object.keys(render)));
+  check("count renders its input rounded to 2 places",
+    rendered(render.UsageTotals, { totals: { totalRequests: 12.345 }, label: "l", tt }).includes("12.35"),
     "count(12.345) should round to 2 places");
+  check("count switches to thousands separators at 10 000",
+    rendered(render.UsageTotals, { totals: { totalRequests: 60000 }, label: "l", tt }).includes("60,000"),
+    "count(60000) should read 60,000");
 
   // === H2. the first frame says "loading", not "sign in" ==================
   // `viewOf(null, null)` reads as needsSetup, so the OLD PanelPage rendered
@@ -704,7 +713,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     viewOfCode("some_new_code").needsSetup === true);
 }
 
-// === G6. the draw switch section is rendered and says which state it is in
+// === G9. the draw switch section is rendered and says which state it is in
 // DrawSwitch IS mountable: `client-surface.js` installs a stand-in React whose
 // `useState` returns the initial value and whose `useCallback` returns the
 // callback, so the first frame renders exactly as it would in the browser.
@@ -717,9 +726,9 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const drawLlm = {
     drawEnabled: true,
     hasApiKey: true,
-    drawModel: "sensenova-u1.5-lite",
-    drawCandidateIds: ["sensenova-u1-fast", "sensenova-u1.5-lite"],
-    drawPreferredModel: "sensenova-u1.5-lite"
+    drawModel: "Agnes-u1.5-lite",
+    drawCandidateIds: ["Agnes-u1-fast", "Agnes-u1.5-lite"],
+    drawPreferredModel: "Agnes-u1.5-lite"
   };
   const drawTree = treeOf(render.DrawSwitch, { llm: drawLlm, tt });
   const drawText = texts(drawTree);
@@ -735,7 +744,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the pinned candidate is the one marked effective",
     drawText.join("").includes("draw.badge · draw.effective"), drawText.join("\n"));
   check("the auto row names the model the auto-pick addresses",
-    drawText.join("").includes("draw.badge · sensenova-u1.5-lite"), drawText.join("\n"));
+    drawText.join("").includes("draw.badge · Agnes-u1.5-lite"), drawText.join("\n"));
   check("the draw section's dictionary keys exist in zh",
     typeof surface.dictionaries.zh["draw.switch"] === "string" &&
       typeof surface.dictionaries.zh["draw.off"] === "string",
@@ -768,7 +777,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   // change to the row shape cannot migrate one and forget the rest.
   {
     const rosterTree = treeOf(render.ModelRoster, {
-      models: [{ id: "sensenova-6.8-flash-lite", name: "SenseNova 6.8 Flash Lite", contextWindow: 262144, maxOutputLength: 65536 }],
+      models: [{ id: "Agnes-6.8-flash-lite", name: "Agnes 6.8 Flash Lite", contextWindow: 262144, maxOutputLength: 65536 }],
       enabledIds: [], busy: false, tt
     });
     const raccoonTree = treeOf(render.RaccoonRoster, {

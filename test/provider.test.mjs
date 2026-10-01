@@ -59,16 +59,16 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
 // --- 1. toPiDescriptor: the wire contract pi-ai consumes ------------------
 {
   try {
-    const descriptor = toPiDescriptor({ id: "SenseNova-Lite", name: "SenseNova Lite" }, { baseUrl: BASE_URL });
+    const descriptor = toPiDescriptor({ id: "Agnes-Lite", name: "Agnes Lite" }, { baseUrl: BASE_URL });
 
     check("provider id is the collision-free own slug", LLM_PROVIDER_ID === "agnes-token-plan", LLM_PROVIDER_ID);
     check("display name is set", LLM_DISPLAY_NAME === "Agnes Token Plan");
-    check("identity fields are mapped", descriptor.id === "SenseNova-Lite" && descriptor.name === "SenseNova Lite");
+    check("identity fields are mapped", descriptor.id === "Agnes-Lite" && descriptor.name === "Agnes Lite");
     check("api is openai-completions", descriptor.api === "openai-completions", descriptor.api);
     check("descriptor is tagged with the provider", descriptor.provider === LLM_PROVIDER_ID);
     check("base URL points at the direct endpoint", descriptor.baseUrl === BASE_URL);
     check("a model with no modality field is text-only", JSON.stringify(descriptor.input) === JSON.stringify(["text"]));
-    // Every SenseNova chat model reasons by default (supported_features
+    // Every Agnes chat model reasons by default (supported_features
     // ["reasoning"], thinking on at high, 2026-09-29): the descriptor must
     // advertise it so DSH offers the 思考强度 selector and pi-ai reads the
     // thinking back (both `reasoning` and `reasoning_content` spellings).
@@ -95,7 +95,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
       thinkingLevelMapFor({ id: "deepseek-v4-flash" }).medium === "medium" &&
       thinkingLevelMapFor({ id: "glm-5.2" }).low === "low" &&
       thinkingLevelMapFor({ id: "glm-5.2" }).medium === "medium" &&
-      thinkingLevelMapFor({ id: "sensenova-6.8-flash-lite" }).low === "low" &&
+      thinkingLevelMapFor({ id: "Agnes-6.8-flash-lite" }).low === "low" &&
       thinkingLevelMapFor({ id: "kimi-k3" }).medium === "medium" &&
       thinkingLevelMapFor({ id: "deepseek-flash" }).medium === "medium" &&
       // indefinite (429 rhythm answers, not 400) stay closed:
@@ -104,7 +104,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
       thinkingLevelMapFor({ id: "deepseek-flash" }).low === null &&
       thinkingLevelMapFor({ id: "kimi-k3" }).low === null);
     check("max is rejected off by default (400 on flash-lite / v4-flash)",
-      thinkingLevelMapFor({ id: "sensenova-6.8-flash-lite" }).max === null);
+      thinkingLevelMapFor({ id: "Agnes-6.8-flash-lite" }).max === null);
     check("glm-5.2 alone offers max (probed 200)",
       thinkingLevelMapFor({ id: "glm-5.2" }).max === "max");
     check("cost is zeroed on all four fields", JSON.stringify(descriptor.cost) === JSON.stringify(NO_COST) &&
@@ -125,15 +125,15 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
 // --- 2. vision is automatic and identical to the panel's classification ----
 {
   try {
-    const byField = toPiDescriptor({ id: "SenseNova-Vision", input_modalities: ["text", "image"] }, { baseUrl: BASE_URL });
+    const byField = toPiDescriptor({ id: "Agnes-Vision", input_modalities: ["text", "image"] }, { baseUrl: BASE_URL });
     check("input_modalities image makes the model vision",
       JSON.stringify(byField.input) === JSON.stringify(["text", "image"]));
 
-    const byName = toPiDescriptor({ id: "SenseNova-VL" }, { baseUrl: BASE_URL });
+    const byName = toPiDescriptor({ id: "Agnes-VL" }, { baseUrl: BASE_URL });
     check("the name fallback still marks a -vl model vision",
       JSON.stringify(byName.input) === JSON.stringify(["text", "image"]));
 
-    const textOnly = toPiDescriptor({ id: "sensenova-6.8-flash-lite", input_modalities: ["text"] }, { baseUrl: BASE_URL });
+    const textOnly = toPiDescriptor({ id: "Agnes-6.8-flash-lite", input_modalities: ["text"] }, { baseUrl: BASE_URL });
     check("flash-lite is text-only (no name-pattern vision anymore)",
       JSON.stringify(textOnly.input) === JSON.stringify(["text"]));
   } catch (error) {
@@ -483,8 +483,8 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
     const clock = () => (clockNow += 500);
     const store = createFileCatalogStore({ dir, now: clock });
     await store.replace([
-      { id: "SenseNova-Lite", input_modalities: ["text"] },
-      { id: "SenseNova-Vision", input_modalities: ["text", "image"] }
+      { id: "Agnes-Lite", input_modalities: ["text"] },
+      { id: "Agnes-Vision", input_modalities: ["text", "image"] }
     ]);
     check("replace wrote catalog.json under the plugin state dir", (() => {
       try { readFileSync(file, "utf8"); return true; } catch { return false; }
@@ -504,7 +504,7 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
     const reopened = createFileCatalogStore({ dir, now: clock });
     const entries = await reopened.list();
     check("a fresh store reads the persisted catalog",
-      entries.length === 2 && entries[0].id === "SenseNova-Lite");
+      entries.length === 2 && entries[0].id === "Agnes-Lite");
 
     writeFileSync(file, "{ this is not json", "utf8");
     const corrupted = createFileCatalogStore({ dir, now: clock });

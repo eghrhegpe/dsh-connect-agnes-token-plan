@@ -38,37 +38,6 @@ import { identifyVisionModel } from "./parsers.ts";
 import type { AdapterConfig } from "./types.ts";
 
 /**
- * The model ids whose quota pool is exhausted.
- *
- * The panel's `pool-usage` response groups models into pools, each with a
- * 5h and a 7d window carrying `limit`/`remaining`. A pool is "exhausted" when
- * its limit is known (> 0) and its remaining credit has hit zero in EITHER
- * window — at that point every model it covers would answer a chat request
- * with `429 quota_exceeded`, so the picker should not offer them (and the
- * panel should show them greyed). A pool whose limit is 0/unknown is NOT
- * counted as exhausted: `credits()` returns 0 for an absent limit, and we must
- * not mark half the catalogue unavailable on a shape drift.
- * @param {object} pools - the `parsePools` result (`{ pools: [...] }`).
- * @returns {string[]} the exhausted model ids, de-duplicated, in first-seen order.
- */
-export function exhaustedModelIds(pools) {
-  const list = Array.isArray(pools?.pools) ? pools.pools : [];
-  const out = new Set();
-  for (const pool of list) {
-    const limit5 = num(pool?.window5h?.limit, 0);
-    const rem5 = num(pool?.window5h?.remaining, 0);
-    const limit7 = num(pool?.window7d?.limit, 0);
-    const rem7 = num(pool?.window7d?.remaining, 0);
-    const exhausted = (limit5 > 0 && rem5 <= 0) || (limit7 > 0 && rem7 <= 0);
-    if (!exhausted) continue;
-    for (const id of Array.isArray(pool?.modelIds) ? pool.modelIds : []) {
-      if (typeof id === "string" && id !== "") out.add(id);
-    }
-  }
-  return [...out];
-}
-
-/**
  * The provider id this plugin registers under.
  *
  * It must NOT be the bare `"Agnes"`: a hand-written `llm-pi-ai` row using
@@ -203,7 +172,7 @@ export function isChatModel(entry) {
  */
 /**
  * Per-model 思考档位 probe table (frozen 2026-09-29, mirrored from
- * `test/baselines/Agnes-contract.json` §reasoningEffort).
+ * `test/baselines/agnes-contract.json` §reasoningEffort).
  *
  * The baseline records which `reasoning_effort` values the platform
  * answered 200 for per model:
@@ -453,10 +422,10 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
     const id = str(entry.id, "");
     if (id === "") continue;
-    // A model whose quota pool is exhausted would answer every request with
-    // `429 quota_exceeded`, so the picker must not offer it — the panel (via
-    // `rosterWithAvailability`) still shows it, greyed, with the reason. Skipping
-    // here means a doomed request is never even dispatched.
+    // A model the Host has declared unavailable would answer every request with
+    // an error the user cannot act on, so the picker must not offer it — the
+    // panel (via `rosterWithAvailability`) still shows it, greyed, with the
+    // reason. Skipping here means a doomed request is never even dispatched.
     if (blocked.has(id)) continue;
     if (!seen.has(id)) {
       seen.set(id, out.length);
@@ -468,21 +437,28 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
 }
 
 /**
- * The panel-facing roster with per-model quota availability.
+ * The panel-facing roster with per-model availability.
  *
  * Like {@link rosterOf} it projects one row per chat-model id, but each row also
- * carries whether the model's quota pool is currently exhausted — the
- * "清单自带识别" the provider advertises to the panel. Unlike the PICKER
- * (which drops exhausted models via `buildDescriptors` so no doomed request is
- * dispatched), the panel keeps them in the list, greyed, so the user can see
- * *why* a model is missing from the picker rather than wondering where it went.
+ * carries whether the model is currently callable — the "清单自带识别" the
+ * provider advertises to the panel. Unlike the PICKER (which drops blocked
+ * models via `buildDescriptors` so no doomed request is dispatched), the panel
+ * keeps them in the list, greyed, so the user can see *why* a model is missing
+ * from the picker rather than wondering where it went.
+ *
+ * `blockedIds` is handed IN rather than derived here, because what makes a
+ * model unavailable is a platform fact, not a roster fact. On Agnes the answer
+ * is currently always "nothing is blocked": the platform allocates no quota per
+ * model, and its account-wide request window cannot be read as a remaining
+ * figure (the console reports cumulative usage, not a balance), so silently
+ * emptying the picker would hide the models for a reason the panel could not
+ * explain. Account-level exhaustion is surfaced as a panel line instead.
  * @param {object[]} entries - the normalized catalog entries.
- * @param {object} pools - the `parsePools` result, or anything without a `pools`
- *   array (in which case every row reads as available).
+ * @param {string[]} [blockedIds] - model ids to report as unavailable.
  * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number, maxOutputLength: number, thinkingLevels: string[]}[]}
  */
-export function rosterWithAvailability(entries, pools) {
-  const blocked = new Set(exhaustedModelIds(pools));
+export function rosterWithAvailability(entries, blockedIds = []) {
+  const blocked = new Set(Array.isArray(blockedIds) ? blockedIds : []);
   const position = new Map();
   const out = [];
   for (const entry of Array.isArray(entries) ? entries : []) {

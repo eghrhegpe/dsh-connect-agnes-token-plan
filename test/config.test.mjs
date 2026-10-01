@@ -31,7 +31,7 @@ function check(name, condition, detail = "") {
   check("no config error on an empty config", configError === null, String(configError));
   check("consoleBase default", settings.consoleBase === CONFIG_DEFAULTS.consoleBase, settings.consoleBase);
   check("apiBase default", settings.apiBase === CONFIG_DEFAULTS.apiBase, settings.apiBase);
-  check("trendHours default", settings.trendHours === CONFIG_DEFAULTS.trendHours, String(settings.trendHours));
+  check("usageDays default", settings.usageDays === CONFIG_DEFAULTS.usageDays, String(settings.usageDays));
   check("cacheSeconds default", settings.cacheSeconds === CONFIG_DEFAULTS.cacheSeconds, String(settings.cacheSeconds));
   check("pollSeconds default", settings.pollSeconds === CONFIG_DEFAULTS.pollSeconds, String(settings.pollSeconds));
   check("consoleTimeoutMs default", settings.consoleTimeoutMs === CONFIG_DEFAULTS.consoleTimeoutMs, String(settings.consoleTimeoutMs));
@@ -70,7 +70,7 @@ function activeValue(key) {
   return m ? m[1] : null;
 }
 check("patch consoleBase matches code default", activeValue("consoleBase") === CONFIG_DEFAULTS.consoleBase.replace(/\/+$/, ""), activeValue("consoleBase"));
-check("patch trendHours matches code default", Number(activeValue("trendHours")) === CONFIG_DEFAULTS.trendHours, activeValue("trendHours"));
+check("patch usageDays matches code default", Number(activeValue("usageDays")) === CONFIG_DEFAULTS.usageDays, activeValue("usageDays"));
 check("patch cacheSeconds matches code default", Number(activeValue("cacheSeconds")) === CONFIG_DEFAULTS.cacheSeconds, activeValue("cacheSeconds"));
 check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSkewSeconds")) === CONFIG_DEFAULTS.tokenSkewSeconds, activeValue("tokenSkewSeconds"));
 
@@ -97,14 +97,50 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
 }
 
 // --- 4. the auth overrides resolve to the keys the code and patch share ---
+// Agnes signs in with ONE request, so the only overrides left are the sign-in
+// path, its deadline and the assumed token lifetime. Pin each name — especially
+// the deadline, which travels under `requestTimeoutMs` even though the row
+// spells it `loginTimeoutMs` (that mismatch is where a config silently reverts).
 {
   const auth = resolveAuthOverrides(
-    { consoleBase: CONFIG_DEFAULTS.consoleBase, iamBase: "https://iam.example", tokenEndpoint: "https://tok.example" },
+    {
+      consoleBase: CONFIG_DEFAULTS.consoleBase,
+      loginPath: "/api/user/login",
+      loginTimeoutMs: 9000,
+      fallbackExpiresInSeconds: 1800
+    },
     CONFIG_DEFAULTS.consoleBase
   );
-  check("resolveAuthOverrides forwards iamBase -> iamOrigin", auth.iamOrigin === "https://iam.example", auth.iamOrigin);
-  check("resolveAuthOverrides forwards tokenEndpoint", auth.tokenEndpoint === "https://tok.example", auth.tokenEndpoint);
+  check("resolveAuthOverrides forwards loginPath", auth.loginPath === "/api/user/login", auth.loginPath);
+  check("resolveAuthOverrides forwards loginTimeoutMs as requestTimeoutMs",
+    auth.requestTimeoutMs === 9000, String(auth.requestTimeoutMs));
+  check("resolveAuthOverrides forwards fallbackExpiresInSeconds",
+    auth.fallbackExpiresInSeconds === 1800, String(auth.fallbackExpiresInSeconds));
   check("resolveAuthOverrides keeps consoleOrigin", auth.consoleOrigin === CONFIG_DEFAULTS.consoleBase, auth.consoleOrigin);
+  // Unset keys must NOT travel: `agnes-auth.ts` owns the platform defaults, and
+  // forwarding a zero would replace a real default with "no deadline".
+  const bare = resolveAuthOverrides({}, CONFIG_DEFAULTS.consoleBase);
+  check("unset overrides stay out of the object",
+    Object.keys(bare).join(",") === "consoleOrigin", Object.keys(bare).join(","));
+
+  // The legacy spelling still wins when only it is set, so a config written
+  // against an earlier version keeps its deadline.
+  const legacy = resolveAuthOverrides({ requestTimeoutMs: 4000 }, CONFIG_DEFAULTS.consoleBase);
+  check("the legacy requestTimeoutMs still feeds the login deadline",
+    legacy.requestTimeoutMs === 4000, String(legacy.requestTimeoutMs));
+
+  // A nested `auth:` block is the silent-drop trap from AGENTS.md red line 3:
+  // the loader accepts it, this resolver reads nothing from it, and the panel
+  // then runs on shipped defaults that point at the REAL platform. It must
+  // throw, not be ignored.
+  let nested = null;
+  try {
+    resolveAuthOverrides({ auth: { loginPath: "/api/user/login" } }, CONFIG_DEFAULTS.consoleBase);
+  } catch (error) {
+    nested = error;
+  }
+  check("a nested auth block is refused rather than ignored",
+    nested !== null && String(nested.message).includes("loginPath"), String(nested));
 }
 
 // --- 5. hostName()/isAdmitted(): every Host-header spelling the fence must answer ---
@@ -219,12 +255,12 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
 // raw is used — an integer 0 would fall back to `def` instead.)
 {
   const clamp = (cfg) => resolveSettings(cfg).settings;
-  const tFloor = clamp({ trendHours: 12.9 }).trendHours;
-  check("trendHours floors fractional input", tFloor === 12, String(tFloor));
-  const tMax = clamp({ trendHours: 9999 }).trendHours;
-  check("trendHours caps at 168", tMax === 168, String(tMax));
-  const tLow = clamp({ trendHours: 0.5 }).trendHours;
-  check("trendHours clamps to its 1 floor on a fractional raw", tLow === 1, String(tLow));
+  const uFloor = clamp({ usageDays: 12.9 }).usageDays;
+  check("usageDays floors fractional input", uFloor === 12, String(uFloor));
+  const uMax = clamp({ usageDays: 9999 }).usageDays;
+  check("usageDays caps at 365", uMax === 365, String(uMax));
+  const uLow = clamp({ usageDays: 0.5 }).usageDays;
+  check("usageDays clamps to its 1 floor on a fractional raw", uLow === 1, String(uLow));
   const cLow = clamp({ cacheSeconds: 3 }).cacheSeconds;
   check("cacheSeconds clamps to its 5 floor", cLow === 5, String(cLow));
   const pLow = clamp({ pollSeconds: 3 }).pollSeconds;
@@ -235,8 +271,8 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
   check("tokenSkewSeconds clamps to its 0 floor on a fractional raw", skLow === 0, String(skLow));
   const dtLow = clamp({ drawTimeoutMs: 10 }).drawTimeoutMs;
   check("drawTimeoutMs clamps to its 5000 floor", dtLow === 5000, String(dtLow));
-  const nanFall = clamp({ trendHours: "not a number" }).trendHours;
-  check("a non-numeric trendHours falls back to default", nanFall === CONFIG_DEFAULTS.trendHours, String(nanFall));
+  const nanFall = clamp({ usageDays: "not a number" }).usageDays;
+  check("a non-numeric usageDays falls back to default", nanFall === CONFIG_DEFAULTS.usageDays, String(nanFall));
 }
 
 console.log(JSON.stringify(results, null, 2));

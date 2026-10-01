@@ -69,7 +69,7 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 | 新模块 | 迁自 `token-store.js` | 备注 |
 |---|---|---|
 | `state.js` | 构造器头（wiring 解析、memory vault、`resolveService`/`backend`/`ephemeral`）+ 七个 let 变量 | memory vault 留 wiring 层，不进块 |
-| `grant.js` | `parseGrant`（模块级）/ `readStored` / `adoptLegacyGrant` / `store` / `purgeGrant` / `isFresh` | `parseGrant` 用 `readJwtExpiry`（sensenova-auth 再导出），注入即可 |
+| `grant.js` | `parseGrant`（模块级）/ `readStored` / `adoptLegacyGrant` / `store` / `purgeGrant` / `isFresh` | `parseGrant` 用 `readJwtExpiry`（agnes-auth 再导出），注入即可 |
 | `account.js` | `readUsername` / `readAccount` / `loginFromAccount` / `saveAccount` / `forgetAccount` / 常量 `USERNAME_REF`/`PASSWORD_REF` 的使用 | 密码永不入 refs——`saveAccount` 的注释原样搬 |
 | `renewal.js` | `renewWithRefresh` + `acquire` 内 refresh 失败岔路（`refresh_rejected`/`no_refresh_token` → 有账号重登 / 无账号 `purgeGrant` 回收） | 岔路逻辑**留在 acquire.js 调用 renewal.js 的出口钩子**，renewal.js 本身只做「refresh → store(CAS) 命名 superseded」 |
 | `throttle.js` | `localBackoffMs` / `readThrottle` / `adoptLegacyThrottle` / `writeThrottle` / `clearThrottle` / `inForceWaitMs` / `throttleError`（模块级） | `THROTTLE_MARKER` 常量随迁 |

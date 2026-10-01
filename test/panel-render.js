@@ -4,22 +4,22 @@
  *
  * `panel-decision.js` closes the mirror on WHAT the panel shows; this module
  * closes it on HOW the numbers reach the screen. The known gap was real: a
- * `PoolCard` that rendered `used/limit` as `limit/used`, or dropped the
- * remaining figure, still passed every check — the decision tests assert
- * which view renders, not what that view says.
+ * quota card that rendered `used/limit` as `limit/used`, or led with a
+ * percentage the platform never stated, still passed every check — the
+ * decision tests assert which view renders, not what that view says.
  *
- * The four hook-free components (`QuotaCard`, `PoolCard`, `TrendTable`,
- * `SectionCard`) are plain functions, so they run unchanged in Node once the
- * shipped bundle is materialized by `client-surface.js`: they come pre-wired
- * to the recording `h`, with every closure dependency (`S`, `count`, `clock`,
- * `clockLong`, `format`) the same definitions the browser closes over.
- * Nothing is lifted from source text, so there is no structure for the checks
- * to lose track of.
+ * The five hook-free components (`PlanCard`, `QuotaWindowCard`, `UsageTotals`,
+ * `UsageChart`, `SectionCard`) are plain functions, so they run unchanged in
+ * Node once the shipped bundle is materialized by `client-surface.js`: they
+ * come pre-wired to the recording `h`, with every closure dependency (`S`,
+ * `count`, `clock`, `clockLong`, `format`) the same definitions the browser
+ * closes over. Nothing is lifted from source text, so there is no structure
+ * for the checks to lose track of.
  *
  * `AccountForm` is deliberately not exercised: it is built on `useState` and
  * friends, and faking the hook contract would test the fake. It stays a
  * documented gap rather than a pretended one.
- * @module dsh-connect-sensenova-token-plan/panel-render
+ * @module dsh-connect-agnes-token-plan/panel-render
  */
 
 import { surface } from "./client-surface.js";

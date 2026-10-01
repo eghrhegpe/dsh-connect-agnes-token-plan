@@ -6,6 +6,12 @@
 本文是**研究结论**，不是待执行清单——每条建议都附证据（文件路径 + 行号），并标注
 投入/风险/门禁。
 
+> **范围说明**：本文写于 2026-09（商汤 SenseNova 时代），2026-10 插件整体迁到 **Agnes 控制台**。
+> 按 [ROADMAP.md](./ROADMAP.md) 开篇的约定，本文是**研究上游**、只记下当时的历史时间点，
+> 「落地状态」注记**不随实现继续更新**。所以文中的 `provider: sensenova-token-plan`、
+> `SENSENOVA_API_KEY`、`test/live-jwks.test.mjs` 等名字都是**当时的实况**；凡属「要你去配置 / 要你去跑」
+> 的现行名字，已就地改为 Agnes 口径并标注。
+
 > **修订记录**：2026-09-29 复核后修正三处原稿硬伤——① §1.2 的"默认推理通道"论断
 > 撤销（`agent-default-model` 是运行时可变的选择记录，原引用内容已不可复现）；
 > ② peer 版本注记由 `0.2.0-rc.1` 纠正为实测的 `0.1.7-rc.2`；③ §3.1③ 的"正则命中
@@ -81,7 +87,7 @@
 ### 1.3 结论与建议
 
 - **保留单包**（生态惯例，拆包反而违背上表核实到的同类形态）。
-- **对齐定位**：把"商汤 connect 全家桶（面板 + 可选 provider 注册 + 429 自愈）"
+- **对齐定位**：把"Agnes connect 全家桶（面板 + 可选 provider 注册 + 429 自愈）"
   写进 README 与包描述——明确**注册了 provider、能承担推理通道**的能力与对应责任
   （provider 行的健康、面板只读、429 分诊）。**不写**"默认推理通道"——那由
   profile 与用户的模型选择决定（见 §1.2），不是插件自身的属性。不靠改名，靠
@@ -182,7 +188,7 @@ step two；`teardown` = dispose→release→off×5）。`index.js` 从 778 行�
 
 ### 3.1 实证核验：误判机制已逐层坐实（本机 peer 源码）
 
-商汤限频 429 被误判为 `QUOTA` 的**完整链条**（全部已在本机 peer 坐实）：
+Agnes 限频 429 被误判为 `QUOTA` 的**完整链条**（全部已在本机 peer 坐实）：
 
 1. **pi-ai 把 JSON body 拼进 message**（`@earendil-works/pi-ai/dist/api/
    openai-completions.js:518` → `dist/utils/error-body.js:111-118`，核验修订：
@@ -204,7 +210,7 @@ step two；`teardown` = dispose→release→off×5）。`index.js` 从 778 行�
    **429 体 message 文本里的额度措辞**：配合第 2 步 quota 先于 rate 的顺序，
    任何带额度措辞的限频 429 都会被判 `QUOTA`。
 
-**验证结论**：商汤限频 429 的 body 常带额度措辞（如 `quota exceeded`、`out of rate
+**验证结论**：Agnes 限频 429 的 body 常带额度措辞（如 `quota exceeded`、`out of rate
 budget` 等），`isQuotaExceededError` 命中该措辞 → `classifyPiAiError` 判 `QUOTA`
 （**类型名 `quota_exceeded_error` 本身不触发**，见第 3 条核验修订）；而
 `DEFAULT_RETRYABLE_CODES`（`dsh-llm/lib/types/retry-policy.js:16-22`）不含
@@ -293,14 +299,14 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 
 ### 4.2 契约基线 → 加 CI live-contract job（best-effort，同 e2e 纪律）
 
-- **现状**：`test/live-contract.mjs`（手动 `npm run test:live:contract`）+
-  `test/live-jwks.test.mjs`（手动 `npm run test:live`）都**不进** `npm test`，
+- **现状**：`test/live-contract.mjs`（手动 `npm run test:live:contract`）**不进** `npm test`，
   也没进 `CI`。`.github/workflows/ci.yml` 只有 `offline`（硬门禁）+ `e2e`
   （best-effort）两档。→ **平台方言漂移只能靠人工手动跑才看得见**（ROADMAP
   §2.2 自己也写了"修法走注释层，不静默改代码"，但没有自动触发点）。
+  （当时与之并列的还有 `test/live-jwks.test.mjs` / `npm run test:live`——那是 OIDC 线的前身，**已随商汤登录线删除**。）
 - **改进**：在 `ci.yml` 加第三档 `live-contract`（best-effort，`continue-on-error:
   true`，同 e2e），跑 `node test/live-contract.mjs`。需要一个平台凭据（API key）
-  来源：CI secret `SENSENOVA_API_KEY`（owner 注入，不进代码）。无凭据时 job
+  来源：CI secret `AGNES_TOKEN_PLAN_API_KEY`（owner 注入，不进代码）。无凭据时 job
   SKIP（与 e2e "没有 dsh CLI 就 SKIP" 同形）。
 - **收益**：平台改 `reasoning_effort` 取值 / 400 语义 / 目录字段时，**漂移当天
   红**（best-effort 不挡离线门禁，但 CI 日志会标红），不再等下一轮 40 请求。
@@ -308,22 +314,22 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 - **推荐**：做。投入极小，把 §20/§21 实测从"一次性手工"变"可自动探"。
 - **落地状态（2026-09-29）**：已在 `ci.yml` 加第三档 `live-contract`（best-effort、
   `continue-on-error: true`），跑 `node test/live-contract.mjs`，凭据走 repo secret
-  `SENSENOVA_API_KEY`（owner 注入，不进代码）。`live-contract.mjs` 非 `*.test.mjs`
+  `AGNES_TOKEN_PLAN_API_KEY`（owner 注入，不进代码）。`live-contract.mjs` 非 `*.test.mjs`
   （其头部明示"无 key → loud SKIP + exit 0"，与 e2e 缺 CLI 同形），因此**不进三方
   名册比对**，offline 硬门禁与 `npm test` 链不受影响。剩余动作只剩 owner 在 CI
-  仓库配置 `SENSENOVA_API_KEY` secret。
+  仓库配置 `AGNES_TOKEN_PLAN_API_KEY` secret。
 
 ### 4.3 UX 代价量化 → 最小实现：面板显示 auto-recover armed 状态
 
-- **现状**：`SENSENOVA_PASSWORD` 环境变量是密码唯一持久来源（AGENTS.md 红线，
-  不可动），但**用户从未被告知"我有没有设它、设了没有"**。refresh 被吊销 +
-  无 env 密码 → 面板重新显示表单，用户此刻才第一次知道要重登（`AUTH.md` §7）。
+- **现状**：`AGNES_PASSWORD` 环境变量是密码唯一持久来源（AGENTS.md 红线，
+  不可动），但**用户从未被告知"我有没有设它、设了没有"**。令牌被拒 +
+  无 env 密码 → 面板重新显示表单，用户此刻才第一次知道要重登（`AUTH.md` §8）。
 - **红线内可做的最小改进**：`tokenStore.state()` 增加一个**非秘密**字段
-  `autoRecoverArmed`（是否检测到 env 里有 `SENSENOVA_PASSWORD`，**只报布尔，
+  `autoRecoverArmed`（是否检测到 env 里有 `AGNES_PASSWORD`，**只报布尔，
   不回显值**），面板在账号区显一行"自动恢复：已开启/未开启"。用户看到"未开启"
-  才知道"refresh 一死就得手动重登"，可以主动去设 env。
-- **量化**：这个布尔本身就是"重登风险"的可见指标——`false` 时，下次 refresh
-  失败必然触发重登表单。无需埋点，一个布尔 + 一行字。
+  才知道"令牌一死就得手动重登"，可以主动去设 env。
+- **量化**：这个布尔本身就是"重登风险"的可见指标——`false` 时，下次令牌失效必然
+  触发重登表单。无需埋点，一个布尔 + 一行字。
 - **投入**：极小（`state()` 加一字段 + 面板一行 + 字典 + 测试断言布尔不回显值）。
   **门禁**：`store.test.mjs` + `panel.test.mjs`（字典一致性 + 不回显红线）。
 - **落地状态（2026-09-29）**：Host 侧已完成——`token-store.js` `state()` 新增
@@ -384,7 +390,7 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 | **P3** | §4.4b 纯逻辑抽 `client-logic.js` | — | — | — | **判停**（同 §4.4a：Loader 硬约束） |
 
 > **不做**（与 §5.3 / ROADMAP §6 边界一致）：跨 provider 通用聚合、多 Key 池、
-> 签到/每日领取（先证商汤有端点）。
+> 签到/每日领取（先证平台有端点）。
 
 ---
 
@@ -398,7 +404,7 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 - **已落地的第一优先项**是 §3.3 ① 的 peer 契约护栏（2026-09-29）：它把
   `llm-error-fix.js` 从"静态测试测不到 peer 漂移"的隐患，变成"漂移当天红"的可见
   护栏，且**零运行时风险**（纯测试，peer 不可达 SKIP）。与既有的 `peer-roots.mjs`
-  / `live-jwks` 纪律同形。**下一步最该做**的是同为 P0 的 §4.3 `autoRecoverArmed`
+  / 「live 档不进 `npm test`」纪律同形。**下一步最该做**的是同为 P0 的 §4.3 `autoRecoverArmed`
   布尔（`store`+`panel` 两套门禁，改动面小）。
 - **最有杠杆的维护债**仍是 §4.1 状态文件统一：一份重复实现抽掉三份，还顺带
   补上 `dsh-atomic-write` 的跨进程写锁（对 `provider-store` 补洞、对
@@ -411,8 +417,9 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 > 本文只给方向与门禁；除 P0 的 §3.3① 契约护栏测试（`test/peer-contract.test.mjs`）
 > 已随本次复核落地外，其余各项落地前先读 [PITFALLS.md](./PITFALLS.md)
 > 对应条目（§18 并发 / §16 peer 解析 / §6 凭据事故）与 [AGENTS.md](../AGENTS.md)
-> 红线（凭据不入库 / 只 `grant` 一种 kind / `auth` 顶层键 / PKCE `Uint8Array` /
-> trace 落盘 / 密码 JWE），以及 [CONTRIBUTING.md](./CONTRIBUTING.md) 的提交纪律
+> 红线（凭据不入库 / 只 `grant` 一种 kind / auth overrides 是 patch 顶层键 /
+> `consoleOrigin` 必须是后端源站 / `/api/usage/overview` 唯一致命源 / 不得算「剩余」/
+> trace 落盘），以及 [CONTRIBUTING.md](./CONTRIBUTING.md) 的提交纪律
 > （路径限定提交、`git status --short` 复核）。
 
 ---

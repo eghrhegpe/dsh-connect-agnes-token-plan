@@ -25,15 +25,15 @@ Host 半边源码位于 `src/host/`（**27 个模块，清单以该目录为准*
 ## 3. 测试先行
 
 - 改动登录 / 续期 / 节流 / 路由 / 面板决策后，跑 `npm test`。
-- 新增登录分支（新的拒绝类型、新的窗口读取）必须补 `auth.test.mjs` 或 `store.test.mjs`。
+- 新增登录分支（新的拒绝类型、新的窗口读取）必须补 `agnes-auth.test.mjs` 或 `store.test.mjs`。
 - 面板渲染决策改动后，`panel.test.mjs` 应同步（它通过 `client-surface.js` 把 `client.js` 作为模块加载、直接调用工厂物化出的 `panel` 测试面，不需手写副本，也没有字符串锚点）。若 `client.js` 的工厂不再导出 `panel` 测试面或改动了结构，`client-surface.js` 会**直接抛错**——更新它，别退回抠源码。
-- 网络层一律打桩，密码用临时密钥，**绝不发往商汤**，也不依赖真实账号。
+- 网络层一律打桩（假 Agnes 平台），登录只发一次明文 POST、密码仅内存使用，**绝不发往真平台**，也不依赖真实账号。
 
 ---
 
 ## 4. 红线：什么绝不进版本库
 
-- **凭据**：`.env`、`.env.*`、`*.env` 已被忽略；账号密码、access/refresh token 只经 DSH 凭据服务，不写文件、不写日志。
+- **凭据**：`.env`、`.env.*`、`*.env` 已被忽略；账号与 access token 只经 DSH 凭据服务，不写文件、不写日志（Agnes 不发 refresh token，所以也没有这一项）。
 - **`upstream/`**：已被 `.gitignore` 忽略。它是独立 git 仓库（[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)；本地副本按独立 `.git` 容纳，丢失时用 `git clone` 该地址恢复，见 [ARCHITECTURE.md](./ARCHITECTURE.md) §1），容纳进本仓库只为本地对照，**不要 `git add upstream/`**，也不要把它的 `accounts.json` 等带进来。
 - **运行时产物**：`*.log`、`logs/`、`tmp/`、`node_modules/`、`dist/`、`build/` 已忽略。
 - **DSH 内部抽取物**：本仓库曾误把 `_asar_extract/`（Host 打包产物）提交进历史，应将其从跟踪中移除（见下方 §6），且不再 add。
@@ -45,7 +45,7 @@ Host 半边源码位于 `src/host/`（**27 个模块，清单以该目录为准*
 逻辑改动若影响以下内容，同步更新 `docs/`：
 
 - 路由 / 配置字段变化 → `API.md` / `SETUP.md`
-- 登录 / 续期 / 节流变化 → `AUTH.md` / `SENSENOVA-API.md`
+- 登录 / 续期 / 节流变化 → `AUTH.md` / `AGNES-API.md`
 - 结构或双仓库关系变化 → `ARCHITECTURE.md` / `DSH-PLUGIN.md`
 - 测试套件或流程变化 → `TESTING.md`
 - 新踩坑或修法 → `PITFALLS.md`
@@ -71,7 +71,7 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
 ## 7. 已知取舍
 
 - **API key 的持久化与跨进程**
-  `index.ts` 的 `resolveApiKey()` 已优先走 `ctx.credentials.resolve("SENSENOVA_API_KEY")`、回退 `process.env`，
+  `index.ts` 的 `resolveApiKey()` 已优先走 `ctx.credentials.resolve("AGNES_TOKEN_PLAN_API_KEY")`、回退 `process.env`，
   与账号/密码腿（走 `ctx.credentials.modifyRecord`、kind=grant、跨重启、跨进程）的不对称已收口——
   凭据服务里的 key 与 env 里的 key 都能被读到。仍不对称的部分：API key 无写路径（不通过本插件修改），
   所以不给 `token-store.ts` 加 `modifyRecord`；`fetchModelCatalog` 只接字符串参数，不关心供方是谁。
@@ -94,8 +94,8 @@ url: https://github.com/eghrhegpe/dsh-connect-agnes-token-plan
 name: eghrhegpe/dsh-connect-agnes-token-plan
 category: usage
 description:
-  en: 'SenseNova Token Plan credit panel rendered as a config card on the Harness Plugins page: per-pool quota windows (5h and weekly), grant balance and per-model consumption from the SenseNova console API, with in-panel login and automatic token renewal. Three opt-in switches, off by default, register SenseNova models and the Xiaohuanxiong upstream as LLM providers and expose an image-generation tool to the agent.'
-  zh: '在 Harness 的 Plugins 页以插件卡显示商汤 SenseNova 控制台的 Token Plan 积分用量：各积分池额度窗口（5 小时与每周）、返赠余额与每模型消耗，支持面板内登录与令牌自动续期。另有三个默认关闭的可选开关，用于把商汤模型与小浣熊上游注册为 DSH 提供方，并向 agent 暴露出图工具。'
+  en: 'Agnes Token Plan quota panel rendered as a config card on the Harness Plugins page: account-wide quota windows (5-hour requests, weekly requests, daily images, daily video) plus cumulative usage with a daily chart and the public plan catalogue, all read from the Agnes console API, with in-panel sign-in and automatic re-login. Three opt-in switches, off by default, register Agnes models and the Xiaohuanxiong upstream as LLM providers and expose an image-generation tool to the agent.'
+  zh: '在 Harness 的 Plugins 页以插件卡显示 Agnes 控制台的 Token Plan 额度：账号级四类额度窗口（5 小时请求、每周请求、每日图片、每日视频）、账号累计用量与按日柱图、以及公开套餐目录，支持面板内登录与令牌失效后自动重登。另有三个默认关闭的可选开关，用于把 Agnes 模型与小浣熊上游注册为 DSH 提供方，并向 agent 暴露出图工具。'
 ```
 
 含 `: ` 的描述必须加引号，否则 YAML 解析失败；`en` 必填且以句号结尾，`zh` 可选。

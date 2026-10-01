@@ -16,7 +16,7 @@ import { createFileThrottleStore } from "../src/host/throttle-store.ts";
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
-/** The host's own SenseNova keys must not steer a check. See isolateHostEnv. */
+/** The host's own Agnes keys must not steer a check. See isolateHostEnv. */
 const restoreHostEnv = isolateHostEnv();
 
 const { credentialKey } = await loadPeer("dsh-credentials");
@@ -41,16 +41,75 @@ const MODELS_PATH = "/api/dsh-connect-agnes-token-plan/models";
 const DRAW_PATH = "/api/dsh-connect-agnes-token-plan/draw";
 const RECORD_KEY = credentialKey("dsh-connect-agnes-token-plan", "agnes-console");
 
-const POOL_BODY = {
-  plan: { id: "p1", name: "TokenPlan", type: "token_plan" },
-  pools: [{
-    id: "pool-1", name: "通用池", pool_type: "default", model_ids: ["SenseNova-Lite"],
-    window_5h: { limit: 60000, used: 12345, remaining: 47655, reset_at: "1800000000" },
-    window_7d: { limit: 600000, used: 12345, remaining: 587655, reset_at: "1800600000" },
-    grant_balance: 0
-  }]
+// Agnes answers every backend route in one `{code, message, data}` envelope,
+// so the fixtures below are the envelope, not the bare payload: the plugin's
+// `unwrapEnvelope` is on the path these checks exercise, and a fixture that
+// handed back bare data would let a broken unwrap pass.
+const OVERVIEW_BODY = {
+  code: 200,
+  message: "ok",
+  data: { total_requests: 12345, total_tokens: 6789012, total_images: 42, total_video_seconds: 99, active_days: 7 }
 };
-const TREND_BODY = { series: [{ model_id: "SenseNova-Lite", points: [{ credits: 12.5 }] }] };
+const SERIES_BODY = {
+  code: 200,
+  message: "ok",
+  data: {
+    items: [
+      { bucket: "2026-09-29", request_count: 100, text_tokens: 2000, image_count: 1, video_seconds: 3 },
+      { bucket: "2026-09-30", request_count: 250, text_tokens: 5000, image_count: 2, video_seconds: 4 }
+    ]
+  }
+};
+// One tier is enough to prove the shape; the real catalogue has six.
+const PLAN = {
+  id: 1,
+  uuid: "plan-starter",
+  name: "入门版",
+  display_name: "入门版",
+  billing_cycle: "monthly",
+  display_cycle: "1个月",
+  price_minor: 2500,
+  currency: "cny",
+  concurrency_limit: 1500,
+  concurrency_window_h: 5,
+  text_weekly_limit: 15000,
+  image_daily_limit: 4000,
+  video_daily_limit: 500,
+  usage_limit_text: "1500 次模型请求 / 5 小时",
+  feature_texts: ["1500 次模型请求 / 5 小时"]
+};
+const PLANS_BODY = { code: 200, message: "ok", data: [PLAN] };
+// The subscription payload's real shape is UNOBSERVED (no session token was
+// available — see docs/AGNES-API.md), so the fake states only what the
+// plugin's own matcher needs: a plan identity under a plausible key name.
+const SUBSCRIPTION_BODY = {
+  code: 200,
+  message: "ok",
+  data: { plan_uuid: "plan-starter", plan_name: "入门版", billing_cycle: "monthly" }
+};
+
+/** The paths the authenticated console stub answers, in match order. */
+const CONSOLE_ROUTES = [
+  ["/api/cn/user/subscription/plans", PLANS_BODY],
+  ["/api/cn/user/subscription", SUBSCRIPTION_BODY],
+  ["/api/usage/overview", OVERVIEW_BODY],
+  ["/api/usage/series", SERIES_BODY]
+];
+
+/** One console answer for a URL, or null when the stub has no route for it. */
+function consoleAnswer(target) {
+  for (const [path, body] of CONSOLE_ROUTES) {
+    // `/plans` must be tested before `/subscription`: the former contains the
+    // latter, so a naive `includes` order would answer the catalogue for both.
+    if (target.includes(path)) return body;
+  }
+  return null;
+}
+
+/** A JSON `Response` in the platform's envelope. */
+function envelope(body, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
 
 function jwtExpiring(minutes) {
   const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + minutes * 60 })).toString("base64url");
@@ -163,14 +222,12 @@ function consoleStub({ rejectFirstToken = null } = {}) {
     const target = String(url);
     calls.push({ target, auth });
     if (rejectFirstToken !== null && auth === `Bearer ${rejectFirstToken}`) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+      // The platform's own refusal, in its own envelope — the shape
+      // `fetchConsole` has to recognise at BOTH layers (HTTP status and code).
+      return envelope({ code: 401, message: "Not logged in or invalid token", data: null }, 401);
     }
-    if (target.includes("pool-usage")) {
-      return new Response(JSON.stringify(POOL_BODY), { status: 200, headers: { "content-type": "application/json" } });
-    }
-    if (target.includes("credit-usage-trend")) {
-      return new Response(JSON.stringify(TREND_BODY), { status: 200, headers: { "content-type": "application/json" } });
-    }
+    const answer = consoleAnswer(target);
+    if (answer !== null) return envelope(answer);
     return new Response("{}", { status: 404 });
   };
   stub.calls = calls;
@@ -185,20 +242,12 @@ async function loginNetwork({ loginOk = true } = {}) {
     if (target.includes("/api/user/login")) {
       log.logins += 1;
       return loginOk
-        ? new Response(JSON.stringify({
-            code: 200, message: "ok", data: { access_token: jwtExpiring(180), user: { id: 1 } }
-          }), { status: 200, headers: { "content-type": "application/json" } })
+        ? envelope({ code: 200, message: "ok", data: { access_token: jwtExpiring(180), user: { id: 1 } } })
         // Agnes's own refusal, verbatim: a bad pair answers exactly this.
-        : new Response(JSON.stringify({
-            code: 401, message: "Invalid username or password", data: null
-          }), { status: 401, headers: { "content-type": "application/json" } });
+        : envelope({ code: 401, message: "Invalid username or password", data: null }, 401);
     }
-    if (target.includes("pool-usage")) {
-      return new Response(JSON.stringify(POOL_BODY), { status: 200, headers: { "content-type": "application/json" } });
-    }
-    if (target.includes("credit-usage-trend")) {
-      return new Response(JSON.stringify(TREND_BODY), { status: 200, headers: { "content-type": "application/json" } });
-    }
+    const answer = consoleAnswer(target);
+    if (answer !== null) return envelope(answer);
     return new Response("{}", { status: 404 });
   };
   stub.log = log;
@@ -215,7 +264,7 @@ async function withNetwork(stub, body) {
   }
 }
 
-// === A. a fresh stored token reaches the console and returns pools ========
+// === A. a fresh stored token reaches the console and returns the quota =====
 {
   const token = jwtExpiring(120);
   const credentials = makeCredentials(storedGrant(token, "r1", 7200));
@@ -223,23 +272,44 @@ async function withNetwork(stub, body) {
   await withNetwork(stub, async () => {
     const response = await (await mount(credentials))(SNAPSHOT_PATH, makeRequest());
     check("snapshot succeeds", response.payload.ok === true, JSON.stringify(response.payload).slice(0, 120));
-    check("pool name is returned", response.payload?.pools?.pools?.[0]?.name === "通用池");
-    check("5h window is parsed", response.payload?.pools?.pools?.[0]?.window5h?.used === 12345);
-    check("7d reset_at string becomes a number",
-      response.payload?.pools?.pools?.[0]?.window7d?.resetAt === 1800600000,
-      String(response.payload?.pools?.pools?.[0]?.window7d?.resetAt));
-    check("trend is parsed", response.payload?.trend?.models?.[0]?.credits === 12.5);
-    check("console saw the stored token", stub.calls.every((c) => c.auth === `Bearer ${token}`));
+    check("the current plan is identified from the catalogue",
+      response.payload?.quota?.plan?.name === "入门版",
+      JSON.stringify(response.payload?.quota?.plan));
+    check("the four quota windows are built from the plan's own limits",
+      JSON.stringify((response.payload?.quota?.windows ?? []).map((w) => [w.key, w.limit])) ===
+        JSON.stringify([["requests5h", 1500], ["requestsWeekly", 15000], ["imagesDaily", 4000], ["videoDaily", 500]]),
+      JSON.stringify(response.payload?.quota?.windows));
+    check("the account totals are parsed",
+      response.payload?.quota?.totals?.totalRequests === 12345 &&
+      response.payload?.quota?.totals?.activeDays === 7,
+      JSON.stringify(response.payload?.quota?.totals));
+    check("the usage series is parsed into buckets, in time order",
+      response.payload?.usage?.buckets?.length === 2 &&
+      response.payload?.usage?.buckets?.[0]?.bucket === "2026-09-29" &&
+      response.payload?.usage?.windowTotals?.totalRequests === 350,
+      JSON.stringify(response.payload?.usage));
+    check("the plan catalogue reaches the panel",
+      response.payload?.quota?.plans?.length === 1 &&
+      response.payload?.quota?.plans?.[0]?.limits?.requests5h === 1500);
     check("a working panel does not show the form",
       panelDecision(response.payload).renders === "pools");
+    // The three authenticated calls carry the stored token; the catalogue is
+    // anonymous ON PURPOSE — sending a Bearer to it would be a needless
+    // credential exposure on a route that does not want one.
+    const authed = stub.calls.filter((c) => !c.target.includes("/plans"));
+    check("console saw the stored token",
+      authed.length === 3 && authed.every((c) => c.auth === `Bearer ${token}`),
+      JSON.stringify(authed.map((c) => c.auth)));
+    check("the public catalogue was fetched without a token",
+      stub.calls.some((c) => c.target.includes("/plans") && c.auth === ""));
   }).catch((error) => fail("A: fresh token", error));
 }
 
-// === A2. the trend cache actually hits across polls ====================
-// The trend endpoint carries a 5-minute cache, but the request used to bake
-// `now` (to the second) into `end_time`, so the URL differed on every poll and
-// the cache never matched. Snapping `end_time` to the granularity boundary
-// makes polls inside the same hour bucket share one URL and one cached body.
+// === A2. the series cache actually hits across polls =====================
+// The series endpoint carries a 5-minute cache. Its URL is built from
+// `start_date`/`end_date`, so it is stable for the whole day: two polls in the
+// same day must share one console call. A URL that baked in `Date.now()` would
+// differ on every poll and the cache would never match.
 {
   const token = jwtExpiring(120);
   const credentials = makeCredentials(storedGrant(token, "r", 7200));
@@ -248,18 +318,24 @@ async function withNetwork(stub, body) {
     const call = await mount(credentials, { cacheSeconds: 5 });
     const first = await call(SNAPSHOT_PATH, makeRequest());
     const second = await call(SNAPSHOT_PATH, makeRequest());
-    const trendCalls = stub.calls.filter((c) => c.target.includes("credit-usage-trend"));
+    const seriesCalls = stub.calls.filter((c) => c.target.includes("/api/usage/series"));
     check("both polls succeed", first.payload.ok === true && second.payload.ok === true,
       `${first.payload.ok}/${second.payload.ok}`);
-    check("the trend response is served from cache on the second poll",
-      trendCalls.length === 1, `trend console calls=${trendCalls.length}`);
-    check("the second poll still carries trend data",
-      second.payload?.trend?.models?.[0]?.credits === 12.5);
-    // The property that makes the URL stable: end_time lands on the hour edge.
-    const endParam = new URL(trendCalls[0].target).searchParams.get("end_time");
-    check("the trend end_time is snapped to the hour boundary",
-      Number(endParam) % 3600 === 0, `end_time=${endParam}`);
-  }).catch((error) => fail("A2: trend cache hit", error));
+    check("the series response is served from cache on the second poll",
+      seriesCalls.length === 1, `series console calls=${seriesCalls.length}`);
+    check("the second poll still carries the charted buckets",
+      second.payload?.usage?.buckets?.length === 2);
+    // The property that makes the URL stable: a whole-day window, in dates.
+    const query = new URL(seriesCalls[0].target).searchParams;
+    const start = query.get("start_date");
+    const end = query.get("end_date");
+    check("the series window is stated as dates, not timestamps",
+      /^\d{4}-\d{2}-\d{2}$/.test(start ?? "") && /^\d{4}-\d{2}-\d{2}$/.test(end ?? ""),
+      `start=${start} end=${end}`);
+    check("the window is the configured number of days",
+      Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) === 29,
+      `${start}..${end}`);
+  }).catch((error) => fail("A2: series cache hit", error));
 }
 
 // === A3. concurrent polls share one console call (single-flight) ========
@@ -279,18 +355,18 @@ async function withNetwork(stub, body) {
       call(SNAPSHOT_PATH, makeRequest()),
       call(SNAPSHOT_PATH, makeRequest())
     ]);
-    const poolCalls = stub.calls.filter((c) => c.target.includes("pool-usage"));
-    const trendCalls = stub.calls.filter((c) => c.target.includes("credit-usage-trend"));
+    const overviewCalls = stub.calls.filter((c) => c.target.includes("/api/usage/overview"));
+    const seriesCalls = stub.calls.filter((c) => c.target.includes("/api/usage/series"));
     check("both concurrent polls succeed",
       first.payload.ok === true && second.payload.ok === true,
       `${first.payload.ok}/${second.payload.ok}`);
-    check("pool-usage was fetched once, not twice",
-      poolCalls.length === 1, `pool calls=${poolCalls.length}`);
-    check("credit-usage-trend was fetched once, not twice",
-      trendCalls.length === 1, `trend calls=${trendCalls.length}`);
-    check("both polls still carry trend data",
-      first.payload?.trend?.models?.[0]?.credits === 12.5 &&
-      second.payload?.trend?.models?.[0]?.credits === 12.5);
+    check("the usage overview was fetched once, not twice",
+      overviewCalls.length === 1, `overview calls=${overviewCalls.length}`);
+    check("the usage series was fetched once, not twice",
+      seriesCalls.length === 1, `series calls=${seriesCalls.length}`);
+    check("both polls still carry the charted buckets",
+      first.payload?.usage?.buckets?.length === 2 &&
+      second.payload?.usage?.buckets?.length === 2);
   }).catch((error) => fail("A3: single-flight", error));
 }
 
@@ -314,20 +390,22 @@ async function withNetwork(stub, body) {
     await withNetwork(async (url, init) => {
       if (String(url).includes("/api/user/login")) {
         logins += 1;
-        return new Response(JSON.stringify({
-          code: 200, message: "ok", data: { access_token: jwtExpiring(180), user: { id: 1 } }
-        }), { status: 200, headers: { "content-type": "application/json" } });
+        return envelope({ code: 200, message: "ok", data: { access_token: jwtExpiring(180), user: { id: 1 } } });
       }
       return stub(url, init);
     }, async () => {
       const response = await (await mount(credentials))(SNAPSHOT_PATH, makeRequest());
       check("401 is recovered", response.payload.ok === true, JSON.stringify(response.payload).slice(0, 160));
       check("a fresh sign-in recovered it", logins === 1, `logins=${logins}`);
-      // Two console endpoints; single-flight means only the initial attempts
-      // carry the dead token, and only one fresh sign-in happens.
-      check("only the initial attempt uses the dead token",
-        stub.calls.filter((c) => c.auth === `Bearer ${dead}`).length === 2,
-        `rejected=${stub.calls.filter((c) => c.auth === `Bearer ${dead}`).length}`);
+      // EXACTLY ONE rejection, not one per endpoint. The usage overview is the
+      // auth probe and runs alone, so the dead token is presented once; by the
+      // time the series and the subscription are fetched the store has already
+      // healed. The catalogue is anonymous and never carries a token at all.
+      // A number above 1 here means the probe stopped gating the batch, and the
+      // plugin is spending a rejected platform call per source.
+      const rejected = stub.calls.filter((c) => c.auth === `Bearer ${dead}`);
+      check("the dead token is presented exactly once",
+        rejected.length === 1, `rejected=${rejected.length}`);
     }).catch((error) => fail("B: 401 recovery", error));
   } finally {
     if (savedUser === undefined) delete process.env.AGNES_USERNAME; else process.env.AGNES_USERNAME = savedUser;
@@ -549,17 +627,18 @@ async function withNetwork(stub, body) {
 }
 
 // === L2. the snapshot's contract fields are present and correct ===========
-// Four fields ride on every successful snapshot and the panel branches on each:
-// `shapeWarnings` (PITFALLS §12 — a renamed console field must read as drift,
-// not "no usage"), `catalogAvailable` / `uncountedModels` (the optional model
-// catalog), and `traceFile` (the sanitized login trace a failed sign-in leaves
-// behind). None had a direct assertion before, so a rename or a dropped field
-// stayed invisible until it reached a user. This drives them through the real
-// route with the network stubbed.
+// Three fields ride on every successful snapshot and the panel branches on
+// each: `shapeWarnings` (PITFALLS §12 — a renamed console field must read as
+// drift, not "no usage"), and `catalogAvailable` (the optional model catalog).
+// None had a direct assertion before, so a rename or a dropped field stayed
+// invisible until it reached a user. This drives them through the real route
+// with the network stubbed.
 {
-  // A drifted pool body: the parsers still return what they understood, but
-  // `plan` and `pools` are gone from the top level.
-  const DRIFT_POOL_BODY = { result: { data: [] }, series_x: [] };
+  // A drifted pair of payloads, still inside the platform's envelope: the
+  // parsers return what they understood, but `total_requests` / `items` — the
+  // keys `EXPECTED_SHAPES` declares — are gone.
+  const DRIFT_OVERVIEW_BODY = { code: 200, message: "ok", data: { result: { data: [] } } };
+  const DRIFT_SERIES_BODY = { code: 200, message: "ok", data: { series: [] } };
   // A token unique to this block. index.js is a module singleton across mounts,
   // so `invalidate()` records refused tokens process-wide; reusing a JWT an
   // earlier section had its console reject would make getToken throw "not being
@@ -572,12 +651,10 @@ async function withNetwork(stub, body) {
   await createFileThrottleStore().clear();
   const driftStub = async (url) => {
     const target = String(url);
-    if (target.includes("pool-usage")) {
-      return new Response(JSON.stringify(DRIFT_POOL_BODY), { status: 200, headers: { "content-type": "application/json" } });
-    }
-    if (target.includes("credit-usage-trend")) {
-      return new Response(JSON.stringify(TREND_BODY), { status: 200, headers: { "content-type": "application/json" } });
-    }
+    if (target.includes("/api/usage/overview")) return envelope(DRIFT_OVERVIEW_BODY);
+    if (target.includes("/api/usage/series")) return envelope(DRIFT_SERIES_BODY);
+    const answer = consoleAnswer(target);
+    if (answer !== null) return envelope(answer);
     return new Response("{}", { status: 404 });
   };
   await withNetwork(driftStub, async () => {
@@ -587,16 +664,17 @@ async function withNetwork(stub, body) {
     check("shapeWarnings is an array", Array.isArray(snapshot.payload.shapeWarnings),
       JSON.stringify(snapshot.payload.shapeWarnings));
     const warnKeys = snapshot.payload.shapeWarnings.map((w) => `${w.api}:${w.missing}`).sort();
-    check("the missing pool keys are reported as drift",
-      warnKeys.includes("pool-usage:plan") && warnKeys.includes("pool-usage:pools"), JSON.stringify(warnKeys));
-    check("a well-shaped trend adds no warning",
-      !warnKeys.some((k) => k.startsWith("credit-usage-trend")), JSON.stringify(warnKeys));
+    check("the missing overview keys are reported as drift",
+      warnKeys.includes("usage-overview:total_requests") && warnKeys.includes("usage-overview:total_tokens"),
+      JSON.stringify(warnKeys));
+    check("the missing series key is reported as drift",
+      warnKeys.includes("usage-series:items"), JSON.stringify(warnKeys));
     check("the panel surfaces the drift rather than reading empty",
       panelDecision(snapshot.payload).renders === "pools");
   }).catch((error) => fail("L2: shapeWarnings", error));
 
   // The healthy path: no drift, and no API key means the catalog degrades to
-  // `catalogAvailable:false` with an empty uncounted list (never undefined).
+  // `catalogAvailable:false` rather than throwing.
   await withNetwork(consoleStub(), async () => {
     const call = await mount(makeCredentials(storedGrant(l2Token, "r", 7200)));
     const snapshot = await call(SNAPSHOT_PATH, makeRequest());
@@ -605,9 +683,9 @@ async function withNetwork(stub, body) {
       JSON.stringify(snapshot.payload.shapeWarnings));
     check("without an API key the catalog is unavailable", snapshot.payload.catalogAvailable === false,
       String(snapshot.payload.catalogAvailable));
-    check("uncountedModels is an empty array when there is no catalog",
-      Array.isArray(snapshot.payload.uncountedModels) && snapshot.payload.uncountedModels.length === 0,
-      JSON.stringify(snapshot.payload.uncountedModels));
+    check("the quota still arrives without any API key",
+      snapshot.payload?.quota?.windows?.length === 4,
+      JSON.stringify(snapshot.payload?.quota?.windows));
   }).catch((error) => fail("L2: clean + no-catalog", error));
 
   // traceFile: a rejected password must leave the caller a pointer to the
@@ -670,8 +748,8 @@ async function withNetwork(stub, body) {
     if (target.includes("/v1/models") || target.includes("/models")) {
       return new Response(JSON.stringify({
         data: [
-          { id: "sensenova-6.8-flash-lite", input_modalities: ["text", "image"] },
-          { id: "sensenova-u1.5-lite", input_modalities: ["text"], output_modalities: ["image"] }
+          { id: "Agnes-6.8-flash-lite", input_modalities: ["text", "image"] },
+          { id: "Agnes-u1.5-lite", input_modalities: ["text"], output_modalities: ["image"] }
         ]
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
@@ -689,7 +767,7 @@ async function withNetwork(stub, body) {
     check("the snapshot still carries visionModels",
       Array.isArray(snapshot.payload.visionModels) &&
       snapshot.payload.visionModels.length === 1 &&
-      snapshot.payload.visionModels[0].id === "sensenova-6.8-flash-lite",
+      snapshot.payload.visionModels[0].id === "Agnes-6.8-flash-lite",
       JSON.stringify(snapshot.payload.visionModels));
     // Step three status rides the same poll: the key ref is recognized, the
     // counts follow the catalog, and the opt-in defaults to off.
@@ -700,10 +778,10 @@ async function withNetwork(stub, body) {
       llm.hasApiKey === true && llm.keySource === "credentials", JSON.stringify(llm));
     check("the llm block counts models and vision models",
       llm.modelCount === 1 && llm.visionCount === 1, JSON.stringify(llm));
-    // The image-output model (sensenova-u1.5-lite) is not a chat model and
+    // The image-output model (Agnes-u1.5-lite) is not a chat model and
     // must not appear in the picker roster (isChatModel, 2026-09-29).
     check("the roster excludes the image-output model",
-      JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["sensenova-6.8-flash-lite"]),
+      JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["Agnes-6.8-flash-lite"]),
       JSON.stringify(llm.models));
     check("the provider stays unregistered with the switch off",
       llm.registerProvider === false && llm.providerRegistered === false, JSON.stringify(llm));
@@ -719,9 +797,9 @@ async function withNetwork(stub, body) {
     // facts, not operator preferences. Only `drawPreferredModel` is
     // preference-shaped and absent here.
     check("auto-pick still reports drawModel + candidates when the catalog exists",
-      llm.drawModel === "sensenova-u1.5-lite" &&
+      llm.drawModel === "Agnes-u1.5-lite" &&
       llm.drawCandidateCount === 1 &&
-      JSON.stringify(llm.drawCandidateIds) === JSON.stringify(["sensenova-u1.5-lite"]),
+      JSON.stringify(llm.drawCandidateIds) === JSON.stringify(["Agnes-u1.5-lite"]),
       JSON.stringify({ drawModel: llm.drawModel, candidates: llm.drawCandidateIds }));
     check("auto-pick carries no operator preference",
       !("drawPreferredModel" in llm), JSON.stringify(llm.drawPreferredModel));
@@ -879,8 +957,8 @@ async function withNetwork(stub, body) {
       if (target.includes("/v1/models") || target.includes("/models")) {
         return new Response(JSON.stringify({
           data: [
-            { id: "SenseNova-Lite", input_modalities: ["text"] },
-            { id: "SenseNova-Vision", input_modalities: ["text", "image"] }
+            { id: "Agnes-Lite", input_modalities: ["text"] },
+            { id: "Agnes-Vision", input_modalities: ["text", "image"] }
           ]
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
@@ -1058,9 +1136,9 @@ async function withNetwork(stub, body) {
       if (target.includes("/v1/models") || target.includes("/models")) {
         return new Response(JSON.stringify({
           data: [
-            { id: "SenseNova-Lite", input_modalities: ["text"] },
-            { id: "SenseNova-Vision", input_modalities: ["text", "image"] },
-            { id: "SenseNova-Pro", input_modalities: ["text"] }
+            { id: "Agnes-Lite", input_modalities: ["text"] },
+            { id: "Agnes-Vision", input_modalities: ["text", "image"] },
+            { id: "Agnes-Pro", input_modalities: ["text"] }
           ]
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
@@ -1084,9 +1162,10 @@ async function withNetwork(stub, body) {
       // is exhausted, so `available`/`quotaExhausted` travel even when true.
       // `contextWindow` rides too: the catalog stub declares no context
       // field, so every row carries `contextWindowOf`'s 128k fallback.
-      // `maxOutputLength` is 0 (nothing declared); `multiplier: 1` rides
-      // because the DEFAULT trendMultipliers match "sensenova" — the same
-      // pseudo rate the trend rows would get, one matcher for both.
+      // `maxOutputLength` is 0 (nothing declared); no `multiplier` rides at
+      // all, because `trendMultipliers` defaults to `{}` — the ×N badge is the
+      // operator's own annotation, and an unmatched row gets no badge rather
+      // than a guessed 1. One matcher serves both the roster and the chart.
       // `thinkingLevels` is the Agnes safe-set for an unprobed id: off→none,
       // plus low/medium/high (the provider row advertises these); xhigh/max
       // stay closed until a live-contract probe proves them on a specific
@@ -1095,9 +1174,9 @@ async function withNetwork(stub, body) {
       const snapshot = await call(SNAPSHOT_PATH, makeRequest());
       check("Q2 the snapshot hands the picker the whole roster with a vision verdict",
         JSON.stringify(snapshot.payload.llm?.models) === JSON.stringify([
-          { id: "SenseNova-Lite", name: "SenseNova-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] },
-          { id: "SenseNova-Vision", name: "SenseNova-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] },
-          { id: "SenseNova-Pro", name: "SenseNova-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] }
+          { id: "Agnes-Lite", name: "Agnes-Lite", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] },
+          { id: "Agnes-Vision", name: "Agnes-Vision", vision: true, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] },
+          { id: "Agnes-Pro", name: "Agnes-Pro", vision: false, available: true, quotaExhausted: false, contextWindow: 128000, maxOutputLength: 0, thinkingLevels: ["off", "low", "medium", "high"] }
         ]), JSON.stringify(snapshot.payload.llm?.models));
       check("Q2 the snapshot quotes the profile's pinned thinking default",
         snapshot.payload.llm?.thinkingDefault === "high",
@@ -1111,27 +1190,27 @@ async function withNetwork(stub, body) {
 
       // Q3. Save a curation: it publishes immediately, with the new list.
       const buildCount = adapterDeps.builds.length;
-      const save = await call(MODELS_PATH, makePost({ enabledModelIds: ["SenseNova-Vision"] }));
+      const save = await call(MODELS_PATH, makePost({ enabledModelIds: ["Agnes-Vision"] }));
       check("Q3 a save reports the saved allow-list",
         save.statusCode === 200 && save.payload.ok === true &&
-          JSON.stringify(save.payload.enabledModelIds) === JSON.stringify(["SenseNova-Vision"]),
+          JSON.stringify(save.payload.enabledModelIds) === JSON.stringify(["Agnes-Vision"]),
         JSON.stringify(save.payload));
       check("Q3 the offer was republished on the request that carried the save",
         adapterDeps.builds.length === buildCount + 1 &&
-          JSON.stringify(adapterDeps.builds.at(-1).enabledIds) === JSON.stringify(["SenseNova-Vision"]),
+          JSON.stringify(adapterDeps.builds.at(-1).enabledIds) === JSON.stringify(["Agnes-Vision"]),
         JSON.stringify({ builds: adapterDeps.builds.length, ids: adapterDeps.builds.at(-1)?.enabledIds }));
 
       // Q4. The poll after the save sees the curation without a fresh catalog.
       const poll = await call(SNAPSHOT_PATH, makeRequest());
       check("Q4 the poll reports the curation",
-        JSON.stringify(poll.payload.llm?.enabledModelIds) === JSON.stringify(["SenseNova-Vision"]),
+        JSON.stringify(poll.payload.llm?.enabledModelIds) === JSON.stringify(["Agnes-Vision"]),
         JSON.stringify(poll.payload.llm?.enabledModelIds));
       check("Q4 the offer is narrowed to the ticked model",
         poll.payload.llm?.modelCount === 1 && poll.payload.llm?.visionCount === 1,
         JSON.stringify({ m: poll.payload.llm?.modelCount, v: poll.payload.llm?.visionCount }));
       check("Q4 the poll still shows the WHOLE roster",
         JSON.stringify(poll.payload.llm?.models.map((model) => model.id)) ===
-          JSON.stringify(["SenseNova-Lite", "SenseNova-Vision", "SenseNova-Pro"]),
+          JSON.stringify(["Agnes-Lite", "Agnes-Vision", "Agnes-Pro"]),
         JSON.stringify(poll.payload.llm?.models));
 
       // Q5. The signature handoff: a poll that brings the same catalogue and
@@ -1163,7 +1242,7 @@ async function withNetwork(stub, body) {
       const missing = await call(MODELS_PATH, makePost({}));
       check("Q7 a missing field is refused, not read as 'all models'",
         missing.statusCode === 400 && missing.payload.ok === false, JSON.stringify(missing.payload));
-      const wrong = await call(MODELS_PATH, makePost({ enabledModelIds: "SenseNova-Lite" }));
+      const wrong = await call(MODELS_PATH, makePost({ enabledModelIds: "Agnes-Lite" }));
       check("Q7 a non-array field is refused",
         wrong.statusCode === 400 && wrong.payload.ok === false, JSON.stringify(wrong.payload));
       const junk = await call(MODELS_PATH, makePost({ enabledModelIds: "not json" }));
@@ -1188,7 +1267,7 @@ async function withNetwork(stub, body) {
 
       // Q9. Forgetting the key also forgets the curation: a new key starts
       // uncurated, not under a filter the previous key's owner set.
-      await call(MODELS_PATH, makePost({ enabledModelIds: ["SenseNova-Lite"] }));
+      await call(MODELS_PATH, makePost({ enabledModelIds: ["Agnes-Lite"] }));
       await call(API_KEY_PATH, makePost({ forget: true }));
       const after = await call(SNAPSHOT_PATH, makeRequest());
       check("Q9 forgetting the key clears the curation with it",

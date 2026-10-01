@@ -18,7 +18,7 @@ import { loadPeer, installNetworkGuard, isolateHostEnv, isolateStateDir } from "
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
-/** This machine's own SenseNova keys must not steer a check. */
+/** This machine's own Agnes keys must not steer a check. */
 const restoreHostEnv = isolateHostEnv();
 
 const { Context } = await loadPeer("cordis");
@@ -227,14 +227,14 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 
 // === A2. a NESTED auth block is refused, not silently ignored ===========
 // Found by the end-to-end run, and the most dangerous shape this plugin has.
-// The loader accepts `auth: { iamBase: ... }`; the plugin reads its overrides
+// The loader accepts `auth: { loginPath: ... }`; the plugin reads its overrides
 // from the TOP level, so the block is dropped without a word — and the panel
 // then runs on its shipped defaults, which point at the REAL platform. A test
 // run meant for a local stub posted a real login attempt before this check
 // existed. Silence here is what makes that possible, so it must be loud.
 {
   const { webServer, stop } = await bootPlugin({
-    config: { consoleBase: "http://127.0.0.1:19399", auth: { iamBase: "http://127.0.0.1:19399" } }
+    config: { consoleBase: "http://127.0.0.1:19399", auth: { loginPath: "/api/user/login" } }
   });
   const res = response();
   await webServer.registered.get("/api/dsh-connect-agnes-token-plan/snapshot")(request(), res);
@@ -242,7 +242,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     res.payload?.ok === false && res.payload?.code === "config_error",
     JSON.stringify(res.payload ?? {}).slice(0, 140));
   check("the message names the top-level keys to use",
-    typeof res.payload?.error === "string" && res.payload.error.includes("iamBase"),
+    typeof res.payload?.error === "string" && res.payload.error.includes("loginPath"),
     String(res.payload?.error).slice(0, 160));
   // The panel must still mount and still answer: an operator who misconfigured
   // a key needs to be told, not left with a plugin that vanished.

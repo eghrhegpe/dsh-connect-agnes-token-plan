@@ -6,8 +6,8 @@
 # override the same id in the profile's cordis.patch.yml) and reinstall/reload.
 #
 # The console token is NOT configured here. Open the panel and sign in once:
-# the Host logs in, keeps the account in the DSH credentials, and renews the
-# token on its own from then on. See README.md.
+# the Host logs in, keeps the account in the DSH credentials, and re-logs in
+# on its own when the token dies (Agnes issues no refresh token). See README.md.
 - insert:
     - id: dsh-connect-agnes-token-plan
       name: dsh-connect-agnes-token-plan
@@ -17,19 +17,20 @@
         # you use a mirror or proxy.
         consoleBase: https://platform-backend.agnes-ai.cn
         # The OpenAI-compatible API base, used only for the optional model
-        # catalog (which models a pool can call). Leave it alone unless the
+        # catalog (which models this key can call). Leave it alone unless the
         # platform moves the endpoint.
         apiBase: https://api.agnes-ai.cn/v1
-        # How many hours of per-model credit consumption to show (max 168 = 7d).
-        trendHours: 24
-        # Pseudo multipliers for the trend table: keys are case-insensitive
+        # How many days of usage the chart covers (max 365). Days, not hours:
+        # the console's series endpoint takes start_date / end_date as DATES.
+        usageDays: 30
+        # Pseudo multipliers for the model roster: keys are case-insensitive
         # SUBSTRINGS of a model id (first match in writing order wins), values
-        # are positive numbers. The platform returns raw credits with no
-        # official per-model rate, so these are the operator's own comparison
-        # aid — the panel labels each hit `×N` with a "not official" note, and
-        # rows without a match stay unmultiplied. Set `{}` to disable all.
+        # are positive numbers. Empty by default — the factor used to scale a
+        # per-model credit figure, and Agnes publishes no per-model usage at
+        # all. What is left is your own annotation: a `×N` badge on a roster
+        # row. Rows without a match get no badge, never a guessed 1.
         # Invalid entries (empty key / value <= 0 / non-number) are dropped.
-        trendMultipliers: { "glm-5.2": 10, "kimi-k3": 20, "sensenova": 1, "deepseek": 1 }
+        trendMultipliers: {}
         # How long the Host caches each console response, in seconds.
         cacheSeconds: 60
         # How often the panel asks the Host again, in seconds. The Host states
@@ -37,7 +38,8 @@
         # how fresh the screen is.
         pollSeconds: 30
         # Deadline for one console call, in milliseconds. The login flow has its
-        # own (loginTimeoutMs, below) because it walks several IAM hops.
+        # own (loginTimeoutMs, below) because it carries a password and may be
+        # rate-limited, so the two are not the same number.
         consoleTimeoutMs: 15000
         # Renew the console token this many seconds before it actually expires,
         # so a poll never races the expiry boundary. 120 = two minutes.
@@ -46,31 +48,28 @@
         # (localhost / 127.0.0.1 / ::1). ADDED to them, never substituted — see
         # docs/SETUP.md. Uncomment and list to serve the panel from another name.
         # allowedHosts: []
-        # The rest of the login flow's endpoints. Everything below is optional:
-        # a key left commented keeps the platform default. Only touch these for
-        # an enterprise mirror or a staging tenant. Any endpoint that is not an
-        # absolute http(s) URL fails the mount with code "config_error" instead
-        # of surfacing later as a confusing network failure.
-        # iamBase: https://iam.sensecoreapi.cn
-        # tokenEndpoint: https://signin.sensecore.cn/oauth2/token
-        # jwksEndpoint: https://signin.sensecore.cn/.well-known/jwks.json
-        # redirectUri: https://platform.sensenova.cn
-        # clientId: nova
-        # scope: openid offline offline_access
-        # encKeyId: public:hydra.openid.id-token
-        # maxHops: 6
-        # Overall deadline for one sign-in attempt (the multi-hop OIDC walk), in
-        # ms. requestTimeoutMs below is its older spelling and still wins when
-        # only it is set; the console calls use consoleTimeoutMs above.
+        # The login flow's overrides. Everything below is optional: a key left
+        # commented keeps the platform default. Agnes signs in with ONE request
+        # (POST {consoleBase}/api/user/login), so there is no OIDC walk and none
+        # of the SenseNova endpoint knobs exist here any more.
+        # loginPath: /api/user/login
+        #   -> the sign-in path, if the platform ever moves it.
+        # fallbackExpiresInSeconds: 604800
+        #   -> lifetime assumed when the access token is not a readable JWT
+        #      (7 days by default). Deliberately LONG: a token assumed dead
+        #      while still alive spends a real sign-in on every poll, and Agnes
+        #      locks an account after a few bad attempts.
         # loginTimeoutMs: 20000
+        #   -> deadline for one sign-in attempt, in ms. requestTimeoutMs is its
+        #      older spelling and still wins when only it is set; the console
+        #      calls use consoleTimeoutMs above.
         # requestTimeoutMs: 20000
         # ------------------------------------------------------------------
         # Vision step two: publish which of this key's models accept image
         # input into this row's OWN settings namespace, for a later LLM
-        # connect plugin (dsh-provider-sensenova, etc.) to read. It writes
-        # only its own row - never another provider's imageModelIds - so a
-        # miscalculated model list can only affect the panel, not DSH's
-        # model routing.
+        # connect plugin to read. It writes only its own row - never another
+        # provider's imageModelIds - so a miscalculated model list can only
+        # affect the panel, not DSH's model routing.
         #
         # `writeImageModelIds: true`  -> the Host syncs visionModels into
         #   `imageModelIds` on this row's settings on every catalog poll
@@ -99,19 +98,19 @@
         registerProvider: false
         # ------------------------------------------------------------------
         # Draw absorption (docs/ARCHITECTURE.md §5.4, route B): when true AND
-        # the Host exposes a tools service, the agent gains a
-        # `sensenova_draw_image` tool that POSTs to
+        # the Host exposes a tools service, the agent gains an
+        # `agnes_draw_image` tool that POSTs to
         # `{apiBase}/images/generations` with the panel-saved
-        # `SENSENOVA_API_KEY`. Draw models are identified from the catalog's
-        # own `output_modalities` (never a name regex), the key is resolved
-        # per call, and a failed draw starts a 30s cooldown. Off by default -
-        # an agent tool is a Host-wide change; a Host without the tools
-        # service simply never sees it.
+        # `AGNES_TOKEN_PLAN_API_KEY`. Draw models are identified from the
+        # catalog's own `output_modalities` (never a name regex), the key is
+        # resolved per call, and a failed draw starts a 30s cooldown. Off by
+        # default - an agent tool is a Host-wide change; a Host without the
+        # tools service simply never sees it.
         # drawEnabled: false
         #   -> the opt-in switch (strict boolean).
         # drawModelId: ""
         #   -> preferred image model id; empty = first of the catalog
-        #      (e.g. sensenova-u1-fast).
+        #      (e.g. Agnes-u1-fast).
         # drawTimeoutMs: 120000
         #   -> deadline for one image request (image models are slow).
         # ------------------------------------------------------------------

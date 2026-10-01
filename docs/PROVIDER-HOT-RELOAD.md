@@ -6,7 +6,7 @@
 
 ## 1. 背景：原设计为什么被改
 
-0.3.0 把「注册 SenseNova LLM 提供方」做成 `cordis.patch.yml` 里的 opt-in 配置字段 `registerProvider`（默认 `false`）。理由当时是成立的——注册模型源是 Host 级变更，不该装个插件就默默改了全局行为。代价是文案必须解释「这不是面板开关，改配置、重启 Host 才生效」，用户实测读不懂（面板上「直接注册未开启」的措辞被误认为 UI 开关）。
+0.3.0 把「注册 Agnes LLM 提供方」做成 `cordis.patch.yml` 里的 opt-in 配置字段 `registerProvider`（默认 `false`）。理由当时是成立的——注册模型源是 Host 级变更，不该装个插件就默默改了全局行为。代价是文案必须解释「这不是面板开关，改配置、重启 Host 才生效」，用户实测读不懂（面板上「直接注册未开启」的措辞被误认为 UI 开关）。
 
 目标：把「是否注册」变成面板上一个**真的开关**，切换立即生效、无需重启，同时保留「默认关」的 opt-in 语义和已有的部署级配置。
 
@@ -65,7 +65,7 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 
 ## 7. 0.4.2 增量：出图工具开关（drawEnabled）
 
-出图吸收（§5.4 接法 B）的 agent 工具 `sensenova_draw_image` 也走同一套「存插件私有状态 + 面板开关」的机制：
+出图吸收（§5.4 接法 B）的 agent 工具 `agnes_draw_image` 也走同一套「存插件私有状态 + 面板开关」的机制：
 
 | 文件 | 改动 |
 |---|---|

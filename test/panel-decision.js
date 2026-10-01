@@ -21,7 +21,7 @@
  * the panel changes, these checks follow automatically — which is the entire
  * point. The exported names are unchanged, so the suites that consume them
  * did not have to change with the mechanism.
- * @module dsh-connect-sensenova-token-plan/panel-decision
+ * @module dsh-connect-agnes-token-plan/panel-decision
  */
 
 import { surface } from "./client-surface.js";

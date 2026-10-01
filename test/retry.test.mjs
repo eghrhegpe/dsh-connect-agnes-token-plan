@@ -3,9 +3,9 @@
  *
  * - `llm-retry.js`: the quota-aware retry-policy config (which failure classes
  *   this shared-pool provider retries, and how gently).
- * - `llm-models.js`: `exhaustedModelIds` (pool -> blocked model set),
- *   `buildDescriptors` excluding blocked models, and `rosterWithAvailability`
- *   (the panel's self-identifying roster).
+ * - `llm-models.js`: the blocked-model seam (`buildDescriptors` excluding a
+ *   handed-in id, `rosterWithAvailability` keeping it greyed), and the
+ *   per-model thinking ladder the panel quotes.
  *
  * Nothing here imports a Host peer, so the policy decisions stay covered on a
  * clean checkout. Where the peer is resolvable (a real Host runtime) an
@@ -18,7 +18,6 @@ import {
   QUOTA_CODES
 } from "../src/host/llm-retry.ts";
 import {
-  exhaustedModelIds,
   buildDescriptors,
   rosterWithAvailability,
   supportedThinkingLevels
@@ -93,50 +92,27 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
   }
 }
 
-// --- 3. exhaustedModelIds: pool -> blocked model set -----------------------
+// --- 3. the blocked-model seam is an ARRAY handed IN, not derived ---------
+// `exhaustedModelIds(pools)` used to derive the set from the SenseNova pool
+// payload. Agnes allocates no quota per model — its console reports
+// account-wide request windows plus a cumulative total, never a per-model
+// balance — so that derivation is gone and the blocked ids arrive as an
+// argument. What remains is the CONTRACT, and both the picker and the roster
+// read it the same way: a tolerant array of ids.
 {
-  try {
-    const pools = {
-      pools: [
-        // Pool A: 5h window exhausted -> its models are blocked.
-        {
-          id: "a", modelIds: ["m1", "m2"],
-          window5h: { limit: 100, remaining: 0, resetAt: 1 },
-          window7d: { limit: 500, remaining: 400, resetAt: 2 }
-        },
-        // Pool B: limit unknown (0) with remaining 0 -> NOT exhausted (shape drift guard).
-        {
-          id: "b", modelIds: ["m3"],
-          window5h: { limit: 0, remaining: 0, resetAt: null },
-          window7d: { limit: 0, remaining: 0, resetAt: null }
-        },
-        // Pool C: still has credit -> NOT exhausted.
-        {
-          id: "c", modelIds: ["m4"],
-          window5h: { limit: 50, remaining: 10, resetAt: 3 },
-          window7d: { limit: 200, remaining: 100, resetAt: 4 }
-        },
-        // Pool D: 7d window exhausted (5h still has credit) -> blocked.
-        {
-          id: "d", modelIds: ["m5"],
-          window5h: { limit: 50, remaining: 30, resetAt: 5 },
-          window7d: { limit: 200, remaining: 0, resetAt: 6 }
-        }
-      ]
-    };
-    const blocked = exhaustedModelIds(pools);
-    check("exhaustedModelIds catches both the 5h-exhausted and 7d-exhausted pools",
-      JSON.stringify(blocked) === JSON.stringify(["m1", "m2", "m5"]), JSON.stringify(blocked));
-
-    check("a pools object without a pools array yields nothing",
-      exhaustedModelIds({}).length === 0);
-    check("an undefined pools value yields nothing",
-      exhaustedModelIds(undefined).length === 0);
-    check("a pool missing both windows is not counted as exhausted",
-      exhaustedModelIds({ pools: [{ id: "x", modelIds: ["m9"] }] }).length === 0);
-  } catch (error) {
-    fail("exhaustedModelIds", error);
-  }
+  const entries = [{ id: "m1" }, { id: "m2" }];
+  check("an undefined blocked list blocks nothing",
+    rosterWithAvailability(entries, undefined).every((row) => row.available === true));
+  check("a non-array blocked list blocks nothing (never a partial match on a string)",
+    rosterWithAvailability(entries, "m1").every((row) => row.available === true),
+    JSON.stringify(rosterWithAvailability(entries, "m1").map((row) => row.available)));
+  check("an id in the list blocks exactly that id",
+    rosterWithAvailability(entries, ["m2"]).map((row) => `${row.id}:${row.available}`).join(",") === "m1:true,m2:false",
+    rosterWithAvailability(entries, ["m2"]).map((row) => `${row.id}:${row.available}`).join(","));
+  check("an id that names no catalog entry is harmless",
+    rosterWithAvailability(entries, ["ghost"]).every((row) => row.available === true));
+  check("an empty list is the shipped default (Agnes blocks nothing)",
+    rosterWithAvailability(entries).every((row) => row.available === true));
 }
 
 // --- 4. buildDescriptors excludes quota-exhausted models -------------------
@@ -178,28 +154,16 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
       { id: "m2" },
       { id: "gen", output_modalities: ["image"] }
     ];
-    // m1's pool still has credit; m2's pool has hit zero (5h window).
-    const pools = {
-      pools: [
-        {
-          id: "a", modelIds: ["m1"],
-          window5h: { limit: 100, remaining: 40, resetAt: 1 },
-          window7d: { limit: 500, remaining: 400, resetAt: 2 }
-        },
-        {
-          id: "b", modelIds: ["m2"],
-          window5h: { limit: 100, remaining: 0, resetAt: 3 },
-          window7d: { limit: 500, remaining: 400, resetAt: 4 }
-        }
-      ]
-    };
-    const roster = rosterWithAvailability(entries, pools);
+    // The Host hands in the ids it cannot serve. On Agnes that set is empty by
+    // design (no per-model quota exists); the mechanism is exercised with a
+    // real id here because the second absorbed upstream reuses it.
+    const roster = rosterWithAvailability(entries, ["m2"]);
     const byId = Object.fromEntries(roster.map((r) => [r.id, r]));
     check("rosterWithAvailability drops image-generation models",
       !("gen" in byId) && roster.length === 2, JSON.stringify(roster.map((r) => r.id)));
-    check("m1 is available (its pool still has credit)",
+    check("m1 is available (nothing blocked it)",
       byId.m1.available === true && byId.m1.quotaExhausted === false);
-    check("m2 is marked quotaExhausted (its pool hit zero)",
+    check("m2 is marked quotaExhausted (it was handed in)",
       byId.m2.available === false && byId.m2.quotaExhausted === true);
     // The parameter figures the WorkBuddy-shape row quotes: the declared
     // ceiling rides verbatim, an entry without one carries 0 (UNKNOWN, never
@@ -233,25 +197,25 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
         "other=" + supportedThinkingLevels({ id: "anything-else" }).join(",")
       ].join(" | "));
 
-    // No exhausted pools -> everything available.
-    const clear = rosterWithAvailability(entries, { pools: [] });
-    check("with no exhausted pools every row reads available",
+    // Nothing blocked -> everything available.
+    const clear = rosterWithAvailability(entries, []);
+    check("with nothing blocked every row reads available",
       clear.every((r) => r.available === true && r.quotaExhausted === false));
 
-    // A non-array / missing pools value must not throw and must read available.
-    const safe = rosterWithAvailability(entries, {});
-    check("a missing pools array yields available rows without throwing",
+    // A non-array / missing blocked list must not throw and must read available.
+    const safe = rosterWithAvailability(entries, undefined);
+    check("a missing blocked list yields available rows without throwing",
       safe.length === 2 && safe.every((r) => r.available === true));
 
-    // Parity: the roster enumerates EVERY chat model (including quota-exhausted,
+    // Parity: the roster enumerates EVERY chat model (including blocked ones,
     // so the panel can show them greyed); the picker (buildDescriptors) offers
-    // that same set MINUS the exhausted ids — the two must never disagree about
+    // that same set MINUS the blocked ids — the two must never disagree about
     // which models exist.
     const rosterIds = roster.map((r) => r.id);
     const built = buildDescriptors(entries, { baseUrl: BASE_URL, unavailableModelIds: ["m2"] }).map((d) => d.id);
-    check("roster enumerates every chat model (incl. quota-exhausted)",
+    check("roster enumerates every chat model (incl. the blocked one)",
       JSON.stringify(rosterIds) === JSON.stringify(["m1", "m2"]), JSON.stringify(rosterIds));
-    check("the picker offers roster minus the quota-exhausted ids",
+    check("the picker offers roster minus the blocked ids",
       JSON.stringify(built) === JSON.stringify(rosterIds.filter((id) => !byId[id].quotaExhausted)),
       `${JSON.stringify(built)} vs ${JSON.stringify(rosterIds.filter((id) => !byId[id].quotaExhausted))}`);
   } catch (error) {

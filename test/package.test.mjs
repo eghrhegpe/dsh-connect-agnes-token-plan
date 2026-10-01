@@ -172,16 +172,15 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
 // checks over the shipped 429 self-heal and draw-absorption code) sat in the
 // first bucket until this pin.
 //
-// The one deliberate exception is the network tier: `live-jwks.test.mjs` is
-// NOT a default-run check (a green offline run must not reach the platform),
-// so it is exempted here and pinned EXCLUDED by its own header.
+// The live tiers (manual, network) are deliberately NOT `*.test.mjs`. This scan
+// takes every file with that suffix as a default-run check, so naming a network
+// suite that way would sweep a platform request into a green offline run. The
+// old exemption (`live-jwks.test.mjs`, the JWKS walk) is gone with the OIDC
+// login it belonged to, so the boundary itself is pinned instead of a list.
 {
   const TEST_DIR = join(root, "test");
-  const EXEMPT = new Set(["live-jwks.test.mjs"]);
 
-  const disk = readdirSync(TEST_DIR)
-    .filter((name) => name.endsWith(".test.mjs"))
-    .filter((name) => !EXEMPT.has(name));
+  const disk = readdirSync(TEST_DIR).filter((name) => name.endsWith(".test.mjs"));
 
   const listed = (text) => new Set(
     [...text.matchAll(/node test\/([\w.-]+\.test\.mjs)/g)].map((m) => m[1])
@@ -211,10 +210,15 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
   check("npm test and the CI offline job cover the same suites",
     onlyNpm.length === 0 && onlyCi.length === 0,
     onlyNpm.length || onlyCi.length ? `only-in-npm=${onlyNpm.join(",")} only-in-CI=${onlyCi.join(",")}` : "");
-  // The exempted network suite must STAY out of the default gate — if someone
-  // wires it in, the pin fails rather than letting a green run reach the platform.
-  check("live-jwks.test.mjs stays out of the default npm test gate", !npmTest.has("live-jwks.test.mjs"),
-    "the network tier must not be a default-run check");
+  // The naming boundary that keeps the scan safe: every live tier is a plain
+  // `.mjs`, so the disk roster can never grow a network check by accident.
+  const liveFiles = readdirSync(TEST_DIR).filter((name) => name.startsWith("live-"));
+  check("every live tier is a plain .mjs (never swept into the default gate)",
+    liveFiles.length > 0 && liveFiles.every((name) => !name.endsWith(".test.mjs")),
+    liveFiles.join(", "));
+  check("the manual live contract is not a default-run check",
+    !npmTest.has("live-contract.mjs") && !ci.has("live-contract.mjs"),
+    "the live tier must not be a default-run check");
 }
 
 console.log(JSON.stringify(results, null, 2));

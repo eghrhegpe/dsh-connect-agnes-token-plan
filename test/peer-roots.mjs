@@ -112,13 +112,13 @@ export async function loadPeer(name) {
 export { ROOT };
 
 /**
- * Hide this machine's SenseNova environment from the checks.
+ * Hide this machine's Agnes environment from the checks.
  *
- * `index.js` reads `SENSENOVA_API_KEY` out of `process.env` when it mounts. A
- * developer machine that has one set therefore takes a path the suite never
- * stubbed: the model catalog is fetched for real, which trips the network
- * guard, and the request it makes carries a Bearer token that is not the
- * console token — so "the console saw the stored token" fails for a reason
+ * `index.js` reads `AGNES_TOKEN_PLAN_API_KEY` out of `process.env` when it
+ * mounts. A developer machine that has one set therefore takes a path the
+ * suite never stubbed: the model catalog is fetched for real, which trips the
+ * network guard, and the request it makes carries a Bearer token that is not
+ * the console token — so "the console saw the stored token" fails for a reason
  * that has nothing to do with the code under test.
  *
  * A suite that is green on a clean machine and red on its author's is not
@@ -127,7 +127,7 @@ export { ROOT };
  * @param {string[]} [keys] - the variables to hide.
  * @returns {() => void} restore.
  */
-export function isolateHostEnv(keys = ["SENSENOVA_API_KEY", "AGNES_USERNAME", "AGNES_PASSWORD"]) {
+export function isolateHostEnv(keys = ["AGNES_TOKEN_PLAN_API_KEY", "AGNES_USERNAME", "AGNES_PASSWORD"]) {
   const saved = keys.map((key) => [key, process.env[key]]);
   for (const key of keys) delete process.env[key];
   return () => {

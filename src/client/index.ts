@@ -2,9 +2,10 @@
  * dsh-connect-agnes-token-plan — Client half (entry).
  *
  * Registers a config card inside the Plugins page (`plugins.bundle.config`
- * slot). The card renders the Agnes Token Plan quota pools (5h / 7d
- * windows with used/limit/percent), per-model credit consumption, and the
- * three-tab layout (quota / api / raccoon). The data comes from the Host's
+ * slot). The card renders the Agnes Token Plan quota — the current plan's four
+ * rate-limit windows (requests per 5 h / per week, images per day, video per
+ * day), the account's cumulative usage, and the per-bucket usage chart — plus
+ * the three-tab layout (quota / api / raccoon). The data comes from the Host's
  * read-only snapshot route, polled only while the card is mounted — the
  * Client folds no session events of its own.
  *
@@ -47,7 +48,7 @@ import {
   setAllModelsIn,
   toggleModelIn
 } from "./models.ts";
-import { clock, clockLong, count, format, tokenSize, when } from "./format.ts";
+import { clock, clockLong, count, format, tokenSize } from "./format.ts";
 import { provideClientReact } from "./runtime.ts";
 import { en, zh } from "./i18n.ts";
 import { S } from "./styles.ts";
@@ -55,11 +56,11 @@ import {
   AccountForm
 } from "./account-form.ts";
 import {
-  PoolCard,
-  PoolExhaustionNotice,
-  QuotaCard,
+  PlanCard,
+  QuotaWindowCard,
   SectionCard,
-  TrendTable
+  UsageChart,
+  UsageTotals
 } from "./cards.ts";
 import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch } from "./provider-controls.ts";
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
@@ -95,7 +96,6 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
     helpers: Object.freeze({
       clock,
       clockLong,
-      when,
       count,
       format,
       tokenSize,
@@ -107,10 +107,10 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       bulkModelsIn
     }),
     components: Object.freeze({
-      QuotaCard,
-      PoolCard,
-      PoolExhaustionNotice,
-      TrendTable,
+      PlanCard,
+      QuotaWindowCard,
+      UsageTotals,
+      UsageChart,
       SectionCard,
       AccountForm,
       ApiKeyForm,

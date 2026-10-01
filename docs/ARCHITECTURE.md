@@ -1,6 +1,6 @@
 # 架构（Architecture）
 
-本仓库 `dsh-connect-agnes-token-plan` 是 DeepSeek Harness 的一个**插件**，在 Harness Web UI 的 **Plugins 页**以插件卡提供商汤（SenseNova）控制台 Token Plan 的实时积分用量面板。它还**不是**一个独立可运行程序，而是挂在 Host（桌面版 / `dsh web`）里的一截逻辑。
+本仓库 `dsh-connect-agnes-token-plan` 是 DeepSeek Harness 的一个**插件**，在 Harness Web UI 的 **Plugins 页**以插件卡提供 Agnes 控制台 Token Plan 的实时额度面板。它还**不是**一个独立可运行程序，而是挂在 Host（桌面版 / `dsh web`）里的一截逻辑。
 
 本文讲清三件事：插件与 `upstream/` 的关系、插件内部的 Host/Client 分流、以及数据如何流动。
 
@@ -15,9 +15,9 @@
 | 形态 | DSH 插件（Host 半边 + Client 半边） | 独立 Python 桌面应用（pywebview 原生窗口） |
 | 语言 | Host 半边与 Client 半边均为 **TypeScript 源码**（`src/host/*.ts` + `src/client/*.ts`），经 `npm run build`（tsdown）构建为 `lib/`（Host 单条 ESM bundle + 动态切分 chunk）与根 `client.js`（Client IIFE 产物）；`lib/` 与 `client.js` 均为 `.gitignore` 忽略的纯构建产物，删后可从 `src/` 重建 | Python（`dashboard.py` + `auth_login.py`） |
 | 账号凭据 | 走 **DSH 凭据服务**（`~/.dsh/.credentials.yaml`），无明文文件 | 明文存 `accounts.json`（为支持自动重登） |
-| 令牌续期 | **`refresh_token` 静默续期**，面板过期无需重启 | JWT 过期后用明文账号密码**重登** |
+| 令牌续期 | **Agnes 不发 refresh token**：令牌失效即用存下的账号名 + 密码**重登一次** | JWT 过期后用明文账号密码**重登** |
 | 登录节流 | 区分时间型 / 凭据型拒绝，防锁号 | 仅基础重试 |
-| 与控制台交互 | `pool-usage` / `credit-usage-trend` / `GET /v1/models` | 同样的 `pool-usage` 等接口 |
+| 与控制台交互 | `/api/usage/overview` / `/api/usage/series` / `/api/cn/user/subscription` / `GET /v1/models` | 商汤时代的 `pool-usage` 等接口 |
 | 是否进本仓库历史 | 是（本仓库主开发目标） | **否**（gitignored，保持独立 git 历史与 remote） |
 
 **为什么要这样放：** 上游 Python 工具是这套商汤控制台集成的「原始实现 / 参考源」，里面沉淀了接口字段、打包（`build_mac.sh` / PyInstaller `.spec`）、登录封包等可复用知识。把它以**被忽略的 `upstream/`** 形式容纳进本仓库，既能随时对照、复用其接口与打包经验，又不会污染本插件仓库的提交历史，也不会把明文凭据文件（`accounts.json`）带进版本库。插件在**构建期与运行期都不依赖 `upstream/`**——两者只是概念上的上下游，没有代码耦合。
@@ -33,24 +33,27 @@
 
 | 半边 | 文件 | 加载时机 | 改动后如何生效 |
 |---|---|---|---|
-| **Host（服务端）** | `src/host/*.ts`（27 个模块，经 `npm run build` 构建为 `lib/`） | 启动时加载一次 | **重新构建 + 完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
-| **Client（前端）** | `src/client/*.ts`（构建为根 `client.js`） | 浏览器侧，随页面加载 | `npm run build:client` 重建后浏览器刷新即可 |
+| **Host（服务端）** | `src/host/*.ts`（32 个模块，另有 `src/host/token-store/` 子目录 6 个；经 `npm run build` 构建为 `lib/`） | 启动时加载一次 | **重新构建 + 完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
+| **Client（前端）** | `src/client/*.ts`（19 个模块，构建为根 `client.js`） | 浏览器侧，随页面加载 | `npm run build:client` 重建后浏览器刷新即可 |
 
-- `index.ts`：注册只读路由 `/api/dsh-connect-agnes-token-plan/snapshot`（聚合控制台数据，401 自动续期重试一次）+ 账号配置路由。
+- `index.ts`：注册只读路由 `/api/dsh-connect-agnes-token-plan/snapshot`（聚合控制台数据，401 自动重登重试一次）+ 账号 / API Key / 模型清单 / 出图开关 / 小浣熊配置路由；模块装配与生命周期接线在 `lifecycle.ts`。
 - `host-config.ts`：配置契约——`CONFIG_DEFAULTS`、`resolveSettings` / `resolveAuthOverrides`（含嵌套 `auth:` 块拒绝）、`isAdmitted` 同源闸、`hostName` 解析。
-- `codes.ts`：全部错误码与 IAM 平台原因码的唯一声明处。`sensenova-auth.ts` 产出、`token-store.ts` 判定是否 parked、`index.ts` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
-- `token-store.ts`：凭据服务里的令牌与账号存取、按期续期、401 拒绝记忆。
+- `codes.ts`：全部错误码与平台原因码的唯一声明处。`agnes-auth.ts` 产出、`token-store.ts` 判定是否 parked、`routes.ts` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
+- `token-store.ts` + `token-store/`：凭据服务里的令牌与账号存取、按期重登、401 拒绝记忆。子目录按职责拆成 `account` / `acquire` / `renewal` / `grant` / `throttle` / `state` 六块（拆分蓝图见 [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md)，行为由 `store-baseline.test.mjs` 冻结）。
 - `throttle-store.ts`：登录节流状态，写在插件自己的状态文件（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），跨进程跨重启生效。
-- `sensenova-auth.ts`：OIDC 授权码流登录 + `refresh_token` 静默续期。
-- `sensenova-crypto.ts`：密码 JWE 封包（RSA-OAEP(SHA-1) + A256GCM）、PKCE 派生、JWT 解析、JWKS 缓存（由调用方持有、非模块级单例）。
-- `console-client.ts`：控制台与模型目录的网络请求，带短生命周期缓存与 single-flight（并发轮询只发一次请求）。
-- `parsers.ts`：响应解析层——字符串数值 / epoch 归一、`checkShape` 漂移检测、`parseTrend` 对 points 求和、`identifyVisionModel` 视觉模型识别。
+- `agnes-auth.ts`：**一跳**账号密码登录（`POST {consoleBase}/api/user/login`）+ 失败分类 + `Retry-After` 解析。`refresh()` 永远抛 `NO_REFRESH_TOKEN`，store 靠这个码落到重登。没有 OIDC / PKCE / JWE。
+- `console-client.ts`：控制台与模型目录的网络请求，带信封解包（`{code,message,data}`）、短生命周期缓存与 single-flight（并发轮询只发一次请求）。
+- `parsers.ts`：响应解析层——字符串数值 / epoch / ISO 归一、`checkShape` 漂移检测、`parseUsageSeries` 分桶求和、`quotaWindows` 四窗口、`matchCurrentPlan` 套餐匹配、`identifyVisionModel` 视觉模型识别。
+- `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 四窗口与累计用量组装 / vision 识别 / `llm` 状态块组装。`routes.ts` 只保留 HTTP 面（路由注册、同源闸、body 读取、`writeJson`），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
 - `trace.ts`：登录 trace 落盘（成功/失败，值级脱敏，仅留最近 20 个，权限 0600）。
 - `util.ts`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
-- `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` F3（并发 publish「最后发起者最终注册」门控）经此模块注入。
-- `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 可调用-vs-锁定拆分 / 配额耗尽标记 / vision 识别 / `llm` 状态块组装。`index.js` 只保留 HTTP 面（路由注册、同源闸、body 读取、`writeJson`），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
+- `state-store.ts`：按 profile 分段的状态文件读写基建（catalog / provider / draw 三份状态共用，见 [PITFALLS.md](./PITFALLS.md) §23）。
+- `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` 经此模块注入并发 publish 门控。
+- `llm-models.ts` / `llm-adapter.ts` / `llm-retry.ts` / `llm-error-fix.ts`：推理侧的纯逻辑映射（无 peer，离线可测）、依赖 peer 的适配器半边、429 退避策略、以及 Agnes 把速率上限错命名为 `quota_exceeded_error` 的纠正。
+- `draw.ts` / `draw-store.ts`：出图工具（`agnes_draw_image`）与它的面板开关。
+- `raccoon*.ts`：第二上游（小浣熊）——网关契约、QR 登录状态机、独立 store / publisher / provider id / 开关，与 Token Plan 完全隔离。
 - `client.js`：Plugins 页内的配置卡与三个 tab（积分额度 / 接入 API / 小浣熊）+ 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
-- 测试基建：`client-surface.js` / `panel-decision.js` / `panel-render.js` —— 把 `client.js` 作为模块加载后物化 `panel` 测试面，供 `panel.test.mjs` / `render.test.mjs` 直接调用。不进运行时、不进 `files` 打包清单。
+- 测试基建：`client-surface.js` / `panel-decision.js` / `panel-render.js` —— 把 `src/client/` 作为模块加载后物化 `panel` 测试面，供 `panel.test.mjs` / `render.test.mjs` 直接调用。不进运行时、不进 `files` 打包清单。
 
 ---
 
@@ -61,8 +64,9 @@
    │  每 30s（仅挂载时轮询，关闭即停）
    ▼
 GET /api/dsh-connect-agnes-token-plan/snapshot   ← Host 半边
-   │  1) 检查令牌，临近过期或 401 时用 refresh_token 续期
-   │  2) 调用控制台 pool-usage / credit-usage-trend / GET /v1/models
+   │  1) 取令牌；临近过期或控制台回 401 时重登一次（Agnes 没有 refresh token）
+   │  2) 先单独取 /api/usage/overview —— 认证探针，也是唯一致命源
+   │     再并行取 series / subscription / 公开 plans / GET /v1/models（后四者可降级）
    │  3) 按 consoleBase 等配置聚合，Host 缓存 cacheSeconds 秒
    ▼
 {snapshot}  ──HTTP 200，body 内 ok:true/false 区分成败──►
@@ -72,7 +76,7 @@ client.js: interpretSnapshot(body) → {data, error}
    │  error 携带 auth 块（含 needsAccount / retryAfterMs / needsUserAction）
    ▼
 决策块（panel-decision.js 从同一模块取的 viewOf）决定渲染：
-   - 有数据 → 积分池 / 每模型消耗
+   - 有数据 → 额度上限（四窗口）/ 账号累计用量 / 分桶柱图 / 套餐对比
    - 需配置账号 → AccountForm（用户自己填一次）
    - config_error / console_error → 纯文本提示（登录解不了的问题：
      前者是配置写错，后者是控制台没应答，下一轮通常自愈）
@@ -80,15 +84,18 @@ client.js: interpretSnapshot(body) → {data, error}
 
 关键点：**HTTP 永远 200**，成败靠 body 里的 `ok` 与 `code` 区分；`auth` 块会随失败一起下发，所以连不上控制台时面板也能说出「令牌是否能自愈」。
 
+**为什么 `overview` 单独先取、且是唯一致命的**：它是认证探针（最便宜的认证调用，任何已登录账号都能发），它的失败是"令牌不可用"的唯一信号，必须冒泡到路由的 catch——那里才决定显示登录表单（`viewOf` 把 null body 读作 `needsSetup`）。同时它被**串行**放在其余取数之前：未登录时并行批量会白发一次匿名目录请求，而那是一个即将显示表单的面板不该花的往返。稳态下这一步通常命中缓存，只有第一次轮询付出代价。
+
 ---
 
 ## 4. 登录与令牌生命周期
 
 详见 [AUTH.md](./AUTH.md)。一句话版：
 
-1. 用户首次在面板填一次账号密码，密码用平台 JWKS 公钥封成 JWE（RSA-OAEP + A256GCM），明文不上网。
-2. 账号与 access/refresh token 存入 DSH 凭据服务（**密码不落盘**，仅登录瞬间内存使用；`SENSENOVA_PASSWORD` 环境变量是唯一持久来源）；之后**只靠 `refresh_token` 静默续期**，不再需要密码。
-3. 令牌约 180 分钟有效，提前 `tokenSkewSeconds`（默认 120s）触发续期；控制台返回 401 时也会换新并重试一次。
+1. 用户首次在面板填一次账号密码，Host 向 `{consoleBase}/api/user/login` 发**一跳** POST；密码是明文 JSON，只过 TLS（Agnes 没有 JWKS / JWE 封包端点，没有任何东西可以把它包起来，所以**传输层是唯一的保护**，而「绝不落盘」是承重设计而非整洁）。
+2. 账号名与 access token 存入 DSH 凭据服务（记录 kind 只能是 `grant`；**密码不落盘**，`AGNES_PASSWORD` 环境变量是唯一持久来源）；此后**令牌失效就用同一路径重登一次**——Agnes 不发 refresh token，`refresh()` 恒抛 `NO_REFRESH_TOKEN`，store 正是靠这个码落到重登。
+3. 令牌寿命优先读 JWT 的 `exp`，读不出则按 `fallbackExpiresInSeconds`（默认 7 天）估；提前 `tokenSkewSeconds`（默认 120s）触发重登；控制台返回 401/403 时也重登并重试一次（**只一次，不递归**：刚换的令牌也被拒说明问题在账号，再试只会敲锁）。
+4. 每一次登录尝试（**成功也算**）都落一份脱敏 trace 到 `$DSH_HOME/logs/`，否则「浏览器能登、面板不能」无法对照排查。
 
 ---
 
@@ -133,27 +140,27 @@ client.js: interpretSnapshot(body) → {data, error}
 
 ### 5.1 视觉能力：两步走（2026-09 决议）
 
-痛点：用户在 DSH 设置里填入 `SENSENOVA_API_KEY` 后，模型卡片的「输入类型」
-不会自动标记「图片」，Agent 不知道 `sensenova-6.8-flash-lite` 可当 vision
-模型，填 key 不会自动打开看图。DSH 的 LLM 链路本身原生认图片输入
-（deepseek provider 有 `maxImagesPerRequest`、图片 offload 一整套参数），
-缺的只是「商汤这套餐里哪把模型能看图」这条结构化信息。
+痛点：用户在 DSH 设置里填入 `AGNES_TOKEN_PLAN_API_KEY` 后，模型卡片的「输入类型」
+不会自动标记「图片」，Agent 不知道哪把模型可当 vision 模型，填 key 不会自动打开
+看图。DSH 的 LLM 链路本身原生认图片输入（deepseek provider 有
+`maxImagesPerRequest`、图片 offload 一整套参数），缺的只是「这套餐里哪把模型
+能看图」这条结构化信息。
 
 **第一步（本期，已完成）**：插件从 `GET /v1/models` 的 `catalogModels` 算出
 `visionModels`（可看图模型清单），发进 `/snapshot`，面板加一行展示。
-识别依据：**已确认（2026-09 拉真实响应）**——商汤 `/v1/models` 在**每个**模型
+识别依据：**已确认（拉真实响应）**——`/v1/models` 在**每个**模型
 条目上都带结构化字段 `input_modalities`（字符串数组，如
 `["text","image"]`）与 `output_modalities`，所以按字段判定：`"image"` 出现在
 `input_modalities` 里即可看图；名字规律（`vl` / `vision`）仅作为「平台若某
 天不返回模态字段」的兜底，并标 `source: "name"` 注明是按名字推断。实测：
-`deepseek-v4-flash`、`glm-5.2`、`kimi-k3` 等 8 个模型 input 仅 `["text"]`；
-`sensenova-6.8-flash-lite` input 为 `["text","image"]`（即可看图模型）；
-`sensenova-u1-fast`、`sensenova-u1.5-lite` input 仅 `["text"]` 但 output 为
+`deepseek-v4-flash`、`glm-5.2`、`kimi-k3` 等模型 input 仅 `["text"]`；
+`Agnes-6.8-flash-lite` input 为 `["text","image"]`（即可看图模型）；
+`Agnes-u1-fast`、`Agnes-u1.5-lite` input 仅 `["text"]` 但 output 为
 `["image"]`（出图模型，不是看图模型——只看 `input_modalities` 的判定天然
 把它们排除，名字规律若只看 `-lite` 会误判，所以名字兜底里已删掉 `flash-lite`）。
 
 另外，API key 的读取路径按 DSH 官方 provider 惯例改为**先经 credentials 服务
-的参考层**（`ctx.get("credentials")?.resolve("SENSENOVA_API_KEY")`，对应
+的参考层**（`ctx.get("credentials")?.resolve("AGNES_TOKEN_PLAN_API_KEY")`，对应
 `~/.dsh/.credentials.yaml` 里用户级的 env 变量值），最后才回退 `process.env`。
 旧代码只读 `process.env`，而很多机器（含本机）的 key 只存在 credentials 服务
 里、`process.env` 里根本没有这条——所以旧版「读不到 key」并不等于「没有
@@ -163,7 +170,7 @@ key」，是读错了层。
 **本插件自己那一行 DSH settings**（`imageModelIds` / `visionModels`
 两个字段，走 DSH 官方写路径
 `settings.update(rowId, patch, revision)`），供后续
-`dsh-provider-sensenova` 之类的 LLM connect 插件读取，从而让 DSH 的图片
+LLM connect 插件读取，从而让 DSH 的图片
 offload 链路知道这把 Key 里哪些模型可以接图。
 
 设计守口（对应 §5 大统一的不变量：opt-in 默认关、失败降级不拖垮宿主）：
@@ -179,7 +186,7 @@ offload 链路知道这把 Key 里哪些模型可以接图。
 宿主机器 `~/.dsh/profiles/*/cordis.patch.yml` 里已有 `imageModelIds`
 与 `imageOverrides` 实例（该路径在宿主 profile 目录，不在本仓库），
 trae 源码注释「Provider API 不暴露模态元数据，image 输入靠显式
-`imageModelIds` 声明」对商汤**不成立**：商汤已经暴露
+`imageModelIds` 声明」对本插件读的这份目录**不成立**：平台已经暴露
 `input_modalities`（见上），第二步只是把这份现成信息按 DSH 的
 settings 写路径交出去，不做识别逻辑。
 
@@ -187,18 +194,18 @@ settings 写路径交出去，不做识别逻辑。
 
 第二步把信息「写给别的 connect 插件读」；第三步更进一步——开关
 `registerProvider: true` 后，**本插件自己**调用 `ctx.llm.registerAdapter`
-注册一个直连 `apiBase`（默认 `https://token.sensenova.cn/v1`）的
+注册一个直连 `apiBase`（默认 `https://api.agnes-ai.cn/v1`）的
 OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 
 关键事实与守口：
 
-- **provider id 用 `sensenova-token-plan`，不能用裸 `sensenova`**：宿主
-  desktop profile 里可能已存在手写 `llm-pi-ai` 的 `sensenova` 行，重名
+- **provider id 用 `agnes-token-plan`，不能用裸 `Agnes`**：宿主
+  profile 里可能已存在手写 `llm-pi-ai` 的 `Agnes` 行，重名
   注册会被 `registerAdapter` 以 DUPLICATE_ADAPTER 拒绝。同时注册
   `registerConfigurableProviders`（`settingsNs` 为本插件自己的 row，
   `declared:false`），让模型设置页出现该 provider 的配置入口。
-- **Key 仍是同一个引用**：面板「模型接入」区把 `sk-` Key 以
-  `SENSENOVA_API_KEY` 引用存进 DSH 凭据服务（`api-key-store.ts`），
+- **Key 仍是同一个引用**：面板「接入 API」区把 `sk-` Key 以
+  `AGNES_TOKEN_PLAN_API_KEY` 引用存进 DSH 凭据服务（`api-key-store.ts`），
   `process.env` 兜底；与手写行读取的引用名相同，一份值两边都亮。
   Key 在适配器里是**每次请求现取**（`resolveApiKey`），轮换 Key 无需
   重新注册；任何快照/路由响应只回布尔状态与来源标签，永不回显明文。
@@ -206,7 +213,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
   经 `llm-models.ts`（**无 peer 依赖**，离线可测）映射成 pi-ai descriptor：
   vision 判定复用 §5.1 同一份 `identifyVisionModel`，vision 模型自动带
   `input:["text","image"]`。两个承重字段：`compat.supportsDeveloperRole:
-  false`（不设会自动探测成 true，商汤端点持续 403）；**不声明 maxTokens
+  false`（不设会自动探测成 true，该端点持续 403）；**不声明 maxTokens
   值**（声明了会变成输出上限、截断长回复，只钉字段名 `max_tokens`）。
 - **catalog/勾选清单是插件私有状态，不进 dsh 配置**：
   `catalog-store.ts` 写 `$DSH_HOME/state/<profile>/<name>/catalog.json`（按 profile 分段，见 [PITFALLS.md](./PITFALLS.md) §23）
@@ -236,7 +243,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 |---|---|---|
 | `@alaxrpg/dsh-sensenova-provider`（desktop） | **直接竞品**：同样走商汤 OIDC+PKCE、注册 LLM provider，带多 Key 轮换与 vision | 证明「额度 + provider 合一」在 DSH 生态成立；其多 Key 轮换是本插件没有的能力，但 Token Plan 同账号共享额度池、换 Key 不换池，**不吸收**（见 [ROADMAP.md](./ROADMAP.md) §1） |
 | `dsh-retry-boost` | 429 自愈网关：多 Key 池化、AIMD 限速；专门处理 SenseNova 把「配额不足」（insufficient_quota）混进 429 被误判重试的问题 | 429 自愈模块的同类先例；吸收时必须区分「限频（可退避重试）」与「配额不足（换 Key / 停）」 |
-| `dsh-draw-router` | 绘图路由，含 `sensenova-u1-fast` 出图 | 出图路由的对接参考（`sensenova-u1-fast` 即 catalog 里 output 为 `["image"]` 的出图模型，§5.1 已识别）；参考件放 `upstream/dsh-draw-router/` 作对照 |
+| `dsh-draw-router` | 绘图路由，含 `sensenova-u1-fast` 出图（同一模型在现行 catalog 里叫 `Agnes-u1-fast`） | 出图路由的对接参考（`Agnes-u1-fast` 即 catalog 里 output 为 `["image"]` 的出图模型，§5.1 已识别）；参考件放 `upstream/dsh-draw-router/` 作对照 |
 | `mmx-quota-tool` | 聚合面板基准：实时积分面板、跨 provider 汇总、用量告警 | 面板 UX 基准（实时性、告警形态）向它对齐；跨 provider 聚合本身**不**吸收 |
 | `dsh-provider-quota` / `dsh-musage` | 品类对照：泛化的「provider 额度面板」 | 定位边界样本：本插件不泛化成通用额度面板，只深耕商汤 |
 | `dsh-codearts-auth`（`upstream/deepseek-harness-codearts-master`） | **多 provider 聚合登录插件**：codearts / buddy / workbuddy / lobsterai / qoder / loomy / raccoon / trae 各写一套自有登录流（IAM OAuth、扫码轮询、短信），凭据一律进 DSH 凭据服务；其中小浣熊走微信扫码——因官方深链回调 `office-raccoon://auth/callback` 写死、宿主 Node 收不到 | 「自有登录 + 凭据服务」形态的完整先例（与本插件同机制）；其跨 provider 泛化正是 §5 不变量 3 划出的边界，**不吸收**。小浣熊部分的事实见 [ROADMAP.md](./ROADMAP.md) §6.1.1 |
@@ -253,7 +260,7 @@ draw-router 的多源能力时才有意义。
 | 维度 | dsh-draw-router（现状） | 本插件（现状） |
 |---|---|---|
 | 出图模型识别 | 名字正则 `DRAW_MODEL_PATTERNS`（line 25-34：`/image/i`、`/u1-fast/i`、`/wan/i`、`/flux/i`…命中才认），探测自己另调一次 `GET /v1/models` | `output_modalities` 含 `"image"` 的结构化判定（`llm-models.js` line 101-114，2026-09 已核真实响应），catalog 每小时已有 |
-| 识别质量 | 实锤会漏：商汤两把出图模型 `u1-fast` / `u1.5-lite`（§5.1）里，`u1-fast` 命中 `/u1-fast/i`，**`u1.5-lite` 一条正则都不命中**——装它配商汤源，`draw_image` 默认永远挑不到 u1.5-lite | 两把都识别 |
+| 识别质量 | 实锤会漏：两把出图模型 `Agnes-u1-fast` / `Agnes-u1.5-lite`（§5.1）里，前者因 `/u1-fast/i` 是子串匹配仍能命中，**`u1.5-lite` 一条正则都不命中**——装它配同一源，`draw_image` 默认永远挑不到 u1.5-lite | 两把都识别 |
 | 出图执行 | `buildEndpoint` 拼 `{base}/v1/images/generations`（line 72-79）→ `POST {model, prompt, n, response_format}` → 取 `data[0].url / b64_json`（line 209-261），约 80 行 | 无（待吸收的全部增量） |
 | 凭据 | 明文写进插件目录 `draw-config.json`（line 140-151） | DSH 凭据服务，不落盘 |
 
@@ -264,10 +271,10 @@ draw-router 的多源能力时才有意义。
   draw-router 的 `manualModels`——它每个 source 本来就支持 `addModel`
   （line 470-477），`drawModels()` 会合并 `detected + manual`
   （line 180-186），我们的清单进去后正则漏识别的问题直接消失。
-- **接法 B（吸收，大统一路线，推荐）**：Key（凭据服务 `SENSENOVA_API_KEY`）、
+- **接法 B（吸收，大统一路线，推荐）**：Key（凭据服务 `AGNES_TOKEN_PLAN_API_KEY`）、
   apiBase、catalog、轮询基建本插件全有，吸收的增量只是上面那 80 行执行 +
   用自己的结构化判定替掉正则。它 495 行里其余约 400 行（多源管理、
-  DashScope 异步任务、Agnes/StepFun 特判）按 §5 不变量 3
+  DashScope 异步任务、其它厂商特判）按 §5 不变量 3
   **不吸收**——那是「跨 provider 通用绘图」的边界外。
 
 顺手可借的小件：probe 失败 30 秒 cooldown（line 196）；
@@ -275,7 +282,7 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 
 **接法 B 已落地（2026-09-29，`draw.ts` + `index.ts` 接线）**：
 
-- 工具名 `sensenova_draw_image`（带前缀，避免与 dsh-draw-router 的
+- 工具名 `agnes_draw_image`（带前缀，避免与 dsh-draw-router 的
   `draw_image` 撞名），配置开关 `drawEnabled`（默认关）+ `drawModelId` +
   `drawTimeoutMs`；只有 `drawEnabled === true` 且 Host 有 tools 服务时才
   动态 `import("@deepseek-ai/dsh-tools")` 注册——无 tools 服务、peer 加载
@@ -285,7 +292,7 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
   Key 每次调用现取（`resolveApiKey`，轮换即生效）；失败分诊沿用 429 纪律
   （`insufficient/quota` → 配额问题，别重试；其余 429 → 限频，等再试）；
   失败后 30s 冷却（借自上游 line 196）。
-- 快照契约**零改动**（14 键不动，`API.md` 不变）：工具要么在要么不在，
+- 快照契约**零改动**（13 键不动，`API.md` 不变）：工具要么在要么不在，
   agent 直接可见；面板不新增展示。
 
 ### 5.5 边界裁定：第二上游（小浣熊）属于界内（2026-10-01）
@@ -296,8 +303,9 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 
 **为什么原来的划法会判错**：不变量 3 原写「只吸收与商汤 **Key/账号线**强相关的能力」。
 如果「账号线」指的是同一个认证域，那么小浣熊天然被排除——两者的令牌确实不通用：
-拿小浣熊桌面 App 的 `access_token` 打 `platform.sensenova.cn` 的 Token Plan 端点回
-`401 auth_token_invalid`（见 [ROADMAP.md](./ROADMAP.md) §6.1.1 的两次复测）。
+拿小浣熊桌面 App 的 `access_token` 打 Token Plan 的额度路由回
+`401 auth_token_invalid`（当时打的是商汤控制台；Token Plan 现已在 Agnes 控制台，
+复测端点见 [ROADMAP.md](./ROADMAP.md) §6.1.1 的两次复测与其「复测判据」）。
 **但认证域不通 ≠ 产品线无关**——把一个自家厂商的姐妹产品判成界外，是拿实现细节当边界。
 
 **同一厂商的举证**（三条独立信源，不是推测）：
@@ -329,9 +337,9 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 ## 6. 与上游 Python 工具的差异（给移植 / 对照用）
 
 - **凭据安全**：上游明文 `accounts.json`；本插件零明文、零调试日志，仅经 DSH 凭据服务。
-- **续期策略**：上游过期即重登（依赖明文密码）；本插件 `refresh_token` 续期，密码可从环境变量删除。
+- **续期策略**：上游过期即重登（依赖明文密码）；本插件同样以重登为唯一续期路径（Agnes 不发 refresh token），但密码可从环境变量删除——删掉后只是失去「自动重登」，面板会明确要求手动登一次，而不是静默失败。
 - **节流**：本插件显式区分「时间型拒绝（锁号/限频）照单全收平台声明窗口」与「凭据型拒绝（错密码）绝不自动重试」，专门防锁号；上游无此分层。
-- **接口知识可复用**：两方调用的 `pool-usage`、`credit-usage-trend`、JWT 解析逻辑一致，`upstream/` 的 `auth_login.py` 可作为登录封包与字段语义的对照参考。
+- **接口知识可复用**：上游的 JWT 解析、`upstream/auth_login.py` 的登录封包，仍是理解商汤体系登录形态的对照参考（本插件的 Agnes 一跳登录已不需要封包，见 [AUTH.md](./AUTH.md) §3）。
 
 ---
 

@@ -5,13 +5,13 @@
 
 ## 项目一句话
 
-DSH 插件：参考上游应用 `upstream/sensenova-usage-dashboard`，从商汤 SenseNova 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / 小浣熊）。
-Host（Node/cordis）走完整 OIDC+PKCE 登录并自续期；Client（React bundle）轮询本地路由。
+DSH 插件：参考上游应用 `upstream/sensenova-usage-dashboard`，从 Agnes 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / 小浣熊）。
+Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/user/login`，无 OIDC / 无 refresh token，令牌死了就重登一次）；Client（React bundle）轮询本地路由。
 
 **三条事实**（写代码前先认清你在动哪一条）：
 
-1. 「积分额度」tab 是地基，走 Host 登录 + 自动续期，只读 OpenStack 控制台。
-2. 「接入 API」tab 与出图工具会把本插件**升级为推理通道**——注册 provider `sensenova-token-plan`、给 agent 挂 `sensenova_draw_image`。它们都是 **opt-in 默认关**，任何失败必须降级为「面板照常用、该模块缺席」。
+1. 「积分额度」tab 是地基，走 Host 登录 + 自动重登，只读 Agnes 控制台（`platform-backend.agnes-ai.cn`）。
+2. 「接入 API」tab 与出图工具会把本插件**升级为推理通道**——注册 provider `agnes-token-plan`、给 agent 挂 `agnes_draw_image`。它们都是 **opt-in 默认关**，任何失败必须降级为「面板照常用、该模块缺席」。
 3. **「小浣熊」tab 是第二个上游**：接的是 `xiaohuanxiong.com` 网关的**独立 provider** `sensenova-raccoon`。它与 Token Plan **同属商汤旗下**，但**认证域互不相通**（桌面 App 登录态打不通 Token Plan，实测见 `docs/ROADMAP.md` §6.1.1）——所以它在 §5 不变量 3 的**界内**（裁定见 `docs/ARCHITECTURE.md` §5.5），而凭据仍必须各走一套。改这条线时它对主注册的影响应恒为零：两边 publisher、store、凭据引用全部隔离。
 
 **定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计决策研究档案见 docs/IMPROVEMENTS.md。
@@ -37,10 +37,10 @@ dsh-connect-workbuddy
 ## 验证（按域裁剪，禁止无脑全量）
 
 ```bash
-node test/auth.test.mjs     # 登录/PKCE/JWE/节流分类
+node test/agnes-auth.test.mjs  # 一跳登录/失败分类/重登/节流窗口解析
 node test/store-baseline.test.mjs # token-store 全行为冻结基线：拆分/改动续期·节流·迁移前后必须零漂移
 node test/panel.test.mjs    # 面板决策、中英字典一致性
-node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch、shape 漂移、trend 求和
+node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shape 漂移、分桶求和、四窗口
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
 npm test                    # 全量离线测试门禁 + 末尾 build-gate + e2e-gate（套件清单与链以 package.json scripts.test 为准，不在本文件背书数字；各自探到 tsdown / dsh CLI 才实跑，否则 SKIP）
@@ -59,26 +59,35 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 
 ## 红线（违反任一都会炸到用户机器）
 
-1. **凭据不入库**：账号与 access/refresh token 只进 DSH 凭据服务（`~/.dsh/.credentials.yaml`，owner-only），
-   永不写入插件目录、永不进 git、永不进日志；**密码不落盘**——仅登录瞬间内存使用，`SENSENOVA_PASSWORD`
-   环境变量是它唯一的持久来源（显式 opt-in，勿把密码写回凭据服务）。登录 trace 已在 `sensenova-auth.ts`
-   内做值级脱敏（`code`/`code_verifier`/token/cookie），新增输出点必须过同一套
-   `sanitize*`。
+1. **凭据不入库**：账号与 access token 只进 DSH 凭据服务（`~/.dsh/.credentials.yaml`，owner-only），
+   永不写入插件目录、永不进 git、永不进日志；**密码不落盘**——仅登录瞬间内存使用，`AGNES_PASSWORD`
+   环境变量是它唯一的持久来源（显式 opt-in，勿把密码写回凭据服务）。Agnes 没有 JWE 封包端点，
+   密码是明文 JSON 过 TLS，**传输层就是唯一的保护**，所以「不落盘」是承重设计而非整洁。
+   凭据防漏分两层：**登录 trace 靠「值不进 trace」**（只记 `maskUsername` 与形状事实），
+   **错误文本靠 `redactSecrets()`**（`src/host/util.ts`，provider / raccoon / 路由三处必须过）。
+   详见 `docs/PITFALLS.md` §15。
 2. **credentials 记录只能是 `kind: "grant"`**。发明私有 kind 会让凭据文件对
    整个 Host 不可解析，而该服务是 required —— **Host 直接起不来**。私有状态
    **不进凭据服务**（节流等已迁到插件状态文件 `throttle-store.ts`）；历史上寄
    存在凭据记录里的节流仅按 marker（`THROTTLE_MARKER`）做一次性迁移读取，别把
    它变回常驻地址。
-3. **auth overrides 是 patch 行的顶层键**（`iamBase`、`tokenEndpoint`…），
-   不是嵌套 `auth:` 块。嵌套会被静默忽略，面板拿着出厂默认值打到**真平台**——
-   这条已经锁过一次号。`resolveAuthOverrides` 对嵌套块直接抛错，别放宽它。
-4. **PKCE verifier 用 `Uint8Array` + 长度自检（43–128）**。`Buffer.from(Uint32Array)`
-   按"每元素一字节"编码、静默截断——曾产出 11 字符 verifier，token 端点只回
-   `invalid_grant`，hint 是唯一线索。`b64url` 对非 Uint8 视图已有补偿分支，别删。
+3. **auth overrides 是 patch 行的顶层键**（`loginPath`、`loginTimeoutMs`、
+   `fallbackExpiresInSeconds`），不是嵌套 `auth:` 块。嵌套会被静默忽略，面板拿着
+   出厂默认值打到**真平台**——这条已经锁过一次号。`resolveAuthOverrides` 对嵌套块
+   直接抛错，别放宽它。
+4. **`consoleOrigin` 必须是后端源站** `https://platform-backend.agnes-ai.cn`，不是控制台
+   前端 `platform.agnes-ai.cn`。前端源站的 `/api/*` 是 Next.js 404 外壳，打到那里会以
+   「路径不对」的样子失败，而真实原因是「主机不对」。`AUTH_DEFAULTS.consoleOrigin`
+   是唯一出处，别在别处再写一遍字面量。
 5. **登录路径的每次尝试（成功也算）必须经 `onTrace` 落盘**。没有成功 trace，
    "浏览器能登、面板不能"就无法对照排查。
-6. **密码必须走 JWE 封包**（平台 JWKS 公钥 RSA-OAEP + A256GCM），明文不上网；
-   算法组合是平台钉死的，不是自由参数。
+6. **`/api/usage/overview` 必须保持唯一致命源**，series / subscription / plans 三个源必须保持
+   **降级**（失败只写 `quota.error`）。面板的 `needsSetup` 判定是
+   `data === null && !FORM_EXCLUDED_CODES.has(code)`——把图表源也做成致命，会让「图表挂了」
+   变成「要你重登」，而重登解决不了它。
+7. **不得计算「剩余」**：平台只给上限与**累计**用量，两者周期不同，`limit − total` 是个没人能
+   负责的数。同理 `unavailableModelIds` 恒为空是**设计**而非遗漏——Agnes 没有按模型配额，
+   账号级额度不足必须在面板**明说**，而不是静默把模型从选择器摘掉。
 
 ## 并行会话纪律
 
@@ -95,7 +104,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 
 | 何时 | 查 |
 |---|---|
-| 排查登录失败 / 改 PKCE、JWE、续期、节流 | `docs/AUTH.md` → `docs/SENSENOVA-API.md` |
+| 排查登录失败 / 改一跳登录、失败分类、重登、节流 | `docs/AUTH.md` → `docs/AGNES-API.md` §1–§2 |
 | 动第二个上游（小浣熊 / `sensenova-raccoon`） | `docs/ROADMAP.md` §6.1.2（网关契约复测表）→ `src/host/raccoon*.ts` |
 | 给用户看的文案（README / `cordis.patch.yml`）改了 | `test/docs.test.mjs` 检查 9/10（tab 全覆盖 + 槽位一致），两者都进 npm 包 |
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
@@ -111,7 +120,8 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 - **e2e 曾跑完不退出**：成功路径没 `process.exit`，Host 子进程 stdio 管道吊住
   事件循环——所有 check 通过后仍挂几分钟，看起来像在干活。现已有显式退出 +
   看门狗（240s）+ 每请求 15s 超时，别拆。
-- **假平台必须真校验**：`fake-platform.mjs` 的 token 端点要校验 PKCE（长度 +
-  S256 匹配），`openSealed` 要读全 5 段 JWE。假平台不校验的每一环，
-  都是 bug 直达用户的通道。
-- **测试期望要对齐实现语义**：`parseTrend` 是对 points 求和，不是取首个。
+- **假平台必须真校验**：`fake-platform.mjs` 的三条控制台路由只接受它自己签发的
+  那枚 token（否则 401 + 信封 `code:401`），`/api/usage/series` 会记下收到的查询串
+  供断言（窗口必须是**日期**）。假平台不校验的每一环，都是 bug 直达用户的通道。
+- **测试期望要对齐实现语义**：`parseUsageSeries` 是对**跨桶**求和（每桶就是一行，
+  不按模型归并），且会把桶按时间序排好——假平台故意倒序下发就是为了让排序失效能被抓到。

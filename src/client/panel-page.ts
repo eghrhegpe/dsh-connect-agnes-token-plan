@@ -11,9 +11,9 @@ import { clock, format } from "./format.ts";
 import { errorOfStatus, interpretSnapshot, viewOf } from "./snapshot.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
-import type { PoolData, SnapshotData, VisionModelData } from "./wire.ts";
+import type { SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
-import { PoolCard, PoolExhaustionNotice, SectionCard, TrendTable } from "./cards.ts";
+import { PlanCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
 import { DrawSwitch } from "./provider-controls.ts";
 import { RaccoonTab } from "./raccoon-tab.ts";
 
@@ -45,7 +45,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // own switch reads as "this does nothing". Only the API key editor stays
   // closed — it holds a secret field, and it is a prerequisite the two
   // cards above point at rather than the thing being configured.
-  const [openSections, setOpenSections] = useState({ pools: true, trend: true, account: false, provider: true, draw: true, llm: false });
+  const [openSections, setOpenSections] = useState({ quota: true, usage: true, account: false, provider: true, draw: true, llm: false });
   // Three fixed perspectives: "quota" is the daily reading (pools, trend,
   // account), "api" is the Token Plan wiring (key, provider push, draw), and
   // "raccoon" is the SECOND upstream provider (ROADMAP §6.1) — an independent
@@ -181,8 +181,8 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     };
   }, [load, cadenceMs]);
 
-  const pools = data?.pools;
-  const trend = data?.trend;
+  const quota = data?.quota;
+  const usage = data?.usage;
   // The decision is `viewOf`'s (module scope): the Node-side tests invoke
   // this exact function, so there is no second copy that could drift.
   const { failure, auth, needsSetup, guidance, shapeWarnings } = viewOf(data, error, tt);
@@ -247,28 +247,30 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               null,
               // Both content sections are collapsible card headers, auto-expanded
               // by default: the panel opens showing everything, and the reader
-              // can tuck the chart or the pools away to focus on the other.
+              // can tuck the chart or the plan card away to focus on the other.
               h(
                 SectionCard,
-                { title: tt("section.pools"), open: openSections.pools, onToggle: () => toggleSection("pools"), tt },
-                pools?.plan?.name
-                  ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 10 } }, pools.plan.name)
+                { title: tt("section.quota"), open: openSections.quota, onToggle: () => toggleSection("quota"), tt },
+                // A source that failed outright (the series, the subscription,
+                // the catalogue) is named here rather than left to read as
+                // "no data yet" — the sources that DID arrive still render.
+                quota?.error
+                  ? h("div", { style: { ...S.formNote, marginTop: 0, marginBottom: 12 }, role: "status" },
+                      format(tt("quota.error"), { source: String(quota.error.source ?? ""), message: String(quota.error.message ?? "") }))
                   : null,
-                h(PoolExhaustionNotice, { pools, tt }),
-                h(
-                  "div",
-                  { style: S.poolsGrid },
-                  (pools?.pools || []).map((pool: PoolData) => h(PoolCard, { key: pool.id, pool, tt }))
-                ),
-                Array.isArray(data.uncountedModels) && data.uncountedModels.length > 0
-                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
-                      format(tt("pool.uncounted"), { models: data.uncountedModels.join(" · ") }))
-                  : null,
+                h(PlanCard, { quota, tt }),
+                // The one thing the reader would otherwise get wrong: the
+                // windows above and the totals below are measured over
+                // different periods, so subtracting them would invent a
+                // "remaining" figure. Said once, here, rather than on each of
+                // the four window cards.
+                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 12 } }, tt("quota.windowNote")),
+                h(UsageTotals, { totals: quota?.totals, label: tt("quota.accountTotals"), tt }),
                 // Step one of the vision plan: which of THIS key's models take
                 // image input. Only shown when the Host actually had a catalog to
                 // ask (no API key → the field is absent → no claim either way).
                 Array.isArray(data.visionModels) && data.visionModels.length > 0
-                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: -4, marginBottom: 4 } },
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 10 } },
                       format(tt("pool.vision"), {
                         models: data.visionModels.map((entry: VisionModelData) => entry.id).join(" · ") + (data.visionModels.every((entry: VisionModelData) => entry.source === "name") ? tt("pool.visionInferred") : "")
                       }))
@@ -276,8 +278,8 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               ),
               h(
                 SectionCard,
-                { title: format(tt("section.trend"), { hours: trend?.hours ?? 24 }), open: openSections.trend, onToggle: () => toggleSection("trend"), tt },
-                h(TrendTable, { trend, tt })
+                { title: format(tt("section.usage"), { days: usage?.days ?? 30 }), open: openSections.usage, onToggle: () => toggleSection("usage"), tt },
+                h(UsageChart, { usage, tt })
               ),
               // The cache age is quoted from the snapshot, not written down here:
               // a note that says 60 while the Host caches for 300 is a lie the

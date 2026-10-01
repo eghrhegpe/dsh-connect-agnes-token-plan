@@ -1,10 +1,15 @@
 # 踩坑经历（Pitfalls）
 
-把对接商汤控制台过程中真实踩过的坑记下来，按「现象 → 根因 → 修法」写。多数已写进代码，这里是为了**下次改的时候别再踩一遍**，也方便接手的人理解代码里那些「看起来多此一举」的防御。
+把对接控制台过程中真实踩过的坑记下来，按「现象 → 根因 → 修法」写。多数已写进代码，这里是为了**下次改的时候别再踩一遍**，也方便接手的人理解代码里那些「看起来多此一举」的防御。
+
+> **范围说明**：本插件 2026-10 从商汤 SenseNova 控制台迁到 **Agnes 控制台**，登录线由 OIDC 授权码 + JWE 密码封包换成**一跳账号密码 POST**（见 [AUTH.md](./AUTH.md)）。于是下面分三类：
+> - 标了「**商汤时代，代码已删除**」的条目（第 1、2、3、5、14 条）描述的是**已经不存在的文件**。保留它们是为了记住这类坑的**形状**——**不要按字面去找这些函数**。
+> - 标了「**商汤时代实测**」的条目（第 20、21 条）是在已退役的推理网关上量的数据；**现行推理契约以 [AGNES-API.md](./AGNES-API.md) §7 为准**。
+> - 其余条目（含第 4、6、11、12、13、16–19、22–26 条）对**当前代码全部有效**。
 
 ---
 
-## 1. 登录流必须从 console 源站发起，否则 CSRF cookie 取不到
+## 1. 登录流必须从 console 源站发起，否则 CSRF cookie 取不到（商汤时代，代码已删除）
 
 - **现象**：授权码流走到回调时直接 `No CSRF value available in the session cookie`，流程死。
 - **根因**：Hydra 的 CSRF cookie 绑定在**入口 host** 上。如果在 IAM 自己的源站（`iam.sensecoreapi.cn`）发起授权，回调时 cookie 不可达。
@@ -12,7 +17,7 @@
 
 ---
 
-## 2. 密码封包必须是 RSA-OAEP(SHA-1) + A256GCM
+## 2. 密码封包必须是 RSA-OAEP(SHA-1) + A256GCM（商汤时代，代码已删除）
 
 - **现象**：IAM 拒绝封包，登录失败。
 - **根因**：平台用 `alg: RSA-OAEP`（即 OAEP over **SHA-1**）。用更「现代」的 `RSA-OAEP-256` IAM 直接拒。
@@ -20,11 +25,11 @@
 
 ---
 
-## 3. 登录失败只读顶层 message，把锁号当密码错
+## 3. 登录失败只读顶层 message，把锁号当密码错（商汤时代；教训已由 `classifyLoginFailure` 承接）
 
 - **现象**：账号被锁、被限频，面板却统一报「账号或密码不正确」，用户反复重试 → 锁死更严重。
 - **根因**：IAM 返回 `google.rpc.Status` 信封，真正原因在 `details[].reason`，顶层 `message` 只是泛化的 `InvalidArgument`。
-- **修法**：`rejectionCode()` 优先取 `details[].reason` 精确匹配（`invalidAccountOrPassword`/`accountLocked`/`tooManyAttempts`/`verificationRequired`…）， substring 扫描只作兜底，绝不伪造具体原因。
+- **修法**：`rejectionCode()` 优先取 `details[].reason` 精确匹配（`invalidAccountOrPassword`/`accountLocked`/`tooManyAttempts`/`verificationRequired`…）， substring 扫描只作兜底，绝不伪造具体原因。**Agnes 侧的同一条纪律由 `classifyLoginFailure()` 承接**：平台原话（`message`）优先于本地猜测，锁定/限频与「密码错」分成两类，前者等窗口、后者绝不自动重试。
 
 ---
 
@@ -36,7 +41,7 @@
 
 ---
 
-## 5. refresh_token 会被轮换，忽略新值下次就死
+## 5. refresh_token 会被轮换，忽略新值下次就死（商汤时代，代码已删除）
 
 - **现象**：连续刷新后某次突然 `refresh_rejected`。
 - **根因**：Hydra 每次刷新都发**新 refresh_token**，旧的直接失效。只拿 access_token 不存 refresh_token = 自毁。
@@ -92,15 +97,15 @@
 
 - **现象**：`limit`/`used` 直接当数字用得到 NaN；`reset_at` 显示成奇怪的大数。
 - **根因**：控制台把数字**当字符串**返回，时间是 **epoch 秒的字符串**（不是毫秒）。
-- **修法**：`credits()` 用 `Number()` 归一；`epochSeconds()` 转 `Number` 再 `Math.floor`，空/`0`/非法返回 `null`（避免把「无到期」误判成 1970 年）。
+- **修法**：`countOf()` 用 `Number()` 归一、不可解析一律 0（面板显示「缺个数」而不是 `NaN`）；`timestampSeconds()` 接受 epoch 秒 / 毫秒、二者的十进制字符串、以及 ISO-8601，空 / `0` / 非法返回 `null`（避免把「无到期」误判成 1970 年）。Agnes 同样混用两种形态——套餐上限是真 JSON 数字、用量计数器见过字符串——所以这条至今有效。
 
 ---
 
 ## 12. 形状漂移被读成「暂无数据」
 
 - **现象**：平台改了返回字段，面板永远显示空。
-- **根因**：解析器对缺失字段宽容，若顶层 key（`plan`/`pools`/`series`）改名，解析仍返回「能看懂的」，缺失部分静默消失。
-- **修法**：`EXPECTED_SHAPES` 校验顶层 key，缺哪个就在快照里挂 `shapeWarnings`，面板顶部明示「接口缺字段 {api} {missing}」，而不是永远「暂无数据」。
+- **根因**：解析器对缺失字段宽容，若顶层 key 改名，解析仍返回「能看懂的」，缺失部分静默消失。
+- **修法**：`EXPECTED_SHAPES` 校验顶层 key（现为 `usage-overview` / `usage-series` / `subscription` 三档；`subscription` 故意是**空数组**——它的形状尚未观测到，见 [AGNES-API.md](./AGNES-API.md) §6），缺哪个就在快照里挂 `shapeWarnings`，面板顶部明示「接口缺字段 {api} {missing}」，而不是永远「暂无数据」。
 
 ---
 
@@ -112,7 +117,7 @@
 
 ---
 
-## 14. JWKS 缓存跨 tenant 复用会封错包
+## 14. JWKS 缓存跨 tenant 复用会封错包（商汤时代，代码已删除）
 
 - **现象**：切到企业镜像/预发后密码封包用错公钥。
 - **根因**：JWKS 缓存了上一个租户的密钥，新平台却用不同 key。
@@ -120,11 +125,13 @@
 
 ---
 
-## 15. 登录 trace 漏了脱敏 = 泄露密码/token
+## 15. 凭据经错误消息漏进日志或面板
 
-- **现象**：潜在——诊断文件里出现明文密码或 token。
-- **根因**：每次登录都写 trace 便于「浏览器能用、面板不能」的对照排查，但若不过滤就泄密。
-- **修法**：`sanitizeUrl`/`sanitizeBody` 把 `password`/`access_token`/`refresh_token`/`code`/`code_verifier`/`cookie` 等一律 `[REDACTED]`，trace 才落盘；文件权限 `0o600`，仅留最近 20 个。
+- **现象**：潜在——诊断文件、日志或面板上出现明文密码、token 或 `sk-` Key。
+- **根因**：每次登录都写 trace 便于「浏览器能登、面板不能」的对照排查，写不好就泄密；另一头更隐蔽——provider / raccoon 注册失败时，HTTP 错误对象的 `message` 往往**内嵌了它构造时的请求头**（axios / fetch 的错误都这样），而平台 4xx 正文也可能把 `sk-` Key 原样回显。这些字符串会顺着 `providerState.error` 与 `ctx.logger.warn` 出去。
+- **修法**（两层，别只做一层）：
+  - **登录 trace 靠「不写值」，不靠事后脱敏**：hop 记录只放形状事实（`step` / `status` / `code` / `retryAfterMs` / `tokenLength` / `tokenIsJwt` / `expiresIn`）、平台原话（截 200 字，本身不含凭据）与**掩码后的账号名**（`maskUsername`）；token 只记长度、不记值。落盘权限 `0o600`，仅留最近 20 个。**新增输出点时别改成「先写后脱敏」——这一层没有 sanitize 兜底，纪律就是「值不进 trace」。**
+  - **错误文本靠 `redactSecrets()`**（`src/host/util.ts`）：provider / raccoon / 路由三处的 error message 在进快照或日志前必须过它，覆盖五类形态——`Authorization:` 头、`Bearer` / `Basic`、裸 `sk-…`、带引号的 `{"password":"…"}` 键值对、以及 `password=…` 形式。`test/provider.test.mjs` §14 钉住这套替换。
 
 ---
 
@@ -148,15 +155,15 @@
 
 ---
 
-## 17. e2e 继承了开发机的 `SENSENOVA_API_KEY`，测的不是干净安装
+## 17. e2e 继承了开发机的 `AGNES_TOKEN_PLAN_API_KEY`，测的不是干净安装
 
-- **现象**：本机（shell 里设了 `SENSENOVA_API_KEY`）跑 e2e，「没有 Key 时目录不可用」这类断言失败；
+- **现象**：本机（shell 里设了 `AGNES_TOKEN_PLAN_API_KEY`）跑 e2e，「没有 Key 时目录不可用」这类断言失败；
   面板保存 Key 的请求返回 `ok:false`，错误是
-  `credentials-local: "SENSENOVA_API_KEY" is supplied read-only by the launching environment`。
+  `credentials-local: "AGNES_TOKEN_PLAN_API_KEY" is supplied read-only by the launching environment`。
 - **根因**：e2e 用 `{...process.env}` 拉起 Host，开发机环境里的 Key 就成了子进程的环境凭据；凭据服务把
   「来自启动环境」的值视为**只读**，于是插件既提前拿到了 Key（目录不再降级），又写不进新值。
   干净机器上这两条路径都看不见——测试因此只在作者机器上红，属于典型的「只是通常离线」。
-- **修法**：`startHost()` 在 spawn 前删掉 `SENSENOVA_API_KEY`/`SENSENOVA_USERNAME`/`SENSENOVA_PASSWORD`
+- **修法**：`startHost()` 在 spawn 前删掉 `AGNES_TOKEN_PLAN_API_KEY`/`AGNES_USERNAME`/`AGNES_PASSWORD`
   （与离线套件的 `isolateHostEnv` 同一组名字），隔离从「另一个 `$DSH_HOME`」补齐到「另一份环境」。
   注意这也是**真实产品行为**的体现：用户的 Key 若来自启动环境，面板保存会被凭据服务拒绝，面板会照实显示该原因，
   此时清掉环境变量或改用它处提供的值即可——插件不会偷偷绕过只读引用。
@@ -174,12 +181,12 @@
 ## 19. adapter 工厂一旦返回 Promise，就会注册一个 undefined adapter
 
 - **现象**：潜在——面板说 provider 已注册，快照 `llm.providerError` 为空，但真正调模型时报完全不像原因的路由错误。
-- **根因**：`createSensenovaAdapter()` 现在是同步函数，`index.ts` 把它的返回值直接交给 `registerAdapter`。哪天它内部改成动态 import peer 而变成 async，`built` 就是 Promise，`built.adapter` / `built.providerIds` 全为 `undefined`——而 Host 照单注册。故障出现在模型路由，离原因很远。
+- **根因**：`createAgnesAdapter()` 现在是同步函数，`index.ts` 把它的返回值直接交给 `registerAdapter`。哪天它内部改成动态 import peer 而变成 async，`built` 就是 Promise，`built.adapter` / `built.providerIds` 全为 `undefined`——而 Host 照单注册。故障出现在模型路由，离原因很远。
 - **修法**：`await` 工厂的返回值（对同步函数零副作用），并校验形状必须是 `{ adapter, providerIds }`；不符就在发布前抛错，进快照的 `llm.providerError`，而不是注册一个空壳。
 
 ---
 
-## 20. 官方接口文档与平台行为不一致，照抄必 400
+## 20. 官方接口文档与平台行为不一致，照抄必 400（商汤时代实测）
 
 - **现象**：把商汤官方「SenseNova 6.8 Flash Lite」接口文档里的参数照进代码：`thinking:"disabled"` 想关思考，结果每请求 400；`reasoning_effort:"max"` 想要最强推理，也 400。
 - **根因**：官方文档多处与平台实际不符（2026-09-29 对 `token.sensenova.cn/v1` 实测 40+ 个请求）：
@@ -191,7 +198,7 @@
 
 ---
 
-## 21. 同一平台两套思考语义，按模型家族分家
+## 21. 同一平台两套思考语义，按模型家族分家（商汤时代实测）
 
 - **现象**：在 flash-lite 上验证过的思考参数搬到 deepseek/glm/kimi 上行为不同：flash-lite 的 `thinking` 字符串 400，deepseek-v4-flash 的 `thinking:{"type":"disabled"}` 却有效；`reasoning_effort:"max"` flash-lite 400、glm-5.2 却 200；返回的思考字段 flash-lite 是 `reasoning`、deepseek/glm/kimi 是 `reasoning_content`。
 - **根因**：商汤在 OpenAI 兼容网关背后给不同模型家族做了各自的参数/字段方言（2026-09-29 逐模型实测）：
@@ -206,7 +213,7 @@
 
 ## 22. 两个 profile 跑的不是同一份代码，却共用同一份状态文件
 
-- **现象**：web profile 的面板改了配置或模型允许清单，desktop profile 的表现跟着变（或干脆不变）；desktop 侧的行为与源码对不上，像是跑着旧版本。问「这台机器上商汤 provider 到底是开是关」，翻遍 `cordis.patch.yml` 找不到答案。
+- **现象**：web profile 的面板改了配置或模型允许清单，desktop profile 的表现跟着变（或干脆不变）；desktop 侧的行为与源码对不上，像是跑着旧版本。问「这台机器上 Agnes provider 到底是开是关」，翻遍 `cordis.patch.yml` 找不到答案。
 - **根因**（2026-09-30 本机实测，三处超出直觉的事实）：
   - **装载面不是 patch，是 bundle**：插件在 profile 的 `package.json#dsh.profile.bundles` 里注册，`cordis.patch.yml` 只是 overlay，**缺省合法**（`cordis.yml` 头注即写明：不要编辑该文件，树由 bundles → patch → overlays 合成）。所以「patch 里没有本插件的行」什么都不证明。
   - **两个 profile 装的不是同一份**：本机 `profiles/web/node_modules/<name>` 是 `symlink → ~/.dsh/plugins/<name>`（跑源码 HEAD），而 `profiles/desktop/node_modules/<name>` 是**真目录**（安装副本，pin 在依赖里声明的版本号）。改了源头，web 立即生效，desktop 停在旧版本。

@@ -43,8 +43,8 @@ function check(name, condition, detail = "") {
 
 // --- 2. parseDrawPayload ----------------------------------------------------
 {
-  const ok = parseDrawPayload({ version: 1, enabled: true, drawModelId: "sensenova-u1.5-lite" });
-  check("draw switch + model round-trip", ok.enabled === true && ok.modelId === "sensenova-u1.5-lite");
+  const ok = parseDrawPayload({ version: 1, enabled: true, drawModelId: "Agnes-u1.5-lite" });
+  check("draw switch + model round-trip", ok.enabled === true && ok.modelId === "Agnes-u1.5-lite");
   const noModel = parseDrawPayload({ version: 1, enabled: true });
   check("draw with no model preference reads modelId null (auto)",
     noModel.enabled === true && noModel.modelId === null);

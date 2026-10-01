@@ -104,6 +104,26 @@ export const S = {
   trendLegend: { marginTop: 10, fontSize: 11, lineHeight: "16px", color: "var(--dsw-alias-label-secondary)" },
   muted: { color: "var(--dsw-alias-label-secondary)" },
   error: { color: "var(--dsw-alias-state-error-primary)" },
+  // The usage figures row: one cell per dimension, label over value. A grid
+  // rather than an inline sentence because the four dimensions are separate
+  // facts with different units, and a run-on line made them read as one sum.
+  metricGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 140px), 1fr))", gap: 10, marginBottom: 14 },
+  metric: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0, padding: "10px 12px", borderRadius: 10, background: "var(--dsw-alias-bg-layer-2)" },
+  metricLabel: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
+  // Tabular figures so the row does not jitter while polling.
+  metricValue: { fontSize: 17, lineHeight: "22px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
+  // The per-bucket chart: a flex row of equal columns, each filling from the
+  // bottom. Equal columns (not a fixed bar width) is what keeps 30 daily
+  // buckets inside the card instead of pushing it into a horizontal scroll.
+  usageBars: { display: "flex", alignItems: "flex-end", gap: 2, height: 96, padding: "0 1px" },
+  usageBar: { flex: 1, minWidth: 2, height: "100%", display: "flex", alignItems: "flex-end" },
+  usageBarFill: { width: "100%", minHeight: 2, borderRadius: 2, background: "var(--agnes-brand, #6C5CE7)" },
+  usageAxis: { display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6, fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
+  // One plan row in the collapsed catalogue: name, cycle, then the limits
+  // right-aligned so the three tiers line up and can be compared by eye.
+  catalogueRow: { display: "flex", alignItems: "baseline", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--dsw-alias-border-l1)", fontSize: 12 },
+  catalogueName: { flex: "0 0 auto", fontWeight: 500 },
+  catalogueLimits: { marginLeft: "auto", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums", textAlign: "right" },
   note: { marginTop: 24, color: "var(--dsw-alias-label-secondary)", fontSize: 12, lineHeight: "18px" },
   empty: { color: "var(--dsw-alias-label-secondary)", padding: "18px 0" },
   field: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 },

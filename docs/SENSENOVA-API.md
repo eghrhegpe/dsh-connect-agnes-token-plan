@@ -1,8 +1,22 @@
 # 商汤 SenseNova 接口文档（SenseNova API）
 
+> ⚠️ **历史档（SenseNova 时代）。本插件已不再调用这份文档里的任何接口。**
+>
+> 额度与登录两条链路都已迁到 **Agnes**：控制台换成 `platform-backend.agnes-ai.cn` 的
+> 一跳账号密码登录（无 OIDC / 无 PKCE / 无 JWE / 无 refresh token），推理侧换成
+> `api.agnes-ai.cn/v1`。两份现行事实源是 [AGNES-API.md](./AGNES-API.md)（接口全集）与
+> [AUTH.md](./AUTH.md)（登录协议）。
+>
+> 这份档**刻意保留**，因为三件事仍然指着它：① 第二个上游「小浣熊」与
+> `upstream/sensenova-usage-dashboard` 同属商汤体系，其接口对照仍以本文为准；
+> ② §0 归档的官方原文是 `docs/sensenova-api-reference/` 的索引；
+> ③ [PITFALLS.md](./PITFALLS.md) 的多条踩坑来自这段时期，引用需要落脚点。
+> 阅读时请把它当**史料**：文中提到的 `sensenova-auth.ts` / `sensenova-crypto.js` /
+> `parsePools` / `parseTrend` 都已随迁移删除，不会再出现在源码里。
+
 本插件与上游 Python 工具（`upstream/`，见 §6）都围绕同一套商汤控制台接口。本文把它们集中记下，避免散落在代码注释里。
 
-> 一切以商汤平台实际返回为准；下文字段名来自本插件 `index.ts` 的真实解析逻辑（`parsePools` / `parseTrend`）与 `sensenova-auth.ts` 的登录流。**接口如有改名，本插件通过 `shapeWarnings` 提示，而非静默显示「暂无数据」——所以改接口第一信号是面板顶部冒出「接口缺字段」提示，不是空白。**
+> 一切以商汤平台实际返回为准；下文字段名来自迁移前插件 `index.ts` 的真实解析逻辑（`parsePools` / `parseTrend`）与 `sensenova-auth.ts` 的登录流。**接口如有改名，本插件通过 `shapeWarnings` 提示，而非静默显示「暂无数据」——所以改接口第一信号是面板顶部冒出「接口缺字段」提示，不是空白。**
 
 ---
 

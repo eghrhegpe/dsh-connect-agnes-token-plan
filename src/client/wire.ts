@@ -5,7 +5,7 @@
  * (see `src/host/snapshot-aggregate.ts`); keeping them in the client half
  * is a deliberate duplication CONSTRAINT: the client bundles unbuilt, so it
  * cannot import the Host's types, and `test/contract.test.mjs` asserts the
- * snapshot's 14-key shape against the same names.
+ * snapshot's key shape against the same names.
  *
  * The shapes stay forgiving on purpose: a missing field must render as
  * "no data yet", never throw — so every property is optional, and reading
@@ -13,48 +13,90 @@
  * closure did. Types are loaded, never enforced at runtime.
  */
 
-/** One pool's 5h/7d quota window, as `parsePools` normalizes it. */
+/**
+ * One quota window as the PLAN caps it — "N per W hours", not a balance.
+ *
+ * Agnes allocates no credits: it rate-limits four dimensions over sliding
+ * windows. `used` and `remaining` are therefore OPTIONAL and usually absent —
+ * the console reports cumulative usage, not a per-window balance, and a
+ * computed `limit - total` would compare two different periods. The card shows
+ * them only when the platform itself stated them.
+ */
 export interface QuotaWindowData {
+  /** `requests5h` | `requestsWeekly` | `imagesDaily` | `videoDaily`. */
+  key?: string;
+  /** `requests` | `images` | `video` — what the number counts. */
+  unit?: string;
   limit?: number;
-  used?: number;
-  remaining?: number;
-  resetAt?: number | null;
+  /** The window length the limit applies over. */
+  windowHours?: number;
+  used?: number | null;
+  remaining?: number | null;
 }
 
-/** One pool row of the `pools.pools` array. */
-export interface PoolData {
-  id?: string;
+/** One plan, as the quota screen reads it. */
+export interface PlanData {
+  uuid?: string;
+  planId?: number;
   name?: string;
-  poolType?: string;
-  modelIds?: string[];
-  window5h?: QuotaWindowData | null;
-  window7d?: QuotaWindowData | null;
-  grantBalance?: number;
-  nearestGrantExpiry?: number | null;
-  nearestGrantExpiringBalance?: number;
-  /** Filled by the Host when a catalog was available. */
-  callableModels?: string[];
-  lockedModels?: string[];
+  displayName?: string;
+  billingCycle?: string;
+  displayCycle?: string;
+  priceMinor?: number;
+  currency?: string;
+  /** The platform's own one-line summary, e.g. "1500 次模型请求 / 5 小时". */
+  usageLimitText?: string;
+  limits?: {
+    requests5h?: number;
+    requestsWindowH?: number;
+    requestsWeekly?: number;
+    imagesDaily?: number;
+    videoDaily?: number;
+  };
 }
 
-/** The `pools` block: the plan header plus the pool deck. */
-export interface PoolsData {
-  plan?: { id?: string; name?: string; type?: string };
-  pools?: PoolData[];
+/**
+ * Consumption figures, from either the account total or the charted window.
+ *
+ * Both sources use the SAME key names on purpose, so one component renders
+ * either without a translation step — the label says which period it covers.
+ */
+export interface UsageTotalsData {
+  totalRequests?: number;
+  totalTokens?: number;
+  totalImages?: number;
+  totalVideoSeconds?: number;
+  activeDays?: number;
 }
 
-/** One per-model consumption row of the trend chart. */
-export interface TrendRowData {
-  model: string;
-  credits: number;
-  /** Operator-configured pseudo multiplier (×N); absent when no key matched. */
-  multiplier?: number;
+/** One time bucket of the usage series. */
+export interface UsageBucketData {
+  /** The platform's own bucket label (a date, at the granularity it chose). */
+  bucket?: string;
+  requestCount?: number;
+  textTokens?: number;
+  imageCount?: number;
+  videoSeconds?: number;
 }
 
-/** The `trend` block: the window the chart covers and its rows. */
-export interface TrendData {
-  hours?: number;
-  models?: TrendRowData[];
+/** The `quota` block: the current plan, its windows, and the account totals. */
+export interface QuotaData {
+  plan?: PlanData | null;
+  windows?: QuotaWindowData[];
+  /** Cumulative account usage. NOT a per-window balance — see `QuotaWindowData`. */
+  totals?: UsageTotalsData | null;
+  /** The public plan catalogue (needs no login) — what upgrading would buy. */
+  plans?: PlanData[];
+  expiresAt?: number | null;
+  /** Why the authenticated half is missing, when it is. */
+  error?: { source?: string; code?: string | null; message?: string } | null;
+}
+
+/** The `usage` block: the charted window and its buckets. */
+export interface UsageData {
+  days?: number;
+  windowTotals?: UsageTotalsData;
+  buckets?: UsageBucketData[];
 }
 
 /** One catalogue entry the roster/picker offers. */
@@ -68,7 +110,7 @@ export interface ModelData {
   contextWindow?: number;
   /** Platform-declared output ceiling from `max_output_length`; 0/absent = unknown. */
   maxOutputLength?: number;
-  /** Operator pseudo credit multiplier (×N); absent when no config key matched. */
+  /** Operator pseudo multiplier (×N); absent when no config key matched. */
   multiplier?: number;
   /** Thinking levels the DSH selector offers for this model, escalation order. */
   thinkingLevels?: string[];
@@ -131,7 +173,7 @@ export interface ShapeWarningData {
  * The whole snapshot body `buildSnapshotBody` returns, as the panel reads it.
  *
  * `pollSeconds`/`cacheSeconds` are quoted into the header and footnote;
- * `auth` drives the self-renew chip; `pools`/`trend` are the two content
+ * `auth` drives the self-renew chip; `quota`/`usage` are the two content
  * sections; `llm` is the setup tab; the rest are banner lines.
  */
 export interface SnapshotData {
@@ -144,9 +186,8 @@ export interface SnapshotData {
   catalogAvailable?: boolean;
   catalogModels?: string[];
   visionModels?: VisionModelData[];
-  uncountedModels?: string[];
   llm?: LlmData | null;
-  pools?: PoolsData | null;
-  trend?: TrendData | null;
+  quota?: QuotaData | null;
+  usage?: UsageData | null;
   shapeWarnings?: ShapeWarningData[];
 }

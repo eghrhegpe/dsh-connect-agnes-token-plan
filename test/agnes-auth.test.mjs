@@ -8,7 +8,8 @@
  * instead of quietly reaching the platform.
  */
 import {
-  createAuth, loginWith, resolveAuthConfig, classifyLoginFailure, readJwtExpiry, AUTH_DEFAULTS
+  createAuth, loginWith, resolveAuthConfig, classifyLoginFailure, readJwtExpiry,
+  parseRetryAfterMs, AUTH_DEFAULTS
 } from "../src/host/agnes-auth.ts";
 import { CODE } from "../src/host/codes.ts";
 import { installNetworkGuard } from "./peer-roots.mjs";
@@ -32,9 +33,11 @@ function stubFetch(response) {
     seen.url = typeof input === "string" ? input : String(input?.url ?? input);
     seen.init = init ?? null;
     if (response instanceof Error) throw response;
+    const headers = new Map(Object.entries(response.headers ?? {}));
     return {
       status: response.status,
       ok: response.status >= 200 && response.status < 300,
+      headers: { get: (name) => headers.get(String(name).toLowerCase()) ?? null },
       async text() { return response.body; },
       async json() { return JSON.parse(response.body); }
     };
@@ -262,6 +265,68 @@ function jwtWithExp(expSeconds) {
     restore();
     check("auth.login delegates to the same code path", out.accessToken === "tok");
   } catch (error) { fail("8: createAuth shape", error); restore(); }
+}
+
+// --- 9. a stated wait is carried on the error ----------------------------
+{
+  try {
+    // The store's throttle reads `error.retryAfterMs` and honours it verbatim
+    // instead of its own doubling backoff — truncating a stated lock walks
+    // straight back into it. So this number has to survive the login call.
+    stubFetch({
+      status: 429,
+      headers: { "retry-after": "7200" },
+      body: JSON.stringify({ code: 429, message: "rate limited", data: null })
+    });
+    let byHeader = null;
+    try { await loginWith(CFG, ACCOUNT, {}); } catch (error) { byHeader = error; }
+    restore();
+    check("a Retry-After header (delta-seconds) reaches the error as milliseconds",
+      byHeader?.retryAfterMs === 7_200_000, String(byHeader?.retryAfterMs));
+
+    stubFetch({
+      status: 429,
+      headers: { "retry-after": new Date(Date.now() + 90_000).toUTCString() },
+      body: JSON.stringify({ code: 429, message: "rate limited", data: null })
+    });
+    let byDate = null;
+    try { await loginWith(CFG, ACCOUNT, {}); } catch (error) { byDate = error; }
+    restore();
+    check("an HTTP-date Retry-After is converted to a positive delta",
+      byDate?.retryAfterMs > 80_000 && byDate?.retryAfterMs <= 90_000, String(byDate?.retryAfterMs));
+
+    // No header: a duration written into the message is the other shape.
+    stubFetch({
+      status: 403,
+      body: JSON.stringify({ code: 403, message: "Account locked, try again in 2 hours", data: null })
+    });
+    let byMessage = null;
+    try { await loginWith(CFG, ACCOUNT, {}); } catch (error) { byMessage = error; }
+    restore();
+    check("a duration stated in the message is read whole",
+      byMessage?.retryAfterMs === 7_200_000, String(byMessage?.retryAfterMs));
+    check("that refusal is classified as a lock, not a generic failure",
+      byMessage?.code === CODE.ACCOUNT_LOCKED, String(byMessage?.code));
+
+    stubFetch({
+      status: 401,
+      body: JSON.stringify({ code: 401, message: "Invalid username or password" })
+    });
+    let noWindow = null;
+    try { await loginWith(CFG, ACCOUNT, {}); } catch (error) { noWindow = error; }
+    restore();
+    check("an UNSTATED window stays absent, so the store uses its own backoff",
+      noWindow?.retryAfterMs === undefined, String(noWindow?.retryAfterMs));
+
+    // "m" is minutes in some phrasings and months in others — reading it as a
+    // unit would turn a 30-minute lock into a 30-month park.
+    check("a bare 'm' is NOT treated as a unit",
+      parseRetryAfterMs({ headers: { get: () => null } }, "try again in 30m") === null,
+      String(parseRetryAfterMs({ headers: { get: () => null } }, "try again in 30m")));
+    check("a stated Chinese duration is read",
+      parseRetryAfterMs({ headers: { get: () => null } }, "请 30 分钟后重试") === 1_800_000,
+      String(parseRetryAfterMs({ headers: { get: () => null } }, "请 30 分钟后重试")));
+  } catch (error) { fail("9: stated wait", error); restore(); }
 }
 
 // --- report ---------------------------------------------------------------

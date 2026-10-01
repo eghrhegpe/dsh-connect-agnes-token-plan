@@ -146,6 +146,64 @@ export function resolveAuthConfig(overrides = {}) {
 }
 
 /**
+ * A duration written in words, mapped to milliseconds.
+ *
+ * Deliberately no bare `m`: "m" is minutes in some phrasings and months in
+ * others, and a lock read as 30 MONTHS instead of 30 minutes would park the
+ * panel for a year. Units are matched long-form only, plus the unambiguous
+ * Chinese ones.
+ */
+const STATED_DURATION = /(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|秒|分钟|小时|天)/i;
+const UNIT_MS = Object.freeze({
+  second: 1000, sec: 1000, seconds: 1000, secs: 1000,
+  minute: 60_000, min: 60_000, minutes: 60_000, mins: 60_000,
+  hour: 3_600_000, hr: 3_600_000, hours: 3_600_000, hrs: 3_600_000,
+  day: 86_400_000, days: 86_400_000,
+  秒: 1000, 分钟: 60_000, 小时: 3_600_000, 天: 86_400_000
+});
+
+/**
+ * The wait the platform stated, in milliseconds, or `null` when it stated none.
+ *
+ * Two sources, because a gateway may state a window either way:
+ *
+ * 1. the standard `Retry-After` header — delta-seconds, or an HTTP date;
+ * 2. a duration written into the message itself ("try again in 2 hours").
+ *
+ * This matters because the store's throttle PREFERS a platform-stated window
+ * over the backoff it invents, and deliberately does not cap it: truncating a
+ * stated lock walks straight back into it. Guessing a window that was never
+ * stated is the opposite failure — it would make the panel wait out a timer the
+ * platform never imposed — so an unstated window stays `null` and the store
+ * falls back to its own doubling backoff.
+ *
+ * @param {{headers?: {get?: (name: string) => string|null}}} response - the fetch response.
+ * @param {string} message - the platform's own message.
+ * @param {number} [nowMs] - clock source, for an HTTP-date header.
+ * @returns {number|null} milliseconds to wait, or null.
+ */
+export function parseRetryAfterMs(response, message, nowMs = Date.now()) {
+  const header = response?.headers?.get?.("retry-after");
+  if (typeof header === "string" && header.trim() !== "") {
+    const trimmed = header.trim();
+    const seconds = Number(trimmed);
+    if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds * 1000);
+    const at = Date.parse(trimmed);
+    if (Number.isFinite(at)) {
+      const delta = at - nowMs;
+      if (delta > 0) return delta;
+    }
+  }
+  const stated = STATED_DURATION.exec(str(message, ""));
+  if (stated !== null) {
+    const amount = Number(stated[1]);
+    const unit = UNIT_MS[stated[2].toLowerCase()] ?? UNIT_MS[stated[2]];
+    if (Number.isFinite(amount) && amount > 0 && unit !== undefined) return Math.round(amount * unit);
+  }
+  return null;
+}
+
+/**
  * Build the auth instance `token-store` consumes.
  *
  * The shape is deliberately the one `token-store/account.ts` and
@@ -269,10 +327,15 @@ export async function loginWith(
 
   if (!response.ok || Number(obj(body).code) !== 200) {
     const code = classifyLoginFailure(response.status, message);
+    // The wait the platform stated, if it stated one. The store's throttle
+    // reads this off the error and honours it verbatim instead of its own
+    // doubling backoff — a stated lock must not be truncated.
+    const retryAfterMs = parseRetryAfterMs(response, message);
     trace.hop({
       step: "login-refused",
       status: response.status,
       code,
+      retryAfterMs,
       // The platform's own words, which carry no credential. Truncated so a
       // pathological body cannot bloat the trace.
       message: message.slice(0, 200)
@@ -281,6 +344,7 @@ export async function loginWith(
       code,
       message !== "" ? message : `Agnes console returned HTTP ${response.status}`
     );
+    if (retryAfterMs !== null) error.retryAfterMs = retryAfterMs;
     finish(error);
     throw error;
   }

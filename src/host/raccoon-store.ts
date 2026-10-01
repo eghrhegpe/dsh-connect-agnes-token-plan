@@ -4,7 +4,7 @@
  *
  * The token pair (plus its metadata) is stored as ONE reference value named
  * `RACCOON_CREDENTIAL` — the same reference-value mechanism `api-key-store.ts`
- * uses for `SENSENOVA_API_KEY`: the credentials service admits reference
+ * uses for `AGNES_TOKEN_PLAN_API_KEY`: the credentials service admits reference
  * values, and this keeps the whole credential in one owner-only
  * `~/.dsh/.credentials.yaml` entry, never in this plugin's directory, git,
  * or logs. The value is a JSON document of the token pair; a private record

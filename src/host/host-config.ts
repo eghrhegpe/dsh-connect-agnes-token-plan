@@ -39,31 +39,43 @@ export const inject = ["webServer"];
 export const CONFIG_DEFAULTS = Object.freeze({
   consoleBase: "https://platform-backend.agnes-ai.cn",
   apiBase: "https://api.agnes-ai.cn/v1",
-  trendHours: 24,
   /**
-   * Pseudo multipliers for the trend table, keyed by a case-insensitive
-   * SUBSTRING of a model id (first matching key wins, in insertion order).
-   * The platform returns raw credits with no official per-model rate, so
-   * these numbers are the operator's own comparison aid — the panel labels
-   * them as custom/non-official and rows without a match stay unmultiplied.
-   * Shipped defaults reflect the operator's rough current rates.
+   * How many days of usage the panel's chart covers, inclusive of today.
+   *
+   * Days, not hours: `/api/usage/series` takes `start_date` / `end_date` as
+   * DATES, so an hour-granular window cannot be asked for. Snapping to whole
+   * days also keeps the request URL stable for the day, which is what lets the
+   * series cache actually hit.
    */
-  trendMultipliers: { "glm-5.2": 10, "kimi-k3": 20, "Agnes": 1, "deepseek": 1 },
+  usageDays: 30,
+  /**
+   * Pseudo multipliers for the model roster, keyed by a case-insensitive
+   * SUBSTRING of a model id (first matching key wins, in insertion order).
+   *
+   * Empty by default, and that is not an oversight: the factor used to scale a
+   * per-model credit figure, and Agnes publishes no per-model usage at all
+   * (its console never reads a `model` field). What is left is the operator's
+   * own annotation — a `×N` badge on a roster row — so there is no defensible
+   * default to ship. Set it to tag models for your own routing notes; rows
+   * without a match get no badge, never a guessed 1.
+   */
+  trendMultipliers: {},
   cacheSeconds: 60,
   pollSeconds: 30,
   consoleTimeoutMs: 15_000,
   tokenSkewSeconds: 120,
+  /**
+   * Login-flow overrides, in the shape `agnes-auth.ts` reads them.
+   *
+   * Agnes signs in with ONE request (`POST /api/user/login`), so the SenseNova
+   * OIDC knobs — `iamBase`, `tokenEndpoint`, `jwksEndpoint`, `redirectUri`,
+   * `clientId`, `scope`, `encKeyId`, `maxHops` — have no counterpart here and
+   * are gone. The three below are the ones that still mean something.
+   */
   auth: {
-    iamBase: "",
-    tokenEndpoint: "",
-    jwksEndpoint: "",
-    redirectUri: "",
-    clientId: "",
-    scope: "",
-    encKeyId: "",
-    maxHops: 0,
+    loginPath: "",
     loginTimeoutMs: 0,
-    requestTimeoutMs: 0
+    fallbackExpiresInSeconds: 0
   },
   /** Host names the Host answers as, by default. The operator's list is added. */
   admittedHosts: ["localhost", "127.0.0.1", "[::1]", "::1"],
@@ -175,8 +187,10 @@ export function resolveSettings(config) {
       settings: {
         consoleBase,
         apiBase,
-        trendHours: clampInt(source.trendHours, CONFIG_DEFAULTS.trendHours, 1, 168),
-        // Pseudo trend multipliers: only well-formed entries travel (string
+        // How many days of usage the chart covers (max 365). The series
+        // endpoint takes dates, so this is a day count, not an hour count.
+        usageDays: clampInt(source.usageDays, CONFIG_DEFAULTS.usageDays, 1, 365),
+        // Pseudo roster multipliers: only well-formed entries travel (string
         // key, finite positive number); anything else is dropped rather than
         // throwing — a typo in one row must not take the panel down.
         trendMultipliers: resolveTrendMultipliers(source.trendMultipliers),
@@ -186,8 +200,9 @@ export function resolveSettings(config) {
         // screen is.
         pollSeconds: clampInt(source.pollSeconds, CONFIG_DEFAULTS.pollSeconds, 5),
         // Deadline for one console call. The login flow has its own
-        // (`loginTimeoutMs`, below): it walks several IAM hops, so the two
-        // are not the same number and pretending otherwise is how a slow
+        // (`loginTimeoutMs`, below): signing in is a single request but it
+        // carries a password over the network and may be rate-limited, so the
+        // two are not the same number and pretending otherwise is how a slow
         // login gets blamed on the console.
         consoleTimeoutMs: clampInt(source.consoleTimeoutMs, CONFIG_DEFAULTS.consoleTimeoutMs, 1_000),
         // Which host names this Host answers as. See `isAdmitted`: the panel
@@ -231,7 +246,7 @@ export function resolveSettings(config) {
       settings: {
         consoleBase,
         apiBase,
-        trendHours: CONFIG_DEFAULTS.trendHours,
+        usageDays: CONFIG_DEFAULTS.usageDays,
         trendMultipliers: CONFIG_DEFAULTS.trendMultipliers,
         cacheSeconds: CONFIG_DEFAULTS.cacheSeconds,
         pollSeconds: CONFIG_DEFAULTS.pollSeconds,
@@ -255,46 +270,47 @@ export function resolveSettings(config) {
  * to a local stub then posts a real login attempt, which is exactly how this
  * plugin locked an account once already. So a nested `auth` key is reported as
  * a configuration error rather than ignored.
+ *
+ * The emitted set is exactly what `agnes-auth.ts:resolveAuthConfig` reads. The
+ * SenseNova OIDC knobs (`iamBase` / `tokenEndpoint` / `jwksEndpoint` /
+ * `redirectUri` / `clientId` / `scope` / `encKeyId` / `maxHops`) are gone with
+ * the OIDC walk they configured — passing them through now would hand
+ * `createAuth` keys it never reads, which is the silent-drop failure this
+ * function exists to prevent.
  * @param {object} source - the row's raw patch config.
  * @param {string} consoleBase - the resolved console origin.
  * @returns {object} the override object for `createAuth`.
  * @throws {Error} when the row looks like it nests overrides it does not read.
  */
 export function resolveAuthOverrides(source, consoleBase) {
-  // ANY nested `auth` block is refused, not just the two names below: none of
-  // its keys are read, so a block of any shape is silently ignored. Testing for
-  // a fixed list would leave `auth: { iamBase: ... }` — the exact key an
+  // ANY nested `auth` block is refused, not just the names below: none of its
+  // keys are read, so a block of any shape is silently ignored. Testing for a
+  // fixed list would leave `auth: { loginPath: ... }` — the exact key an
   // operator reaches for — as the one case that still fails quietly.
   if (source.auth !== undefined && source.auth !== null) {
     const keys = Object.keys(obj(source.auth));
     throw new Error(
       "auth overrides are top-level keys on this row, not a nested `auth:` block" +
         `${keys.length === 0 ? "" : ` (found: ${keys.join(", ")})`}. ` +
-        "Use `iamBase`, `tokenEndpoint`, `jwksEndpoint`, `redirectUri`, `clientId`, " +
-        "`scope` or `encKeyId` at the top level; a nested block is ignored and the " +
-        "panel would keep using the real platform."
+        "Use `loginPath`, `loginTimeoutMs` or `fallbackExpiresInSeconds` at the top " +
+        "level; a nested block is ignored and the panel would keep using the real platform."
     );
   }
-  const text = (key) => str(source[key], "");
   const overrides: Record<string, unknown> = { consoleOrigin: consoleBase };
-  const set = (key: string, value: any, transform?: (value: any) => any) => {
-    if (value === "") return;
-    overrides[key] = transform === undefined ? value : transform(value);
-  };
-  set("iamOrigin", text("iamBase"), (value) => value.replace(/\/+$/, ""));
-  set("tokenEndpoint", text("tokenEndpoint"));
-  set("jwksEndpoint", text("jwksEndpoint"));
-  set("redirectUri", text("redirectUri"));
-  set("clientId", text("clientId"));
-  set("scope", text("scope"));
-  set("encKeyId", text("encKeyId"));
-  const maxHops = Math.floor(num(source.maxHops, 0));
-  if (maxHops > 0) overrides.maxHops = maxHops;
+  const loginPath = str(source.loginPath, "");
+  if (loginPath !== "") overrides.loginPath = loginPath;
+  // How long a token is assumed to live when it is not a readable JWT. The
+  // direction is load-bearing (see `AUTH_DEFAULTS`): too SHORT spends a real
+  // sign-in on every poll, and Agnes locks an account after a few bad
+  // attempts, so an operator shortening this is trading accuracy for a
+  // lockout risk. Exposed anyway, because a deployment behind a slow proxy
+  // may genuinely need it.
+  const fallbackExpiresInSeconds = Math.floor(num(source.fallbackExpiresInSeconds, 0));
+  if (fallbackExpiresInSeconds > 0) overrides.fallbackExpiresInSeconds = fallbackExpiresInSeconds;
   // `requestTimeoutMs` is what this option shipped as, but it only ever fed
-  // the login flow — the console calls below had their own hardcoded deadline.
-  // The old name still wins when only it is set, so a config written against
-  // an earlier version keeps its deadline instead of silently reverting to
-  // the default.
+  // the login flow — the console calls had their own deadline. The old name
+  // still wins when only it is set, so a config written against an earlier
+  // version keeps its deadline instead of silently reverting to the default.
   const loginTimeoutMs = Math.floor(num(source.loginTimeoutMs, num(source.requestTimeoutMs, 0)));
   if (loginTimeoutMs > 0) overrides.requestTimeoutMs = loginTimeoutMs;
   return overrides;

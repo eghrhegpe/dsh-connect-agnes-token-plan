@@ -6,19 +6,19 @@
 
 ## 0. 已锁死的前提（来自 §5，这里不复制其表）
 
-- **三条不变量**：每个新模块 opt-in 默认关；凭据红线不动；只吸与商汤 Key / 账号线强相关的能力。
-- **能力事实**：本插件**可**向 DSH 注册推理 provider（`sensenova-token-plan`）。它是否成为某台机器的默认推理通道，由该机的 profile 与用户模型选择决定，**不随插件注册自动成立**（`agent-default-model` 是宿主的选择记录服务，见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §1.2 的撤销注记）；一旦某 profile 真的把它选作默认模型，故障域就从「Plugins 页里的只读面板」升级为「推理可用性」，这是**条件性**的爆炸半径，不是既成事实。
+- **三条不变量**：每个新模块 opt-in 默认关；凭据红线不动；只吸与 Agnes Key / 账号线强相关的能力。
+- **能力事实**：本插件**可**向 DSH 注册推理 provider（`agnes-token-plan`）。它是否成为某台机器的默认推理通道，由该机的 profile 与用户模型选择决定，**不随插件注册自动成立**（`agent-default-model` 是宿主的选择记录服务，见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §1.2 的撤销注记）；一旦某 profile 真的把它选作默认模型，故障域就从「Plugins 页里的只读面板」升级为「推理可用性」，这是**条件性**的爆炸半径，不是既成事实。
 - **角色**：从「只下发信息」升级为「信息 + 执行」，但每块执行都挂在三条不变量下。
 
 ## 1. 对 §5 的一处纠偏：429 不做多 Key 池
 
 §5 原写「429 自愈 + 多 Key 池进插件」。经查证需要修正：
 
-- **事实**：SenseNova Token Plan 是**同一账号共享额度池**，换 Key 不换池 → 多 Key 轮换对该路线是**伪解**（这也是 §5 早已写「不碰 `st-rotator` 多 Key」的同源理由）。
+- **事实**：Agnes Token Plan 是**同一账号共享的限流额度**（账号级四窗口，见 [AGNES-API.md](./AGNES-API.md) §4），换 Key 不换窗口 → 多 Key 轮换对该路线是**伪解**（这也是 §5 早已写「不碰 `st-rotator` 多 Key」的同源理由）。
 - **决策**：吸收 `st-rotator` 的两条纪律——① 先分诊「限频（可退避）vs 配额不足（别空转）」；② 降速退避而非继续冲——但**不吸收多 Key 池化**。
 - §5 的「拟吸收」行已据本文件改为「429 自愈（退避 + 分诊），不做多 Key 池」。
 
-## 2. P0：`index.js` 控制面解耦 + 商汤契约自动化回归 ✅ 已实现（2026-09）
+## 2. P0：`index.js` 控制面解耦 + 推理契约自动化回归 ✅ 已实现（2026-09）
 
 > 来源：2026-09 锐评结论，研究论证见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §2（接线复杂度诊断的完整证据链）。两个 P0 先于任何「继续吸收」——§0 已承认本插件
 > 可注册推理 provider（是否默认通道由 profile 决定），`index.js` 1187 行里同时挂着
@@ -31,6 +31,11 @@
 > `test/contract.test.mjs`（77 项，进 `npm test`）+ `test/baselines/sensenova-contract.json`
 > （冻结 2026-09-29 实测）+ `test/live-contract.mjs`（`npm run test:live:contract`，手动档）。
 > 离线全量 12 套件 + e2e-gate 全绿。
+>
+> **2026-10 迁移补记**：插件整体迁到 Agnes 控制台，上段的文件名与端点是 2026-09 的落地面。
+> 现行对应关系：`test/baselines/sensenova-contract.json` → `test/baselines/agnes-contract.json`、
+> `docs/SENSENOVA-API.md` §7 → `docs/AGNES-API.md` §7、`test/live-jwks.test.mjs`（已随 OIDC 线删除）
+> → `test/live-contract.mjs`。§2.2 正文已按现行名字更新。
 
 ### 2.1 拆 `index.js`：控制面状态机独立成模块
 
@@ -54,24 +59,25 @@ F3（并发 publish「最后发起者最终注册」门控）依赖对 `index.js
 **完成判据**：`index.js` 无 `providerState` 字段声明、`index.js` 行数 < 700、
 wiring/routes/provider/draw 四套件全绿、e2e-gate 通过。
 
-### 2.2 商汤契约自动化回归（把 §20/§21 的实测从一次性变可复跑）
+### 2.2 推理契约自动化回归（把 §20/§21 的实测从一次性变可复跑）
 
 **现状**：ROADMAP §0 引用的「40+ 实测请求」与 `PITFALLS.md` §20/§21 的方言表
 （thinking 形态、`reasoning_effort` 取值、采样规则、404/403 模型清单）全靠 2026-09-29
-一次性手工实测维持，`docs/SENSENOVA-API.md` §7 是注释层，**没有自动化护栏**——
-商汤下次改一个 400 语义就又是一轮 40 请求。`test/live-jwks.test.mjs` 已证明
-「live 档不进 `npm test`、手动 `npm run test:live`」这套纪律在本仓库可复用。
+一次性手工实测维持，`docs/AGNES-API.md` §7 是注释层，**没有自动化护栏**——
+平台下次改一个 400 语义就又是一轮 40 请求。本仓库的纪律是：live 档**不进 `npm test`**，
+手动 `npm run test:live:contract` 才跑。
 
-**做法**（与 `live-jwks` 同型：离线骨架进门禁，live 重放手动跑）：
+**做法**（离线骨架进门禁，live 重放手动跑）：
 
 | 档 | 文件 | 内容 | 门禁 |
 |---|---|---|---|
-| 离线 | `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/sensenova-contract.json`（冻结 2026-09-29 实测：9 模型的 thinking 形态 / reasoning_effort 支持面 / 采样参数 / `context_length` / 模态 / 404-403 标记） | 断言 `llm-models.js` 的 `toPiDescriptor` / `identifyVisionModel` / `isChatModel` / `exhaustedModelIds` 对契约表的输出与冻结值一致；`parsers.js` 对契约表的解析结果；`codes.js` 的 reason 折叠对 429/quota 文案的分类。契约表改动必须附「平台响应原文」证据（提交约定） | `npm test` 全绿 |
-| live | `test/live-contract.mjs`（不进 `npm test`，`npm run test:live:contract`） | 对 `token.sensenova.cn/v1/models` 发 1 请求核对 9 模型目录仍含冻结字段（模态 / context_length / max_output_length / supported_sampling_parameters）；推理端点按契约表**每格 1 请求、限流友好**（每格失败记漂移不重试），红 = 平台方言漂移，修法走 `SENSENOVA-API.md` §7 注释层，不静默改代码 | 手动 / CI best-effort（同 `live-jwks`） |
-| 探针纪律（2026-09-30 扩） | 推理探针扩到 `reasoning_effort: low/medium`（每模型 2 请求、2s 退避）；**429 是节奏答案不是参数判读**——探针记 INDEFINITE、不计入失败、退出码 0，只有 4xx 参数拒绝才算「平台不支持」的负证据；探针结果**人工**写回冻结契约（`driftLog` 留平台响应原文），不自动改 `llm-models.ts` | 同上；首跑（2026-09-30 22:11）实锤 9 格 200，4 格 INDEFINITE 待重跑 |
+| 离线 | `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/agnes-contract.json`（seed：逐模型的 chat / vision / thinking 档位；`test/baselines/sensenova-contract.json` 是商汤时代的历史原件，仍留在原处供对照） | 断言 `llm-models.ts` 的 `toPiDescriptor` / `identifyVisionModel` / `isChatModel` 对契约表的输出与冻结值一致；`parsers.ts` 对契约表的解析结果；`routes.ts` 的 429 / quota 文案分类。契约表改动必须附「平台响应原文」证据（提交约定） | `npm test` 全绿 |
+| live | `test/live-contract.mjs`（不进 `npm test`，`npm run test:live:contract`） | 对 `api.agnes-ai.cn/v1/models` 发 1 请求核对目录仍含冻结字段（模态 / context_length / max_output_length / supported_sampling_parameters）；推理端点按契约表**每格 1 请求、限流友好**（每格失败记漂移不重试），红 = 平台方言漂移，修法走 `AGNES-API.md` §7 注释层，不静默改代码 | 手动 / CI best-effort |
+| 探针纪律（2026-09-30 扩） | 推理探针扩到 `reasoning_effort: low/medium`（每模型 2 请求、2s 退避）；**429 是节奏答案不是参数判读**——探针记 INDEFINITE、不计入失败、退出码 0，只有 4xx 参数拒绝才算「平台不支持」的负证据；探针结果**人工**写回冻结契约（`driftLog` 留平台响应原文），不自动改 `llm-models.ts` | 同上 |
+
 **完成判据**：`test/contract.test.mjs` 进 `package.json` 的 `test` 脚本链；
-`test/baselines/sensenova-contract.json` 字段与 `SENSENOVA-API.md` §7.5 逐模型表一一对应；
-live 档在 `package.json` 加 `test:live:contract` 脚本（与 `test:live` 并列）。
+`test/baselines/agnes-contract.json` 的字段与 `AGNES-API.md` §7 逐模型表一一对应；
+live 档在 `package.json` 有 `test:live:contract` 脚本。
 
 ### 2.3 顺序约束（防漂移）
 
@@ -80,13 +86,13 @@ live 档在 `package.json` 加 `test:live:contract` 脚本（与 `test:live` 并
   （§6.1 raccoon 机制点、§5 doctor、§6 明确不做清单之外的新模块）。
 - §2.1 完成前，**冻结「大统一」下一块吸收**——`index.js` 还挂着 5 路由 + 2 个
   IIFE 时再加模块，会重演 PITFALLS §18「慢者赢」的并发陷阱面。
-- §2.2 的 live 档失败**不是回归**（同 `live-jwks` 纪律）：平台改字段时它红，
-  修法是更新 `test/baselines/sensenova-contract.json` + `SENSENOVA-API.md` §7 注释，
+- §2.2 的 live 档失败**不是回归**（同 live 档纪律）：平台改字段时它红，
+  修法是更新 `test/baselines/agnes-contract.json` + `AGNES-API.md` §7 注释，
   不是改 `llm-models.ts` 逻辑去迁就平台。
 - §2.2 冻结的事实是**套餐层级相关**的（PITFALLS §20 自认部分模型 403 未实测、
   `reasoning_effort:"max"` 仅 glm 实测通过）：契约基线保的是「本机这把 Key 的世界
   没漂移」，不是「所有套餐都对」。分发到其它套餐的用户首遇方言差异时，修法走
-  `SENSENOVA-API.md` §7 注释层 + 基线增行，不静默改 `llm-models.ts`——live 档
+  `AGNES-API.md` §7 注释层 + 基线增行，不静默改 `llm-models.ts`——live 档
   只在作者机器有护栏，这一层保护随大统一分发而变薄，吸收新模块前先记住这一点。
 
 ## 3. 旗舰刀口：429 自愈（全局级，低侵入）✅ 已实现
@@ -113,7 +119,7 @@ per-model 可用性标记即用户要的「清单自带识别」——但它是 
 
 > ⚠️ **纠偏（2026-09-30 实测）**：上述 spike 假设"peer 分类正确"，但实际 `isQuotaExceededError`
 > （`dsh-llm/lib/index.js:181`）命中面过宽——含 `out of ... budget`、`balance/credits exhausted`、
-> `usage limit (exceeded|exhausted|reached)` 等。商汤限频 429 体常带 `rate limit budget` /
+> `usage limit (exceeded|exhausted|reached)` 等。Agnes 限频 429 体常带 `rate limit budget` /
 > `out of rate budget` 这类字眼，于是被**抢判为 `QUOTA`**（而纯 `RATE_LIMIT` 正则因排在 `isQuotaExceededError`
 > 之后成了死代码）。后果：本应退避重试的限频被按"配额耗尽"快速失败、且模型被面板静默下线呈现"额度已用尽"。
 > → 新增 `llm-error-fix.ts` 在 host 侧 Proxy 包裹 `PiAiAdapter` 流出口，把"误判的限频 QUOTA"纠正回
@@ -141,7 +147,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 
 **已排除的 C 路（精确窗口退避）**：peer 的 `dsh-llm-retry` 在 `failure.providerRetryAfterMs`
 存在时会用它做精确退避（`dsh-llm-retry/lib/index.js:171`），且 `LlmFailure` 支持该字段。但 grep
-`dsh-llm-pi-ai` 未发现它在 SenseNova 429 路径上提取 HTTP `Retry-After` 并附到 `LlmError`——
+`dsh-llm-pi-ai` 未发现它在 Agnes 429 路径上提取 HTTP `Retry-After` 并附到 `LlmError`——
 即默认 `RATE_LIMIT` 走的是通用指数退避，而非按平台窗口。要把「按 `resetAt` 精确退避」做出来，需要
 推理侧响应钩子把 `Retry-After` 转成 `providerRetryAfterMs`，而该钩子面本次未在 peer 中查证到公开
 入口。**C 路非必需**（默认已对 `RATE_LIMIT` 退避），列为 deferred，不阻塞主线。
@@ -175,7 +181,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 ## 6. 明确不做（边界，写死防止漂移）
 
 - **多 Key 池化**：同池无效，已纠偏（§1）。
-- **签到 / 每日领取**：先证商汤有端点，否则不吸。
+- **签到 / 每日领取**：先证平台有端点，否则不吸。
 - **不再往 `upstream/` 拉新项目**，除非同时定义「提炼出口」（吸知识不吸代码）。
 - **跨 provider 通用聚合**：不吸收 `dsh-provider-quota` / `dsh-musage` 的泛化定位（见 §5.3）。
 - **client.js 文件级分解（2026-09-29 定界不拆；2026-09-30 tripwire 触发、决策重开并执行完毕——client 半边 TS 化 + 按功能拆文件一步到位，见 §6.2）**。
@@ -241,8 +247,13 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 > **状态（2026-09-30 第二次复测：仍判死）**：**不做**，但**保留原理与复测判据**。方向上是「最终仍想融」，
 > 因此这里只钉结论与前置门禁——**实施统一推迟到本体稳定之后**，本块不阻塞任何主线。
 
-**结论**：小浣熊桌面端的登录态**不能**作为本插件 OIDC 之外的第二条登录路径。
+**结论**：小浣熊桌面端的登录态**不能**作为本插件的第二条登录路径。
 原因不是权限没开，而是**两个独立认证域**。
+
+> **探针端点注记（2026-10）**：下表两次复测打的都是**当时**的 Token Plan 控制台
+> （`platform.sensenova.cn/lite/console/v1/tokenplan/pool-usage`）。Token Plan 已迁到 Agnes，
+> 所以**现在的复测判据要打 Agnes 的额度路由**（见本节末「复测判据」）。两次记录的结论不受影响——
+> 它们证明的是「桌面 App 的令牌打不通 Token Plan 的认证域」，与 Token Plan 迁到哪台主机无关。
 
 **实测证据（2026-09-29，只读探针，token 只在内存中过一遍 `Authorization` 头，
 未落盘、未进日志）**：
@@ -259,8 +270,8 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 附带对照：`xiaohuanxiong.com/api/web/llm/v2/models` 回 `404 page not found`（网关路由或鉴权入口与 09-29 记录有漂移，
 融第二上游前需重新核实该端点契约，不能照抄 raccoon 的 URL 清单）。
 
-对照本插件自己的令牌：Hydra 签发、`client_id=nova`、`scope=openid offline offline_access`
-（见 [SENSENOVA-API.md](./SENSENOVA-API.md) §1）。**令牌这一层就不通用**——
+对照本插件自己的令牌：Agnes 控制台的 access token（`POST {consoleBase}/api/user/login` 一跳换取，
+见 [AGNES-API.md](./AGNES-API.md) §1）。**令牌这一层就不通用**——
 换登录方式（扫码 / 短信 / 深链回调）也绕不过去。
 
 **同期核实的上游事实**（来自 `upstream/deepseek-harness-codearts-master`，即
@@ -294,8 +305,9 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 > 与第二上游是不是界内是两件事，别混为一谈。
 
 **复测判据（本体稳定后、开工前先跑，1 次只读请求）**：拿桌面 `access_token` 打
-`GET platform.sensenova.cn/lite/console/v1/tokenplan/pool-usage`；
-`200` = 认证域已合并（本结论被推翻，可继续）；`401 auth_token_invalid` = 仍然判死。
+`GET https://platform-backend.agnes-ai.cn/api/usage/overview`（Token Plan 现行控制台的额度路由）；
+`200` = 认证域已合并（本结论被推翻，可继续）；`401` 或 HTTP 200 带信封 `code:401` = 仍然判死
+（Agnes 的鉴权拒绝可能走 200 + `code:401`，两种形态都算拒绝，见 [AGNES-API.md](./AGNES-API.md) §3）。
 
 **前置门禁**：本插件本体稳定——§2.1 / §2.2 两个 P0 已落地且无挂起中的吸收项。
 
@@ -336,13 +348,13 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 | 优先级 | 项 | 侵入性 | 门禁 |
 |---|---|---|---|
 | **P0 ✅** | `index.js` 控制面解耦（§2.1：`provider-publish.js` + `snapshot-aggregate.js` 抽状态机与聚合、`index.js` 1187→778 行、5 路由 + 2 IIFE 收编） | 中（纯重构，快照契约零改动） | `test/wiring.test.mjs` F3 经新模块注入仍全绿 + `routes`/`provider`/`draw` 四套件全绿 + `e2e-gate` |
-| **P0 ✅** | 商汤契约自动化回归（§2.2：`test/contract.test.mjs` 77 项进 `npm test` + `test/live-contract.mjs` live 手动档 + `test/baselines/sensenova-contract.json` 冻结 2026-09-29 实测） | 低（纯测试基建，不碰运行时） | `npm test` 全绿；`package.json` 加 `test:live:contract` 脚本 |
+| **P0 ✅** | 推理契约自动化回归（§2.2：`test/contract.test.mjs` 进 `npm test` + `test/live-contract.mjs` live 手动档 + `test/baselines/agnes-contract.json`） | 低（纯测试基建，不碰运行时） | `npm test` 全绿；`package.json` 有 `test:live:contract` 脚本 |
 | **P0 ✅** | 429 spike + 配额联动（全局策略 `llm-retry.ts` + per-model 可用性 `llm-models.ts` + `index.ts` quota 重注册） | 低（1 行 peer + peer-free 分类器 + 状态文件桥） | `e2e-gate`（dsh CLI 在则实跑）；`test/retry.test.mjs` 已落地 |
 | **P0 文档** | §5 纠偏 + 本文入库 | 无（仅 doc） | `docs.test.mjs` |
 | **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.ts`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.ts` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs`（56 项）已落地；离线 12 套件全绿 |
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
-| **P2 ✅ 部分落地** | 第二上游 provider：已随 0.4.3 落地（三个 tab 之一 + `sensenova-raccoon`），2026-10-01 补做网关契约复测，**契约成立**（§6.1.2）；剩余未做的是 desktop 融合路径（第二**登录路径**，见 §6.1.1）——它已实测判死，维持观望 | 高（新上游 + 新凭据生命周期） | 已落地部分：`test/raccoon.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9；**仍缺**：带凭据的 live 端到端探针（比照 §2.2 给商汤做的 `live-contract`） |
+| **P2 ✅ 部分落地** | 第二上游 provider：已随 0.4.3 落地（三个 tab 之一 + `sensenova-raccoon`），2026-10-01 补做网关契约复测，**契约成立**（§6.1.2）；剩余未做的是 desktop 融合路径（第二**登录路径**，见 §6.1.1）——它已实测判死，维持观望 | 高（新上游 + 新凭据生命周期） | 已落地部分：`test/raccoon.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9；**仍缺**：带凭据的 live 端到端探针（比照 §2.2 给推理契约做的 `live-contract`） |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 | 明确不做 | 伪倍率折进注册模型名（qoder ② 法：把倍率嵌进 DSH 原生选择器的模型名里，绕「选择器无旁路字段」限制）。2026-09-30 决议 | 低 | 现状即决议：`×N` 只作**面板侧标记**（模型花名册行尾 + 趋势图，同一匹配器、同一数值，均标「非官方」）。理由：① 倍率是操作者手填的对比数据、非平台计费事实，折进 DSH 全局模型名会把个人配置泄漏给所有会话；② qoder 嵌名是「DSH 无字段携带平台真实倍率」的 workaround，本插件的倍率本就没有平台出处，面板就是它唯一合理的位置；③ 模型名是 DSH 配置 / 选择器的稳定标识（id 匹配），加 `×N` 会破坏 id 语义 |
 
@@ -353,5 +365,6 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 - [ARCHITECTURE.md](./ARCHITECTURE.md) §5 — 定位与边界（本文承接，不复制其表）
 - [AGENTS.md](../AGENTS.md) — 验证裁剪、红线
 - [TESTING.md](./TESTING.md) — `docs.test.mjs` 孤儿文件 / 跨文件重复表规则
-- [SENSENOVA-API.md](./SENSENOVA-API.md) — 商汤接口全集（§4 保真：链接官方原文，不提炼）
+- [AGNES-API.md](./AGNES-API.md) — Agnes 接口全集（现行事实源：控制台额度侧 + 推理侧）
+- [SENSENOVA-API.md](./SENSENOVA-API.md) — 商汤接口全集（**历史档**；§4 保真：链接官方原文，不提炼）
 - [PITFALLS.md](./PITFALLS.md) — 改代码前避坑（§16 peer 解析、§6 凭据事故）

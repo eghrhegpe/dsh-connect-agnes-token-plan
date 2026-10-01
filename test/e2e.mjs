@@ -1,7 +1,7 @@
 /**
  * End-to-end: a REAL `dsh web` process, the real plugin, real HTTP.
  *
- * Everything below the Host is a stub — a fake SenseNova platform on
+ * Everything below the Host is a stub — a fake Agnes platform on
  * 127.0.0.1 — but nothing below the plugin is faked: the bundle is loaded by
  * the Loader, the routes are registered with the real webserver, the browser
  * trust fence and auth cookie are the Host's own, and the panel renders from
@@ -17,10 +17,11 @@
  *
  * That last pair is not ceremony. An earlier attempt at this harness used a
  * nested `auth:` block, which the loader accepts and the plugin ignores — so
- * the panel used its shipped defaults and POSTED A REAL LOGIN ATTEMPT to
- * iam.sensecoreapi.cn during a test run. The plugin now rejects that shape
- * outright (see resolveAuthOverrides), and this harness asserts the redirect
- * actually took effect before it lets a sign-in happen.
+ * the panel used its shipped defaults and POSTED A REAL LOGIN ATTEMPT to the
+ * live platform during a test run. The plugin now rejects that shape outright
+ * (see resolveAuthOverrides), and this harness asserts the redirect actually
+ * took effect before it lets a sign-in happen: the fake's own login counter is
+ * the evidence, and `consoleBase` in the snapshot is the corroboration.
  *
  * Run it directly with `npm run test:e2e`, or through `npm test`: the default
  * gate ends in `test/e2e-gate.mjs`, which runs this file when the dsh CLI is on
@@ -156,21 +157,23 @@ function buildHome(fakePort) {
     dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "dsh-connect-agnes-token-plan"] } }
   }, null, 2));
 
-  // The row id is the one the plugin's own patch declares, and the login-flow
-  // overrides are TOP-LEVEL keys. A nested `auth:` block is accepted here and
-  // ignored by the plugin, which is how the run once reached the real IAM.
+  // The row id is the one the plugin's own patch declares, and every override
+  // is a TOP-LEVEL key. A nested `auth:` block is accepted here and ignored by
+  // the plugin, which is how the run once reached the real platform.
+  //
+  // `consoleBase` is the only address that matters on this platform: Agnes
+  // signs in with ONE POST to `{consoleBase}/api/user/login`, so the origin the
+  // password is posted to IS the console origin — there is no separate
+  // `iamBase`/`tokenEndpoint`/`jwksEndpoint` to redirect, and passing the old
+  // OIDC names here would be silently dropped rather than honoured.
   writeFileSync(join(profile, "cordis.patch.yml"), [
     "- id: dsh-connect-agnes-token-plan",
     "  name: dsh-connect-agnes-token-plan",
     "  config:",
     `    consoleBase: http://127.0.0.1:${fakePort}`,
     `    apiBase: http://127.0.0.1:${fakePort}/v1`,
-    `    iamBase: http://127.0.0.1:${fakePort}`,
-    `    tokenEndpoint: http://127.0.0.1:${fakePort}/oauth2/token`,
-    `    jwksEndpoint: http://127.0.0.1:${fakePort}/.well-known/jwks.json`,
-    `    redirectUri: http://127.0.0.1:${fakePort}`,
     // Step three is opt-in, so the run has to opt in: with this on, the Host
-    // tries to register the SenseNova provider for real, and the peer
+    // tries to register the Agnes provider for real, and the peer
     // packages (`@earendil-works/pi-ai`, `@deepseek-ai/dsh-llm*`) must resolve
     // out of the Host's own runtime — a clean checkout has none. Leaving it
     // off would test the degradation path and silently skip the feature.
@@ -233,8 +236,8 @@ function killHostTree(child) {
 
 function startHost(home, port) {
   return new Promise((resolve, reject) => {
-    // The developer's own SenseNova environment is STRIPPED from the child.
-    // `SENSENOVA_API_KEY` in the launching shell reaches the Host as an
+    // The developer's own Agnes environment is STRIPPED from the child.
+    // `AGNES_TOKEN_PLAN_API_KEY` in the launching shell reaches the Host as an
     // environment credential, which the credentials service then treats as
     // read-only ("supplied read-only by the launching environment") — so the
     // run fetched the catalog before any key was entered, and the panel's own
@@ -242,7 +245,7 @@ function startHost(home, port) {
     // and both are invisible on a machine that happens to have no key set.
     // Same three names the offline suites hide (see peer-roots.mjs).
     const env = { ...process.env, DSH_HOME: home };
-    for (const key of ["SENSENOVA_API_KEY", "AGNES_USERNAME", "AGNES_PASSWORD"]) delete env[key];
+    for (const key of ["AGNES_TOKEN_PLAN_API_KEY", "AGNES_USERNAME", "AGNES_PASSWORD"]) delete env[key];
     const child = spawn(DSH, ["--profile", "web", "--no-open", "--port", String(port)], {
       env,
       shell: true,
@@ -412,7 +415,7 @@ try {
     // The full login takes several round trips inside ONE request. The Host's
     // read timeout may be shorter than the fake's whole flow, in which case the
     // server answers and then drops the socket. Give the exchange room.
-    const before = fake.log.iam;
+    const before = fake.log.login;
     const res = await call("/api/dsh-connect-agnes-token-plan/account", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -432,14 +435,16 @@ try {
     // Where the request actually went. The fake's own counter is the evidence,
     // and it is what an earlier version of this harness failed to check: a
     // nested `auth:` block was accepted by the loader, ignored by the plugin,
-    // and the run POSTED A REAL LOGIN ATTEMPT to iam.sensecoreapi.cn. The
-    // plugin now rejects that shape outright; this asserts the redirect holds.
-    check("the request reached the fake, not the platform", fake.log.iam > before,
-      `iam calls ${before} -> ${fake.log.iam}`);
+    // and the run POSTED A REAL LOGIN ATTEMPT to the live platform. The plugin
+    // now rejects that shape outright; this asserts the redirect holds.
+    check("the request reached the fake, not the platform", fake.log.login > before,
+      `login calls ${before} -> ${fake.log.login}`);
     // Agnes ships no JWE walk: the password reaches the backend as typed over
     // TLS, and the fake records exactly what arrived.
     check("the password arrived exactly as submitted",
       fake.seen.password === "e2e-test-password", String(fake.seen.password));
+    check("the login body was JSON, as the console front-end sends it",
+      fake.seen.loginIsJson === true, String(fake.seen.loginIsJson));
     check("no bad-password refusal was produced", fake.log.badPassword === 0, String(fake.log.badPassword));
     check("no refresh token is held (Agnes issues none)", res.body?.hasRefreshToken === false,
       JSON.stringify(res.body?.hasRefreshToken));
@@ -450,18 +455,82 @@ try {
     const res = await call("/api/dsh-connect-agnes-token-plan/snapshot");
     check("the snapshot succeeds after signing in", res.body?.ok === true,
       JSON.stringify(res.body ?? {}).slice(0, 160));
-    check("the pool came back with its name", res.body?.pools?.pools?.[0]?.name === "E2E 池",
-      JSON.stringify(res.body?.pools?.pools?.[0]?.name));
-    check("the 5h window is parsed", res.body?.pools?.pools?.[0]?.window5h?.used === 23456,
-      String(res.body?.pools?.pools?.[0]?.window5h?.used));
-    check("the 7d reset_at became a number", res.body?.pools?.pools?.[0]?.window7d?.resetAt === 1800600000,
-      String(res.body?.pools?.pools?.[0]?.window7d?.resetAt));
-    // The trend is a SUM over the series' points (42.5 + 51.25), not the first
-    // point — asserting 42.5 here only ever passed because the run used to fail
-    // before reaching this check and `undefined !== 42.5` was one of many
-    // failures nobody read individually.
-    check("the trend came back", res.body?.trend?.models?.[0]?.credits === 93.75,
-      JSON.stringify(res.body?.trend?.models?.[0]?.credits));
+    // The plan comes from the PUBLIC catalogue, matched to the subscription by
+    // uuid — the strongest signal `matchCurrentPlan` has. The numeric plan id
+    // is deliberately NOT a signal (the ids are 1–6 and a subscription object
+    // is full of small integers), so a fake that identified the plan by id
+    // would prove nothing.
+    check("the subscription was matched to its catalogue entry",
+      res.body?.quota?.plan?.displayName === "专业版",
+      JSON.stringify(res.body?.quota?.plan?.displayName));
+    check("the matched entry is the variant the payload stated",
+      res.body?.quota?.plan?.billingCycle === "monthly",
+      String(res.body?.quota?.plan?.billingCycle));
+    check("the price is carried as minor units with its currency",
+      res.body?.quota?.plan?.priceMinor === 9900 && res.body?.quota?.plan?.currency === "CNY",
+      JSON.stringify({ priceMinor: res.body?.quota?.plan?.priceMinor, currency: res.body?.quota?.plan?.currency }));
+    // The four windows, in the panel's own order, off the catalogue entry's own
+    // field names. There is no balance here: Agnes caps per window.
+    check("the four quota windows came back in order",
+      JSON.stringify(res.body?.quota?.windows?.map((w) => w.key)) ===
+        JSON.stringify(["requests5h", "requestsWeekly", "imagesDaily", "videoDaily"]),
+      JSON.stringify(res.body?.quota?.windows?.map((w) => w.key)));
+    check("the 5h window carries the plan's request limit",
+      res.body?.quota?.windows?.[0]?.limit === 7500 && res.body?.quota?.windows?.[0]?.windowHours === 5,
+      JSON.stringify(res.body?.quota?.windows?.[0]));
+    check("the weekly window is the 168-hour one",
+      res.body?.quota?.windows?.[1]?.limit === 75000 && res.body?.quota?.windows?.[1]?.windowHours === 168,
+      JSON.stringify(res.body?.quota?.windows?.[1]));
+    check("the video window does not claim a seconds unit",
+      res.body?.quota?.windows?.[3]?.unit === "video" && res.body?.quota?.windows?.[3]?.limit === 500,
+      JSON.stringify(res.body?.quota?.windows?.[3]));
+    check("the subscription expiry became a number",
+      res.body?.quota?.expiresAt === 1793491200, String(res.body?.quota?.expiresAt));
+    check("no quota source degraded", res.body?.quota?.error === null,
+      JSON.stringify(res.body?.quota?.error ?? null));
+    check("the public catalogue is carried in full",
+      res.body?.quota?.plans?.length === 6, String(res.body?.quota?.plans?.length));
+    // Cumulative usage — a separate fact from the limits above, never
+    // subtracted from them. A rolling 5-hour window cannot be derived from a
+    // running total, so a `remaining`/`used` field here would be a fabricated
+    // number rather than a platform one.
+    check("the account totals came back",
+      res.body?.quota?.totals?.totalRequests === 12345 &&
+        res.body?.quota?.totals?.totalTokens === 340000 &&
+        res.body?.quota?.totals?.totalImages === 120 &&
+        res.body?.quota?.totals?.totalVideoSeconds === 480 &&
+        res.body?.quota?.totals?.activeDays === 9,
+      JSON.stringify(res.body?.quota?.totals));
+    check("no remaining figure is invented",
+      res.body?.quota?.totals?.remaining === undefined && res.body?.quota?.totals?.used === undefined,
+      JSON.stringify(res.body?.quota?.totals));
+    // The series: the fake lists its buckets newest-first, so a panel that
+    // rendered them in arrival order would draw the window backwards. The
+    // totals are a SUM across buckets (the platform states none for the
+    // window), so 40 + 60 requests and 1000 + 2000 tokens.
+    check("the usage series is bucketed in chronological order",
+      JSON.stringify(res.body?.usage?.buckets?.map((b) => b.bucket)) ===
+        JSON.stringify(["2026-09-29", "2026-09-30"]),
+      JSON.stringify(res.body?.usage?.buckets?.map((b) => b.bucket)));
+    check("the window totals sum across the buckets",
+      res.body?.usage?.windowTotals?.totalRequests === 100 &&
+        res.body?.usage?.windowTotals?.totalTokens === 3000 &&
+        res.body?.usage?.windowTotals?.totalImages === 3 &&
+        res.body?.usage?.windowTotals?.totalVideoSeconds === 30,
+      JSON.stringify(res.body?.usage?.windowTotals));
+    check("the window covers the configured number of days",
+      res.body?.usage?.days === 30, String(res.body?.usage?.days));
+    // The series endpoint takes DATES, not the hours the SenseNova trend took.
+    // The fake records the query so this cannot regress silently.
+    check("the window the Host asked for arrived as dates",
+      /(?:^|&)start_date=\d{4}-\d{2}-\d{2}(?:&|$)/.test(fake.seen.seriesQuery ?? "") &&
+        /(?:^|&)end_date=\d{4}-\d{2}-\d{2}(?:&|$)/.test(fake.seen.seriesQuery ?? ""),
+      String(fake.seen.seriesQuery));
+    // Every authenticated console call must have presented the token the fake
+    // minted. A plugin that sent no `authorization` header at all would still
+    // have received the numbers above from a fake that did not check.
+    check("every console call presented the token the fake issued",
+      fake.log.unauthenticated === 0, String(fake.log.unauthenticated));
     check("the token is reported as self-renewing", res.body?.auth?.configured === true);
     check("no wait is being served", res.body?.auth?.retryAfterMs === null, String(res.body?.auth?.retryAfterMs));
     // The console origin proves the whole run stayed on the stub.
@@ -476,7 +545,7 @@ try {
   // (input ["text"], output ["image"]) model. The snapshot must list only
   // the vision-capable one — an output-only model is NOT a vision model, and
   // that distinction is what step two publishes to the settings row.
-  // The e2e home has no SENSENOVA_API_KEY, so the catalog is unavailable
+  // The e2e home has no AGNES_TOKEN_PLAN_API_KEY, so the catalog is unavailable
   // here (the model list degrades rather than fabricating): assert that
   // degraded shape holds AND that visionModels stays ABSENT (not an empty
   // list) when the key is missing — the panel must not claim "no vision
@@ -488,9 +557,11 @@ try {
     check("no catalog means visionModels is absent, not an empty claim",
       res.body?.visionModels === undefined,
       JSON.stringify(res.body?.visionModels ?? null));
-    check("a degraded catalog still reports no uncounted models",
-      Array.isArray(res.body?.uncountedModels) && res.body?.uncountedModels.length === 0,
-      JSON.stringify(res.body?.uncountedModels));
+    // A missing key must not fabricate an empty model list either: `[]` would
+    // read as "this key can call nothing", which is a different claim.
+    check("a missing key fabricates no model list",
+      JSON.stringify(res.body?.catalogModels) === JSON.stringify([]),
+      JSON.stringify(res.body?.catalogModels));
   }
 
   // === step three: a pasted key lights the catalog AND the provider =======
@@ -525,12 +596,12 @@ try {
     check("the catalog is available once a key is saved",
       res.body?.catalogAvailable === true, String(res.body?.catalogAvailable));
     check("the catalog lists every model the key can call",
-      JSON.stringify(res.body?.catalogModels) === JSON.stringify(["SenseNova-Lite", "SenseNova-Vision", "SenseNova-Draw"]),
+      JSON.stringify(res.body?.catalogModels) === JSON.stringify(["deepseek-v4-flash", "Agnes-6.8-flash-lite", "Agnes-u1-fast"]),
       JSON.stringify(res.body?.catalogModels));
     // Only the input-modality model counts: the image-OUTPUT model must not
     // be published as one that can take a picture.
     check("the vision list is exactly the input-modality model",
-      JSON.stringify((res.body?.visionModels ?? []).map((entry) => entry.id)) === JSON.stringify(["SenseNova-Vision"]),
+      JSON.stringify((res.body?.visionModels ?? []).map((entry) => entry.id)) === JSON.stringify(["Agnes-6.8-flash-lite"]),
       JSON.stringify(res.body?.visionModels));
     check("no key is echoed in the snapshot either", !res.text.includes("sk-e2e"));
 
@@ -543,7 +614,7 @@ try {
     check("it registers under its own provider id", llm.providerId === "agnes-token-plan", String(llm.providerId));
     check("the offered models come from the catalog, image-output excluded",
       llm.modelCount === 2 && llm.visionCount === 1 &&
-        JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["SenseNova-Lite", "SenseNova-Vision"]),
+        JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["deepseek-v4-flash", "Agnes-6.8-flash-lite"]),
       `modelCount=${String(llm.modelCount)} visionCount=${String(llm.visionCount)} models=${JSON.stringify(llm.models)}`);
 
     // PITFALLS §23, end-to-end. This Host was launched with `--profile web`

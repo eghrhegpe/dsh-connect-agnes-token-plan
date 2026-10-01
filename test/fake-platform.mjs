@@ -1,60 +1,230 @@
 /**
- * A fake SenseNova platform for the end-to-end run.
+ * A fake Agnes platform for the end-to-end run.
  *
- * It answers everything the panel asks for — JWKS, the login flow, the token
- * endpoint, the console API — so the panel can reach a genuinely WORKING state
- * and the test can assert on real numbers coming out of a real Host. The
- * password it accepts is a fixed test string; it is not an account, and the
- * e2e run sets no real credentials at all.
+ * It answers everything the panel asks for — the one-shot login, the console
+ * usage/subscription reads, the anonymous plan catalogue and the API-key model
+ * list — so the panel can reach a genuinely WORKING state and the test can
+ * assert on real numbers coming out of a real Host. The password it accepts is
+ * a fixed test string; it is not an account, and the e2e run sets no real
+ * credentials at all.
  *
  * The real Host is booted against this on 127.0.0.1, so even a bug that tried
  * to sign in would land here rather than at the platform.
+ *
+ * ## What it checks, not just what it answers
+ *
+ * A fake that answers everything is a channel for bugs to reach users. Two
+ * properties are therefore VERIFIED here rather than assumed:
+ *
+ * 1. **The console token.** Every authenticated route refuses a request that
+ *    does not carry the exact bearer this fake issued. Without that, a plugin
+ *    that sent no `authorization` header at all would still get its numbers and
+ *    the run would be green.
+ * 2. **The series window.** `/api/usage/series` takes DATES
+ *    (`start_date`/`end_date`), not the hours the SenseNova trend took. The
+ *    fake records the query it received so the test can assert the shape — a
+ *    plugin that reverted to timestamps would get a 200 from a fake that did
+ *    not look.
  */
 import { createServer } from "node:http";
-import { generateKeyPairSync } from "node:crypto";
 
 const PORT = Number(process.env.FAKE_PORT ?? 19399);
 const PASSWORD = "e2e-test-password";
 
-/**
- * A throwaway RSA key, generated per run: the JWE is decrypted to prove it.
- *
- * `generateKeyPairSync` already returns KeyObjects, so they are exported
- * directly — re-wrapping a public key with `createPublicKey` would throw.
- */
-const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const jwk = publicKey.export({ format: "jwk" });
-const privateJwk = privateKey.export({ format: "jwk" });
-
 /** Counters the test asserts on, so "did it log in?" is answerable. */
-export const log = { jwks: 0, auth: 0, iam: 0, token: 0, poolUsage: 0, trend: 0, catalog: 0, badPassword: 0 };
+export const log = {
+  login: 0,
+  overview: 0,
+  series: 0,
+  subscription: 0,
+  plans: 0,
+  catalog: 0,
+  badPassword: 0,
+  /** Console calls that arrived without the token this fake issued. */
+  unauthenticated: 0
+};
 
-/** A JWT the panel will accept, expiring in an hour. */
+/**
+ * The last credential the fake actually received, verbatim.
+ *
+ * Agnes ships no JWE walk: the password reaches the backend as typed over TLS,
+ * so there is nothing to open — but there IS a property worth pinning, which
+ * is that what arrived is exactly what was submitted. The old OIDC fake could
+ * only prove that by decrypting a sealed blob; here the plaintext on the wire
+ * IS the evidence.
+ */
+export const seen = {
+  username: null,
+  password: null,
+  /** The bearer the console routes last saw (never the api key). */
+  bearer: null,
+  /** The api key `/v1/models` last saw. */
+  apiKey: null,
+  /** The raw query string `/api/usage/series` last saw. */
+  seriesQuery: null,
+  /** Whether the last login body was JSON, as the console front-end sends it. */
+  loginIsJson: false
+};
+
+/** The one token this fake will accept on the console routes. */
+let issuedToken = null;
+
+/**
+ * A JWT the plugin will accept, expiring in an hour.
+ *
+ * Three segments on purpose: `readJwtExpiry` reads `exp` off the middle one and
+ * only treats a token as a JWT when it finds three. A two-part string would
+ * take the `fallbackExpiresInSeconds` branch instead, and the run would stop
+ * exercising the claim-reading path it exists to exercise.
+ */
 function freshJwt() {
   const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
-  return `eyJhbGciOiJSUzI1NiJ9.${payload}.e2e`;
+  return `eyJhbGciOiJIUzI1NiJ9.${payload}.e2e`;
 }
 
-const POOL_BODY = {
-  plan: { id: "plan-e2e", name: "TokenPlan", type: "token_plan" },
-  pools: [{
-    id: "pool-e2e",
-    name: "E2E 池",
-    pool_type: "default",
-    model_ids: ["SenseNova-Lite"],
-    window_5h: { limit: 60000, used: 23456, remaining: 36544, reset_at: "1800000000" },
-    window_7d: { limit: 600000, used: 23456, remaining: 576544, reset_at: "1800600000" },
-    grant_balance: 0
-  }]
+/**
+ * The uuid that ties the subscription payload to the catalogue.
+ *
+ * `matchCurrentPlan` scores a uuid match 3 — the strongest signal it has — and
+ * a numeric plan id is deliberately NOT a signal (the ids are 1–6 and a
+ * subscription object is full of small integers). So the fake's subscription
+ * names the 专业版 monthly entry by uuid, which is how the real payload is
+ * expected to identify a plan.
+ */
+const PRO_UUID = "11111111-1111-4111-8111-111111111111";
+
+/** `GET /api/usage/overview` — the account's CUMULATIVE usage. */
+const OVERVIEW_DATA = {
+  total_requests: 12345,
+  total_tokens: 340000,
+  total_images: 120,
+  total_video_seconds: 480,
+  active_days: 9
 };
-const TREND_BODY = {
-  series: [{ model_id: "SenseNova-Lite", points: [{ credits: 42.5 }, { credits: 51.25 }] }]
+
+/**
+ * `GET /api/usage/series` — per-bucket usage for the window that was asked for.
+ *
+ * Two buckets, listed newest-first on purpose: `parseUsageSeries` sorts them
+ * chronologically, and a fake that pre-sorted them would let a broken sort pass.
+ */
+const SERIES_DATA = {
+  items: [
+    { bucket: "2026-09-30", request_count: 40, text_tokens: 1000, image_count: 1, video_seconds: 10 },
+    { bucket: "2026-09-29", request_count: 60, text_tokens: 2000, image_count: 2, video_seconds: 20 }
+  ]
+};
+
+/** `GET /api/cn/user/subscription` — the signed-in account's own plan. */
+const SUBSCRIPTION_DATA = {
+  plan_uuid: PRO_UUID,
+  billing_cycle: "monthly",
+  status: "active",
+  expires_at: "2026-11-01T00:00:00Z"
+};
+
+/**
+ * `GET /api/cn/user/subscription/plans` — the PUBLIC catalogue.
+ *
+ * Verified live 2026-10-01 against an anonymous request: six entries —
+ * 入门版 / 专业版 / 高级版, each in a monthly and a yearly variant. The daily
+ * image (4000) and video (500) caps are identical across all three tiers,
+ * which is why only the request dimensions differentiate the plans. The fake
+ * keeps that shape so the panel's "what does upgrading buy" line is exercised
+ * against the same field names the platform uses.
+ */
+function planEntry({ id, uuid, name, cycle, priceMinor, concurrency, weekly }) {
+  return {
+    id,
+    uuid,
+    name,
+    display_name: name,
+    billing_cycle: cycle,
+    display_cycle: cycle === "yearly" ? "年付" : "月付",
+    price_minor: priceMinor,
+    currency: "CNY",
+    concurrency_limit: concurrency,
+    concurrency_window_h: 5,
+    text_weekly_limit: weekly,
+    image_daily_limit: 4000,
+    video_daily_limit: 500,
+    usage_limit_text: `${concurrency} 次模型请求 / 5 小时`,
+    feature_texts: [`每周 ${weekly} 次模型请求`, "图片与视频按日限额"]
+  };
+}
+
+const PLANS_DATA = [
+  planEntry({ id: 1, uuid: "aaaaaaa1-0000-4000-8000-000000000001", name: "入门版", cycle: "monthly", priceMinor: 4900, concurrency: 1500, weekly: 15000 }),
+  planEntry({ id: 2, uuid: "aaaaaaa2-0000-4000-8000-000000000002", name: "入门版", cycle: "yearly", priceMinor: 49000, concurrency: 1500, weekly: 15000 }),
+  planEntry({ id: 3, uuid: PRO_UUID, name: "专业版", cycle: "monthly", priceMinor: 9900, concurrency: 7500, weekly: 75000 }),
+  planEntry({ id: 4, uuid: "aaaaaaa4-0000-4000-8000-000000000004", name: "专业版", cycle: "yearly", priceMinor: 99900, concurrency: 7500, weekly: 75000 }),
+  planEntry({ id: 5, uuid: "aaaaaaa5-0000-4000-8000-000000000005", name: "高级版", cycle: "monthly", priceMinor: 29900, concurrency: 30000, weekly: 300000 }),
+  planEntry({ id: 6, uuid: "aaaaaaa6-0000-4000-8000-000000000006", name: "高级版", cycle: "yearly", priceMinor: 299900, concurrency: 30000, weekly: 300000 })
+];
+
+/**
+ * `GET {apiBase}/models` — one text-only, one vision-capable, one
+ * image-output-only entry.
+ *
+ * The three-way split is the whole point: it is what distinguishes
+ * input-modality from output-modality. A vision model takes pictures in; an
+ * image-generation model puts pictures out and answers 404 on
+ * `/v1/chat/completions`, so offering it as a chat model only produces errors
+ * in DSH. A fake with a single model would let that conflation pass.
+ *
+ * The envelope is `{data:[…]}` — the OpenAI-compatible shape
+ * `fetchModelCatalog` unwraps, NOT the console's `{code,message,data}`. A fake
+ * answering the console envelope here would hand the plugin an empty catalog
+ * and let a broken unwrap pass.
+ */
+const CATALOG_BODY = {
+  data: [
+    {
+      id: "deepseek-v4-flash",
+      name: "deepseek-v4-flash",
+      input_modalities: ["text"],
+      output_modalities: ["text"],
+      context_length: 131072,
+      max_output_length: 8192
+    },
+    {
+      id: "Agnes-6.8-flash-lite",
+      name: "Agnes-6.8-flash-lite",
+      input_modalities: ["text", "image"],
+      output_modalities: ["text"],
+      context_length: 65536,
+      max_output_length: 4096
+    },
+    {
+      id: "Agnes-u1-fast",
+      name: "Agnes-u1-fast",
+      input_modalities: ["text"],
+      output_modalities: ["image"]
+    }
+  ]
 };
 
 function json(res, status, body, headers = {}) {
   const text = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(text), ...headers });
   res.end(text);
+}
+
+/**
+ * The platform's success envelope: `{code: 200, message: "ok", data: …}`.
+ *
+ * Agnes wraps every console answer this way, and a 200 can still carry a
+ * refusal — which is why the fake never answers a bare object on a console
+ * route. A plugin that forgot to unwrap would read `data` as `undefined` and
+ * the panel would say "no data yet" instead of showing these numbers.
+ */
+function ok(res, data) {
+  return json(res, 200, { code: 200, message: "ok", data });
+}
+
+/** The platform's own refusal shape, verbatim. */
+function refused(res, status, code, message) {
+  return json(res, status, { code, message, data: null });
 }
 
 function readBody(req) {
@@ -65,57 +235,32 @@ function readBody(req) {
   });
 }
 
-/**
- * Decrypt a compact JWE with the fake's own key.
- *
- * Used only to PROVE the panel really sealed the submitted password rather
- * than sending it in the clear — the property the whole login path exists for.
- * @param {string} jwe - the compact serialization.
- * @returns {string|null} the plaintext, or `null` if it will not open.
- */
-export async function openSealed(jwe) {
-  try {
-    // ALL FIVE segments. A compact JWE is header.encryptedKey.iv.ciphertext.tag,
-    // and the tag is the detached final 128 bits (RFC 7516 §5.1). Reading only
-    // the first four handed WebCrypto a ciphertext with no tag, which refuses
-    // to decrypt — so `seen.password` was null on every run, the fake rejected
-    // the login as a wrong password, and the flow never reached the token
-    // endpoint. The end-to-end run therefore never exercised PKCE at all.
-    const [header, wrapped, iv, ciphertext, tag] = String(jwe).split(".");
-    if (wrapped === undefined || tag === undefined) return null;
-    const key = await crypto.subtle.importKey(
-      "jwk", privateJwk, { name: "RSA-OAEP", hash: "SHA-1" }, false, ["decrypt"]
-    );
-    const cek = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, key, Buffer.from(wrapped, "base64url"));
-    const plain = await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: Buffer.from(iv, "base64url"),
-        additionalData: new TextEncoder().encode(header),
-        tagLength: 128
-      },
-      await crypto.subtle.importKey("raw", cek, { name: "AES-GCM" }, false, ["decrypt"]),
-      // WebCrypto wants ciphertext||tag as one buffer; the JWE keeps them apart.
-      Buffer.concat([Buffer.from(ciphertext, "base64url"), Buffer.from(tag, "base64url")])
-    );
-    return new TextDecoder().decode(plain);
-  } catch {
-    return null;
-  }
+/** The bearer a request presented, or `""`. */
+function bearerOf(req) {
+  const header = req.headers.authorization;
+  return typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : "";
 }
 
-/** The last sealed password the fake received, decrypted. */
-export const seen = { password: null, username: null, codeChallenge: null, codeChallengeMethod: null, state: null };
-
 /**
- * The PKCE floor from RFC 7636, enforced by every real OIDC server.
+ * Gate one authenticated console route.
  *
- * The fake used to hand out a token without looking at `code_verifier` at all,
- * so a verifier that was too short — or absent — still produced a green
- * end-to-end run while the real platform refused the exchange. That is exactly
- * how an 11-character verifier reached a user's console.
+ * A request that does not carry the token this fake minted is refused the way
+ * the real gateway refuses one — HTTP 401 with `code: 401` in the envelope.
+ * That double signal is what `fetchConsole` keys its single renewal retry off,
+ * and it is also the check that stops a plugin which never authenticated from
+ * reading the numbers anyway.
+ * @returns {boolean} whether the caller may proceed.
  */
-const PKCE_MIN_LENGTH = 43;
+function admitConsole(req, res) {
+  const bearer = bearerOf(req);
+  seen.bearer = bearer === "" ? null : bearer;
+  if (issuedToken === null || bearer !== issuedToken) {
+    log.unauthenticated += 1;
+    refused(res, 401, 401, "Not logged in or invalid token");
+    return false;
+  }
+  return true;
+}
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
@@ -126,143 +271,67 @@ const server = createServer(async (req, res) => {
   process.stdout.write(`fake: ${req.method} ${path}\n`);
 
   if (path === "/api/user/login") {
-    // Agnes's whole login flow: one email + password POST answering with a
+    // Agnes's whole login flow: one username + password POST answering with a
     // single access_token (no OIDC walk, no refresh token). The password
     // travels in the clear over TLS, so the fake reads it straight off the
     // body — there is no JWE to open on this platform.
-    log.iam += 1;
+    log.login += 1;
     let parsed = {};
     try { parsed = JSON.parse(body); } catch { /* refusal below */ }
+    seen.loginIsJson = body.trim().startsWith("{");
     seen.username = typeof parsed.username === "string" ? parsed.username : null;
     seen.password = typeof parsed.password === "string" ? parsed.password : null;
     process.stdout.write(`fake: login username=${seen.username} password=${JSON.stringify(seen.password)}\n`);
     if (seen.password !== PASSWORD) {
       log.badPassword += 1;
       // Agnes's own refusal, verbatim: a bad pair answers exactly this.
-      return json(res, 401, { code: 401, message: "Invalid username or password", data: null });
+      return refused(res, 401, 401, "Invalid username or password");
     }
-    return json(res, 200, { code: 200, message: "ok", data: { access_token: freshJwt(), user: { id: 1 } } });
+    issuedToken = freshJwt();
+    return ok(res, { access_token: issuedToken, user: { id: 1, username: seen.username } });
   }
-  if (path === "/.well-known/jwks.json") {
-    log.jwks += 1;
-    return json(res, 200, { keys: [{ ...jwk, kid: "public:hydra.openid.id-token", use: "sig" }] });
+
+  if (path === "/api/usage/overview") {
+    if (!admitConsole(req, res)) return;
+    log.overview += 1;
+    return ok(res, OVERVIEW_DATA);
   }
-  if (path === "/oauth2/auth") {
-    // Hydra answers the authorization request with a redirect into the login
-    // flow, carrying the CSRF cookie the callback needs. Returning a 200 here
-    // is what made the panel report "could not obtain a login challenge".
-    log.auth += 1;
-    // Remember the challenge: the token endpoint has to redeem it, or the
-    // fake is not checking PKCE and cannot catch a malformed verifier.
-    seen.codeChallenge = url.searchParams.get("code_challenge");
-    seen.codeChallengeMethod = url.searchParams.get("code_challenge_method");
-    // Remember the state nonce: the callback must round-trip it, and the login
-    // flow now verifies that round-trip.
-    seen.state = url.searchParams.get("state");
-    res.writeHead(302, {
-      location: `http://127.0.0.1:${PORT}/login?login_challenge=chal-e2e`,
-      "set-cookie": "oauth2_authentication_csrf=abc; Path=/"
-    });
-    return res.end();
+  if (path === "/api/usage/series") {
+    if (!admitConsole(req, res)) return;
+    log.series += 1;
+    // Recorded so the test can assert the window arrived as DATES. The endpoint
+    // takes `start_date`/`end_date`, and a plugin that sent hour timestamps
+    // would still get a 200 from a fake that did not look.
+    seen.seriesQuery = url.search;
+    return ok(res, SERIES_DATA);
   }
-  if (path === "/login") {
-    log.auth += 1;
-    res.writeHead(200, { "content-type": "text/html", "set-cookie": "oauth2_authentication_csrf=abc; Path=/" });
-    return res.end("<html><body>login</body></html>");
+  if (path === "/api/cn/user/subscription") {
+    if (!admitConsole(req, res)) return;
+    log.subscription += 1;
+    return ok(res, SUBSCRIPTION_DATA);
   }
-  if (path.includes("/iam/authn/") && path.includes("/login")) {
-    log.iam += 1;
-    let parsed = {};
-    try { parsed = JSON.parse(body); } catch { /* fall through to the refusal below */ }
-    seen.username = typeof parsed.username === "string" ? parsed.username : null;
-    seen.password = await openSealed(parsed.password);
-    process.stdout.write(`fake: iam username=${seen.username} sealedPassword=${JSON.stringify(seen.password)}\n`);
-    if (seen.password !== PASSWORD) {
-      log.badPassword += 1;
-      // The real envelope: a generic status up top, the cause in details[].
-      return json(res, 400, {
-        code: 3,
-        message: "InvalidArgument",
-        details: [
-          { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "invalidAccountOrPassword", domain: "iam" },
-          { "@type": "type.googleapis.com/google.rpc.LocalizedMessage", locale: "en", message: "invalid account or password" }
-        ]
-      });
+  if (path === "/api/cn/user/subscription/plans") {
+    // PUBLIC: no `authorization` header is sent, and sending an empty Bearer
+    // turns this into a refused request on the real gateway — so the fake
+    // refuses one too, rather than quietly tolerating the mistake.
+    log.plans += 1;
+    if (req.headers.authorization !== undefined) {
+      return refused(res, 401, 401, "Not logged in or invalid token");
     }
-    const stateQuery = seen.state !== null ? `&state=${encodeURIComponent(seen.state)}` : "";
-    return json(res, 200, { redirect: `http://127.0.0.1:${PORT}/cb?code=the-code${stateQuery}` });
+    return ok(res, PLANS_DATA);
   }
-  if (path === "/cb") {
-    const stateQuery = seen.state !== null ? `&state=${encodeURIComponent(seen.state)}` : "";
-    res.writeHead(302, { location: `http://127.0.0.1:${PORT}/done?code=the-code${stateQuery}` });
-    return res.end();
-  }
-  if (path === "/done") {
-    res.writeHead(200, { "content-type": "text/html" });
-    return res.end("<html><body>ok</body></html>");
-  }
-  if (path === "/oauth2/token") {
-    log.token += 1;
-    const params = new URLSearchParams(body);
-    const grant = params.get("grant_type");
-    if (grant === "authorization_code") {
-      // Redeem PKCE the way Hydra does. The error payloads are the platform's
-      // own words, so a failure looks like the failure a user would report.
-      const verifier = params.get("code_verifier") ?? "";
-      if (verifier.length < PKCE_MIN_LENGTH) {
-        return json(res, 400, {
-          error: "invalid_grant",
-          error_description:
-            "The provided authorization grant (e.g., authorization code, resource owner " +
-            "credentials) or refresh token is invalid, expired, revoked, does not match the " +
-            "redirection URI used in the authorization request, or was issued to another " +
-            `client. The PKCE code verifier must be at least ${PKCE_MIN_LENGTH} characters.`
-        });
-      }
-      const digest = Buffer.from(
-        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
-      ).toString("base64url");
-      if (seen.codeChallenge !== null && digest !== seen.codeChallenge) {
-        return json(res, 400, {
-          error: "invalid_grant",
-          error_description: "The PKCE code verifier did not match the code challenge."
-        });
-      }
-    }
-    if (grant === "authorization_code" || grant === "refresh_token") {
-      return json(res, 200, {
-        access_token: freshJwt(),
-        refresh_token: `e2e-refresh-${log.token}`,
-        expires_in: 10800,
-        scope: "openid offline offline_access"
-      });
-    }
-    return json(res, 400, { error: "unsupported_grant_type" });
-  }
-  if (path.includes("pool-usage")) {
-    log.poolUsage += 1;
-    return json(res, 200, POOL_BODY);
-  }
-  if (path.includes("credit-usage-trend")) {
-    log.trend += 1;
-    return json(res, 200, TREND_BODY);
-  }
-  if (path.includes("model")) {
+
+  if (path === "/v1/models") {
     log.catalog += 1;
-    // One text-only, one vision-capable, and one image-output-only model,
-    // so the catalog exercise distinguishes input-modality from
-    // output-modality (step-two publish must not treat an out model as a
-    // vision model). The envelope is `{data:[…]}` — the OpenAI-compatible
-    // shape `fetchModelCatalog` unwraps; a fake answering `{models:[…]}`
-    // would hand the plugin an empty catalog and let a broken unwrap pass.
-    return json(res, 200, {
-      data: [
-        { id: "SenseNova-Lite", name: "SenseNova-Lite", input_modalities: ["text"] },
-        { id: "SenseNova-Vision", name: "SenseNova-Vision", input_modalities: ["text", "image"], output_modalities: ["text"] },
-        { id: "SenseNova-Draw", name: "SenseNova-Draw", input_modalities: ["text"], output_modalities: ["image"] }
-      ]
-    });
+    const key = bearerOf(req);
+    seen.apiKey = key === "" ? null : key;
+    // The gateway authenticates this one with the API key, not the console
+    // token — a plugin that reused the console token here would be refused.
+    if (key === "") return refused(res, 401, 401, "Missing API key");
+    // NOT enveloped: this is the OpenAI-compatible gateway, not the console.
+    return json(res, 200, CATALOG_BODY);
   }
+
   return json(res, 404, { error: `no fake route for ${path}` });
 });
 

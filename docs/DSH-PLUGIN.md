@@ -10,7 +10,7 @@
 
 DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代码，通过 DSH 的 **Loader** 注册成一个 **bundle**，在启动时按 `cordis.patch.yml` 的描述挂进 Host 的 cordis 容器。插件分两半：
 
-- **Host 半边**：在 Node 侧运行，`index.js` / `token-store.js` / `sensenova-auth.js` 这种。本插件用它注册 HTTP 路由、调商汤控制台、管令牌。
+- **Host 半边**：在 Node 侧运行，`index.ts` / `token-store/` / `agnes-auth.ts` 这种。本插件用它注册 HTTP 路由、调 Agnes 控制台、管令牌。
 - **Client 半边**：注入到 Host 的 Web UI 里运行，`client.js` 这种（React 由 Host 提供，不打包）。本插件用它画 Plugins 页的配置卡与账号表单。
 
 两半通过 Host 暴露的上下文（`ctx`）与本地路由（`/api/...`）通信。**插件不是独立进程，也不是独立网页**——它寄生在 DSH 里。
@@ -40,8 +40,8 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
     "build": "tsdown -c tsdown.config.mjs",        // 重建 lib/index.js + 根 client.js
     "build:client": "tsdown -c tsdown.config.mjs",
     "prepack": "npm run build",                    // 发布前自动重建产物
-    "test": "node test/auth.test.mjs && ... && node test/build-gate.mjs && node test/e2e-gate.mjs",
-    "test:live": "node test/live-jwks.test.mjs",
+    "test": "node test/agnes-auth.test.mjs && ... && node test/build-gate.mjs && node test/e2e-gate.mjs",
+    "test:live:contract": "node test/live-contract.mjs",
     "test:e2e": "node test/e2e.mjs"
   },
   "dsh": {
@@ -51,8 +51,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
       "immediately": true,
       "inject": [
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-renderer",
-        "@deepseek-ai/dsh-client-ui-layout"
+        "@deepseek-ai/dsh-client-ui-renderer"
       ]
     }
   },
@@ -65,6 +64,9 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
     "@deepseek-ai/dsh-home-paths": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-tools": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-host-webserver": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-client-ui-layout": ">=0.1.5 <0.3",
     "@deepseek-ai/schemastery": "^3.18.2",
     "@earendil-works/pi-ai": "^0.85.1"
   },
@@ -75,7 +77,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 要点：
 
 - **`dsh.bundle.patch`** 指向 `cordis.patch.yml`——这是插件声明「我要在 Host 里插入哪一行、带哪些配置」的地方。
-- **`dsh.client`** 声明 Client 半边跑在 `web` 平台、立即注入，并依赖三套 Host 提供的客户端模块（locale / renderer / layout）。
+- **`dsh.client`** 声明 Client 半边跑在 `web` 平台、立即注入，并依赖两套 Host 提供的客户端模块（locale / renderer）。
 - **`peerDependencies`** 是 DSH 运行时（`@deepseek-ai/dsh`、`@deepseek-ai/dsh-credentials`、`react`，以及第三步注册 provider 用的 `@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm` / `@deepseek-ai/dsh-llm-pi-ai`）——**由 Host 在运行时提供**，不在公共 registry 上。这与 `dsh-connect-qoder` 的处境完全一致：它的 `.npmrc` 里有 `legacy-peer-deps=true` 正是因为 peer 装不到。本插件同理，不要试图 `npm install` 这些 peer；但**它们必须能从插件文件所在目录解析到**（Node 的裸模块解析只向上找 `node_modules`）：npm 装进 profile 的插件天然满足，开发期 symlink/junction 进 profile 的检出不满足——见 [PITFALLS.md](./PITFALLS.md) §16。
 - **`exports`** 把 Host/Client 各半边与工具模块都暴露出来，`index.js` 的 `apply/name/inject` 是 Host 入口约定。
 
@@ -90,11 +92,11 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
     - id: dsh-connect-agnes-token-plan          # Loader 条目 id；Host 用它在命名空间/设置里定位本插件
       name: dsh-connect-agnes-token-plan
       config:
-        consoleBase: https://platform.sensenova.cn
-        trendHours: 24
+        consoleBase: https://platform-backend.agnes-ai.cn   # 后端源站，不是控制台前端
+        usageDays: 30
         cacheSeconds: 60
         tokenSkewSeconds: 120
-        # iamBase / tokenEndpoint / jwksEndpoint / ... 都是可选覆盖，留注释=用平台默认
+        # loginPath / loginTimeoutMs / fallbackExpiresInSeconds ... 都是可选覆盖，留注释=用平台默认
 ```
 
 - 这里的 `id: dsh-connect-agnes-token-plan` 至关重要：DSH 的「设置 → 模型」页、命名空间推导都基于这个条目 id（参见 `dsh-connect-qoder` README 里「设置命名空间由宿主决定，不能自选」那条踩坑——本插件同样遵循 `ctx.fiber.entry.options.id` 推导，不硬编码）。
@@ -120,14 +122,14 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 ## 5. 与 Host 的边界（哪些该放插件、哪些归 Host）
 
 - **插件不该做的事**：管理进程生命周期、持有全局状态、碰 Host 隐私数据。插件通过 `ctx`（cordis 容器）拿服务，如 `ctx.webServer`（注册路由）、`ctx.credentials`（凭据服务）、`ctx.slots`（注入 UI）、`ctx.locale`（字典）。
-- **本插件注册的路由**（六条，都在 `registerRoutes` 里，全部过 `isAdmitted` 同源闸，见 [PITFALLS.md](./PITFALLS.md) 第 13 条）：`GET|HEAD snapshot`（只读聚合，始终 HTTP 200，成败在 body 的 `ok`/`code`）、`GET|POST account`（账号配置，POST 校验 body ≤ 4KB）、`GET|POST api-key`（`SENSENOVA_API_KEY` 引用存取，响应永不回显明文）、`GET|POST provider`（面板 provider 热开关，`docs/PROVIDER-HOT-RELOAD.md`）、`POST models`（模型允许清单保存）、`GET|POST draw`（出图工具开关）。路由白名单以 `routes.js` 为准——文档这里只给清单与约束，不复制契约。
-- **凭据归 Host 的凭据服务**：账号与 access/refresh token 只经 `@deepseek-ai/dsh-credentials` 落 `~/.dsh/.credentials.yaml`；**密码不落盘**（仅登录瞬间内存使用，`SENSENOVA_PASSWORD` 环境变量是唯一持久来源）。插件自己不写明文文件。没有凭据服务时退化为进程内存（`ephemeral`），重启需重登。
+- **本插件注册的路由**（六条，都在 `registerRoutes` 里，全部过 `isAdmitted` 同源闸，见 [PITFALLS.md](./PITFALLS.md) 第 13 条）：`GET|HEAD snapshot`（只读聚合，始终 HTTP 200，成败在 body 的 `ok`/`code`）、`GET|POST account`（账号配置，POST 校验 body ≤ 4KB）、`GET|POST api-key`（`AGNES_TOKEN_PLAN_API_KEY` 引用存取，响应永不回显明文）、`GET|POST provider`（面板 provider 热开关，`docs/PROVIDER-HOT-RELOAD.md`）、`POST models`（模型允许清单保存）、`GET|POST draw`（出图工具开关）。路由白名单以 `routes.js` 为准——文档这里只给清单与约束，不复制契约。
+- **凭据归 Host 的凭据服务**：账号与 access token 只经 `@deepseek-ai/dsh-credentials` 落 `~/.dsh/.credentials.yaml`；**密码不落盘**（仅登录瞬间内存使用，`AGNES_PASSWORD` 环境变量是唯一持久来源）。Agnes 不发 refresh token，令牌死了就重登一次。插件自己不写明文文件。没有凭据服务时退化为进程内存（`ephemeral`），重启需重登。
 
 ---
 
 ## 6. 与 `dsh-connect-qoder` 等兄弟插件的关系
 
-- 它们**共用同一套 DSH 插件协议**，但**功能域互不相关**：`dsh-connect-qoder` 是把 Qoder 账号接成 DSH 的模型 provider；本插件是商汤控制台的积分用量面板。两者都是「Host 半边 + Client 半边 + cordis.patch.yml + peer 由 Host 提供」这一形态。
+- 它们**共用同一套 DSH 插件协议**，但**功能域互不相关**：`dsh-connect-qoder` 是把 Qoder 账号接成 DSH 的模型 provider；本插件是 Agnes 控制台的额度面板。两者都是「Host 半边 + Client 半边 + cordis.patch.yml + peer 由 Host 提供」这一形态。
 - 它们可以**并存**：各自有独立的 Loader 条目 id（`llm-qoder` / `dsh-connect-agnes-token-plan`），各自的命名空间、路由前缀（`/api/dsh-connect-agnes-token-plan/...` vs 各自前缀）互不冲突。
 - 都遵循同一套 Host 约定：设置命名空间由 Host 从条目 id 推导、Client 由 Host 注入、`peerDependencies` 由 Host 提供。
 
@@ -135,8 +137,8 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 
 ## 7. 测试与构建（本插件）
 
-- 本插件测试**无需 `npm install`**：网络层打桩，密码用临时密钥加密，不碰真实账号；peer 依赖由 `test/peer-roots.mjs` 在 DSH 运行时就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到会列全部查过的位置，而非静默跳过。这只是让**测试**拿得到 peer；插件运行期自己 `import()` 的解析链是另一回事，见 [PITFALLS.md](./PITFALLS.md) §16。
-- 跑 `npm test`（**全量离线测试套件**，清单与链的唯一事实源是 `package.json` 的 `scripts.test`，新增套件只需接进该链），末尾接 `test/build-gate.mjs`（重建 `src/` 全部源码并验证 `lib/` 与 `client.js` 产物，tsdown 缺席则醒目 SKIP）与 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live` 需联网验证 JWKS。`package.test.mjs` 还把「磁盘上的 *.test.mjs ↔ npm test 链 ↔ CI 离线 job」钉成同一个事实：新写套件忘接门禁会直接红。`store-baseline` 是 token-store 的全行为冻结基线（拆分 guardrail），详见 `docs/TESTING.md`。
+- 本插件测试**无需 `npm install`**：网络层打桩（假 Agnes 平台），登录只发一次明文 POST、密码仅内存使用，不碰真实账号；peer 依赖由 `test/peer-roots.mjs` 在 DSH 运行时就地解析（`$DSH_HOME` → 插件 `node_modules` → 安装目录）。找不到会列全部查过的位置，而非静默跳过。这只是让**测试**拿得到 peer；插件运行期自己 `import()` 的解析链是另一回事，见 [PITFALLS.md](./PITFALLS.md) §16。
+- 跑 `npm test`（**全量离线测试套件**，清单与链的唯一事实源是 `package.json` 的 `scripts.test`，新增套件只需接进该链），末尾接 `test/build-gate.mjs`（重建 `src/` 全部源码并验证 `lib/` 与 `client.js` 产物，tsdown 缺席则醒目 SKIP）与 `test/e2e-gate.mjs`——探到 dsh CLI 就实跑端到端，探不到则醒目 SKIP 并退出 0。`test:live:contract` 需联网并要一枚真 Key，不进默认门禁。`package.test.mjs` 还把「磁盘上的 *.test.mjs ↔ npm test 链 ↔ CI 离线 job」钉成同一个事实：新写套件忘接门禁会直接红。`store-baseline` 是 token-store 的全行为冻结基线（拆分 guardrail），详见 `docs/TESTING.md`。
 - 本插件 **两半边均已构建化（2026-09-30）**：全部源码在 `src/host/*.ts` 与 `src/client/*.ts`，经 `npm run build`（tsdown）构建为 `lib/`（Host ESM bundle + 切分 chunk）与根 `client.js`（Client IIFE）。**两个产物均已 `.gitignore`、不入库**——改源码后必须重建再刷新/重启；删掉 `lib/` 与 `client.js` 后一条 `npm run build` 即可从 `src/` 完整重建。`test/build-gate.mjs` 在 `npm test` 末尾拦构建失败与产物缺失。
 - 所有离线测试均已通过；各套件用例数会随并行会话变化，以 `npm test` 实际输出为准，不在此处保留快照（详见 [TESTING.md](./TESTING.md)）。
 
@@ -146,6 +148,6 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — 插件内部双仓库关系 / Host-Client 分流 / 数据流
 - [SETUP.md](./SETUP.md) — 安装、配置字段、重启注意事项
-- [SENSENOVA-API.md](./SENSENOVA-API.md) — 商汤接口全集
+- [AGNES-API.md](./AGNES-API.md) — Agnes 接口全集（额度侧 + 推理侧）；商汤时代的接口原文见 [SENSENOVA-API.md](./SENSENOVA-API.md)（历史档）
 - [PITFALLS.md](./PITFALLS.md) — 真实踩坑（含 DSH 加载 / 重启 / 同源 / peer 依赖相关）
 - 范本：`~/.dsh/fork/dsh-connect-qoder/README.md`（DSH 插件 README 的参考写法）

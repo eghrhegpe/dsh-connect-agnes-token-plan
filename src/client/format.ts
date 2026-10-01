@@ -17,25 +17,6 @@ export function clockLong(epoch: unknown): string {
 }
 
 /**
- * A date-aware reset clock: `HH:MM` when the instant lands on today's local
- * date, `MM-DD HH:mm` once it crosses into another day.
- *
- * Why this exists: `clock` was the one shared formatter, so the weekly
- * (`window_7d`) reset — an absolute instant days away — read as "重置 18:10"
- * and looked like it fired later TODAY. A bare time is honest only for the
- * 5-hour window; a reset that crosses midnight must carry its day.
- */
-export function when(epoch: unknown): string {
-  if (typeof epoch !== "number" || !Number.isFinite(epoch) || epoch <= 0) return "—";
-  const date = new Date(epoch * 1000);
-  const now = new Date();
-  const sameDay = date.getFullYear() === now.getFullYear()
-    && date.getMonth() === now.getMonth()
-    && date.getDate() === now.getDate();
-  return sameDay ? clock(epoch) : clockLong(epoch);
-}
-
-/**
  * A credit figure as text: 2-decimal precision under 10 000, whole with
  * thousands separators at or above it. The switch is deliberate — a pool
  * limit of 60 000 reads as "60,000", a live balance of 47.5 as "47.5".
@@ -53,6 +34,20 @@ export function format(template: string, vars?: Record<string, unknown> | null):
     text = text.split(`{${key}}`).join(String(value));
   }
   return text;
+}
+
+/**
+ * A price as text, from the platform's minor units: `2500` + `cny` -> `¥25.00`.
+ *
+ * The catalogue quotes prices in cents (`price_minor`), so dividing by 100 is
+ * the platform's own convention rather than a guess. An unrecognised currency
+ * keeps its code rather than being dressed in the wrong symbol.
+ */
+export function money(minor: unknown, currency: unknown): string {
+  const amount = typeof minor === "number" && Number.isFinite(minor) ? minor / 100 : 0;
+  const code = typeof currency === "string" ? currency.toLowerCase() : "";
+  const symbol = code === "cny" || code === "rmb" ? "¥" : code === "usd" ? "$" : "";
+  return symbol === "" ? `${amount.toFixed(2)} ${code}`.trim() : `${symbol}${amount.toFixed(2)}`;
 }
 
 /**
