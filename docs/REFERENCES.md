@@ -13,7 +13,7 @@
 | `AgnesCodeReverseEngineering/` | git 仓库 | `vibe-coding-labs/AgnesCodeReverseEngineering` | `9a5705f`（2026-08-03） | Apache-2.0 | 12 份协议文档（认证授权、OAuth+DeepLink、ACP WebSocket、BFF API、agnesd 本地 HTTP、AI Providers、IPC）+ 5 个 Python 脚本（`agnes_sdk.py` / `exchange_token.py` / `acp_proxy.py` …）；ROADMAP §6.3 的事实来源之一 |
 | `AgnesCode2Api/` | git 仓库 | `vibe-coding-labs/AgnesCode2Api` | `6d5228b`（2026-08-04） | Apache-2.0 | Go 协议翻译代理（AgnesCode → Anthropic/OpenAI）；`pkg/auth/credentials.go` 是 macOS `state.vscdb` 采集路径的出处 |
 | `AgnesCode/` | git 仓库 | `AgnesAI-Labs/AgnesCode` | `7e6bc45`（2026-07-13） | 未标注 | **官方** release 与反馈中心，**不含源码**；桌面端安装包在它的 Releases 里 |
-| `AgnesCode-desktop-1.0.68/` | 本机快照（非 git） | 本机安装的桌面端 `app.asar` 解包 | `1.0.68`（buildNumber 8） | 闭源第三方 | 全部 BFF 调用的真实出处（`.vite/renderer/.../App-*.js`）。**比线上逆向件（基于 1.0.17）新两个多月**——引用其事实前先在这里复核版本漂移 |
+| `AgnesCode-desktop-1.0.68/` | 本机快照（非 git） | 本机安装的桌面端 `app.asar` 解包 | `1.0.68`（buildNumber 8） | 闭源第三方 | 全部 BFF 调用的真实出处（`.vite/renderer/.../App-*.js`）。**比线上逆向件（基于 1.0.17）新两个多月**——引用其事实前先在这里复核版本漂移。另归档两个形状探针：`probe-agnescode-models.mjs`（目录字段面 / 倍率候选端点）与 `probe-agnescode-credits.mjs`（积分端点，2026-10-01）；二者的原始输出（如 `credits-probe-output.json`）带**账号级数据，只进本机文件**，永不进提交 / 粘贴公开渠道（形状结论已提炼进 ROADMAP §6.3.1） |
 | `agnescode-cli/` | git 仓库 | `ViviQuan/agnescode` | `c587e85`（2026-09-30） | MIT | 终端原生 coding agent，内置 Agnes AI provider（TypeScript） |
 | `agnescodex/` | git 仓库 | `minchieh-fay/agnescodex` | `aa803ed`（2026-07-07） | Apache-2.0 | 把 Agnes API 接到 Codex 的适配件，作协议对照 |
 

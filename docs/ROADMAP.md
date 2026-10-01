@@ -405,6 +405,20 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 
 **存储格式漂移哨子（`format_drift`，2026-10 落地）。** 这条线吃的是从桌面 App 逆推的私有格式，App 升级随时可能改会话文件形状——此前严格模式全 miss 只会说「文件不存在」，与「没登录」同款，而更早采集的 JWT 还能用约 28 天，失效要按周计才暴露。现在：walk 发现 App 目录里有「像会话文件族」（`code-auth-session*`）却不认识形状的文件时，给独立档 `format_drift`，建议从「重登」翻成「升级本插件」；有可读 `.v1` 在旁则漂移不成立（未知兄弟可能只是 App 自留备份）。`doctor` 同持这条分类的**只读盘点**（列文件名，永不读内容、永不碰密钥），「没装 App / 装了没登录 / 登录了但格式变了」三个事实在命令行分开点名。
 
+### 6.3.1 契约复测（2026-10-01 深夜，本机凭据，只读端点）
+
+> 证据：`upstream/AgnesCode-desktop-1.0.68/probe-agnescode-credits.mjs`（与模型探针
+> `probe-agnescode-models.mjs` 同目录；stdout 只带形状事实，账号级原始响应落同目录
+> `credits-probe-output.json`——gitignore 区内，**永不进提交 / issue / 公开渠道**）。
+> 前缀约定同本节：账号侧端点挂 `{apiRoot}`（bffBase 去 `/v1`），目录与 chat 挂 `{bffBase}`。
+
+| 项 | 实测 | 判读 |
+|---|---|---|
+| `GET {apiRoot}/api/v2/subscription/credits-balance` | `200`，信封 `code` 为**字符串** `"000000"`；`data` 共 13 字段：五个余额字段（`total_balance` / `time_sensitive_balance` / `permanent_balance` / `daily_free_credits` / `subscription_credits`）+ `level`(number) / `level_name`(string) / `effect_quota_balance` / `daily_effect_quota` + **四个订阅期字段** `current_period_start` / `current_period_end` / `duration` / `cancel_at_period_end` | `fetchAgnescodeBalance` 的字符串 `code` 比对与五个余额字段读取**全部对**。四个订阅期字段是「有无订阅 / 何时到期 / 是否期末取消」的判别料——本机免费账号全 `0`/`false`，有订阅的账号形状以真机为准。信封码形态与线上逆向件文档（`code: 0` 数字）不同，以本机实测为准（[REFERENCES.md](./REFERENCES.md) §3 版本漂移纪律） |
+| `POST {apiRoot}/api/v1/subscription/credits-transactions`（body `{page,page_size,filter:0}`） | `200`，`data: {pagination:{page,page_size,total}, list:[…]}`；条目键 `description` / `amount` / `direction` / `platform` / `created_at` | **插件尚未接入的流水端点**。三条形状事实：① `created_at` 是 **epoch 秒**（逆向件文档的 ISO 串是版本漂移）；② `direction` 实测 1=入账 / 2=扣减；③ `platform` 是数字枚举（入账条 `4`、扣减条 `7`）语义未明——面板接入时原样存、不翻译。`description` 值带账号级内容，只进本机文件 |
+| `GET {bffBase}/models` 字段面 | 8 行（新增 `agnes-2.0-flash`：`max_input_tokens 512000` / `max_output_tokens 65536`，BFF 行内直发）；行键新成员：`thinking_toggle`（`{default_enabled, switchable_endpoints:["chat"]}`，`kimi-k3` 无此键）、`is_gray` / `gray_available`、`provider`（全 `agrouter`） | `AGNESCODE_FALLBACK_MODELS`（7 行）与活目录（8 行）已脱节——**补行挂起**：`src/host/agnescode.ts` 上有并行会话的 `format_drift` 改动未提交，按并行纪律待其落地后补 `agnes-2.0-flash` 行，并把 `test/agnescode.test.mjs` 的两处 `7` 钉改 `8`，一次提交带走。`thinking_toggle` 是**推理开关事实**（哪些模型可切 thinking），现行 catalog 丢弃它；是否进面板未裁，先只记事实 |
+| 倍率候选端点 | `GET /v1/model-config`、`/v1/model-rates`、`/v1/models/rates`、`/api/v2/model-config`、`/api/v2/models` 全部 `404`；8 行目录上也**无任何** `credit` / `rate` / `multiplier` / `price` / `cost` / `billing` 键 | **平台级事实（非「没读到」）**：AgnesCode 的计费口径是账号级积分池，不存在按模型倍率——与 workbuddy 的 `credits: "x0.79"` 字段是不同体系。AgnesCode tab 因此**无倍率可显示**（数据层缺席；与 §7 表「伪倍率折名不做」那条决议不是一回事——那条裁的是操作者手填 ×N，这里是 BFF 根本没出这个数据源） |
+
 ## 7. 优先级与时间盒
 
 | 优先级 | 项 | 侵入性 | 门禁 |
