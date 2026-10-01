@@ -269,14 +269,14 @@ safe-set，保证选择器不空：
 
 | 字段 | wire 位置 | 备注 |
 |---|---|---|
-| `model` / `prompt` / `n` / `size` / `response_format` | 顶层 | `response_format` 顶层写法经 live probe ③ 确证有效，不迁 `extra_body` |
+| `model` / `prompt` / `n` / `size` / `response_format` | 顶层 | `response_format` 顶层写法经 live probe ③ 确证有效，不迁 `extra_body`；`size` 接受精确 `WIDTHxHEIGHT`（32 的倍数），**未 live probe 确证生效，且 2K/4K 档位常量不确认支持**——工具描述已降格措辞（历史误抄 SenseNova U1.5 的档位表） |
 | `ratio` | `extra_body.ratio` | Agnes 方言；`extra_body` 是 OpenAI 兼容网关的标准扩展通道，与 `extra_body.image` 同层；**尚无 live probe 记录 Agnes 出图端点接受该字段**，若平台 400 报错应据此调参或删字段 |
 | `image` | `extra_body.image` | Agnes 方言；参考图走 img2img 时传入，U1.5 官方文档里对应的是 `/v1/images/edits` 顶层 `images[].image_url`，Agnes 端点是否接受 `extra_body.image` 写法**尚未 live probe** |
 | `return_base64` | `extra_body.return_base64` | Agnes 方言；官方文档里 `response_format: "b64_json"` 是顶层写法，Agnes 端点是否接受 `extra_body.return_base64` **尚未 live probe**；`response_format` 保持顶层、不迁 |
 
 > **live probe（2026-10-01，子代理真机）**：用真实 Key 实跑确认了四点——① `n` **必须为 1**，传 `n:2` 直接 `400 n 必须为 1`，故 `buildDrawBody` 现在只转发 `1`；② 不传 `model` 时自动发现选中 `agnes-image-2.1-flash` 并成功出图，证明「省略 model 走目录默认」逻辑是对的；③ 顶层 `response_format:"url"` **仍返回 url**（与本节真机记录一致），故维持顶层写法、不迁 `extra_body`；④ `agnes-u1-fast` 在真机是 **chat 模型**（报 400「是 chat 模型，请使用 /v1/chat/completions」），印证旧描述里的示例 id 是错的——已在上轮提交移除。
 >
-> ⏳ **待补 live probe**：`extra_body.ratio` / `extra_body.image` / `extra_body.return_base64` 三个字段在 Agnes 出图端点的实际接受情况尚未真机验证；当前按 OpenAI 兼容网关 `extra_body` 扩展通道的标准写法实现，若平台 400 拒绝则需在 §7.5 live probe 记录中补充失败结论并考虑是否删除对应参数。
+> ⏳ **待补 live probe**：`extra_body.ratio` / `extra_body.image` / `extra_body.return_base64` 三个字段在 Agnes 出图端点的实际接受情况尚未真机验证；当前按 OpenAI 兼容网关 `extra_body` 扩展通道的标准写法实现，若平台 400 拒绝则需在 §7.5 live probe 记录中补充失败结论并考虑是否删除对应参数。顶层 `size` 同样未 live probe 确证生效——其工具描述（`WIDTHxHEIGHT`，32 的倍数）承自 SenseNova U1.5 官方档位表，移植时未做 Agnes 侧核验；2K/4K 档位常量不确认支持，工具参数描述已按要求降格措辞（见 `draw.ts`），补 probe 时一并测 `size: "2720x1536"` 与 `size: "2K"` 两种写法回填本节。
 
 #### 7.5.1 视频 V2.0 请求体与校验规则
 
