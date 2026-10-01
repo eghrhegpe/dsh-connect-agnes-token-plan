@@ -109,8 +109,11 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * Draw absorption (ARCHITECTURE §5.4 route B): register the
    * `agnes_draw_image` agent tool. When true AND the Host exposes a tools
    * service, image-generation requests go to `{apiBase}/images/generations`
-   * with the panel-saved `AGNES_TOKEN_PLAN_API_KEY`, and the model list comes from
-   * the catalog's own `output_modalities` (never a name regex). Off by
+   * with the panel-saved `AGNES_TOKEN_PLAN_API_KEY`, and the model list comes
+   * from `modality.ts` — the declared `output_modalities` field when the
+   * gateway sends one, the platform's own `agnes-image-*` family segment when
+   * it does not (the Agnes gateway sends no modality metadata at all; see that
+   * module's header). Off by
    * default like every execution module: a tool the agent can call is a
    * Host-wide change, and a Host without the tools service must simply never
    * see it rather than fail.

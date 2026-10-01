@@ -268,7 +268,7 @@ draw-router 的多源能力时才有意义。
 
 | 维度 | dsh-draw-router（现状） | 本插件（现状） |
 |---|---|---|
-| 出图模型识别 | 名字正则 `DRAW_MODEL_PATTERNS`（line 25-34：`/image/i`、`/u1-fast/i`、`/wan/i`、`/flux/i`…命中才认），探测自己另调一次 `GET /v1/models` | `output_modalities` 含 `"image"` 的结构化判定（`llm-models.js` line 101-114，2026-09 已核真实响应），catalog 每小时已有 |
+| 出图模型识别 | 名字正则 `DRAW_MODEL_PATTERNS`（line 25-34：`/image/i`、`/u1-fast/i`、`/wan/i`、`/flux/i`…命中才认），探测自己另调一次 `GET /v1/models` | `modality.ts` 三级判定：`output_modalities` 字段优先 → `agnes-image-*` 名称兜底 → 默认 `text`，catalog 每小时已有 |
 | 识别质量 | 实锤会漏：两把出图模型 `Agnes-u1-fast` / `Agnes-u1.5-lite`（§5.1）里，前者因 `/u1-fast/i` 是子串匹配仍能命中，**`u1.5-lite` 一条正则都不命中**——装它配同一源，`draw_image` 默认永远挑不到 u1.5-lite | 两把都识别 |
 | 出图执行 | `buildEndpoint` 拼 `{base}/v1/images/generations`（line 72-79）→ `POST {model, prompt, n, response_format}` → 取 `data[0].url / b64_json`（line 209-261），约 80 行 | 无（待吸收的全部增量） |
 | 凭据 | 明文写进插件目录 `draw-config.json`（line 140-151） | DSH 凭据服务，不落盘 |
@@ -296,13 +296,29 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
   `drawTimeoutMs`；只有 `drawEnabled === true` 且 Host 有 tools 服务时才
   动态 `import("@deepseek-ai/dsh-tools")` 注册——无 tools 服务、peer 加载
   失败、注册被拒都降级为「工具缺席、面板照常」，与 §5.2 的降级同型。
-- 识别走 `isImageGenModel`（`output_modalities` 严格方向：缺字段不算，
-  与 `isChatModel` 的宽松方向互补，两份清单不可能互相矛盾）；
+- 识别走 `modality.ts` 的 `isImageGenModel`，与对话侧的 `isChatModel` **由同一个
+  函数解析模态**，两份清单不可能互相矛盾；
   Key 每次调用现取（`resolveApiKey`，轮换即生效）；失败分诊沿用 429 纪律
   （`insufficient/quota` → 配额问题，别重试；其余 429 → 限频，等再试）；
   失败后 30s 冷却（借自上游 line 196）。
 - 快照契约**零改动**（13 键不动，`API.md` 不变）：工具要么在要么不在，
   agent 直接可见；面板不新增展示。
+
+**前提反转（2026-10-01 真机）**：上表「本插件」一列原先写的是「结构化判定
+（`output_modalities`）」。这个前提**只在 SenseNova 目录上成立**。Agnes 网关
+（new-api 血统）的 `/v1/models` 条目只带 `id` / `object` / `created` / `owned_by` /
+`supported_endpoint_types`，**没有任何模态字段**。于是同一个缺失字段让两个判定朝
+**相反方向**失手——恰恰是本表承诺「不可能互相矛盾」的那一对：
+
+- `isImageGenModel` 严格方向（缺字段 = 未知 = 不是出图模型）→ 出图工具一个候选都
+  选不出来，面板报「暂无出图模型」，而目录里明明列着 `agnes-image-2.5-flash`；
+- `isChatModel` 宽松方向（缺字段 = 对话）→ 全部 image / video 模型被挂进对话
+  选择器，用户一选就 `400 模型 … 是 image 模型，请使用 /v1/images/generations`。
+
+修法不是推翻「结构化优先」，而是**补齐**它：`modality.ts` 仍把声明字段放在第一
+优先（平台将来补字段即自动生效），只在字段缺席时退回**平台自己的命名段**
+（`agnes-image-*` / `agnes-video-*`）。两个判定改为共用这一个函数，矛盾由构造
+消除而非靠约定维持。判据与真机取证见 [AGNES-API.md](./AGNES-API.md) §7.1 / §7.5。
 
 ### 5.5 边界裁定：第二上游（小浣熊）属于界内（2026-10-01）
 

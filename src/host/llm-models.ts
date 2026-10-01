@@ -19,13 +19,15 @@
  * 2. No `maxTokens` VALUE is declared. A declared value becomes the output
  *    ceiling and pi-ai sends it as `max_tokens`, truncating long replies with
  *    `finish: max-tokens`. Only the field NAME (`max_tokens`) is pinned.
- * 3. `reasoning: true` + a `thinkingLevelMap`. Every Agnes chat model
- *    advertises `supported_features: ["reasoning"]` and thinks by default
- *    (verified 2026-09-29: default reasoning_effort high, thinking text
- *    returned as `reasoning` on flash-lite and `reasoning_content` on
+ * 3. `reasoning: true` + a `thinkingLevelMap`. Agnes chat models think by
+ *    default (verified 2026-09-29: default reasoning_effort high, thinking
+ *    text returned as `reasoning` on flash-lite and `reasoning_content` on
  *    deepseek/glm/kimi — pi-ai reads both spellings). `reasoning: true` is
  *    what makes DSH offer the 思考强度 selector and what makes pi-ai surface
- *    the thinking. The map pins picker levels to platform-valid wire values:
+ *    the thinking. Note this is set UNCONDITIONALLY rather than read off a
+ *    capability flag: the Agnes catalog carries no `supported_features` field
+ *    at all (live-verified 2026-10-01), so there is nothing to read. The map
+ *    pins picker levels to platform-valid wire values:
  *    `off: "none"` (the platform's off spelling — "off" itself 400s),
  *    `minimal: null` (unverified on this gateway), and `max` only on glm-5.2
  *    (probed 200; rejected 400 on flash-lite / deepseek-v4-flash).
@@ -35,6 +37,7 @@
 
 import { str, num } from "./util.ts";
 import { identifyVisionModel } from "./parsers.ts";
+import { isChatModel } from "./modality.ts";
 import type { AdapterConfig } from "./types.ts";
 
 /**
@@ -128,21 +131,23 @@ export function maxOutputLengthOf(entry) {
  * Whether a catalog entry can be addressed as a CHAT model on this provider's
  * OpenAI-compatible endpoint.
  *
- * The catalog also lists image GENERATION models (`Agnes-u1-fast`,
- * `Agnes-u1.5-lite`): their `output_modalities` includes `"image"` (or `"video"`) and they
- * answer 404 "model is not found" on `/v1/chat/completions` (verified
- * 2026-09-29), so offering them as chat models only produces errors in DSH.
- * A missing/unknown `output_modalities` is treated as chat (permissive): the
- * field is new enough that an entry without it should not vanish from the
- * picker.
+ * Delegated to `modality.ts` so this roster and the draw tool's candidate list
+ * resolve modalities through the SAME function — ARCHITECTURE §5.4's "the two
+ * lists can never disagree" is now a property of the code rather than a
+ * promise between two copies. The catalog also lists image and video
+ * GENERATION models (`agnes-image-*`, `agnes-video-*`): they answer 400 on
+ * `/v1/chat/completions` naming the endpoint they do want ("请使用
+ * /v1/images/generations"), so offering them here only produces errors in DSH.
+ *
+ * The previous local copy treated a missing `output_modalities` as "chat"
+ * (permissive). That was defensible on a gateway that might start sending the
+ * field, and actively wrong on the Agnes gateway, which sends no modality
+ * metadata at all (live-verified 2026-10-01) — it put every image and video
+ * model into the picker. See `modality.ts` for the resolution order.
  * @param {object} entry - one normalized catalog entry.
  * @returns {boolean} whether the entry is usable as a chat model.
  */
-export function isChatModel(entry) {
-  const out = entry?.output_modalities;
-  if (!Array.isArray(out)) return true;
-  return !out.includes("image") && !out.includes("video");
-}
+export { isChatModel };
 
 /**
  * The picker's 思考强度 levels, pinned to platform-valid wire spellings.
@@ -294,9 +299,10 @@ export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
     // Vision is automatic: the catalog's modality field decides, the user does
     // not configure it per model.
     input: vision ? ["text", "image"] : ["text"],
-    // Every Agnes chat model thinks by default and advertises
-    // `supported_features: ["reasoning"]`; see the module header (decision 3)
-    // for why the flag is true and what the map pins.
+    // Every Agnes chat model thinks by default. The flag is set unconditionally
+    // because the catalog advertises no capability field to read (it sends no
+    // `supported_features` at all); see the module header (decision 3) for why
+    // the flag is true and what the map pins.
     reasoning: true,
     thinkingLevelMap: thinkingLevelMapFor(entry),
     cost: { ...NO_COST },
@@ -411,9 +417,10 @@ export function rosterOf(entries) {
  */
 export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
   const { providerId = LLM_PROVIDER_ID, baseUrl, enabledIds = [], unavailableModelIds = [] } = options;
-  // Image-generation models (`output_modalities: ["image"]`) cannot be
-  // addressed as chat models and are excluded BEFORE the allow-list, so a
-  // stale id in `enabledIds` matches nothing rather than resurrecting one.
+  // Image- and video-generation models cannot be addressed as chat models
+  // (`modality.ts` resolves which entries those are) and are excluded BEFORE
+  // the allow-list, so a stale id in `enabledIds` matches nothing rather than
+  // resurrecting one.
   const blocked = new Set(Array.isArray(unavailableModelIds) ? unavailableModelIds : []);
   const filtered = filterByEnabled(entries, enabledIds).filter(isChatModel);
   const seen = new Map();

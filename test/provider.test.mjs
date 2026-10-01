@@ -32,6 +32,7 @@ import {
   HIDE_ALL_MODELS,
   summarizeCatalog
 } from "../src/host/llm-models.ts";
+import { isChatModel as sharedIsChatModel } from "../src/host/modality.ts";
 import {
   CATALOG_VERSION,
   normalizeEnabledIds,
@@ -208,12 +209,37 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
     check("an image-output model is not a chat model", isChatModel(gen) === false);
     check("a vision chat model is a chat model", isChatModel(visionChat) === true);
     check("a text-only model is a chat model", isChatModel(textChat) === true);
-    check("a missing output_modalities stays chat (permissive)", isChatModel({ id: "x" }) === true);
-    check("a non-array output_modalities stays chat", isChatModel({ id: "y", output_modalities: "text" }) === true);
+    check("no modality field and no family name falls back to text",
+      isChatModel({ id: "x" }) === true);
+    check("a non-array output_modalities falls through to the name fallback",
+      isChatModel({ id: "y", output_modalities: "text" }) === true);
+
+    // The live Agnes gateway sends NO modality metadata (live-verified
+    // 2026-10-01). The old permissive reading put every image and video model
+    // into the picker; the shared resolver reads the platform's own family
+    // segment instead.
+    const fieldless = [
+      { id: "agnes-image-2.1-flash" },
+      { id: "agnes-image-2.5-flash" },
+      { id: "agnes-video-2.5" },
+      { id: "agnes-video-2.5-flash" },
+      { id: "agnes-video-v2.0" }
+    ];
+    check("fieldless image/video models are NOT offered as chat",
+      fieldless.every((entry) => isChatModel(entry) === false));
+    check("a fieldless text model is still offered as chat",
+      isChatModel({ id: "agnes-2.5-pro" }) === true);
+    check("llm-models re-exports the shared predicate (one definition, not two)",
+      isChatModel === sharedIsChatModel);
 
     const built = buildDescriptors([gen, visionChat, textChat], { baseUrl: BASE_URL });
     check("buildDescriptors skips image-generation models",
       built.length === 2 && JSON.stringify(built.map((d) => d.id)) === JSON.stringify(["v-chat", "t-chat"]));
+
+    const builtLive = buildDescriptors([...fieldless, { id: "agnes-3.0-flash" }], { baseUrl: BASE_URL });
+    check("buildDescriptors drops the fieldless image/video models too",
+      JSON.stringify(builtLive.map((d) => d.id)) === JSON.stringify(["agnes-3.0-flash"]),
+      JSON.stringify(builtLive.map((d) => d.id)));
 
     const roster = rosterOf([gen, visionChat, textChat]);
     check("rosterOf skips image-generation models",

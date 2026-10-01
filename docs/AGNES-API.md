@@ -12,8 +12,8 @@
 > **SenseNova 控制台**（`platform.sensenova.cn`，OIDC+PKCE）已不是本插件的任何一条链路，
 > 其接口原文留在 [SENSENOVA-API.md](./SENSENOVA-API.md) 作历史档——小浣熊上游与
 > `upstream/` 仍属商汤体系，那份档仍被它们引用。
-> 出图（draw，`draw.ts`）默认关闭，其 `images/generations` 端点随 `apiBase` 落在 Agnes；
-> 启用前需确认 Agnes 提供该端点。
+> 出图（draw，`draw.ts`）默认关闭，其 `images/generations` 端点已真机确证存在且可用
+> （见 §7.5），模型识别走 `modality.ts`（见 §7.1）。
 
 ## 0. 已经确证的事实（源码常量，无需真机即可断言）
 
@@ -28,8 +28,9 @@
 | 默认思考档位 | `high` | `DEFAULT_REASONING_EFFORT` |
 | 单 token 价 | 哨兵 0（按窗口限流计费，非按 token 价） | `NO_COST` |
 | 兜底上下文窗口 | `128_000`（目录声明优先） | `FALLBACK_CONTEXT_WINDOW` |
-| 看图判定 | 仅看 `input_modalities` 含 `image` | `identifyVisionModel` |
-| 出图/视频排除 | `output_modalities` 含 `image`/`video` 即非对话 | `isChatModel` |
+| 看图判定 | 仅看 `input_modalities` 含 `image`（Agnes 目录不带该字段，故恒为 false——见 §7.1） | `identifyVisionModel` |
+| 模态判定唯一出处 | `src/host/modality.ts`：`output_modalities` 字段优先 → `agnes-image-*` / `agnes-video-*` 名称兜底 → 默认 `text` | `outputModalitiesOf` |
+| 出图/视频排除 | 产出含 `image`/`video` 即非对话 | `isChatModel`（与 `isImageGenModel` 同源） |
 
 > 端点类字段的生效路径：`cordis.patch.yml` 里的同名值若非空会**覆盖**
 > `CONFIG_DEFAULTS`（见 `resolveSettings` 的 `str(source.X, CONFIG_DEFAULTS.X)`）。
@@ -140,18 +141,50 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 ### 7.1 模型目录 `GET /v1/models`
 
 需 `Bearer <API Key>`（本机推理 key，非控制台 access token）。返回 `data[]`；
-`console-client.ts` 整条原样保留，插件识别：
+`console-client.ts` 整条原样保留（不剥信封、不改字段）。
 
-| 字段 | 用途 |
-|---|---|
-| `id` | 模型 id |
-| `input_modalities` | 看图判定（`identifyVisionModel` 只看 input） |
-| `output_modalities` | 含 `image`/`video` 则非对话，被 `isChatModel` 排除 |
-| `context_length` | 上下文窗口——`contextWindowOf` 命名字段（缺则兜底 128k） |
-| `max_output_length` | 单次响应上限（仅展示，不设为请求参数） |
+**真机确证（2026-10-01）：Agnes 的条目只带 5 个字段，没有任何模态 / 能力元数据。**
 
-> ⏳ **待 live-contract 实测**：Agnes 真实返回的字段名、`deepseek-v4.1-flash`
-> 是否在 Agnes 目录、以及各模型的 `reasoning_effort` 支持面尚未用真机核验。先以
+```json
+{"id":"agnes-image-2.5-flash","object":"model","created":1626777600,
+ "owned_by":"custom","supported_endpoint_types":["openai"]}
+```
+
+`success: true` + `supported_endpoint_types` 是 new-api 血统的签名。当时目录 11 条：
+`agnes-2.0-flash`、`agnes-2.5-flash`、`agnes-2.5-pro`、`agnes-2.5-pro-alpha`、
+`agnes-2.5-pro-beta`、`agnes-3.0-flash`、`agnes-image-2.1-flash`、
+`agnes-image-2.5-flash`、`agnes-video-2.5`、`agnes-video-2.5-flash`、`agnes-video-v2.0`。
+
+因此 **SenseNova 的那一套字段名在这里一个都不存在**——下表右两列才是 Agnes 的实况：
+
+| 字段 | SenseNova 目录 | Agnes 目录 | 插件的读取方式 |
+|---|---|---|---|
+| `id` | ✅ | ✅ | 模型 id |
+| `input_modalities` | ✅ | ❌ | `identifyVisionModel` 只看它 → Agnes 上**恒 false**；面板「0 个支持图片输入」的含义是「读不到」，不是「测过没有」 |
+| `output_modalities` | ✅ | ❌ | `modality.ts` 的第一优先；缺则退回名称兜底 |
+| `context_length` | ✅ | ❌ | `contextWindowOf` 命名字段，缺则兜底 `128_000`——面板显示的是**兜底值**，不是平台声明 |
+| `max_output_length` | ✅ | ❌ | 同上 |
+| `supported_features` | ✅ | ❌ | 无字段可读，`reasoning: true` 改为无条件设置 |
+| `supported_endpoint_types` | ❌ | ✅ | 无判别力（11 条全是 `["openai"]`） |
+
+**模态判定（`src/host/modality.ts`）**——Agnes 上唯一可用的信号是 id 自己的命名：
+
+| 层级 | 依据 | 结果 |
+|---|---|---|
+| 1 declared | `output_modalities` / `outputTypes` 是数组 | 原样采用；平台将来补字段即自动生效，无需改码 |
+| 2 inferred | id 含独立的 `image` / `video` 段 | `agnes-image-*` → image；`agnes-video-*` → video |
+| 3 assumed | 以上都没有 | `["text"]`，即对话模型 |
+
+名称模式**只匹配完整段**（`(?:^|[-_])image(?:[-_]|$)`），不是子串匹配——
+`dsh-draw-router` 的 `/u1-fast/i` 漏掉 `u1.5-lite` 正是这个坑，见
+[ARCHITECTURE.md](./ARCHITECTURE.md) §5.4。
+
+> **平台自述的模态藏在错误信息里**：把出图模型打到对话端点，平台回
+> `400 模型 agnes-image-2.5-flash 是 image 模型，请使用 /v1/images/generations`；
+> 视频同理指向 `/v1/videos`。这是目前唯一由平台直接声明模态的来源，但只能**逐次探测**
+> 才拿得到（要花请求、且随套餐变化），不适合当目录判定的依据。
+
+> ⏳ **待 live-contract 实测**：各模型的 `reasoning_effort` 支持面尚未用真机核验。先以
 > [../test/baselines/agnes-contract.json](../test/baselines/agnes-contract.json)
 > 的 seed 基线占位；跑 [../test/live-contract.mjs](../test/live-contract.mjs)
 > （`npm run test:live:contract`，设 `AGNES_TOKEN_PLAN_API_KEY`）后回填。
@@ -199,3 +232,32 @@ safe-set，保证选择器不空：
   INDEFINITE 不当判读，仅 4xx 参数拒绝算红）。
 - 红 = 信息而非回归：修复落在本文 §7 注释层 + 刷新基线 JSON，绝不改 `llm-models.ts`
   逻辑。
+
+### 7.5 出图 / 视频端点（真机确证 2026-10-01）
+
+图片与视频**不是同一种协议**：图片同步返回，视频是异步任务制。这条差异是
+`draw.ts` 的执行体无法直接复用到视频的根本原因。
+
+| 用途 | 端点 | 形状 |
+|---|---|---|
+| 出图 | `POST /v1/images/generations` | **同步**：一次请求直接拿到结果 |
+| 视频建任务 | `POST /v1/video/generations`（单数 `video`） | 返回任务标识，**异步** |
+| 视频查任务 | `GET /v1/videos/generations`（复数 `videos`） | 查询任务状态；空查询回 `{"code":"task_not_exist"}` |
+
+注意建任务与查任务的路径**单复数不对称**（`video` / `videos`），
+`POST /v1/videos/generations` 会回 `Invalid URL`。`POST /v1/videos` 也接受建任务。
+
+出图真机响应（`agnes-image-2.5-flash`，`response_format: "url"`）：
+
+```json
+{"data":[{"url":"https://cos-platform-outputs.agnes-ai.cn/images/t2i/task_…/output_….png",
+          "b64_json":"","revised_prompt":""}],
+ "created":1790817333,"task_id":"task_…"}
+```
+
+`parseDrawResponse` 只读 `data[0].url` / `b64_json` / `revised_prompt`，顶层多出的
+`task_id` 被忽略——即当前解析器与真实形状**已经对齐**，出图链路无需改动。
+
+> ⏳ **未实测**：视频建任务的**成功响应形状**（字段名、任务 id 位置、状态枚举）尚未
+> 取证——需要真跑一次生成（消耗 1/500 日额度）。在取证之前，视频工具不实现；
+> 额度侧是支持的（§4 的 `videoDaily` 窗口，用量计 `video_seconds`）。

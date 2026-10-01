@@ -4,8 +4,10 @@
  *
  * - endpoint building (every operator spelling of `apiBase` lands on the same
  *   `images/generations` URL);
- * - structured image-model identification (the field, NEVER a name regex —
- *   the dsh-draw-router lesson, ARCHITECTURE §5.4);
+ * - image-model identification through the shared `modality.ts` resolver: the
+ *   declared `output_modalities` field first, the platform's own
+ *   `agnes-image-*` / `agnes-video-*` family segment as the fallback the Agnes
+ *   gateway forces (it sends no modality metadata at all);
  * - model picking precedence, wire body clamps, response parsing;
  * - failure classification (the 429 quota-vs-rate split from ROADMAP §1);
  * - `drawOnce` against a fake fetch (success, classified failures, timeout);
@@ -30,6 +32,11 @@ import {
   createDrawCooldown,
   defineDrawTool
 } from "../src/host/draw.ts";
+import {
+  isImageGenModel as sharedIsImageGenModel,
+  isVideoGenModel,
+  isChatModel
+} from "../src/host/modality.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -64,7 +71,12 @@ async function rejects(fn) {
     buildDrawEndpoint("") === "" && buildDrawEndpoint(undefined) === "");
 }
 
-// --- 2. image-model identification is STRUCTURED, never a name guess -------
+// --- 2. image-model identification: declared field first, family name second
+// The Agnes gateway sends NO modality metadata at all (live-verified
+// 2026-10-01), so a field-only reading left this tool with zero candidates
+// while the catalog was full of image models. `modality.ts` keeps the declared
+// field as the first choice and falls back to the platform's own
+// `agnes-image-*` / `agnes-video-*` family segment.
 {
   const catalog = [
     { id: "Agnes-u1-fast", output_modalities: ["image"] },
@@ -78,7 +90,7 @@ async function rejects(fn) {
     isImageGenModel(catalog[0]) === true);
   check("INPUT image (vision) is not a DRAW model",
     isImageGenModel(catalog[1]) === false);
-  check("a missing field is NOT a draw model (strict direction)",
+  check("a missing field on a non-family id is NOT a draw model",
     isImageGenModel(catalog[3]) === false);
   const ids = imageGenModelIds(catalog);
   check("both u1 models are found — the regex route missed u1.5-lite",
@@ -88,6 +100,52 @@ async function rejects(fn) {
     imageGenModelIds([{ id: "a", output_modalities: ["image"] }, { id: "b", output_modalities: ["image"] }, { id: "a", output_modalities: ["image"] }]).join(",") === "a,b");
   check("junk input yields an empty list",
     imageGenModelIds(null).length === 0 && imageGenModelIds("x").length === 0);
+  check("draw.ts re-exports the shared predicate (one definition, not two)",
+    isImageGenModel === sharedIsImageGenModel);
+}
+
+// --- 2b. the live Agnes catalog: fieldless entries resolve by family name ---
+{
+  // Verbatim shape of `GET https://api.agnes-ai.cn/v1/models` (live-verified
+  // 2026-10-01): five fields, no modality metadata of any kind.
+  const live = [
+    "agnes-2.0-flash", "agnes-2.5-flash", "agnes-2.5-pro", "agnes-2.5-pro-alpha",
+    "agnes-2.5-pro-beta", "agnes-3.0-flash", "agnes-image-2.1-flash",
+    "agnes-image-2.5-flash", "agnes-video-2.5", "agnes-video-2.5-flash",
+    "agnes-video-v2.0"
+  ].map((id) => ({ id, object: "model", created: 1626777600, owned_by: "custom", supported_endpoint_types: ["openai"] }));
+
+  const drawIds = imageGenModelIds(live);
+  check("the live fieldless catalog yields its 2 image models",
+    JSON.stringify(drawIds) === JSON.stringify(["agnes-image-2.1-flash", "agnes-image-2.5-flash"]),
+    JSON.stringify(drawIds));
+  check("pickDrawModel picks one instead of reporting 'no draw models'",
+    pickDrawModel(live, "", "") === "agnes-image-2.1-flash");
+  check("the 3 video models are recognised as video, not as image",
+    live.filter(isVideoGenModel).length === 3 && drawIds.length === 2,
+    String(live.filter(isVideoGenModel).length));
+
+  const chatIds = live.filter(isChatModel).map((entry) => entry.id);
+  check("the chat roster keeps only the 6 text models",
+    JSON.stringify(chatIds) === JSON.stringify(["agnes-2.0-flash", "agnes-2.5-flash", "agnes-2.5-pro", "agnes-2.5-pro-alpha", "agnes-2.5-pro-beta", "agnes-3.0-flash"]),
+    JSON.stringify(chatIds));
+  check("the draw list and the chat roster are disjoint (ARCHITECTURE §5.4)",
+    drawIds.every((id) => !chatIds.includes(id)));
+
+  // A segment-bounded pattern must not catch a longer word that merely
+  // contains it — the dsh-draw-router substring trap.
+  check("the name fallback matches a whole segment, never a substring",
+    isImageGenModel({ id: "imageservice-v2" }) === false &&
+    isImageGenModel({ id: "agnes-imagery" }) === false &&
+    isVideoGenModel({ id: "videoconf-1" }) === false);
+
+  // A declaration always outranks the name: the platform's own word wins, so
+  // a gateway that starts shipping the field takes over with no code change.
+  check("a declared field overrides the family name",
+    isImageGenModel({ id: "agnes-image-2.5-flash", output_modalities: ["text"] }) === false &&
+    isChatModel({ id: "agnes-image-2.5-flash", output_modalities: ["text"] }) === true);
+  check("a declared empty list is still a declaration",
+    isImageGenModel({ id: "agnes-image-2.5-flash", output_modalities: [] }) === false);
 }
 
 // --- 3. pickDrawModel precedence -------------------------------------------

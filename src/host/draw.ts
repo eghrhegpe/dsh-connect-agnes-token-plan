@@ -12,13 +12,17 @@
  *
  * Two design facts are load-bearing rather than cosmetic:
  *
- * 1. Model identification is STRUCTURED, not name-regex. `dsh-draw-router`
- *    (the community reference this module absorbs, upstream/dsh-draw-router)
- *    filters its probed model list through name patterns and thereby misses
- *    `Agnes-u1.5-lite` outright (ARCHITECTURE §5.4); this module reads the
- *    catalog's own `output_modalities` field instead — the same field
- *    `isChatModel` already uses to keep image models OUT of the chat picker,
- *    so the two lists can never disagree about what exists.
+ * 1. Model identification is delegated to `modality.ts` — the ONE resolver
+ *    this tool shares with the chat roster, so the two lists can never
+ *    disagree about what exists. ARCHITECTURE §5.4 originally had this module
+ *    read the catalog's own `output_modalities` field directly, to beat
+ *    `dsh-draw-router`'s name patterns (they miss `Agnes-u1.5-lite` outright).
+ *    That field does not exist on the Agnes gateway — its `/v1/models` entries
+ *    carry no modality metadata at all (live-verified 2026-10-01) — so the
+ *    strict reading left this tool unable to pick ANY model while the catalog
+ *    was full of image models. `modality.ts` keeps the declared field as the
+ *    first choice and falls back to the platform's own family segment; its
+ *    header carries the full record of the reversal.
  * 2. The key is resolved per call (`resolveApiKey`), never cached: rotating
  *    the panel-saved `AGNES_TOKEN_PLAN_API_KEY` reference takes effect on the next
  *    draw without re-registration, mirroring the LLM adapter.
@@ -27,7 +31,14 @@
  */
 
 import { str, num } from "./util.ts";
+import { isImageGenModel } from "./modality.ts";
 import type { DrawRequest } from "./types.ts";
+
+// Re-exported so the draw module still reads as one self-contained surface for
+// its callers and tests. The definition lives in `modality.ts` because the
+// chat roster must resolve modalities through the SAME function — see the
+// module header, design fact 1.
+export { isImageGenModel };
 
 /** The agent tool name. Scoped so it cannot collide with `dsh-draw-router`'s `draw_image`. */
 export const DRAW_TOOL_NAME = "agnes_draw_image";
@@ -59,23 +70,6 @@ export function buildDrawEndpoint(apiBase) {
   if (/\/v1$/.test(trimmed)) return `${trimmed}/images/generations`;
   if (/\/v1\//.test(trimmed)) return trimmed.replace(/\/v1\/.*$/, "/v1/images/generations");
   return `${trimmed}/v1/images/generations`;
-}
-
-/**
- * Whether one catalog entry is an image-GENERATION model.
- *
- * The strict direction of `isChatModel`: only a catalog entry that EXPLICITLY
- * declares `"image"` in `output_modalities` counts. A missing field means
- * "unknown", and unknown must not be offered as a draw model — unlike the
- * chat direction (permissive, so entries never vanish from the picker), a
- * wrong draw guess sends the agent's request to a model that cannot answer.
- * @param {object} entry - one normalized catalog entry.
- * @returns {boolean}
- */
-export function isImageGenModel(entry) {
-  const out = entry?.output_modalities;
-  if (!Array.isArray(out)) return false;
-  return out.includes("image");
 }
 
 /**
@@ -349,7 +343,7 @@ export function defineDrawTool({
       const model = pickDrawModel(entries, params?.model, settings?.drawModelId);
       if (model === null) {
         throw new Error(
-          "catalog 中没有出图模型（output_modalities 含 image 的条目为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含出图模型"
+          "catalog 中没有出图模型（`output_modalities` 字段与 `agnes-image-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含出图模型"
         );
       }
       const body = buildDrawBody({ model, prompt, n: params?.n, size: params?.size });
