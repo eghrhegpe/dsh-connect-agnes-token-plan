@@ -38,6 +38,7 @@ import {
   supportedThinkingLevels,
   thinkingLevelMapFor,
   FALLBACK_CONTEXT_WINDOW,
+  PROBED_CONTEXT_WINDOWS,
   LLM_PROVIDER_ID
 } from "../src/host/llm-models.ts";
 import { countOf, timestampSeconds, checkShape, identifyVisionModel } from "../src/host/parsers.ts";
@@ -159,17 +160,21 @@ for (const model of contract.models) {
     check(`${model.id} descriptor.input matches contract visionInput`,
       JSON.stringify(descriptor.input) === JSON.stringify(expectedInput),
       JSON.stringify({ got: descriptor.input, want: expectedInput }));
-    // The window: a declared `context_length` wins, and an entry that declares
-    // none gets the SAME fallback pi-ai is handed — never undefined, which
-    // pi-ai's options builder would treat as zero.
+    // The window: a declared `context_length` wins; an entry that declares none
+    // gets the official-doc hard table (`PROBED_CONTEXT_WINDOWS`, source =
+    // archived platform docs), and only a model in neither keeps the SAME
+    // fallback pi-ai is handed — never undefined, which pi-ai's options
+    // builder would treat as zero.
     if (model.contextLength !== undefined) {
       check(`${model.id} descriptor.contextWindow reads catalog context_length`,
         descriptor.contextWindow === model.contextLength,
         `${descriptor.contextWindow} vs ${model.contextLength}`);
     } else {
+      const official = PROBED_CONTEXT_WINDOWS[model.id];
+      const want = official ?? FALLBACK_CONTEXT_WINDOW;
       check(`${model.id} descriptor.contextWindow falls back to the shipped default`,
-        descriptor.contextWindow === FALLBACK_CONTEXT_WINDOW,
-        `${descriptor.contextWindow} vs ${FALLBACK_CONTEXT_WINDOW}`);
+        descriptor.contextWindow === want,
+        `${descriptor.contextWindow} vs ${want}`);
     }
   } catch (error) { fail(`${model.id} descriptor`, error); }
 }
