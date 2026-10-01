@@ -29,7 +29,7 @@ import { str, verbatim, pluginError } from "../util.ts";
  * @param {string} name - the variable name.
  * @returns {string} the reference.
  */
-const credentialRef = (name) => name;
+const credentialRef = (name: string) => name;
 
 /** Where the account lives. The password is NEVER persisted. */
 export const USERNAME_REF = "AGNES_USERNAME";
@@ -42,9 +42,12 @@ export const PASSWORD_REF = "AGNES_PASSWORD";
  * requiring a password to be available.
  * @returns {Promise<string>} the username, or `""` when none is known.
  */
-export async function readUsername(wiring, _state) {
+export async function readUsername(
+  wiring: { backend: () => { resolve: (ref: string) => Promise<{ value?: unknown }> }; env: Record<string, unknown> },
+  _state: unknown
+) {
   const { backend, env } = wiring;
-  const fromStore = async (ref) => {
+  const fromStore = async (ref: string) => {
     // `resolve` is per-call by contract: a value written a moment ago is
     // visible to the next read, with no restart in between.
     const resolved = await backend().resolve(credentialRef(ref)).catch(() => undefined);
@@ -62,7 +65,10 @@ export async function readUsername(wiring, _state) {
  * password the panel simply asks again when the access token dies.
  * @returns {Promise<{username: string, password: string, source: string}|undefined>}
  */
-export async function readAccount(wiring, state) {
+export async function readAccount(
+  wiring: { backend: () => { resolve: (ref: string) => Promise<{ value?: unknown }>; unset: (ref: string) => Promise<unknown> }; env: Record<string, unknown> },
+  state: { passwordSwept: boolean }
+) {
   const { backend, env } = wiring;
   const username = await readUsername(wiring, state);
   // One-time sweep: a previous version stored the password in the
@@ -100,7 +106,18 @@ export async function readAccount(wiring, state) {
  *   `undefined` is tolerated and falls back to `readAccount`.
  * @returns {Promise<{accessToken: string, refreshToken: string, expiresAt: number|null}>}
  */
-export async function loginFromAccount(wiring, state, explicit, readStored, store) {
+export async function loginFromAccount(
+  wiring: {
+    auth: { login: (account: { username: string; password: string }, opts: { onTrace: any }) => Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> };
+    onTrace: any;
+    backend: () => { resolve: (ref: string) => Promise<{ value?: unknown }>; unset: (ref: string) => Promise<unknown> };
+    env: Record<string, unknown>;
+  },
+  state: { passwordSwept: boolean; cached?: any },
+  explicit: { username: string; password: string } | undefined,
+  readStored: () => Promise<{ accessToken: string } | undefined>,
+  store: (accessToken: string, refreshToken: string, expiresIn: number, replaced?: string) => any
+) {
   const { auth, onTrace } = wiring;
   const account = explicit ?? await readAccount(wiring, state);
   if (account === undefined) {
@@ -120,7 +137,7 @@ export async function loginFromAccount(wiring, state, explicit, readStored, stor
  * expired grant then, so nothing ownerless is left behind.
  * @returns {Promise<void>}
  */
-export async function forgetAccount(wiring, state) {
+export async function forgetAccount(wiring: { backend: () => { unset: (ref: string) => Promise<unknown> } }, state: { cached: any }) {
   const { backend } = wiring;
   await backend().unset(credentialRef(USERNAME_REF));
   await backend().unset(credentialRef(PASSWORD_REF));
