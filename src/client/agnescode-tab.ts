@@ -141,7 +141,8 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
       // the refusal payload the same way the Host writes it.
       const body = await postJson(AGNESCODE_PATH, { action: "harvest" });
       if (alive.current) {
-        const attempts = Array.isArray(body?.harvest?.attempts) ? body.harvest.attempts : [];
+        const harvestBlock = body?.harvest;
+        const attempts = Array.isArray((harvestBlock as { attempts?: unknown })?.attempts) ? (harvestBlock as { attempts: unknown[] }).attempts : [];
         setState((current) => (current ? { ...current, harvest: { ok: body?.ok === true, attempts } } : current));
         if (body?.ok === true) {
           setNote(tt("agnescode.harvestOk"));

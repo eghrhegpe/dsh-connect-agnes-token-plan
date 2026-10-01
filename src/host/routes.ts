@@ -771,6 +771,14 @@ export function registerRoutes(ctx, wiring) {
         return;
       }
       const { action } = body.value;
+      // The last harvest walk's diagnosis rows (tier codes and shape facts
+      // only — a token NEVER enters this payload), shown by the GET and by
+      // every POST answer so the panel can explain why "重新检测" found
+      // nothing.
+      let lastHarvest = null;
+      // One harvest walk at a time: a concurrent request joins the same
+      // promise instead of spawning a second PowerShell.
+      let agnescodeHarvestInFlight = null;
       const answer = async (extra = {}) => {
         const state = await agnescodeState();
         writeJson(response, 200, { ...state, ...extra }, { "cache-control": "no-store" });

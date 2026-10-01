@@ -14,9 +14,14 @@
  *   Host processes rotating the same refresh token cannot lose one another's
  *   write.
  * - `getToken()` returns a token that is valid for at least
- *   `skewMs`, renewing through `refresh_token` when the stored one is close to
- *   expiry. Hydra rotates refresh tokens, so every renewal also replaces the
- *   stored refresh token.
+ *   `skewMs`. The store is PLATFORM-AGNOSTIC: when the platform issues
+ *   rotating refresh tokens, the stored one is renewed through
+ *   `refresh_token` and every renewal replaces the stored pair (the
+ *   compare-and-set in `token-store/grant.ts` detects a concurrent rotation).
+ *   Agnes itself issues NO refresh token — `token-store/acquire.ts` catches
+ *   `NO_REFRESH_TOKEN` and forks into the re-login branch. The block stays because the same store code is
+ *   the seam a refresh-token platform would plug into; the baseline
+ *   (S6/S7 scenarios) exercises it through a scripted fake auth.
  * - `invalidate()` drops the in-memory token after a 401 so the next call
  *   renews once rather than looping on a token the console already rejected.
  *

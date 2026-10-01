@@ -37,11 +37,7 @@ import { profileSegment } from "./state-store.ts";
 import { createApiKeyStore } from "./api-key-store.ts";
 import { createAgnescodeStore } from "./agnescode-store.ts";
 import { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
-import { createAgnescodePublisher } from "./agnescode-publish.ts";
-import { harvestAgnescodeLocalSession, decodeAgnescodeJwtExpMs, AGNESCODE_FALLBACK_MODELS } from "./agnescode.ts";
-
-/** How long a failed re-harvest blocks further re-harvest attempts. */
-const AGNESCODE_REHARVEST_BACKOFF_MS = 60_000;
+import { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 import { createProviderPublisher } from "./provider-publish.ts";
 import { registerRoutes } from "./routes.ts";
 import { startSideEffects, teardown } from "./lifecycle.ts";
@@ -216,60 +212,14 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     credentials: () => ctx.get("credentials") ?? null
   });
   const agnescodeSwitch = createFileAgnescodeStore({ profile });
-  // The re-harvest walk (below) runs PowerShell — a per-request storm of it is
-  // the price of an expiring credential with the App gone. One walk at a time,
-  // and a failed walk buys a short window where nobody retries: the request
-  // rides the stored token and surfaces the 401 upstream, where the panel can
-  // see it, instead of every call paying the harvest cost forever.
-  let reharvestInFlight = null;
-  let reharvestBlockedUntil = 0;
-  const agnescodePublisher = createAgnescodePublisher({
+  // The AgnesCode publisher's re-harvest seam (single-flight + backoff +
+  // cross-base rebuild) and mount seed now live in `agnescode-lifecycle.ts`
+  // — extracted from this mount seam so it stays a thin router.
+  const { publisher: agnescodePublisher, seed: agnescodeSeed } = wireAgnescodePublisher({
+    store: agnescodeStore,
     panelSwitch: () => agnescodeSwitch.enabled().catch(() => null),
-    resolveToken: async () => {
-      const { credential } = await agnescodeStore.resolve();
-      if (credential === null) return "";
-      // There is NO refresh endpoint (ROADMAP §6.3): the desktop App owns the
-      // session file, so an expiring credential is re-harvested from it —
-      // single-flighted, with a failure backoff so a dead App cannot turn
-      // every request into a PowerShell spawn.
-      if (await agnescodeStore.isExpired().catch(() => false)) {
-        if (reharvestInFlight === null && Date.now() >= reharvestBlockedUntil) {
-          reharvestInFlight = harvestAgnescodeLocalSession()
-            .then(async (walk) => {
-              reharvestInFlight = null;
-              if (walk?.ok !== true) {
-                reharvestBlockedUntil = Date.now() + AGNESCODE_REHARVEST_BACKOFF_MS;
-                ctx.logger?.warn?.(`agnescode: re-harvest found no usable session (${walk?.attempts?.length ?? 0} probed files); riding the stored token until ${new Date(reharvestBlockedUntil).toISOString()}`);
-                return null;
-              }
-              const expMs = decodeAgnescodeJwtExpMs(walk.session.accessToken);
-              await agnescodeStore.save({
-                ...walk.session,
-                ...(expMs !== undefined ? { expiresAtMs: expMs } : {})
-              }).catch((why) => {
-                ctx.logger?.warn?.(`agnescode: re-harvest succeeded but the store refused it: ${str(why?.message ?? why, "unknown")}`);
-              });
-              // The registered descriptors pin the OLD base; a re-harvest that
-              // landed on another account/base must rebuild, or B's token rides
-              // to A's base (both inside the Agnes family, but wrong).
-              if (walk.session.bffBase !== agnescodePublisher.state.bffBase) {
-                await agnescodePublisher.publish(AGNESCODE_FALLBACK_MODELS, walk.session.bffBase).catch(() => {});
-              }
-              return walk;
-            })
-            .catch(() => {
-              reharvestInFlight = null;
-              reharvestBlockedUntil = Date.now() + AGNESCODE_REHARVEST_BACKOFF_MS;
-              return null;
-            });
-        }
-        await Promise.resolve(reharvestInFlight).catch(() => null);
-      }
-      const { credential: live } = await agnescodeStore.resolve();
-      return live?.accessToken ?? "";
-    },
     getLlm: (service) => getService(service),
-    loadAdapterModule: deps.loadAgnescodeAdapterModule ?? (() => import("./agnescode-llm-adapter.ts")),
+    loadAdapterModule: deps.loadAgnescodeAdapterModule,
     emit: (event) => {
       try {
         ctx.emit?.(event);
@@ -281,21 +231,8 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     logger: ctx.logger
   });
   // Mount seed: if the switch survived a restart, re-register from the
-  // fallback roster + the stored credential's per-account base. A fresh
-  // publisher's `state.rows` is ALWAYS empty, so the previous guard on it
-  // never seeded anything (the same fresh-construction tautology); the
-  // live catalogue still wins on the next switch/harvest action.
-  void (async () => {
-    try {
-      const switchState = await agnescodeSwitch.enabled().catch(() => null);
-      if (switchState === true) {
-        const { credential } = await agnescodeStore.resolve().catch(() => ({ credential: null }));
-        await agnescodePublisher.publish(AGNESCODE_FALLBACK_MODELS, credential?.bffBase ?? "");
-      }
-    } catch {
-      // No seed: the first switch/harvest publishes.
-    }
-  })();
+  // fallback roster + the stored credential's per-account base.
+  void agnescodeSeed();
 
   // The credentials service is how the console token and account are held and
   // renewed. It is optional: a Host without one still gets a working panel,

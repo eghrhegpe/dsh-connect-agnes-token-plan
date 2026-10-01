@@ -187,6 +187,28 @@ for (const message of misjudgedMessages) {
   check("无额度措辞的限频体幂等放行", reclassifyFinish(rate2) === rate2);
 }
 
+// --- D. credentialKey 双轨契约：shim 必须等于 peer 函数 ----------------
+// `index.ts` 手写的 `credentialKey(scope, id)` 与 DSH 凭据服务的真实
+// `credentialKey` 是同一契约的两份实现：shim 让插件在干净 checkout 上
+// 可运行，peer 函数是运行时实际使用的权威。这里把两份实现对齐钉死——
+// peer 改 key 格式（如加版本号或换分隔符）时此段红，提示同步更新 shim。
+// 此段在 dsh-credentials 库入口可达时运行；不可达时 SKIP（与套件头部一致）。
+{
+  const peerCredPath = join(root, "@deepseek-ai", "dsh-credentials", "lib", "index.js");
+  if (existsSync(peerCredPath)) {
+    const { credentialKey: peerKey } = await import(pathToFileURL(peerCredPath).href);
+    const { credentialKey: shim } = await import("../src/host/index.ts");
+    check(
+      "credentialKey shim 与 peer 函数逐一对齐",
+      shim("dsh-connect-agnes-token-plan", "agnes-console") ===
+        peerKey("dsh-connect-agnes-token-plan", "agnes-console"),
+      `shim="${shim("dsh-connect-agnes-token-plan", "agnes-console")}" peer="${peerKey("dsh-connect-agnes-token-plan", "agnes-console")}"`
+    );
+  } else {
+    console.log("SKIP (D): dsh-credentials 库入口不在标准路径——由 test/store.test.mjs 18 段检查兜底。");
+  }
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.pass);
 if (failed.length > 0) {
