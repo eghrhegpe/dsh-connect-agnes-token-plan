@@ -14,7 +14,11 @@ export const S = {
   // the host silently truncates everything below the fold.
   page: { flex: "1 1 auto", height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", color: "var(--dsw-alias-label-primary)", fontSize: 14, lineHeight: "22px" },
   headerBar: { flex: "none", background: "var(--dsw-alias-bg-base)", position: "relative", zIndex: 1 },
-  header: { display: "flex", alignItems: "center", gap: 12, padding: "16px 0 12px" },
+  // The pinned bar is a toolbar, not a title block: it holds the visible tab's
+  // own status (freshness / credential chip / stale-data warning) and its
+  // refresh. The page-level title went away with the fake global one — see
+  // `barPlan` in `panel-page.ts`.
+  header: { display: "flex", alignItems: "center", gap: 12, padding: "12px 0 10px" },
   scroll: { flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" },
   content: { padding: "6px 0 56px" },
   // Two fixed perspectives — daily quota reading vs. one-off API wiring —
@@ -22,7 +26,6 @@ export const S = {
   tabBar: { display: "flex", gap: 4, borderBottom: "1px solid var(--dsw-alias-border-l1)", marginBottom: 4 },
   tab: { appearance: "none", background: "none", border: "none", borderBottom: "2px solid transparent", padding: "8px 12px", fontSize: 13, color: "var(--dsw-alias-label-secondary)", cursor: "pointer" },
   tabActive: { color: "var(--dsw-alias-label-primary)", fontWeight: 600, borderBottom: "2px solid var(--agnes-brand, #6C5CE7)" },
-  title: { margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "28px" },
   updated: { color: "var(--dsw-alias-label-secondary)", fontSize: 12 },
   spacer: { flex: 1 },
   button: BUTTON,

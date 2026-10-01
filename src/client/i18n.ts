@@ -10,7 +10,6 @@ import type { Tt } from "./runtime.ts";
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   "entry.label": "积分面板",
-  "panel.title": "积分面板",
   "panel.back": "返回会话",
   "panel.refresh": "刷新",
   "panel.updated": "更新于 {time}",
@@ -231,7 +230,6 @@ export const zh = {
 /** English dictionary, mirroring every zh key. */
 export const en: typeof zh = {
   "entry.label": "Credits",
-  "panel.title": "Credits",
   "panel.back": "Back to conversation",
   "panel.refresh": "Refresh",
   "panel.updated": "Updated {time}",

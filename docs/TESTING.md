@@ -52,7 +52,7 @@ npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PL
 
 ## 3. `panel-decision.js` / `client-surface.js` 为何特殊
 
-面板的渲染决策与渲染组件**不是手写副本、也不是从源码抠字符串**：`client-surface.js` 装一个捕获型 `window.__ModuleLoader__`，导入真实的 `src/client/index.ts`，给它的工厂喂一个记录型 React 替身，拿到工厂物化出的 `panel` 测试面（`interpretSnapshot` / `viewOf` / 字典 / 错误码表 / 样式令牌 / 组件），`panel-decision.js` 与 `panel-render.js` 再从这个真实对象上取用。若 client 的结构变了，检查跟着变——测的始终是浏览器真正跑的那段代码。
+面板的渲染决策与渲染组件**不是手写副本、也不是从源码抠字符串**：`client-surface.js` 装一个捕获型 `window.__ModuleLoader__`，导入真实的 `src/client/index.ts`，给它的工厂喂一个记录型 React 替身，拿到工厂物化出的 `panel` 测试面（`interpretSnapshot` / `viewOf` / `barPlan` / 字典 / 错误码表 / 样式令牌 / 组件），`panel-decision.js` 与 `panel-render.js` 再从这个真实对象上取用。若 client 的结构变了，检查跟着变——测的始终是浏览器真正跑的那段代码。
 
 > 机制有两代：早期一版是手写 `panelDecision` 副本（会漂移，且漏了节流字段）；再一版是从 `client.js` 源码用平衡括号抠函数体、`new Function` 求值（锚点绑死源码排版）。现版把 client 物化成模块后两者都取代了。
 

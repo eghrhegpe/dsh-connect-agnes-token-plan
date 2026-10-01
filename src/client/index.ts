@@ -65,7 +65,7 @@ import {
 import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch, VideoSwitch } from "./provider-controls.ts";
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
-import { PanelPage } from "./panel-page.ts";
+import { PanelPage, barPlan } from "./panel-page.ts";
 import { AgnescodeRoster, AgnescodeTab } from "./agnescode-tab.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
@@ -89,6 +89,10 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
     interpretSnapshot,
     viewOf,
     errorOfStatus,
+    // What the pinned bar may say about the visible tab: the shell decision,
+    // exposed for the same reason as the others — the suite drives the real
+    // function instead of scraping the layout for it.
+    barPlan,
     dictionaries: Object.freeze({ zh, en }),
     tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
     styles: S,

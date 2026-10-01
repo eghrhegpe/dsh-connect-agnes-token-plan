@@ -47,6 +47,23 @@ interface AgnescodeHarvestAttempt {
   detail?: string;
 }
 
+/**
+ * The freshness + reload a tab hands to the shell's pinned bar.
+ *
+ * The bar is a shell: it shows whichever tab is on screen. The quota and API
+ * tabs both read the shared snapshot, so `PanelPage` derives their half itself;
+ * this tab reads its OWN route on its own cadence (60 s), so it is the one that
+ * has to publish. `refresh` exists because the bar's refresh button used to
+ * reload the snapshot no matter which tab was open — on this tab that meant
+ * "reload the data behind the tab you are NOT looking at".
+ */
+export interface TabStatus {
+  /** When this tab last read its own route successfully (epoch ms; 0 = never). */
+  updatedAt: number;
+  /** Reload THIS tab's data. */
+  refresh: () => void;
+}
+
 /** The secret-free state the /agnescode route answers. */
 interface AgnescodeState {
   ok?: boolean;
@@ -75,12 +92,17 @@ const AGNESCODE_POLL_MS = 60_000;
  * The AgnesCode tab body.
  * @param {object} props
  * @param {Tt} props.tt - the dictionary.
+ * @param {(status: TabStatus) => void} [props.onStatus] - hands the shell's
+ *   pinned bar this tab's own freshness and reload (it owns both).
  * @returns {unknown} the tab's card tree.
  */
-export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
+export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: TabStatus) => void }): unknown {
   const [state, setState] = useState<AgnescodeState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // When this tab last read its route successfully. The bar quotes it instead
+  // of the snapshot's stamp: two different routes, two different cadences.
+  const [updatedAt, setUpdatedAt] = useState(0);
   // The in-flight harvest walk: the button goes to a "reading" state and the
   // diagnosis rows land in `state.harvest` (also on failure — the walk's
   // answer IS the diagnosis).
@@ -100,6 +122,7 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
       }
       setState(body);
       setError(null);
+      setUpdatedAt(Date.now());
     } catch {
       if (alive.current) setError("unable to reach the Host");
     } finally {
@@ -120,6 +143,13 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
       clearInterval(timer);
     };
   }, [load]);
+
+  // Hand the pinned bar this tab's own freshness and reload. Fires on real
+  // changes only: `load` is a stable `useCallback` and `onStatus` is stable on
+  // the shell's side, so a publish cannot feed itself.
+  useEffect(() => {
+    onStatus?.({ updatedAt, refresh: () => void load() });
+  }, [onStatus, updatedAt, load]);
 
   const toggle = useCallback(async (enabled: boolean) => {
     setNote(null);
@@ -182,6 +212,13 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
       { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)", marginBottom: 12 } },
       tt("agnescode.desc")
     ),
+    // A route that did not answer is named FIRST. This state used to be set and
+    // never rendered, so a failed read left `state === null` and the tab below
+    // accused the reader's desktop App of not being signed in — the one
+    // reading the panel had no evidence for.
+    error !== null
+      ? h("div", { style: S.formError, role: "alert" }, format(tt("agnescode.error"), { error }))
+      : null,
     // The provider switch (opt-in, default off). It decides whether the
     // AgnesCode models are registered with DSH at all.
     h(
@@ -204,42 +241,48 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
             : h("div", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.unregistered"))
       : null,
     // The credential half: the linked account (or the harvest affordance).
-    h(
-      "div",
-      { style: { ...S.card, marginTop: 4 } },
-      loggedIn
-        ? h(
-            "div",
-            null,
-            h("div", { style: { fontSize: 13 }, role: "status" },
-              format(tt("agnescode.loggedIn"), { nick: String(state?.nickname ?? "") })),
-            // The per-account base and the JWT expiry are shape facts the
-            // user may need ("is my token the dead one?") — both come from
-            // the route secret-free.
-            state?.bffBase !== undefined && state?.bffBase !== ""
-              ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4, wordBreak: "break-all" } },
-                  format(tt("agnescode.bffBase"), { base: state.bffBase }))
-              : null,
-            typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
-              ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } },
-                  format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) }))
-              : null,
-            h("button", { type: "button", style: { ...S.button, marginTop: 8 }, onClick: () => void harvest(), disabled: harvestBusy },
-              harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")),
-            h("button", { type: "button", style: { ...S.button, marginTop: 8, marginLeft: 8 }, onClick: () => void logout() }, tt("agnescode.logout"))
-          )
-        : h(
-            "div",
-            null,
-            h("div", { style: { fontSize: 13 } }, tt("agnescode.notLogged")),
-            h("button", {
-              type: "button",
-              style: { ...S.button, marginTop: 8 },
-              onClick: () => void harvest(),
-              disabled: harvestBusy
-            }, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
-          )
-    ),
+    // Withheld while a failed read leaves us knowing NOTHING: `state` is null,
+    // so `loggedIn` is false, and the unlinked copy below would accuse the
+    // reader's desktop App of not being signed in — a claim this tab has no
+    // evidence for. The `agnescode.error` line above is the honest statement.
+    state === null && error !== null
+      ? null
+      : h(
+          "div",
+          { style: { ...S.card, marginTop: 4 } },
+          loggedIn
+            ? h(
+                "div",
+                null,
+                h("div", { style: { fontSize: 13 }, role: "status" },
+                  format(tt("agnescode.loggedIn"), { nick: String(state?.nickname ?? "") })),
+                // The per-account base and the JWT expiry are shape facts the
+                // user may need ("is my token the dead one?") — both come from
+                // the route secret-free.
+                state?.bffBase !== undefined && state?.bffBase !== ""
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4, wordBreak: "break-all" } },
+                      format(tt("agnescode.bffBase"), { base: state.bffBase }))
+                  : null,
+                typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } },
+                      format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) }))
+                  : null,
+                h("button", { type: "button", style: { ...S.button, marginTop: 8 }, onClick: () => void harvest(), disabled: harvestBusy },
+                  harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")),
+                h("button", { type: "button", style: { ...S.button, marginTop: 8, marginLeft: 8 }, onClick: () => void logout() }, tt("agnescode.logout"))
+              )
+            : h(
+                "div",
+                null,
+                h("div", { style: { fontSize: 13 } }, tt("agnescode.notLogged")),
+                h("button", {
+                  type: "button",
+                  style: { ...S.button, marginTop: 8 },
+                  onClick: () => void harvest(),
+                  disabled: harvestBusy
+                }, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
+              )
+        ),
     // The last harvest walk's diagnosis rows: one line per probed file, tier
     // first (it is the advice), then the path (it is the evidence). Rendered
     // whenever a walk has run — also after a SUCCESS, so a user who ran it

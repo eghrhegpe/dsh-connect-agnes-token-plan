@@ -309,6 +309,42 @@ const healthy = {
     dictionaries.en["llm.rosterEmpty"]);
 }
 
+// === F6. one route per tab, one status line per tab =======================
+// The pinned bar is a shell now (`render.test.mjs` group H3 drives the decision
+// behind it), and it can only say anything about AgnesCode if that tab — the
+// only one with its own route and its own cadence — HANDS IT OVER. The handover
+// and the failed-read line are hook-path wiring the render suite cannot mount
+// (its React stand-in never runs effects), so they are pinned at the source:
+// not behaviour, but the shape that behaviour needs.
+{
+  const source = await readFile(new URL("../src/client/agnescode-tab.ts", import.meta.url), "utf8");
+  check("the AgnesCode tab publishes its own freshness + reload to the bar",
+    /onStatus\?\.\(\{\s*updatedAt,\s*refresh/.test(source),
+    (source.match(/onStatus[^\n]*/g) ?? []).join(" | "));
+  check("that freshness is stamped when the tab's own read succeeds",
+    /setUpdatedAt\(Date\.now\(\)\)/.test(source), "");
+  // `error` used to be set and NEVER rendered: a failed read leaves `state`
+  // null, which renders exactly like "not linked" — so the panel blamed the
+  // user's desktop App for a Host that never answered.
+  check("a failed /agnescode read is rendered instead of read as 'not linked'",
+    /format\(tt\("agnescode\.error"\), \{ error \}\)/.test(source)
+      && /state === null && error !== null/.test(source), "");
+
+  // The shell side of the same handover, plus the annotation `docs.test.mjs`
+  // check 9 derives its tab set from — naming the union would leave that check
+  // with nothing to read, and it would read nothing as a pass.
+  const panelSource = await readFile(new URL("../src/client/panel-page.ts", import.meta.url), "utf8");
+  check("the shell passes the bar's publish callback to the AgnesCode tab",
+    /AgnescodeTab, \{ tt, onStatus: publishTabStatus \}/.test(panelSource), "");
+  // The refresh button used to be hard-wired to `load()` — the snapshot — so on
+  // the AgnesCode tab it reloaded the data behind a tab nobody was looking at.
+  check("the bar's refresh follows the plan instead of always reloading the snapshot",
+    /const refresh = plan\.refresh === "agnescode"\s*\?\s*tabStatus\?\.refresh/.test(panelSource),
+    (panelSource.match(/const refresh[^\n]*/g) ?? []).join(" | "));
+  check("the active-tab union stays spelled out for the README check",
+    /useState<"quota" \| "api" \| "agnescode">\("quota"\)/.test(panelSource), "");
+}
+
 // === G. the checks are running the shipped module, not a stale copy ======
 // Reaching here at all means client.js loaded and materialized its factory.
 {

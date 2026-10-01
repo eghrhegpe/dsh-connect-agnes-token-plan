@@ -16,6 +16,53 @@ import { S } from "./styles.ts";
 import { PlanCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
 import { DrawSwitch, VideoSwitch } from "./provider-controls.ts";
 import { AgnescodeTab } from "./agnescode-tab.ts";
+import type { TabStatus } from "./agnescode-tab.ts";
+
+/** The three fixed perspectives the panel switches between. */
+export type TabName = "quota" | "api" | "agnescode";
+
+/** What the pinned bar shows, and whose loader its refresh button fires. */
+export interface BarPlan {
+  /** Whose freshness the bar may quote; `null` = nothing to quote yet. */
+  stamp: "snapshot" | "agnescode" | null;
+  /** Show the console-token chip (the quota tab's own credential). */
+  authChip: boolean;
+  /** Show the snapshot's failure while its numbers stay on screen. */
+  staleWarning: boolean;
+  /** Which tab's loader the refresh button calls. */
+  refresh: "snapshot" | "agnescode";
+}
+
+/**
+ * What the pinned bar owes the tab that is on screen.
+ *
+ * Module scope and pure so the Node-side suite drives the real decision
+ * instead of scraping the JSX for it — the same reason `viewOf` lives outside
+ * the component.
+ *
+ * The bar is a SHELL: it owns no page-wide reading. It used to be titled
+ * 「积分面板」, stamp every tab with the snapshot's clock, and offer a refresh
+ * that reloaded the snapshot no matter which tab was open — so on the
+ * AgnesCode tab it claimed a freshness and a reload it never had. What it may
+ * say per tab:
+ *
+ *   quota      the shared snapshot's stamp, the console-token chip, its stale
+ *              warning, snapshot reload.
+ *   api        the SAME snapshot (its `llm` block is what this tab renders),
+ *              so the same stamp and reload — but NOT the chip: that token is
+ *              the quota tab's credential, while this tab works off the stored
+ *              API key.
+ *   agnescode  its own route, its own cadence (60 s), so its own stamp and its
+ *              own reload. No chip: this tab's credential is the desktop App's
+ *              session JWT, which has NO refresh endpoint — a "token renews
+ *              itself" pill here would state the opposite of the truth.
+ */
+export function barPlan(tab: TabName, hasSnapshot: boolean, hasAgnescode: boolean): BarPlan {
+  if (tab === "agnescode") {
+    return { stamp: hasAgnescode ? "agnescode" : null, authChip: false, staleWarning: false, refresh: "agnescode" };
+  }
+  return { stamp: hasSnapshot ? "snapshot" : null, authChip: tab === "quota", staleWarning: hasSnapshot, refresh: "snapshot" };
+}
 
 export function PanelPage({ onClose, tt, localeSubscribe }: {
   onClose?: () => void;
@@ -56,7 +103,21 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // used to appear only once a body had landed, which meant a console nobody
   // had signed in to replaced the whole page with a form — including the two
   // tabs that never read the console.
+  //
+  // The union is written out INLINE on purpose: `docs.test.mjs` check 9
+  // derives the tab set (and therefore what README must mention) from this
+  // exact annotation. Naming it `TabName` here would leave that check with no
+  // tab ids to read — and it would read that as a pass, not as a failure.
   const [activeTab, setActiveTab] = useState<"quota" | "api" | "agnescode">("quota");
+
+  // The freshness a tab that owns its OWN route publishes for the pinned bar
+  // (today only AgnesCode: it polls `/agnescode` on its own cadence, not the
+  // snapshot's). `null` until such a tab has mounted and reported; the bar
+  // only reads it while that tab is the visible one.
+  const [tabStatus, setTabStatus] = useState<TabStatus | null>(null);
+  // Stable on purpose: the publishing tab calls this from an effect, and a
+  // fresh callback identity per render would re-run that effect forever.
+  const publishTabStatus = useCallback((status: TabStatus) => setTabStatus(status), []);
 
   // The Host half registers the dictionaries, but a runtime language switch
   // only reaches this page through the locale face's subscribe: without it a
@@ -380,7 +441,9 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                   h(
                     SectionCard,
                     { title: tt("agnescode.title"), open: true, onToggle: () => {}, tt },
-                    h(AgnescodeTab, { tt })
+                    // This tab owns its route and its cadence, so it hands the
+                    // pinned bar its own freshness and reload (see `barPlan`).
+                    h(AgnescodeTab, { tt, onStatus: publishTabStatus })
                   )
                 )
               : h(
@@ -409,27 +472,53 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               )
       );
 
+  // The pinned bar's contents for the tab on screen. `barPlan` decides WHICH
+  // facts belong to which tab; this block only resolves them to nodes.
+  const plan = barPlan(activeTab, data !== null, tabStatus !== null && tabStatus.updatedAt > 0);
+  const stamp = plan.stamp === "snapshot"
+    ? data
+      ? format(tt("panel.updated"), { time: clock(updatedAt / 1000) })
+      : ""
+    : plan.stamp === "agnescode"
+      ? format(tt("panel.updated"), { time: clock((tabStatus?.updatedAt ?? 0) / 1000) })
+      : "";
+  // The refresh button follows the VISIBLE tab. AgnesCode publishes its loader
+  // one effect after it mounts, so until that lands the button is disabled
+  // rather than quietly reloading the other tab's data.
+  const refresh = plan.refresh === "agnescode" ? tabStatus?.refresh ?? null : () => void load();
+
   return h(
     "div",
     { style: S.page, "data-dsh-plugin": "dsh-connect-agnes-token-plan" },
     // The bar is pinned (flex:none); everything below scrolls inside
-    // `S.scroll` instead of being clipped by the shell's center column.
+    // `S.scroll` instead of being clipped by the shell's center column. It no
+    // longer carries a title: the Plugins page already renders this bundle's
+    // own name and description above the card, while 「积分面板」 named only
+    // the first of three tabs.
     h(
       "div",
       { style: S.headerBar },
       h(
         "div",
         { style: S.header },
-        h("h1", { style: S.title }, tt("panel.title")),
-        h("span", { style: S.updated }, data ? format(tt("panel.updated"), { time: clock(updatedAt / 1000) }) : ""),
-        authChip,
+        h("span", { style: S.updated }, stamp),
+        plan.authChip ? authChip : null,
         h("span", { style: S.spacer }),
-        // With data on screen a failure is a stale-data warning, so it rides
-        // in the header; without data the body already explains it.
-        failure && data
+        // With the numbers on screen a failure is a stale-data warning, so it
+        // rides in the bar; without data the body already explains it.
+        plan.staleWarning && failure && data
           ? h("span", { style: S.error, role: "status", title: failure.message }, format(tt("panel.error"), { error: failure.message }))
           : null,
-        h("button", { type: "button", style: S.button, onClick: () => void load() }, tt("panel.refresh")),
+        h(
+          "button",
+          {
+            type: "button",
+            style: refresh === null ? { ...S.button, ...S.primaryBusy } : S.button,
+            disabled: refresh === null,
+            onClick: () => refresh?.()
+          },
+          tt("panel.refresh")
+        ),
         onClose ? h("button", { type: "button", style: S.button, onClick: () => onClose() }, tt("panel.back")) : null
       )
     ),

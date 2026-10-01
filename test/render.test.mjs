@@ -694,6 +694,65 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   }
 }
 
+// === H3. the pinned bar is a per-tab SHELL, not a page header =============
+// The bar carried one global title (「积分面板」, a name that fits only the
+// first of three tabs), one global stamp (the SNAPSHOT's clock) and one global
+// refresh (`load()`, which reloads the snapshot). On the AgnesCode tab all
+// three lied: that tab reads its own route on its own 60 s cadence, so the
+// stamp quoted another tab's clock and the button reloaded data behind a tab
+// nobody was looking at. `barPlan` is the module-scope decision the bar renders
+// from, so it is driven here rather than scraped out of the layout.
+{
+  const { barPlan } = surface;
+  check("the bar plan was lifted from the shipped client", typeof barPlan === "function",
+    JSON.stringify(Object.keys(surface)));
+
+  const quota = barPlan("quota", true, true);
+  check("the quota tab quotes the snapshot, wears the console-token chip, warns about stale numbers and reloads the snapshot",
+    quota.stamp === "snapshot" && quota.authChip === true && quota.staleWarning === true && quota.refresh === "snapshot",
+    JSON.stringify(quota));
+
+  // The API tab renders the snapshot's `llm` block, so it shares the stamp and
+  // the reload — but NOT the chip: that token is the console's, while this tab
+  // works off the stored API key. A pill claiming "token renews itself" beside
+  // a tab that does not use that token is how a status line starts lying.
+  const api = barPlan("api", true, true);
+  check("the API tab shares the snapshot's freshness and reload",
+    api.stamp === "snapshot" && api.staleWarning === true && api.refresh === "snapshot", JSON.stringify(api));
+  const code = barPlan("agnescode", true, true);
+  check("only the quota tab shows the console-token chip",
+    api.authChip === false && code.authChip === false, JSON.stringify([api, code]));
+
+  // AgnesCode: its own route, its own cadence, and NO chip — the desktop App's
+  // session JWT has no refresh endpoint at all, so "token renews itself" would
+  // state the opposite of the truth on this tab (README: ~28 days, re-open the
+  // App).
+  check("the AgnesCode tab quotes its own clock and its own reload",
+    code.stamp === "agnescode" && code.staleWarning === false && code.refresh === "agnescode", JSON.stringify(code));
+
+  // Nothing to quote yet = say nothing. A source that has not answered must
+  // not wear the other source's timestamp (the snapshot's clock was shown on
+  // this tab even when the tab itself had never reached its route).
+  const cold = [barPlan("quota", false, false), barPlan("api", false, false), barPlan("agnescode", false, false)];
+  check("a tab with no reading yet quotes no clock at all",
+    cold.every((plan) => plan.stamp === null), JSON.stringify(cold));
+
+  // The stand-in returns useState's INITIAL value, so this is the true first
+  // frame: snapshot tab active, nothing published, data null.
+  const tree = treeOf(render.PanelPage, { onClose: () => {}, tt, localeSubscribe: undefined });
+  const firstFrame = texts(tree);
+  check("the first frame no longer claims a page-wide title",
+    !firstFrame.includes("panel.title"), firstFrame.join("\n"));
+  check("the first frame still offers exactly one refresh",
+    firstFrame.filter((line) => line === "panel.refresh").length === 1, firstFrame.join("\n"));
+  // …and it is LIVE: the snapshot tab has a loader from the start, so the
+  // button is enabled — only the AgnesCode tab has to wait for a publish.
+  const refreshButton = findAll(tree, (props) => props.type === "button" && props.disabled === false)
+    .find((element) => texts(element.children).includes("panel.refresh"));
+  check("the first frame's refresh button is enabled (the snapshot tab has a loader)",
+    refreshButton !== undefined, JSON.stringify(findAll(tree, () => true).length));
+}
+
 // === I. the decision table: every wire code gets an answer ================
 // `viewOf` is a deliberate copy of the Host's taxonomy and nothing else in the
 // suite drove it, so a code added to `codes.js` and forgotten here — or a
