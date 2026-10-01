@@ -165,6 +165,18 @@ function fail(name, error) {
       shouldReclassifyQuotaToRate(failure) === true);
   }
 
+  // Agnes 官方 FAQ 明说 429 也可能是「超过订阅配额」（docs/AGNES-API.md §7.3.1）。
+  // 命中订阅/套餐配额措辞必须保留 QUOTA——退避重试对一个配额耗尽没有意义。
+  const agnesSubscriptionQuota = [
+    { code: CODE.QUOTA, message: '429: {"message":"subscription quota exceeded, please upgrade your Token Plan"}' },
+    { code: CODE.QUOTA, message: "429 Token Plan quota exhausted, top up or upgrade" },
+    { code: CODE.QUOTA, message: "429 订阅配额已用尽，请升级套餐" }
+  ];
+  for (const failure of agnesSubscriptionQuota) {
+    check(`Agnes subscription quota stays QUOTA: ${failure.message.slice(0, 40)}`,
+      shouldReclassifyQuotaToRate(failure) === false);
+  }
+
   // 端到端：整条流里 code:8/rpm 的 finish 被纠正为 RATE_LIMIT。
   async function* src() {
     yield { type: "finish", reason: { kind: "error", failure: { code: CODE.QUOTA, message: '429: {"message":"rpm exhausted","type":"quota_exceeded_error","code":"8"}' } } };

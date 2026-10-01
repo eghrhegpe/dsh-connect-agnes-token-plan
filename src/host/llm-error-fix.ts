@@ -10,15 +10,21 @@
  *   而纯 `RATE_LIMIT` 分支（`/\b429\b|rate.?limit/`）是**死代码**——
  *   任何带 429 的体若能进 `isQuotaExceededError` 就被上一行吃了。
  *
- * 这个误判最初在**商汤线**上观测到；本插件现走 Agnes 网关
- * （`api.agnes-ai.cn`），判据刻意写成**方言无关**（状态码、rate limit、
- * too many requests、限流/频率 + rpm/tpm），并保留 `hardQuota` 守卫——
- * 真配额耗尽绝不会被误拉去重试。Agnes 是否透传结构化 `type` 字段**待实测**；
- * 缺失时下面的结构化分支不命中，自然退回本模块的纯文本启发，行为与
- * 没有结构化信号时一致。
+ * 这个误判最初在**商汤线**上观测到，但 Agnes 的官方错误码表已经把它钉死
+ * （docs/AGNES-API.md §7.3.1，抓存官方 FAQ）：**Agnes 没有 `quota_exceeded_error`
+ * 这个错误码名**（那是商汤时代的东西）；**429 = RPM 限频，应退避重试**（官方明说
+ * 「等待 1 分钟后重试」）；**402 = Token Plan 配额不足，不应重试**。所以本模块把
+ * "被 peer 误判为 QUOTA 的限频 429" 纠正回 `RATE_LIMIT`，方向与官方一致。
+ * 同时官方 FAQ 也明说 **429 可能表示「超过订阅配额」**，所以 `hardQuota` 保留
+ * 「订阅/套餐配额耗尽」判据（`subscription quota` / `Token Plan quota` / `订阅配额` /
+ * `Token Plan 配额`），命中即保留 QUOTA——退避重试对一个配额耗尽没有意义。
+ *
+ * 判据刻意写成**方言无关**（状态码、rate limit、too many requests、限流/频率 +
+ * rpm/tpm），不依赖商汤码值；Agnes 是否透传结构化 `type` 字段仍**待实测**，
+ * 缺失时结构化分支不命中，自然退回纯文本启发，行为与没有结构化信号时一致。
  *
  * 本模块在 host 侧把"看似限频却被误判为 QUOTA 的 429"纠正回 `RATE_LIMIT`，
- * 让退避重试真正生效；真配额耗尽（明确余额/积分耗尽的硬额度措辞）保留 `QUOTA`。
+ * 让退避重试真正生效；真配额耗尽（余额/积分/订阅配额耗尽的硬额度措辞）保留 `QUOTA`。
  *
  * 设计约束（对应 AGENTS.md 红线与并行纪律）：
  *   - 不动 vendor peer：peer 不在此插件 git 内，也不可被改。
@@ -78,7 +84,11 @@ export function looksLikeRateLimit(message: string) {
     /\b(?:balance|credits?)\s+(?:exhausted|depleted)\b/i.test(m) ||
     /\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b/i.test(m) ||
     /额度\s*(?:已)?\s*(?:用尽|耗尽|不足)/.test(m) ||
-    /quota\s*(?:exceeded|exhausted|reached)/i.test(m);
+    /quota\s*(?:exceeded|exhausted|reached)/i.test(m) ||
+    // Agnes 官方 FAQ 明说 429 也可能是「超过订阅配额」（Token Plan 配额用尽）：
+    // 命中订阅/套餐配额措辞必须保留 QUOTA，否则会被误判成限频去退避重试
+    // （docs/AGNES-API.md §7.3.1 结论 2 指出的演进点）。
+    /(?:subscription|token[\s_-]?plan)[\s_-]*(?:quota|credit)|订阅配额|套餐配额|Token[\s_-]?Plan\s*(?:配额|额度)/i.test(m);
   return !hardQuota;
 }
 
