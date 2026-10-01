@@ -132,13 +132,21 @@ export const PROBED_MAX_TOKENS = 65_536;
  *    （目录字段优先 + 未实测不写，PITFALLS 纪律；若平台补文档页声明或
  *    真机探针确认再加）。
  *
- * ⚠️ 图像输入的**拼写与上限尚未真机 probe**（官方只说"图像 URL 输入"，没说
- * `image_url` 块还是 `image` 字段、没写上限）。这张表只让 descriptor 带上
- * `input:["text","image"]` 让 DSH 允许发图片；具体 wire 拼写由上层请求体
- * 构造负责，未实测前不得断言（见 AGNES-API.md §7.1.1）。
+ * ✅ **wire 拼写已实测（2026-10-01 真机，`test/live-contract.mjs` §2d）**：
+ * 官方只说"图像 URL 输入"，没说拼写——探针对 `agnes-3.0-flash` 用两种拼写各发
+ * 一次：`{type:"image_url", image_url:{url}}`（OpenAI 标准块）→ **HTTP 200
+ * 接受**；`{type:"image", image_url:{url}}`（备选）→ **HTTP 500**，平台转发
+ * 上游报 `Invalid user message at index 0...`——该拼写不被接受。结论：走
+ * 标准 OpenAI 拼写，与 `dsh-llm-pi-ai` 的 `openai-completions` 方言一致，
+ * 无需特判。用户实测向 `agnes-3.0-flash` 发游戏截图能正确识别画面内容。
+ * `agnes-2.5-pro` / `agnes-2.5-flash` 未单独跑同款探针（同家族方言大概率
+ * 一致，但仍标"待同款探针"）。
  */
 export const PROBED_VISION = Object.freeze({
   "agnes-3.0-flash": true,
+  // ⚠️ 死条目：当前 /v1/models 目录 7 条不含 agnes-2.5-pro（官方文档页存在该
+  // 模型，但目录收缩后不复现，见基线 driftLog 2026-10-01）。保留备目录恢复时
+  // 命中；目录无此 id 时 visionOf 永不走到这条。
   "agnes-2.5-pro": true,
   "agnes-2.5-flash": true
 });
@@ -158,6 +166,8 @@ export const PROBED_VISION = Object.freeze({
 export const PROBED_CONTEXT_WINDOWS = Object.freeze({
   "agnes-2.5-flash": 512_000,
   "agnes-3.0-flash": 512_000,
+  // ⚠️ 死条目：当前目录 7 条不含 agnes-2.5-pro（见 PROBED_VISION 同款注），
+  // 保留备目录恢复时命中。
   "agnes-2.5-pro": 1_000_000
 });
 

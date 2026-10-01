@@ -349,13 +349,18 @@ safe-set，保证选择器不空：
 - **思考字段拼写（已实测 2026-10-01）**：三个 chat 模型统一回
   `message.reasoning_content`（`none` 档无思考字段）——pi-ai 读该拼写成立。
   逐模型 `reasoning_effort` 支持面见 §7.2 的 `PROBED_EFFORT` 表。
-- 图像输入方言：**探针已加，待真机运行**——目录无 `input_modalities` 可读，模型已按 §7.1.1
+- 图像输入方言：**已实测（2026-10-01 真机）**——目录无 `input_modalities` 可读，模型已按 §7.1.1
   的硬编码 `PROBED_VISION` 表标为 vision（`agnes-3.0-flash` / `agnes-2.5-pro` /
-  `agnes-2.5-flash`），但 **wire 拼写（`image_url` 块还是 `image` 字段）与上限
-  未知**。`test/live-contract.mjs` §2d 已加探针：对 `agnes-3.0-flash` 用两种
-  拼写（`{type:"image_url"}` / `{type:"image"}`）各发一次，200 = 接受、400 =
-  平台原文点名它要的字段——跑完把结果写回这里与基线。真机运行
-  `npm run test:live:contract`（需 `AGNES_TOKEN_PLAN_API_KEY`）。
+  `agnes-2.5-flash`）。wire 拼写探针（`test/live-contract.mjs` §2d）对
+  `agnes-3.0-flash` 用两种拼写各发一次：
+  - `{type:"image_url", image_url:{url}}`（OpenAI 标准块）→ **HTTP 200，接受**
+  - `{type:"image", image_url:{url}}`（备选拼写）→ **HTTP 500**，平台转发上游
+    报 `Invalid user message at index 0. Please ensure all user messages are
+    valid OpenAI chat completion messages`——**该拼写不被接受**。
+
+  用户实测：向 `agnes-3.0-flash` 发游戏截图能正确识别画面内容（角色/武器/HUD/
+  计时器等），识图能力成立。**结论：图像输入走标准 OpenAI 拼写，与
+  `dsh-llm-pi-ai` 的 `openai-completions` 方言一致，无需特判**。
 
 #### 7.3.1 官方错误码表（中文站文档，抓存 [AGNES-API-docs/2、常见错误码.md](./AGNES-API-docs/2、常见错误码.md)）
 

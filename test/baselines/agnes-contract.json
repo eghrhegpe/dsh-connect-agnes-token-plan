@@ -11,7 +11,9 @@
       "2026-10-01 thinkingField：三个 chat 模型的 message 键均为 content+role+reasoning_content（none 档为 content+role，思考关闭、finish=stop；其余档 max_tokens=8 截断 finish=length）——pi-ai 读 reasoning_content 拼写成立。",
       "2026-10-01 max_tokens 上限：32768 / 65536 / 缺省不发均 200（65536 在 agnes-2.5-flash 与 agnes-2.0-flash 复测），131072 → 400 平台原文「max_tokens 不能超过 65536」（request id 20261001072838712216301z4CHT670）。固化为 meta.maxTokensCap + live-contract §2c 护栏；descriptor 经 PROBED_MAX_TOKENS 声明该值。",
       "2026-10-01 判读纪律披注：agnes-2.0-flash 的 low/high/max 首轮 429（探针节奏撞上 rpm 窗口），60s 退避重跑后全部 200——基线记录的是干净重跑的判读，不是 429 那一轮。",
-      "2026-10-01 基线 cell 键由 seed 的 off 更名为 none：记录的是平台 wire 值的接受度（reasoning_effort 的关思考拼写是 none），与 sensenova-contract.json 词汇一致。"
+      "2026-10-01 基线 cell 键由 seed 的 off 更名为 none：记录的是平台 wire 值的接受度（reasoning_effort 的关思考拼写是 none），与 sensenova-contract.json 词汇一致。",
+      "2026-10-01 图像输入 wire 方言（live-contract §2d，agnes-3.0-flash，max_tokens=8）：`{type:\"image_url\", image_url:{url}}`（OpenAI 标准块）→ 200 接受；`{type:\"image\", image_url:{url}}`（备选）→ 500，平台转发上游报 `Invalid user message at index 0. Please ensure all user messages are valid OpenAI chat completion messages`。结论：图像输入走标准 OpenAI 拼写，与 dsh-llm-pi-ai 的 openai-completions 方言一致，无需特判。用户实测向 agnes-3.0-flash 发游戏截图能正确识别画面内容。agnes-2.5-flash 同家族未单独跑同款探针（大概率一致，仍标待测）。",
+      "2026-10-01 目录无 agnes-2.5-pro：官方文档页（AGNES-API-docs/Agnes 2.5 Pro.md）存在该模型并明说支持文本+图像输入，但当前 /v1/models 目录 7 条不含它——PROBED_VISION / PROBED_CONTEXT_WINDOWS 里 agnes-2.5-pro 条目为死条目（目录无此 id 则永不命中），保留备目录恢复，代码注释与 AGNES-API.md §7.1.1 已标该事实。"
     ]
   },
   "models": [
