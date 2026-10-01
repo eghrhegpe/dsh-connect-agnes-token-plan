@@ -15,7 +15,7 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 
 这个面板把数字搬进 DSH 的 Plugins 页，写代码时不用切网页就能盯住：
 
-- **额度上限**：四个窗口的上限与周期（平台只给上限，不给窗口内已用量——面板**不替平台做减法**，理由见下）
+- **额度窗口**：四个窗口的上限、周期与**平台报出的已用量**（`used / limit` 与百分比）。面板直接引用控制台自己的「当前用量」，进度条是逐字转写、不做减法；`usage_pct` 也是平台算好的
 - **账号累计用量**：控制台口径的累计请求 / 文本 Token / 生图 / 视频秒数 / 活跃天数，以及近 N 天的分桶柱图
 - **套餐对比**：平台**公开**的套餐目录（六档：入门版 / 专业版 / 高级版 × 月付 / 年付），无需登录即可读，用来回答"升级能买到什么"
 - **模型清单**：当前 Key 实际能调哪些模型，其中哪些能看图（按平台 `input_modalities` 判定，不靠名字猜）
@@ -24,7 +24,7 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 
 面板**不代你操作账务**：不改套餐、不代扣额度、不碰 Key 明文；数据来自 Agnes 控制台自己的 API，与网页控制台口径一致。真正会「动」的四部分——注册 provider、挂出图工具、挂视频工具、接入 AgnesCode 桌面端上游——全部 opt-in 且**默认关闭**，不打开时插件退化为纯信息展示。
 
-**注册 provider 时**（面板开关打开），插件把 Agnes 模型接进 DSH 的对话模型选择器，并在 Host 侧纠正 peer 对限频 429 的误判（Agnes 把速率上限错命名为 `quota_exceeded_error`，会被判成额度耗尽而不重试）——限频真正退避重试，模型不再无端 "消失"。
+**注册 provider 时**（面板开关打开），插件把 Agnes 模型接进 DSH 的对话模型选择器，并在 Host 侧纠正 peer 对限频 429 的误判（peer 的 `isQuotaExceededError` 命中面过宽，任何带额度措辞的 429——如 `out of rate budget`——都会被抢判成「额度耗尽」而不重试）——限频真正退避重试，模型不再无端 "消失"。
 
 ## 安装
 
@@ -51,19 +51,19 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 
 登录原理一句话：Host 在后台向 `{consoleBase}/api/user/login` 发**一次**账号密码 POST 换取 access token（Agnes 没有 OIDC 跳转、没有 refresh token），令牌过期或被拒时用同一路径**重登一次**；面板打开时才轮询一个只读本地路由，关掉即停。协议细节（一跳登录、密码明文过 TLS 与「不落盘」纪律、防锁号节流）见 [docs/AUTH.md](docs/AUTH.md)，接口契约见 [docs/AGNES-API.md](docs/AGNES-API.md)。
 
-**为什么不显示「剩余」**：Agnes 控制台只提供**累计**用量（`/api/usage/overview`）与**分桶**用量（`/api/usage/series`），滚动窗口内的已用量拿不到。`上限 − 累计` 是个跨周期的减法，算出来的数没人能负责，所以面板把「上限」与「累计」作为两个独立事实并排显示，并明说它们不可相减。
+**窗口「已用」是平台报出的，面板不计算**：`/api/cn/user/subscription` 直接返回每个窗口的 `used` / `limit` / `reset_at` / `usage_pct`（控制台「当前用量」那一屏的数据源），面板逐字转写并渲染进度条。但 `overview` / `series` 是**账号累计**口径，覆盖的是一段更长的时间——**不能用它去减窗口上限**，那个「剩余」跨周期、没人能担保，所以面板把「窗口用量」与「账号累计」作为两个独立事实并排显示，并明说不可相减。
 
 ## 把 Agnes 模型接进 DSH（可选）
 
 「接入 API」tab 的三张卡按"你为什么来这"排序，而不是按依赖排序：**语言模型**（注册 provider + 勾选推送哪些模型）、**出图工具**——两张都在最前且默认展开；**API Key** 收在最后（默认收起），它是前两张卡的前置条件，由它们指回来。
 
-在「API Key」卡里粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可）：Host 即以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入，还能在「语言模型」卡勾选具体要推送哪些模型。Key 只进 DSH 凭据（引用名 `AGNES_TOKEN_PLAN_API_KEY`）、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
+在「API Key」卡里粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可）：Host 即以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新，还能在「语言模型」卡勾选具体要推送哪些模型。Key 只进 DSH 凭据（引用名 `AGNES_TOKEN_PLAN_API_KEY`）、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
 
-> **免费版与付费 Token Plan 共用同一个 API Key 输入框**：免费版发的 `sk-` 密钥只能调免费全模态模型；付费 Token Plan 发的 `cpk-` 密钥消耗四窗口额度（即「积分额度」tab 读到的上限）。两者都能在此粘贴，本插件不做前缀限制。
+> **免费版与付费 Token Plan 共用同一个 API Key 输入框**：`sk-`（免费版）与 `cpk-`（Token Plan）两类 Key 都走同一份 `/v1/models` 目录，本插件对前缀不做限制；面板「积分额度」tab 读的是**订阅账号**的四窗口上限，免费版 Key 是否消耗该窗口额度由 Agnes 计费口径决定，插件不代判。两者都能在此粘贴。
 
 ## 出图工具（可选，默认关）
 
-面板「出图工具」卡（在「语言模型」下方，默认展开）打开开关后，Host 给 agent 注册工具 `agnes_draw_image`（首选模型由 `drawModelId` 指定），鉴权走同一把 `AGNES_TOKEN_PLAN_API_KEY`。出图模型优先按 catalog 的 `output_modalities` 结构化判定，该字段缺失时退回模型名里的 `image` 段（Agnes 网关不返回这个字段，名字兜底才是实际命中的路径）。注意：工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义），开关值本身立即生效。
+面板「出图工具」卡（在「语言模型」下方，默认展开）打开开关后，Host 给 agent 注册工具 `agnes_draw_image`（首选模型由 `drawModelId` 指定），鉴权走同一把 `AGNES_TOKEN_PLAN_API_KEY`。出图模型优先按 catalog 的 `output_modalities` 结构化判定，该字段在 Agnes 目录上**缺失**时退回模型名里的 `image` 段（名字兜底才是实际命中的路径）。注意：工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义），开关值本身立即生效。
 
 ## 视频工具（可选，默认关）
 
@@ -98,7 +98,7 @@ AI 协作会话请先读 [AGENTS.md](AGENTS.md)。
 ## 诚实声明
 
 - 面板显示的是**控制台自己的口径**，与网页控制台一致；`GET /v1/models` 只区分权限，不计费也不占推理额度；
-- 窗口内的「已用量」平台不提供，所以面板**不显示「剩余」**——上限与累计是两个不同周期的独立事实；
+- 窗口卡片里的「已用」是控制台报出的「当前用量」，面板逐字转写、不做减法；下方「账号累计」覆盖的是另一段时间，不能与窗口上限相减；
 - 令牌被拒时面板明确提示重新登录，而不是静默显示旧数据；
 - 凭据（账号、access token）只经 DSH 凭据服务保存，**密码不落盘**；本插件不写任何明文凭据文件或调试日志。
 

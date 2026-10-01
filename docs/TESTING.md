@@ -42,7 +42,7 @@ npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PL
 | `test/doctor.test.mjs` | `tools/doctor.mjs` 的只读诊断：干净机器、provider/draw/video 三种开关状态与各自的 model 偏好、跨 profile 读各自的私有状态文件、损坏/外来版本文件被点名而非静默丢弃 |
 | `test/agnescode.test.mjs` | 桌面端上游（AgnesCode）：BFF base 钉域、os_crypt 解密与 Local State 密钥解封（AES-GCM 真轮转 + 注入 DPAPI）、采集步进的逐文件分诊全 8 档（file_missing / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform）+ tier↔i18n 双语跨层钉 + catalog/balance 的 URL 精确断言 + 钉域拒非默认端口、订阅池余额解析、逐账号 base 进描述符与签名、独立 publisher 三门、store 拒绝无 base 保存、客户端面花名册（会员徽标） |
 | `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误；推理侧的可选 `ctx.get("llm")` 注册对（`registerAdapter` + `registerConfigurableProviders`，id `agnes-token-plan`）、opt-in 关闭不注册、fiber dispose 释放注册对与全部路由 |
-| `test/error-fix.test.mjs` | `llm-error-fix` 对 429 误判的纠正（Agnes 把速率上限错命名为 `quota_exceeded_error`） |
+| `test/error-fix.test.mjs` | `llm-error-fix` 对 429 误判的纠正（peer 的 `isQuotaExceededError` 把带额度措辞的限频 429 抢判成 `QUOTA`，本层在出流前纠正回 `RATE_LIMIT`） |
 | `test/peer-contract.test.mjs` | 与真 peer 包（pi-ai / dsh-llm*）的契约：可达时逐值比对，不可达时 SKIP |
 | `test/live-contract.mjs` | （仅 `test:live:contract`）重放 `test/baselines/agnes-contract.json` 对 Agnes 推理端点：`/v1/models` 目录核对 + 少量 `reasoning_effort` 探针（限流友好，每格 1 请求不重试）；红 = 平台方言漂移，**不是回归**，修法走 `AGNES-API.md` §7 注释层。**它必须是裸 `.mjs`**（不带 `.test.` 后缀），否则会被扫进默认门禁 |
 

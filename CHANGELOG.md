@@ -203,8 +203,7 @@
 面板花名册每行原来把 `low/medium/xhigh` 对**所有**商汤模型都画出来，但冻结契约表
 `test/baselines/sensenova-contract.json` 里 `xhigh` 只实测过 deepseek-v4-flash（200）、
 `max` 只实测过 glm-5.2（200），`low`/`medium` 对任何模型都**从未实测**（代码依据只是
-平台 400 报错文案里出现过这两个词，而 [SENSENOVA-API.md §7.6](docs/SENSENOVA-API.md)
-明说那串列表是**并集**、各模型支持面不同）——用户点了某家不支持的档就可能 400。
+平台 400 报错文案里出现过这两个词，而那串列表是**并集**、各模型支持面不同）——用户点了某家不支持的档就可能 400。
 现把 `thinkingLevelMapFor` 改为**逐模型门控**（新常量 `PROBED_EFFORT`，数据抄自同一张
 冻结契约，覆盖 low/medium/high/xhigh/max 五格）：`high`（平台默认，全家族实测过）保持
 开，`xhigh` 只对 deepseek-v4-flash 开，`max` 只对 glm-5.2 开；未收录模型默认全关。

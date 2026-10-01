@@ -194,7 +194,7 @@
   `reasoning_effort:"max"` 在 flash-lite / deepseek-v4-flash 上实测 400（glm-5.2 上有效）——平台报错原文 `field ReasoningEffort invalid, should be one of: low, medium, high, xhigh, none`；
   目录 `supported_sampling_parameters` 只声明 `["temperature","stop"]`，文档表格里列的 `top_p`/`frequency_penalty`/`presence_penalty`/`seed`/`n` 一个都不在声明里（思考模式下 temperature 等本就不生效，送不送得动未验证，别假设支持）。
   另外文档写 `max_tokens` 默认 65535，目录实际 `max_output_length` 是 65536；窗口字段是 `context_length` 不是 `context_window`（曾让 `contextWindowOf` 拿不到真实窗口、全体回退 128k，见 `llm-models.js` 与 `test/provider.test.mjs`）。
-- **修法**：与平台行为有关的契约一律以**实测**为准（见 [SENSENOVA-API.md](./SENSENOVA-API.md) §7），官方文档只当线索、不当依据——且各模型页面互相矛盾（GLM 页说 `thinking.type:disabled` 会失败、实测可用；DeepSeek 页与 flash-lite 页都列 `max`、实测两处 400）。实测要点：默认即思考开（flash-lite `message.reasoning`、deepseek/glm/kimi 是 `reasoning_content`，每请求多约 26 个 prompt token、慢约 2.9 倍）；`reasoning_effort:"none"` 关思考（思考字段消失、`reasoning_tokens=0`）；`role:"developer"` 是 400（`supportsDeveloperRole:false` 的依据）；流式 `delta` 含 `content`/`reasoning`/`role`。
+- **修法**：与平台行为有关的契约一律以**实测**为准，官方文档只当线索、不当依据——且各模型页面互相矛盾（GLM 页说 `thinking.type:disabled` 会失败、实测可用；DeepSeek 页与 flash-lite 页都列 `max`、实测两处 400）。实测要点：默认即思考开（flash-lite `message.reasoning`、deepseek/glm/kimi 是 `reasoning_content`，每请求多约 26 个 prompt token、慢约 2.9 倍）；`reasoning_effort:"none"` 关思考（思考字段消失、`reasoning_tokens=0`）；`role:"developer"` 是 400（`supportsDeveloperRole:false` 的依据）；流式 `delta` 含 `content`/`reasoning`/`role`。
 
 ---
 
@@ -207,7 +207,7 @@
   `reasoning_effort`：平台报错列表 `low/medium/high/xhigh/none` 是**并集**；`max` 只有 glm（实测 200）与 v4.1-flash（文档原生）支持，flash-lite / v4-flash 400；`xhigh` 在 v4-flash 实测 200（官方文档称映射到 high）；
   工具链路：DeepSeek 系文档要求带 `tools` 时回传所有历史 `reasoning_content`，否则工具调用链路不完整（不带 tools 时回传也会被忽略）——DSH/pi-ai 若丢弃该字段，deepseek 系多轮工具调用可能断链；
   思考模式采样：DeepSeek 系 temperature / presence_penalty / frequency_penalty 不生效（传入不报错），top_p 思考模式最小 0.95、非思考固定 1.0；GLM top_p 默认 0.95。
-- **修法**：按**模型家族**而不是按「平台」记契约（逐模型表见 [SENSENOVA-API.md](./SENSENOVA-API.md) §7.5）。思考透出不再悬而未决：pi-ai 的 openai-completions 读取 `reasoning_content`/`reasoning`/`reasoning_text` 三种拼写（2026-09 查源码确认），本插件 descriptor 已翻为 `reasoning:true` + `thinkingLevelMap`（`off:"none"` 是平台关思考的拼写，`minimal:null` 不提供，`max` 仅 glm-5.2），profile 默认 `high` 保持平台默认思考开。`isChatModel` 按 `output_modalities` 排除图像生成模型（U 系列对话端点 404），避免把不可聊的模型挂进选择器。
+- **修法**：按**模型家族**而不是按「平台」记契约（现行逐模型契约见 [AGNES-API.md](./AGNES-API.md) §7）。思考透出不再悬而未决：pi-ai 的 openai-completions 读取 `reasoning_content`/`reasoning`/`reasoning_text` 三种拼写（2026-09 查源码确认），本插件 descriptor 已翻为 `reasoning:true` + `thinkingLevelMap`（`off:"none"` 是平台关思考的拼写，`minimal:null` 不提供，`max` 仅 glm-5.2），profile 默认 `high` 保持平台默认思考开。`isChatModel` 按 `output_modalities` 排除图像生成模型（U 系列对话端点 404），避免把不可聊的模型挂进选择器。
 
 ---
 

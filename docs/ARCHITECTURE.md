@@ -49,7 +49,7 @@
 - `util.ts`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
 - `state-store.ts`：按 profile 分段的状态文件读写基建（catalog / provider / draw 三份状态共用，见 [PITFALLS.md](./PITFALLS.md) §23）。
 - `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` 经此模块注入并发 publish 门控。
-- `llm-models.ts` / `llm-adapter.ts` / `llm-retry.ts` / `llm-error-fix.ts`：推理侧的纯逻辑映射（无 peer，离线可测）、依赖 peer 的适配器半边、429 退避策略、以及 Agnes 把速率上限错命名为 `quota_exceeded_error` 的纠正。
+- `llm-models.ts` / `llm-adapter.ts` / `llm-retry.ts` / `llm-error-fix.ts`：推理侧的纯逻辑映射（无 peer，离线可测）、依赖 peer 的适配器半边、429 退避策略、以及 peer 对限频 429 的误判纠正（`isQuotaExceededError` 命中面过宽，带额度措辞的 429 被抢判成 `QUOTA` 而不重试）。
 - `draw.ts` / `draw-store.ts`：出图工具（`agnes_draw_image`）与它的面板开关。
 - `agnescode*.ts`：桌面端上游（AgnesCode）——本机登录态采集（Chromium os_crypt + DPAPI，逐文件分诊）、逐账号 BFF base 钉域、独立 store / publisher / provider id / 开关，与主链路完全隔离（ROADMAP §6.3）。
 - `client.js`：Plugins 页内的配置卡与三个 tab（积分额度 / 接入 API / AgnesCode）+ 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。

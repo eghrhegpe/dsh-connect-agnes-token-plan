@@ -34,7 +34,7 @@
 >
 > **2026-10 迁移补记**：插件整体迁到 Agnes 控制台，上段的文件名与端点是 2026-09 的落地面。
 > 现行对应关系：`test/baselines/sensenova-contract.json` → `test/baselines/agnes-contract.json`、
-> `docs/SENSENOVA-API.md` §7 → `docs/AGNES-API.md` §7、`test/live-jwks.test.mjs`（已随 OIDC 线删除）
+> 商汤推理契约表 → `docs/AGNES-API.md` §7、`test/live-jwks.test.mjs`（已随 OIDC 线删除）
 > → `test/live-contract.mjs`。§2.2 正文已按现行名字更新。
 
 ### 2.1 拆 `index.js`：控制面状态机独立成模块
@@ -157,19 +157,21 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - `test/retry.test.mjs` 已落地（peer-free）：断言 `buildRetryPolicyConfig` 形状（排除 QUOTA/ACCOUNT_QUOTA、保留 RATE_LIMIT）、`exhaustedModelIds`、`buildDescriptors` 排除借尽模型、`rosterWithAvailability` 标记；peer 可达时额外断言 `resolveRetryPolicy` 解析结果。
 - 验证只跑 `parsers` / `provider` / `auth` 相关 + 新增 `retry`；**不跑全量**（`AGENTS.md` 并行纪律：禁连跑全量 vitest 卡死用户机）。
 
-## 4. 官方文档保真：不提炼、不 git rm、保留逐字原文
+## 4. 官方文档保真（历史决策存档：文件已随迁移移除）
 
-`docs/sensenova-api-reference/*.md`（12 个，商汤**官方一手信源**，已由 `.txt` 改名 `.md`）的处理原则已据评审纠偏——**原「提炼回 SENSENOVA-API.md 后 git rm」方案作废**，理由：
+> ⚠️ **本节所议的 `docs/sensenova-api-reference/*.md` 与 `SENSENOVA-API.md` 已于迁移到 Agnes 控制台时删除**，以下记录保留供历史回溯，**不再是现行依据**。
 
-- **权威性问题**：这些是逐字引用才有意义的一手信源（错误码 `429 quota_exceeded_error`、参数名 `reasoning_effort`/`supported_features`、模型实测能力表）。转述会漂，且 `codes.js`/`parsePools` 的判据靠 grep 原文兜底，丢原文即丢依据。
+`docs/sensenova-api-reference/*.md`（12 个，商汤**官方一手信源**）当时曾据评审纠偏——**原「提炼回 SENSENOVA-API.md 后 git rm」方案作废**，理由：
+
+- **权威性问题**：这些是逐字引用才有意义的一手信源（错误码 `429 quota_exceeded_error`、参数名 `reasoning_effort`/`supported_features`、模型实测能力表）。转述会漂，丢原文即丢依据。
 - **git rm 前提错误**：`upstream/SenseNova AI API does/` 与 `docs/sensenova-api-reference/` 那份**逐字节相同，但 upstream 那份 0 文件进 git**（是参考应用 checkout，不在本插件版本控制）。`docs/sensenova-api-reference/` 那份是**唯一受版本控制的官方副本**——`git rm` 不是去重，是删除唯一受控信源。
 - **无实际问题需解**：这 12 个 txt **不在 `package.json` 的 `files`** → 不进发布包；位于 `docs/` 子目录 → 不触发 `docs.test.mjs` 孤儿文件规则；`SENSENOVA-API.md` 本就是独立的「实测注释层」（开篇即声明「官方文档多处不符，以实测为准」），揉进原文反而搅乱它已维护的「官方 vs 实测」边界。
 
-**正确做法（天花板 = 改名，不越界）**：
+**当时的正确做法（天花板 = 改名，不越界）**：
 
 - **保留官方原文逐字**，作为只读一手信源。
 - **最多改名**：`.txt` → `.md`（纯内容保留、零权威损失，仅换扩展名让查看器渲染更好）；顺手把误译残留目录名 `SenseNova AI API does` 改为 `sensenova-api-reference`。
-- **[SENSENOVA-API.md](./SENSENOVA-API.md) 保持「实测注释层」身份**，改为**链接**到官方原文（如「官方模型列表见 `sensenova-api-reference/11、模型列表.md`」），而非抄录——形成「官方一手信源（逐字，只读）+ 插件实测注释（我们维护）」两层互不污染。
+- **`SENSENOVA-API.md` 保持「实测注释层」身份**，改为**链接**到官方原文，而非抄录——形成「官方一手信源（逐字，只读）+ 插件实测注释（我们维护）」两层互不污染。
 - **不做**：提炼/转述、把官方原文合并进 SENSENOVA-API.md、`git rm` 官方副本。
 - **不做**「把 `upstream/` 拉进库」的反向操作（`upstream/` 仍 gitignored、独立历史）。
 
@@ -423,5 +425,4 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 - [AGENTS.md](../AGENTS.md) — 验证裁剪、红线
 - [TESTING.md](./TESTING.md) — `docs.test.mjs` 孤儿文件 / 跨文件重复表规则
 - [AGNES-API.md](./AGNES-API.md) — Agnes 接口全集（现行事实源：控制台额度侧 + 推理侧）
-- [SENSENOVA-API.md](./SENSENOVA-API.md) — 商汤接口全集（**历史档**；§4 保真：链接官方原文，不提炼）
 - [PITFALLS.md](./PITFALLS.md) — 改代码前避坑（§16 peer 解析、§6 凭据事故）

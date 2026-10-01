@@ -455,7 +455,7 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   单一常量（`llm-adapter` 派发它、快照播报它，展示与行为构造上不可漂移）只在花名册
   头部说**一次**（`llm.rosterThinkingDefault`）。首版曾把「默认思考强度 high」逐行打印，
   当日即被指出：七行同样的字是噪音不是信息——**逐行重复恒定量**这个反模式记在此处。
-   修订（2026-09-30 两连）：①扩展档 xhigh 原对**所有**模型开放、max 只 glm-5.2 特判，改为逐模型门控（当时叫 EXTENDED_THINKING，数据抄自冻结契约 test/baselines/sensenova-contract.json）：xhigh 只对 deepseek-v4-flash 开（唯一实测 200 者）、max 只对 glm-5.2 开，未实测模型两档都关；②同日再收紧一档——low/medium 原对全家族无条件开放（依据只是平台 400 报错文案里出现过这两个词，而 SENSENOVA-API.md §7.6 明说那串列表是**并集**、各模型支持面不同），并入同一张门控表（改名 PROBED_EFFORT，覆盖 low/medium/high/xhigh/max 五格）：high（平台默认，全家族实测过）保持开，low/medium 尚无逐模型探针（test/live-contract.mjs 已扩探针段，跑完按 200/400 结果翻表），两格先关——面板未实测不画。
+   修订（2026-09-30 两连）：①扩展档 xhigh 原对**所有**模型开放、max 只 glm-5.2 特判，改为逐模型门控（当时叫 EXTENDED_THINKING，数据抄自冻结契约 test/baselines/sensenova-contract.json）：xhigh 只对 deepseek-v4-flash 开（唯一实测 200 者）、max 只对 glm-5.2 开，未实测模型两档都关；②同日再收紧一档——low/medium 原对全家族无条件开放（依据只是平台 400 报错文案里出现过这两个词，而那串列表是**并集**、各模型支持面不同），并入同一张门控表（改名 PROBED_EFFORT，覆盖 low/medium/high/xhigh/max 五格）：high（平台默认，全家族实测过）保持开，low/medium 尚无逐模型探针（test/live-contract.mjs 已扩探针段，跑完按 200/400 结果翻表），两格先关——面板未实测不画。
    收官（同日 22:11 探针首跑）：PROBED_EFFORT 已按实锤 200 翻表——sensenova-6.8-flash-lite / deepseek-v4-flash / glm-5.2 三家 low+medium 全开，deepseek-flash / kimi-k3 各开 medium；deepseek-v4-pro 两格与另两家 low 格仍 INDEFINITE（429 是限流节奏答案、非 400 参数拒——重跑翻表，不造假证），契约表 driftLog 留了证据原文。
 - **倍率与格式**：`trendMultipliers` 一直存在但只在趋势表露面。**取舍**：抽
   `matchMultiplier` 单一匹配器，趋势行与花名册行共用——同一模型的 `×N` 两处

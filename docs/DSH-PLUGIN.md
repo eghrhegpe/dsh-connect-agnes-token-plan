@@ -149,6 +149,6 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — 插件内部双仓库关系 / Host-Client 分流 / 数据流
 - [SETUP.md](./SETUP.md) — 安装、配置字段、重启注意事项
-- [AGNES-API.md](./AGNES-API.md) — Agnes 接口全集（额度侧 + 推理侧）；商汤时代的接口原文见 [SENSENOVA-API.md](./SENSENOVA-API.md)（历史档）
+- [AGNES-API.md](./AGNES-API.md) — Agnes 接口全集（额度侧 + 推理侧）
 - [PITFALLS.md](./PITFALLS.md) — 真实踩坑（含 DSH 加载 / 重启 / 同源 / peer 依赖相关）
 - 范本：`~/.dsh/fork/dsh-connect-qoder/README.md`（DSH 插件 README 的参考写法）
