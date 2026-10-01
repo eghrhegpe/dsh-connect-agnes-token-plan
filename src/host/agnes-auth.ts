@@ -61,7 +61,7 @@ export const AUTH_DEFAULTS = Object.freeze({
 });
 
 /** RFC 7519 `exp`, in epoch MILLIS, or `null` when the token carries none. */
-export function readJwtExpiry(token) {
+export function readJwtExpiry(token: string) {
   const parts = str(token, "").split(".");
   if (parts.length !== 3) return null;
   try {
@@ -79,7 +79,7 @@ export function readJwtExpiry(token) {
  * @param {string} username - the submitted email.
  * @returns {string} e.g. `ab***@example.com`, or `""`.
  */
-function maskUsername(username) {
+function maskUsername(username: string) {
   const value = str(username, "");
   const at = value.indexOf("@");
   if (at <= 0) return value === "" ? "" : `${value.slice(0, 1)}***`;
@@ -99,7 +99,7 @@ function maskUsername(username) {
  * @param {string} message - the platform's own message, if any.
  * @returns {string} a {@link CODE} value.
  */
-export function classifyLoginFailure(status, message) {
+export function classifyLoginFailure(status: number, message: string) {
   const text = str(message, "").toLowerCase();
   // A named credential refusal wins over the status: Agnes answers 401 for a
   // bad password, but a 400 carrying "invalid username or password" means the
@@ -182,7 +182,7 @@ const UNIT_MS = Object.freeze({
  * @param {number} [nowMs] - clock source, for an HTTP-date header.
  * @returns {number|null} milliseconds to wait, or null.
  */
-export function parseRetryAfterMs(response, message, nowMs = Date.now()) {
+export function parseRetryAfterMs(response: { headers?: { get?: (name: string) => string | null } }, message: string, nowMs: number = Date.now()) {
   const header = response?.headers?.get?.("retry-after");
   if (typeof header === "string" && header.trim() !== "") {
     const trimmed = header.trim();
@@ -198,7 +198,7 @@ export function parseRetryAfterMs(response, message, nowMs = Date.now()) {
   if (stated !== null) {
     const amount = Number(stated[1]);
     const unitRaw = stated[2]!;
-    const unit = UNIT_MS[unitRaw.toLowerCase()] ?? UNIT_MS[unitRaw];
+    const unit = (UNIT_MS as Record<string, number>)[unitRaw.toLowerCase()] ?? (UNIT_MS as Record<string, number>)[unitRaw];
     if (Number.isFinite(amount) && amount > 0 && unit !== undefined) return Math.round(amount * unit);
   }
   return null;
@@ -218,7 +218,7 @@ export function createAuth(overrides = {}) {
   const config = resolveAuthConfig(overrides);
   return {
     config,
-    login(credentials, options) {
+    login(credentials: { username?: string; password?: string }, options?: { onTrace?: (trace: unknown, error: unknown) => void }) {
       return loginWith(config, credentials, options);
     },
     /**
@@ -251,22 +251,22 @@ export function createAuth(overrides = {}) {
  * @throws {Error & {code?: string}} a {@link CODE} tagged failure.
  */
 export async function loginWith(
-  cfg,
-  credentials,
+  cfg: any,
+  credentials: { username?: string; password?: string } | undefined,
   options: { onTrace?: (trace: unknown, error: unknown) => void } = {}
 ) {
   const username = str(credentials?.username, "");
   const password = typeof credentials?.password === "string" ? credentials.password : "";
   const hops: unknown[] = [];
   const trace = {
-    hop(entry) {
+    hop(entry: unknown) {
       hops.push(entry);
     },
     done() {
       return hops;
     }
   };
-  const finish = (error) => {
+  const finish = (error: { trace?: unknown } | undefined | null) => {
     try {
       // The sanitized hop record rides on the thrown error so the route layer
       // can persist it under its own filename and hand the panel a pointer
