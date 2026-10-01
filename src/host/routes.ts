@@ -710,6 +710,15 @@ export function registerRoutes(ctx, wiring) {
   // render. One scan per process (the single long-poll owns it); cleared when
   // the walk settles.
   let raccoonScan: { code: string; url: string } | null = null;
+  // The LAST harvest walk's diagnosis rows (the /agnescode GET's `harvest`
+  // block). Route-scoped like `raccoonScan`, for the same reason: a
+  // handler-local resets on EVERY request, and the tab's 60 s poll (plus the
+  // `void load()` a harvest itself triggers) would wipe the rows before the
+  // user read them — the workbuddy diagnosis is the tab's whole point.
+  let lastHarvest: { ok: boolean; attempts: object[] } | null = null;
+  // One harvest walk at a time: the walk spawns PowerShell, and two tabs (or
+  // a poll racing a click) must share one walk instead of racing two.
+  let agnescodeHarvestInFlight: Promise<{ ok: boolean; attempts: object[] }> | null = null;
   const offRaccoon = ctx.webServer.register({
     kind: "exact",
     path: RACCOON_PATH,
@@ -942,7 +951,6 @@ export function registerRoutes(ctx, wiring) {
       // The GET's secret-free state, reused by every POST branch. The
       // `harvest` block carries the last walk's diagnosis rows (tier codes
       // and shape facts only — a token NEVER enters this payload).
-      let lastHarvest: { ok: boolean; attempts: object[] } | null = null;
       const agnescodeState = async () => {
         const switchState = await (agnescodeSwitch ? agnescodeSwitch.enabled() : null).catch(() => null);
         const effectiveEnabled = switchState === true;
@@ -1060,7 +1068,7 @@ export function registerRoutes(ctx, wiring) {
           await agnescodeSwitch.save(body.value.enabled);
           await publishFromStore();
         } catch (error) {
-          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
           return;
         }
         await answer();
@@ -1074,21 +1082,32 @@ export function registerRoutes(ctx, wiring) {
           return;
         }
         try {
-          const walk = await harvestAgnescodeLocalSession();
-          lastHarvest = { ok: walk.ok, attempts: walk.attempts };
+          // Single-flighted: the WHOLE walk (harvest + store save) runs once;
+          // a concurrent request joins the same promise and shares both the
+          // saved credential and the diagnosis rows.
+          if (agnescodeHarvestInFlight === null) {
+            agnescodeHarvestInFlight = (async () => {
+              const walk = await harvestAgnescodeLocalSession();
+              lastHarvest = { ok: walk.ok, attempts: walk.attempts };
+              if (walk.ok !== true) return { ok: false, attempts: walk.attempts };
+              const expMs = decodeAgnescodeJwtExpMs(walk.session.accessToken);
+              await agnescodeStore.save({
+                accessToken: walk.session.accessToken,
+                bffBase: walk.session.bffBase,
+                ...(walk.session.userId !== "" ? { userId: walk.session.userId } : {}),
+                ...(walk.session.nickname !== "" ? { nickname: walk.session.nickname } : {}),
+                ...(expMs !== undefined ? { expiresAtMs: expMs } : {})
+              });
+              return { ok: true, attempts: walk.attempts };
+            })().finally(() => {
+              agnescodeHarvestInFlight = null;
+            });
+          }
+          const walk = await agnescodeHarvestInFlight;
           if (walk.ok !== true) {
             await answer({ ok: false, status: "not_found", harvest: walk });
             return;
           }
-          await agnescodeStore.save({
-            accessToken: walk.session.accessToken,
-            bffBase: walk.session.bffBase,
-            ...(walk.session.userId !== "" ? { userId: walk.session.userId } : {}),
-            ...(walk.session.nickname !== "" ? { nickname: walk.session.nickname } : {}),
-            ...(decodeAgnescodeJwtExpMs(walk.session.accessToken) !== undefined
-              ? { expiresAtMs: decodeAgnescodeJwtExpMs(walk.session.accessToken) }
-              : {})
-          });
         } catch (error) {
           await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
           return;
@@ -1115,7 +1134,7 @@ export function registerRoutes(ctx, wiring) {
             await agnescodePublisher.publish(AGNESCODE_FALLBACK_MODELS, "");
           }
         } catch (error) {
-          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
           return;
         }
         await answer({ ok: true, status: "logged_out" });

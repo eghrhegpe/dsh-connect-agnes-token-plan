@@ -122,6 +122,8 @@ const GOOD_SESSION = {
       trustAgnescodeBffBase("https://evil.example.com/v1") === null);
     check("a look-alike suffix is refused (not endsWith alone)",
       trustAgnescodeBffBase("https://api-agnes-code.agnes-ai.cn.evil.com/v1") === null);
+    check("a non-default port is refused (a hostile file must not aim the token at a listener)",
+      trustAgnescodeBffBase("https://api-agnes-code.agnes-ai.cn:8443/v1") === null);
     check("a non-URL and an empty value are refused",
       trustAgnescodeBffBase("not a url") === null && trustAgnescodeBffBase("") === null);
 
@@ -268,11 +270,47 @@ const GOOD_SESSION = {
       evil.ok === false && evil.attempts[0]?.tier === AGNESCODE_HARVEST_TIER.UNTRUSTED_BASE,
       JSON.stringify(evil.attempts));
 
-    // Tier: a platform with no candidate layout at all.
+    // Tier: an unknown platform with no candidate layout at all — now an
+    // up-front refusal, because non-Windows harvest paths are unimplemented
+    // (a walk there would show a misleading `no_key`).
     const unknownPlatform = await harvestAgnescodeLocalSession({ ...io, platform: "sunos" });
     check("an unknown platform reads as unsupported_platform",
       unknownPlatform.ok === false && unknownPlatform.attempts[0]?.tier === AGNESCODE_HARVEST_TIER.UNSUPPORTED_PLATFORM,
       JSON.stringify(unknownPlatform.attempts));
+    const darwin = await harvestAgnescodeLocalSession({ ...io, platform: "darwin", env: { HOME: root } });
+    check("macOS reads as unsupported_platform too (state.vscdb variant unimplemented)",
+      darwin.ok === false && darwin.attempts[0]?.tier === AGNESCODE_HARVEST_TIER.UNSUPPORTED_PLATFORM,
+      JSON.stringify(darwin.attempts));
+
+    // Tier: the file is there but the reader cannot open it (permissions).
+    const rootUnreadable = mkdtempSync(join(tmpdir(), "agnescode-unread-"));
+    const dirUnreadable = join(rootUnreadable, "AgnesCode");
+    mkdirSync(dirUnreadable, { recursive: true });
+    // The file exists on disk (readDir is the real readdir) but the injected
+    // reader refuses it — the walk must tell the tiers apart.
+    writeFileSync(join(dirUnreadable, "code-auth-session.cn.v1"), blob);
+    const unreadable = await harvestAgnescodeLocalSession({
+      ...io,
+      env: { APPDATA: rootUnreadable },
+      readFile: async (path) => {
+        if (String(path).endsWith(".v1")) throw new Error("EACCES: permission denied");
+        return (await import("node:fs/promises")).readFile(path);
+      }
+    });
+    check("an unreadable session file reads as unreadable, not file_missing",
+      unreadable.ok === false && unreadable.attempts[0]?.tier === AGNESCODE_HARVEST_TIER.UNREADABLE,
+      JSON.stringify(unreadable.attempts));
+
+    // Tier: decrypts fine but the plaintext is not JSON (shape drift).
+    const rootMalformed = mkdtempSync(join(tmpdir(), "agnescode-malformed-"));
+    const dirMalformed = join(rootMalformed, "AgnesCode");
+    mkdirSync(dirMalformed, { recursive: true });
+    writeFileSync(join(dirMalformed, "code-auth-session.cn.v1"), encryptSessionBlob("this is not json"));
+    writeFileSync(join(dirMalformed, "Local State"), JSON.stringify({ os_crypt: { encrypted_key: Buffer.concat([Buffer.from("DPAPI", "latin1"), randomBytes(32)]).toString("base64") } }));
+    const malformed = await harvestAgnescodeLocalSession({ ...io, env: { APPDATA: rootMalformed } });
+    check("non-JSON plaintext reads as malformed",
+      malformed.ok === false && malformed.attempts[0]?.tier === AGNESCODE_HARVEST_TIER.MALFORMED,
+      JSON.stringify(malformed.attempts));
 
     // Order: the CN build wins over another region variant in the same dir.
     const rootTwo = mkdtempSync(join(tmpdir(), "agnescode-two-"));
@@ -291,6 +329,8 @@ const GOOD_SESSION = {
     rmSync(rootNoToken, { recursive: true, force: true });
     rmSync(rootEvil, { recursive: true, force: true });
     rmSync(rootTwo, { recursive: true, force: true });
+    rmSync(rootUnreadable, { recursive: true, force: true });
+    rmSync(rootMalformed, { recursive: true, force: true });
   } catch (error) {
     fail("harvest walk", error);
   }
@@ -314,6 +354,16 @@ const GOOD_SESSION = {
       catalog?.length === 3 && catalog[0].id === "agnes-3.0-flash" && catalog[0].memberOnly === false
       && catalog[1].memberOnly === true && catalog[1].contextWindow === 1048576,
       JSON.stringify(catalog));
+    // The /v1 suffix rides the per-account base; a drift here would 404 the
+    // whole provider against a silently different endpoint (the balance probe
+    // pins its own URL below — this one pins the catalogue's).
+    let catalogUrl = "";
+    await fetchAgnescodeCatalog(credential, async (url) => {
+      catalogUrl = String(url);
+      return { ok: true, status: 200, json: async () => ({ data: rows }) };
+    });
+    check("the catalogue addresses {per-account base}/models exactly",
+      catalogUrl === "https://api-agnes-code.agnes-ai.cn/v1/models", catalogUrl);
     check("vision stays false — the rows declare no image modality (never invented)",
       catalog.every((row) => row.vision === false));
     check("a non-text model_type is dropped, a duplicate id deduped",
@@ -617,6 +667,21 @@ const GOOD_SESSION = {
     const needed = ["tab.agnescode", "agnescode.title", "agnescode.desc", "agnescode.notLogged", "agnescode.harvestFail"];
     check("the zh dictionary covers the tab's keys",
       needed.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""));
+
+    // The tier values the harvest emits must map onto real dictionary keys in
+    // BOTH languages: the tab renders `agnescode.tier.${tier}`, and without
+    // this pin a renamed tier would sail through every suite and render as a
+    // bare key at runtime.
+    const tierValues = Object.values(AGNESCODE_HARVEST_TIER);
+    check("every harvest tier has a zh + en tier label",
+      tierValues.every((tier) => typeof dictionaries.zh[`agnescode.tier.${tier}`] === "string"
+        && dictionaries.zh[`agnescode.tier.${tier}`] !== ""
+        && typeof dictionaries.en[`agnescode.tier.${tier}`] === "string"
+        && dictionaries.en[`agnescode.tier.${tier}`] !== ""),
+      tierValues.filter((tier) => typeof dictionaries.zh[`agnescode.tier.${tier}`] !== "string").join(","));
+    check("the dictionary defines no tier label the harvest never emits (no dead keys)",
+      !Object.keys(dictionaries.zh).some((key) => key.startsWith("agnescode.tier.")
+        && !tierValues.includes(key.slice("agnescode.tier.".length))));
   } catch (error) {
     fail("client surface", error);
   }

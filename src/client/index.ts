@@ -5,9 +5,9 @@
  * slot). The card renders the Agnes Token Plan quota — the current plan's four
  * rate-limit windows (requests per 5 h / per week, images per day, video per
  * day), the account's cumulative usage, and the per-bucket usage chart — plus
- * the three-tab layout (quota / api / raccoon). The data comes from the Host's
- * read-only snapshot route, polled only while the card is mounted — the
- * Client folds no session events of its own.
+ * the four-tab layout (quota / api / raccoon / agnescode). The data comes from
+ * the Host's read-only snapshot route, polled only while the card is mounted —
+ * the Client folds no session events of its own.
  *
  * The sources live in `src/client/*.ts` and are bundled into the root
  * `client.js` artifact by tsdown (IIFE, see `tsdown.config.mjs`); the tests

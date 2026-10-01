@@ -651,9 +651,9 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     // console nobody had signed in to replaced the whole page with a form —
     // taking the API-key tab and the Raccoon tab down with it, neither of
     // which reads the console at all (ARCHITECTURE.md §5). "No snapshot yet"
-    // and "no console account" must both leave the three tabs reachable.
-    check("the first frame already carries all three tabs",
-      firstFrame.includes("tab.quota") && firstFrame.includes("tab.api") && firstFrame.includes("tab.raccoon"),
+    // and "no console account" must both leave the four tabs reachable.
+    check("the first frame already carries all four tabs",
+      firstFrame.includes("tab.quota") && firstFrame.includes("tab.api") && firstFrame.includes("tab.raccoon") && firstFrame.includes("tab.agnescode"),
       firstFrame.join("\n"));
     // …and the quota tab's body is a TAB's content, not the page: the loading
     // line renders inside the tab strip, so switching tabs is possible before

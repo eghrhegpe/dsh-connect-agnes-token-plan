@@ -98,6 +98,10 @@ export function trustAgnescodeBffBase(value) {
     return null;
   }
   if (url.protocol !== "https:") return null;
+  // A non-default port is never part of the account's real base; keeping it
+  // would let a hostile session file aim the token at any port on an Agnes
+  // host (a proxy/impostor listener). Only scheme-default ports pass.
+  if (url.port !== "") return null;
   const host = url.hostname.toLowerCase();
   if (!(host === "agnes-ai.cn" || host === "agnes-ai.com"
     || host.endsWith(".agnes-ai.cn") || host.endsWith(".agnes-ai.com"))) {
@@ -215,18 +219,20 @@ export async function unwrapAgnescodeLocalStateKey(localStateRaw, dpapiUnprotect
   // The injected reader returns a Buffer (the production shape) or a string;
   // route BOTH through text before JSON.parse — an `obj()` on a Buffer would
   // read its numeric byte properties and "find" no os_crypt key.
-  const text = typeof localStateRaw === "string"
-    ? localStateRaw
-    : Buffer.isBuffer(localStateRaw) || localStateRaw instanceof Uint8Array
-      ? Buffer.from(localStateRaw).toString("utf8")
-      : JSON.stringify(obj(localStateRaw));
   let source;
-  try {
-    source = typeof localStateRaw === "string" || Buffer.isBuffer(localStateRaw) || localStateRaw instanceof Uint8Array
-      ? JSON.parse(text)
-      : localStateRaw;
-  } catch (why) {
-    throw new Error(`Local State is not JSON: ${why instanceof Error ? why.message : String(why)}`);
+  if (typeof localStateRaw === "string" || Buffer.isBuffer(localStateRaw) || localStateRaw instanceof Uint8Array) {
+    const text = typeof localStateRaw === "string" ? localStateRaw : Buffer.from(localStateRaw).toString("utf8");
+    try {
+      source = JSON.parse(text);
+    } catch {
+      // A FIXED phrase, deliberately without the parse error's message: V8's
+      // JSON errors quote the offending input ("Unexpected token 'x', ...is
+      // not valid JSON"), and that quote would carry a fragment of the user's
+      // `Local State` into the harvest attempts and on to the panel response.
+      throw new Error("Local State is not valid JSON");
+    }
+  } else {
+    source = obj(localStateRaw);
   }
   const encryptedKeyB64 = str(obj(obj(source).os_crypt).encrypted_key, "");
   if (encryptedKeyB64 === "") throw new Error("Local State carries no os_crypt.encrypted_key");
@@ -263,12 +269,27 @@ export async function defaultDpapiUnprotect(wrapped) {
     });
     const chunks = [];
     let failure = "";
+    // A hung PowerShell must not hold the harvest (and, through the request
+    // path, the publish chain) forever: 10 s is generous for a local DPAPI
+    // call and kills the child instead.
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("DPAPI unprotect timed out (10s)"));
+    }, 10_000);
     child.stdout.on("data", (chunk) => chunks.push(chunk));
     child.stderr.on("data", (chunk) => {
       failure += chunk.toString();
     });
-    child.on("error", reject);
+    // An early child exit (crash before reading stdin) makes the write fail
+    // with EPIPE; swallowed here, the close handler rejects with the real
+    // exit status instead of an unhandled stream error.
+    child.stdin.on("error", () => {});
+    child.on("error", (why) => {
+      clearTimeout(timer);
+      reject(why);
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
       if (code !== 0) {
         reject(new Error(`DPAPI unprotect failed (exit ${code})${failure ? `: ${failure.slice(0, 200)}` : ""}`));
         return;
@@ -307,6 +328,16 @@ export async function harvestAgnescodeLocalSession(options: any = {}) {
 
   /** One tier row: {file, tier, detail?} — detail carries shapes, never values. */
   const attempts = [];
+
+  // Windows is the only platform with a VERIFIED harvest path (os_crypt key
+  // via DPAPI + PowerShell). The darwin/linux candidates below describe where
+  // the App WOULD keep its data, but the macOS IDE variant reads state.vscdb
+  // (sqlite) and neither non-Windows crypto path has been probed — walking
+  // them would surface a misleading `no_key` for what is really "untested
+  // platform", so they are refused up front with that fact.
+  if (platform !== "win32") {
+    return { ok: false, attempts: [{ file: null, tier: AGNESCODE_HARVEST_TIER.UNSUPPORTED_PLATFORM, detail: `no verified harvest path for ${platform} yet (Windows only; macOS reads state.vscdb — unimplemented)` }] };
+  }
 
   const appDirs = AGNESCODE_APP_DATA_CANDIDATES
     .filter((candidate) => candidate.platform === platform)

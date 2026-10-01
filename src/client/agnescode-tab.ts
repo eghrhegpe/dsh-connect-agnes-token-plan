@@ -26,8 +26,7 @@
  */
 import { AGNESCODE_PATH } from "./const.ts";
 import { clockLong, count, format, tokenSize } from "./format.ts";
-import { postJson, postJsonOrThrow } from "./http.ts";
-import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
+import { postJson, postJsonOrThrow } from "./http.ts";import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
 
@@ -136,10 +135,11 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
     setHarvestBusy(true);
     setNote(null);
     try {
-      // The route answers with the FULL state either way; a failed walk
-      // carries `ok:false` + the diagnosis rows, which the note below
-      // renders — the rows are the message, not an error string.
-      const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "harvest" });
+      // `postJson`, NOT `postJsonOrThrow`: a failed walk answers `ok:false`
+      // WITH the diagnosis rows — the rows ARE the message, and the throw
+      // face would reduce them to a bare "HTTP 200". The branch below reads
+      // the refusal payload the same way the Host writes it.
+      const body = await postJson(AGNESCODE_PATH, { action: "harvest" });
       if (alive.current) {
         const attempts = Array.isArray(body?.harvest?.attempts) ? body.harvest.attempts : [];
         setState((current) => (current ? { ...current, harvest: { ok: body?.ok === true, attempts } } : current));
@@ -261,16 +261,20 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
       ? h("div", { style: { ...S.formNote, fontSize: 12, marginTop: 8 }, role: "status" }, note)
       : null,
     // The credit pool and the roster the adapter offers. The pool is a
-    // subscription pool: total, then the platform's own split.
+    // subscription pool: total, then the platform's own split. A pool the
+    // route could not read (`balance === null`) draws NOTHING — a rendered
+    // zero would present an unread figure as a measurement.
     loggedIn
       ? h(
           "div",
           { style: { marginTop: 12 } },
-          h(
-            "div",
-            { style: { ...S.muted, fontSize: 12, marginBottom: 2 } },
-            format(tt("agnescode.balance"), { balance: count(balance?.totalBalance ?? 0) })
-          ),
+          balance !== null
+            ? h(
+                "div",
+                { style: { ...S.muted, fontSize: 12, marginBottom: 2 } },
+                format(tt("agnescode.balance"), { balance: count(balance.totalBalance ?? 0) })
+              )
+            : null,
           balance !== null
             ? h(
                 "div",
