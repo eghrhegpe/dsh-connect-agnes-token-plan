@@ -493,6 +493,15 @@ try {
     check("the video window does not claim a seconds unit",
       res.body?.quota?.windows?.[3]?.unit === "video" && res.body?.quota?.windows?.[3]?.limit === 500,
       JSON.stringify(res.body?.quota?.windows?.[3]));
+    // The windows also carry the platform's own per-window consumption, merged
+    // from the subscription fetch — quoted verbatim, never computed here.
+    check("each window carries the platform's own used figure",
+      JSON.stringify(res.body?.quota?.windows?.map((w) => [w.key, w.used])) ===
+        JSON.stringify([["requests5h", 100], ["requestsWeekly", 900], ["imagesDaily", 2], ["videoDaily", 5]]),
+      JSON.stringify(res.body?.quota?.windows?.map((w) => [w.key, w.used])));
+    check("the 5h window carries its reset moment",
+      res.body?.quota?.windows?.[0]?.resetInSeconds === 600 && res.body?.quota?.windows?.[0]?.usagePct === 1.3,
+      JSON.stringify(res.body?.quota?.windows?.[0]));
     check("the subscription expiry became a number",
       res.body?.quota?.expiresAt === 1793491200, String(res.body?.quota?.expiresAt));
     check("no quota source degraded", res.body?.quota?.error === null,

@@ -40,8 +40,11 @@
         "imagesDaily": 4000, "videoDaily": 500 } },
     // 四个账号级窗口上限。unit 为 "requests" / "images" / "video"；
     // video 刻意不带秒数主张（平台只给了 video_daily_limit，未说单位）。
-    // 没有 used/remaining —— 控制台只提供累计用量，窗口内已用量拿不到。
-    "windows": [{ "key": "requests5h", "unit": "requests", "limit": 30000, "windowHours": 5 }],
+    // 控制台的 `subscription.usage` 给到该窗口时，会带上平台自己报出的 `used`
+    // 与窗口起止 / 重置时间（下面省略号处）；没有就留空，面板不画进度条。
+    // 没有 remaining —— 控制台从不报「剩余」，面板也从不计算它。
+    "windows": [{ "key": "requests5h", "unit": "requests", "limit": 30000, "windowHours": 5,
+      "used": 12345, "resetAt": 1790866800 }],
     // 账号累计用量（控制台口径）。刻意不与上面的上限相减：两者周期不同。
     // **读不到时是 null，不是零值块**——把没读到渲染成「0 次请求」就是把
     // 一次失败伪装成一次测量（面板显示「暂未读到」）。
@@ -120,7 +123,7 @@
 - **控制台读不到时 body 仍然是 `ok:true`**：`quota.consoleConnected:false` 加上 `quota.error.code`（`not_configured` / `auth_error` / `console_error`）。这样 API Key tab 和 AgnesCode tab 仍然可达——它们一个不读控制台、一个连的是桌面 App 上游，被一个缺席模块一起埋掉正是 `ARCHITECTURE.md` §5 禁止的。
 - Host 内部：临近过期时用保存的账号重新登录一次；Agnes 不发 refresh_token，所以「续期」就是重登。
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
-- **额度与用量是两条独立事实**：`quota.windows` 是平台声明的上限，`quota.totals` 与 `usage` 是平台报出的累计量。滚动窗口内的已用量平台不提供，所以 Host 不做任何减法——`limit - total` 会相减两个不同周期。
+- **额度与用量是两条独立事实**：`quota.windows` 的平台声明上限 +（`subscription.usage` 给到时的）窗口内 `used`；`quota.totals` 与 `usage` 是平台报出的累计 / 分桶量。窗口内的已用量由平台给，面板直接引用；Host 从不做 `limit - total`——累计值与窗口不同周期，相减会算出没人能负责的数。
 
 ### `GET /api/dsh-connect-agnes-token-plan/account`
 

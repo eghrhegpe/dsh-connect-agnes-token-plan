@@ -28,6 +28,7 @@ import {
   matchCurrentPlan,
   readSubscriptionExpiry,
   quotaWindows,
+  parseSubscriptionUsage,
   identifyVisionModel,
   EXPECTED_SHAPES
 } from "../src/host/parsers.ts";
@@ -108,13 +109,18 @@ function fail(name, error) {
   check("usage-series expects `items`", EXPECTED_SHAPES["usage-series"].includes("items"));
   check("a series body without items drifts",
     checkShape({}, "usage-series").missing.includes("items"));
-  // `subscription` deliberately expects NOTHING: no session token was available
-  // to observe that payload, so inventing an expectation would report drift on
-  // every poll. Pin the empty list so nobody "helpfully" fills it in.
-  check("subscription declares no expectations (unobserved contract)",
-    EXPECTED_SHAPES.subscription.length === 0, JSON.stringify(EXPECTED_SHAPES.subscription));
-  check("any subscription body passes the shape check",
-    checkShape({ anything: 1 }, "subscription").ok === true);
+  // `subscription` was observed live 2026-10-01 (docs/AGNES-API.md §6): the
+  // load-bearing identity keys are `plan_name` and `billing_cycle`, so they are
+  // now expected. `usage` is DELIBERATELY not — an account that has never
+  // consumed anything may simply omit it, and a missing `usage` is an absence
+  // of enrichment, not a shape drift.
+  check("subscription expects its observed identity keys",
+    JSON.stringify(EXPECTED_SHAPES.subscription) === JSON.stringify(["plan_name", "billing_cycle"]),
+    JSON.stringify(EXPECTED_SHAPES.subscription));
+  check("a subscription body without the identity keys drifts",
+    checkShape({ anything: 1 }, "subscription").ok === false);
+  check("a subscription body without `usage` does NOT drift",
+    checkShape({ plan_name: "入门版", billing_cycle: "monthly" }, "subscription").ok === true);
 
   // A null/array body must not throw — obj() folds it to {}.
   check("a null body reports every expected key missing",
@@ -420,6 +426,100 @@ function fail(name, error) {
       quotaWindows({ videoDailyLimit: 500 }).length === 1);
   } catch (error) {
     fail("quotaWindows tolerates a sparse plan", error);
+  }
+}
+
+// --- 5e-bis. parseSubscriptionUsage(): the platform's OWN window usage ----
+// The real shape, observed 2026-10-01 (see docs/AGNES-API.md §4). This is the
+// missing half of the quota story: `quotaWindows` states the LIMIT from the
+// plan, this states what has actually been consumed inside the current window,
+// plus the window's own bounds and the moment it resets. Nothing is computed —
+// the figures are the console's own, transcribed.
+{
+  // Matches the live payload's field names and Asia/Shanghai timestamps.
+  const subscription = {
+    plan_name: "入门版",
+    billing_cycle: "monthly",
+    usage: {
+      text_generation: {
+        model: "agnes-2.5-flash",
+        windowed: {
+          used: 548, limit: 1500,
+          time_range_start: "2026-10-01T10:00:00", time_range_end: "2026-10-01T15:00:00",
+          reset_at: "2026-10-01T15:00:00", reset_in_seconds: 692, usage_pct: 36.5
+        },
+        weekly: {
+          used: 4454, limit: 15000,
+          reset_at: "2026-10-05T00:00:00", reset_in_seconds: 292292, usage_pct: 29.7
+        }
+      },
+      image_generation: {
+        model: "agnes-image-1.2",
+        daily: { used: 8, limit: 4000, reset_at: "2026-10-02T00:00:00", reset_in_seconds: 33092, usage_pct: 0.2 }
+      },
+      video_generation: {
+        model: "agnes-video-v1.2",
+        daily: { used: 28, limit: 500, reset_at: "2026-10-02T00:00:00", reset_in_seconds: 33092, usage_pct: 5.6 }
+      }
+    }
+  };
+  try {
+    const usage = parseSubscriptionUsage(subscription);
+    check("the four windows are read", usage !== null && Object.keys(usage).length === 4, JSON.stringify(usage));
+    const w5h = usage.requests5h;
+    check("the 5-hour window carries the platform's used/limit",
+      w5h.used === 548 && w5h.limit === 1500, JSON.stringify(w5h));
+    check("the weekly window is read from text_generation.weekly",
+      usage.requestsWeekly.used === 4454 && usage.requestsWeekly.limit === 15000,
+      JSON.stringify(usage.requestsWeekly));
+    check("the image window is read from image_generation.daily",
+      usage.imagesDaily.used === 8 && usage.imagesDaily.limit === 4000,
+      JSON.stringify(usage.imagesDaily));
+    check("the video window is read from video_generation.daily",
+      usage.videoDaily.used === 28 && usage.videoDaily.limit === 500,
+      JSON.stringify(usage.videoDaily));
+    // The platform sends Shanghai wall clocks without an offset (its overview
+    // declares timezone Asia/Shanghai), so they are read as UTC+8 — not as the
+    // host's own local time. 15:00 Shanghai IS 07:00 UTC.
+    check("a reset time is read as Asia/Shanghai, not the host's timezone",
+      new Date(usage.requests5h.resetAt * 1000).toISOString() === "2026-10-01T07:00:00.000Z",
+      JSON.stringify({ resetAt: usage.requests5h.resetAt, iso: usage.requests5h.resetAt && new Date(usage.requests5h.resetAt * 1000).toISOString() }));
+    check("the window bounds are read", usage.requests5h.rangeStart !== null && usage.requests5h.rangeEnd !== null,
+      JSON.stringify({ rangeStart: usage.requests5h.rangeStart, rangeEnd: usage.requests5h.rangeEnd }));
+    check("the platform's own countdown rides along",
+      usage.requests5h.resetInSeconds === 692, String(usage.requests5h.resetInSeconds));
+    check("the platform's own percentage rides along",
+      usage.requests5h.usagePct === 36.5, String(usage.requests5h.usagePct));
+  } catch (error) {
+    fail("parseSubscriptionUsage reads a full payload", error);
+  }
+
+  try {
+    check("a payload with no usage block is null",
+      parseSubscriptionUsage({ plan_name: "入门版" }) === null);
+    check("a null payload is null", parseSubscriptionUsage(null) === null);
+    // A generation the account never consumed simply has no cell — the window
+    // key must be ABSENT, never a fabricated "used 0".
+    const partial = parseSubscriptionUsage({
+      plan_name: "入门版",
+      usage: { text_generation: { windowed: { used: 1, limit: 1500, usage_pct: 0.1 } } }
+    });
+    check("an unreported window is absent, not zero",
+      partial !== null && "requests5h" in partial && !("imagesDaily" in partial) && !("videoDaily" in partial),
+      JSON.stringify(partial));
+    // String counters coerce; a missing `used` reads as null (no bar), never 0.
+    const stringy = parseSubscriptionUsage({
+      usage: { text_generation: { windowed: { used: "7", limit: "1500" } } }
+    });
+    check("string counters coerce", stringy.requests5h.used === 7 && stringy.requests5h.limit === 1500,
+      JSON.stringify(stringy.requests5h));
+    const noUsed = parseSubscriptionUsage({ usage: { text_generation: { windowed: { limit: 1500 } } } });
+    check("an unstated used is null, not 0",
+      noUsed.requests5h.used === null && noUsed.requests5h.limit === 1500,
+      JSON.stringify(noUsed.requests5h));
+    check("a malformed usage value is null", parseSubscriptionUsage({ usage: "nope" }) === null);
+  } catch (error) {
+    fail("parseSubscriptionUsage tolerates sparse payloads", error);
   }
 }
 

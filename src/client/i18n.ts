@@ -64,6 +64,8 @@ export const zh = {
   "quota.unit.requests": "次",
   "quota.unit.images": "张",
   "quota.used": "已用",
+  "quota.resetAt": "重置 {time}",
+  "quota.resetCountdown": "约 {minutes} 分钟后重置",
   "quota.expires": "到期 {time}",
   "quota.none": "暂无额度数据。",
   "quota.planUnknown": "未能识别当前套餐——控制台没有返回可匹配的套餐信息。下方「套餐对比」是平台公开的套餐目录，不依赖登录。",
@@ -71,10 +73,10 @@ export const zh = {
   "quota.consoleOfflineHint": "登录入口在本页下方的「{section}」卡片里。",
   "quota.error": "读取 {source} 失败：{message}",
   "quota.catalogue": "套餐对比（{count} 档）",
-  // 这一句是整个额度区的诚实声明，不是装饰：上限是「每 N 小时/天/周」的窗口，
-  // 累计用量是账号总量，两者周期不同。不写这句，读者必然去相减，而相减出来的
-  // 「剩余」是个没人能担保的数字——控制台根本不提供窗口内的已用量。
-  "quota.windowNote": "Agnes 按窗口限流：上面的上限是「每 N 小时 / 每天 / 每周」的次数。控制台只提供账号累计用量，不提供窗口内的已用量，所以下方累计值与上面的上限周期不同，不能相减。",
+  // 这一句是整个额度区的诚实声明，不是装饰：窗口卡片里的「已用 x / 上限」是
+  // 控制台自己报出的「当前用量」，下方「账号累计用量」是账号总量，两者周期不同。
+  // 不写这句，读者必然去拿累计值减窗口上限，而相减出来的「剩余」是个没人能担保的数字。
+  "quota.windowNote": "Agnes 按窗口限流：上面的上限是「每 N 小时 / 每天 / 每周」的次数，卡片里的「已用」来自控制台自己的「当前用量」，是平台报出的数字。下方「账号累计用量」覆盖的是另一段时间，不能与上面的窗口上限相减。",
   "quota.accountTotals": "账号累计用量（控制台口径）",
   "quota.total.requests": "模型请求",
   "quota.total.tokens": "文本 Token",
@@ -283,6 +285,8 @@ export const en: typeof zh = {
   "quota.unit.requests": "",
   "quota.unit.images": "",
   "quota.used": "Used",
+  "quota.resetAt": "resets {time}",
+  "quota.resetCountdown": "resets in ~{minutes} min",
   "quota.expires": "expires {time}",
   "quota.none": "No quota data yet.",
   "quota.planUnknown": "Could not identify the current plan — the console returned nothing matchable. The plan comparison below is the platform's public catalogue and needs no sign-in.",
@@ -290,7 +294,7 @@ export const en: typeof zh = {
   "quota.consoleOfflineHint": "The sign-in form is in the \"{section}\" card further down this page.",
   "quota.error": "Could not read {source}: {message}",
   "quota.catalogue": "Compare plans ({count})",
-  "quota.windowNote": "Agnes rate-limits by window: the limits above are counts per N hours / day / week. The console publishes cumulative account usage only, never a per-window figure — so the totals below cover a different period and must not be subtracted from the limits above.",
+  "quota.windowNote": "Agnes rate-limits by window: the limits above are counts per N hours / day / week, and the \"used\" on each card is the console's own current-window figure. The account totals below cover a different period and must not be subtracted from the limits above.",
   "quota.accountTotals": "Account totals (as the console reports them)",
   "quota.total.requests": "Model requests",
   "quota.total.tokens": "Text tokens",

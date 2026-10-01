@@ -48,6 +48,7 @@ import {
   parseUsageOverview,
   parseUsageSeries,
   parsePlans,
+  parseSubscriptionUsage,
   matchCurrentPlan,
   quotaWindows,
   readSubscriptionExpiry,
@@ -288,12 +289,36 @@ export async function buildSnapshotBody({
   // --- the quota block -----------------------------------------------------
   const catalogue = parsePlans(plans.value);
   const currentPlan = matchCurrentPlan(subscription.value, catalogue);
+  // The platform's own per-window consumption, keyed by window. It rides on the
+  // SAME subscription fetch the plan identity came from, so a window that shows
+  // a bar is quoting the console's figure verbatim — never a `limit - total`
+  // this plugin computed (the two cover different periods).
+  const windowUsage = parseSubscriptionUsage(subscription.value);
+  // The limit stays the PLAN's fact (`quotaWindows`); only the consumed side
+  // is overlaid. A window the subscription did not report keeps no `used` at
+  // all, so the card draws no bar rather than one claiming a figure nobody
+  // stated.
+  const windows = quotaWindows(currentPlan).map((window) => {
+    const usage = windowUsage?.[window.key];
+    if (usage === undefined) return window;
+    return {
+      ...window,
+      used: usage.used,
+      usagePct: usage.usagePct,
+      rangeStart: usage.rangeStart,
+      rangeEnd: usage.rangeEnd,
+      resetAt: usage.resetAt,
+      resetInSeconds: usage.resetInSeconds
+    };
+  });
   const quota = {
     plan: currentPlan === null ? null : planSummary(currentPlan),
     // The four windows the plan caps. Empty when the payload did not name a
     // plan this plugin recognises — an empty list is honest, a guessed plan is
     // not, and the panel says "unknown" rather than showing the entry tier.
-    windows: quotaWindows(currentPlan),
+    // Each window that the subscription also reported consumption for carries
+    // the platform's own `used` / window bounds / reset time.
+    windows,
     // Cumulative usage. Deliberately NOT subtracted from the limits above: the
     // two are measured over different periods, so a difference would be a
     // number nobody can defend.

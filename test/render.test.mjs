@@ -37,11 +37,12 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 // === A. the window card's headline is the LIMIT, and its bar is real ======
 // The inversion is the point of the Agnes rewrite. The SenseNova card led with
 // "remaining %" because the platform reported a live balance per pool; Agnes
-// reports none — it caps four dimensions over sliding windows and its console
-// publishes only CUMULATIVE usage — so the limit is the headline, and a
-// percentage appears only when the platform itself stated a `used` figure for
-// that window. 12345 of 60000 is 20.575%: any swap of used/limit changes the
-// bar width, so this block is the anti-mirror for that exact bug.
+// instead caps four dimensions over sliding windows and reports consumption
+// only inside its own `subscription.usage` block — so the limit is the
+// headline, and a percentage appears only when the platform itself stated a
+// `used` figure for that window. 12345 of 60000 is 20.575%: any swap of
+// used/limit changes the bar width, so this block is the anti-mirror for that
+// exact bug.
 {
   const tree = treeOf(render.QuotaWindowCard, {
     label: "quota.win.requests5h",
@@ -51,12 +52,13 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const meta = texts(tree).join("\n");
   check("the headline is the LIMIT, with its unit",
     meta.includes("60,000 quota.unit.requests"), meta);
-  check("the headline is not a percentage",
-    !meta.includes("79.4%") && !meta.includes("20.6%"), meta);
+  check("a percentage appears only in the used caption, never as the headline",
+    meta.indexOf("%") > meta.indexOf("quota.used"), meta);
   check("the used figure is the USED count against the limit",
     meta.includes("quota.used 12,345 / 60,000"), meta);
-  check("the window's PERIOD is named — there is no reset instant to print",
-    meta.includes("quota.perHours"), meta);
+  check("the used caption also quotes the percentage",
+    meta.includes("20.6%"), meta);
+  check("the window's PERIOD is named", meta.includes("quota.perHours"), meta);
 
   const fill = bar(tree);
   check("the bar reports the used fraction to assistive tech",
@@ -64,6 +66,34 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const inner = findElement(fill, (props) => typeof props.style?.width === "string");
   check("the bar's width is the same fraction the caption shows",
     inner?.props.style.width === "20.575%", String(inner?.props.style.width));
+}
+
+// === A2. a stated reset instant is printed; an absent one prints nothing ===
+// The reset moment is a fact the platform states inside `subscription.usage`,
+// so the card quotes it verbatim. Absent — the window's period chip still
+// appears — it must draw nothing rather than a placeholder.
+{
+  const withReset = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 1500, windowHours: 5, used: 548, resetAt: 1790866800, resetInSeconds: 692 },
+    tt
+  });
+  check("a stated reset instant is printed",
+    texts(withReset).join("\n").includes("quota.resetAt"), texts(withReset).join("\n"));
+  const withoutReset = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 1500, windowHours: 5, used: 548 },
+    tt
+  });
+  check("an absent reset instant prints nothing (not a placeholder)",
+    !texts(withoutReset).join("\n").includes("quota.resetAt"), texts(withoutReset).join("\n"));
+  const countdownOnly = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 1500, windowHours: 5, used: 548, resetInSeconds: 692 },
+    tt
+  });
+  check("the platform's own countdown is the fallback when the instant is missing",
+    texts(countdownOnly).join("\n").includes("quota.resetCountdown"), texts(countdownOnly).join("\n"));
 }
 
 // === B. a window with no stated consumption draws NO bar ==================

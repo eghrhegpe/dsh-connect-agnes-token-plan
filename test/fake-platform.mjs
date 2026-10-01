@@ -120,7 +120,17 @@ const SUBSCRIPTION_DATA = {
   plan_uuid: PRO_UUID,
   billing_cycle: "monthly",
   status: "active",
-  expires_at: "2026-11-01T00:00:00Z"
+  expires_at: "2026-11-01T00:00:00Z",
+  // The platform's own per-window consumption (docs/AGNES-API.md §4), aligned
+  // with the 专业版 caps this fake's catalogue declares for the matching plan.
+  usage: {
+    text_generation: {
+      windowed: { used: 100, limit: 7500, time_range_start: "2026-10-01T10:00:00", time_range_end: "2026-10-01T15:00:00", reset_at: "2026-10-01T15:00:00", reset_in_seconds: 600, usage_pct: 1.3 },
+      weekly: { used: 900, limit: 75000, reset_at: "2026-10-05T00:00:00", usage_pct: 1.2 }
+    },
+    image_generation: { daily: { used: 2, limit: 4000, reset_at: "2026-10-02T00:00:00", usage_pct: 0.1 } },
+    video_generation: { daily: { used: 5, limit: 500, reset_at: "2026-10-02T00:00:00", usage_pct: 1 } }
+  }
 };
 
 /**

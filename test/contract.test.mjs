@@ -283,11 +283,16 @@ for (const model of contract.models) {
     drift.ok === false && drift.missing.includes("total_tokens"), JSON.stringify(drift));
   check("checkShape flags a series body missing `items`",
     checkShape({}, "usage-series").missing.includes("items"));
-  // `subscription` declares NO expectations on purpose: the payload was never
-  // observed with a session token, and inventing one would report drift on
-  // every poll. Pin the empty list so nobody "helpfully" fills it in.
-  check("checkShape expects nothing of the unobserved subscription payload",
-    checkShape({ anything: 1 }, "subscription").ok === true);
+  // `subscription` declares only its OBSERVED identity keys (2026-10-01,
+  // docs/AGNES-API.md §6): `plan_name` / `billing_cycle`. A body without them
+  // is drift; the `usage` block is deliberately NOT expected — an account that
+  // has never consumed anything may simply omit it.
+  check("checkShape expects the subscription's observed identity keys",
+    checkShape({ plan_name: "入门版", billing_cycle: "monthly" }, "subscription").ok === true);
+  check("checkShape flags a subscription body without the identity keys",
+    checkShape({ anything: 1 }, "subscription").ok === false);
+  check("a subscription body without `usage` is NOT drift",
+    checkShape({ plan_name: "入门版", billing_cycle: "monthly" }, "subscription").missing.includes("usage") === false);
 }
 
 // --- 8. 429 / quota classification matches the frozen retry policy --------

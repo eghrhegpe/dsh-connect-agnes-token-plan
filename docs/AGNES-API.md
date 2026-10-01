@@ -54,7 +54,7 @@
 | `POST /api/user/login` | 无 | `{access_token, user}` |
 | `GET /api/usage/overview` | Bearer | 账号**累计**用量（唯一致命源，见下） |
 | `GET /api/usage/series?range=custom&start_date=…&end_date=…` | Bearer | `{items:[…]}` 分桶用量 |
-| `GET /api/cn/user/subscription` | Bearer | 当前账号的套餐信息（**形状未观测**，见 §6） |
+| `GET /api/cn/user/subscription` | Bearer | 当前账号的套餐信息 + **窗口内已用量**（`usage`，见 §4） |
 | `GET /api/cn/user/subscription/plans` | **无**（公开） | 套餐目录数组，六档 |
 
 `/api/cn/user/subscription/plans` 的 `/cn/` 段是必需的，少了就是 404。它同时是
@@ -102,9 +102,12 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 - 三档套餐的 `image_daily_limit`（4000）与 `video_daily_limit`（500）**完全相同**，
   真正拉开差距的只有请求维度（1500/7500/30000 与 15000/75000/300000）。
 
-**「剩余」不可计算，所以不计算。** 控制台只提供**累计**用量（overview）与**分桶**用量（series），
-滚动窗口内的已用量拿不到。`上限 − 累计` 是跨周期的减法，算出来的数没人能负责——
-面板把上限与累计作为两个独立事实并排显示，并明说不可相减（`quota.windowNote`）。
+**窗口内的已用量由平台自己给，直接引用，不做减法。** `subscription.usage` 是控制台「当前用量」
+那一屏的数据源：每个窗口都带 `used` / `limit` / `time_range_start` / `time_range_end` / `reset_at` /
+`reset_in_seconds` / `usage_pct`（**2026-10-01 实测**）。面板把它并进 `quota.windows[].used`，
+进度条是逐字转写，不是计算。`overview` / `series` 仍是**累计**与**分桶**口径，与窗口周期不同，
+`上限 − 累计` 依然是跨周期减法，算出来的数没人能负责——所以面板把平台给的窗口用量与账号累计
+作为两类独立事实并排显示，并明说不可相减（`quota.windowNote`）。
 
 ## 5. 套餐目录
 
@@ -123,13 +126,18 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 会在几乎每个账号上"匹配"到入门档。名称命中会同时打中月付与年付两档，平手时用 payload 里
 写明的 `billing_cycle` 破平（`annual` 读作 `yearly`），都没写就默认月付。
 
-## 6. 尚未观测 / 待实测
+## 6. 已观测契约 / 待实测
 
-- **`/api/cn/user/subscription` 的真实形状未观测**（没有可用的会话令牌去看），所以
-  `EXPECTED_SHAPES.subscription` **故意是空数组**：给一个没人见过的契约编期望，会让每一次轮询
-  都报形状漂移。到期时间也同理——`readSubscriptionExpiry` 按可能性顺序试九个键名，
-  一个都不中就返回 `null`（面板什么都不画），而不是编一个 1970。
-- **窗口内的已用量**：平台不提供，见 §4。
+- **`/api/cn/user/subscription` 已观测（2026-10-01）**：`data` 带 `id` / `plan_id` / `plan_name` /
+  `status` / `billing_cycle` / `current_period_start` / `current_period_end` / `key_preview` /
+  `features` / `feature_texts` / `usage` / `available_usage`。`EXPECTED_SHAPES.subscription` 只把
+  承重的身份键（`plan_name` / `billing_cycle`）列为必需——`usage` **故意不要求**：一个从未消费的
+  账号可能根本没有它，把「没有用量」误报成「形状漂移」会天天响。
+  到期时间仍按可能性顺序试多个键名（`readSubscriptionExpiry`），一个都不中就返回 `null`（面板什么都不画），
+  而不是编一个 1970。
+- **窗口内的已用量**：`subscription.usage` 提供，见 §4。逐窗口路径见
+  `parsers.ts:parseSubscriptionUsage` 的 `USAGE_WINDOW_MAP`。
+- **仍待实测**：`subscription.usage` 在「从未消费」的账号上是否整块缺失；`used` 对视频是「次」还是「秒」。
 
 ---
 

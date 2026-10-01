@@ -17,10 +17,11 @@
  * One quota window as the PLAN caps it — "N per W hours", not a balance.
  *
  * Agnes allocates no credits: it rate-limits four dimensions over sliding
- * windows. `used` and `remaining` are therefore OPTIONAL and usually absent —
- * the console reports cumulative usage, not a per-window balance, and a
- * computed `limit - total` would compare two different periods. The card shows
- * them only when the platform itself stated them.
+ * windows. `used` is OPTIONAL and present only when the console's own
+ * `subscription.usage` reported it for this window — the platform's figure,
+ * quoted verbatim. It is never computed as `limit - total`: the account totals
+ * below cover a different period, so a subtraction would compare two different
+ * things. The card draws a bar only when `used` is a real number.
  */
 export interface QuotaWindowData {
   /** `requests5h` | `requestsWeekly` | `imagesDaily` | `videoDaily`. */
@@ -30,7 +31,18 @@ export interface QuotaWindowData {
   limit?: number;
   /** The window length the limit applies over. */
   windowHours?: number;
+  /** Consumed inside the CURRENT window, as the platform reported it. */
   used?: number | null;
+  /** The platform's own percentage, when it sent one. */
+  usagePct?: number | null;
+  /** The window's bounds, epoch seconds (Asia/Shanghai). */
+  rangeStart?: number | null;
+  rangeEnd?: number | null;
+  /** When this window resets, epoch seconds. */
+  resetAt?: number | null;
+  /** Seconds until the window resets, as the platform counts them down. */
+  resetInSeconds?: number | null;
+  /** Kept for wire compatibility; never computed here. */
   remaining?: number | null;
 }
 

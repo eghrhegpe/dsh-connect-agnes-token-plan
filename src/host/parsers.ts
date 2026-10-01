@@ -31,7 +31,12 @@ import { str, obj } from "./util.ts";
 export const EXPECTED_SHAPES = Object.freeze({
   "usage-overview": ["total_requests", "total_tokens"],
   "usage-series": ["items"],
-  "subscription": []
+  // Observed live 2026-10-01 (see docs/AGNES-API.md): the subscription's core
+  // identity carries `plan_name` and `billing_cycle`. The `usage` block that
+  // also arrives here is DELIBERATELY not required — an account that has never
+  // consumed anything may simply lack it, and missing `usage` is an absence of
+  // enrichment, not a shape drift. Only the identity keys are load-bearing.
+  "subscription": ["plan_name", "billing_cycle"]
 });
 
 /**
@@ -360,6 +365,92 @@ export function quotaWindows(plan) {
     windows.push({ key: "videoDaily", unit: "video", limit: video, windowHours: 24 });
   }
   return windows;
+}
+
+/**
+ * Parse a Shanghai-local wall clock the platform sends without an offset.
+ *
+ * The console declares `"timezone":"Asia/Shanghai"` (its overview reports it)
+ * and sends window timestamps as bare `"2026-10-01T15:00:00"`. Interpreting
+ * that with the host's own `Date.parse` would shift the reset time by the
+ * machine's offset, so the platform's convention is applied explicitly:
+ * UTC+8. Returns epoch SECONDS, or null for anything that is not that shape.
+ * @param {unknown} text - the raw timestamp string.
+ * @returns {number|null} epoch seconds, or null.
+ */
+function shanghaiSeconds(text) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(text ?? ""));
+  if (match === null) return null;
+  const [, year, month, day, hour, minute, second = "0"] = match;
+  // `Date.UTC` reads the fields AS IF they were UTC; the platform means
+  // Shanghai, which is UTC+8, so the real epoch is that reading minus 8 hours.
+  return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)) / 1000 - 8 * 3600;
+}
+
+/**
+ * Which subscription usage slot answers which panel window.
+ *
+ * `subscription.usage` is the platform's OWN per-window reading, grouped by
+ * generation and keyed by the window shape it applies to:
+ *
+ * | panel window | subscription path |
+ * |---|---|
+ * | `requests5h` | `text_generation.windowed` |
+ * | `requestsWeekly` | `text_generation.weekly` |
+ * | `imagesDaily` | `image_generation.daily` |
+ * | `videoDaily` | `video_generation.daily` |
+ *
+ * Verified live 2026-10-01. This is the ONLY per-window consumption the
+ * platform publishes; it is what lets the panel draw a real `used / limit`
+ * bar instead of declining to compute one.
+ */
+const USAGE_WINDOW_MAP = Object.freeze({
+  "requests5h": ["text_generation", "windowed"],
+  "requestsWeekly": ["text_generation", "weekly"],
+  "imagesDaily": ["image_generation", "daily"],
+  "videoDaily": ["video_generation", "daily"]
+});
+
+/** A finite number, or null — so an absent figure never reads as a measurement. */
+function numOrNull(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Read `subscription.usage` into the panel's per-window facts.
+ *
+ * This is the missing half of the quota story. `quotaWindows` states the
+ * LIMIT from the plan; this states what has actually been consumed inside the
+ * current window, plus the window's own bounds and the moment it resets — all
+ * figures the PLATFORM reported, not derived here. Nothing is subtracted:
+ * `used` and `limit` are quoted side by side exactly as the console shows
+ * them, so the panel's bar is a transcription, not an arithmetic claim.
+ *
+ * Returns `null` when the payload carries no `usage` at all — an account that
+ * has never consumed anything simply may not report one, and that absence
+ * must read as "no bar", never as "used 0".
+ * @param {unknown} subscription - the unwrapped `/api/cn/user/subscription` data.
+ * @returns {Record<string, {used: number|null, limit: number, usagePct: number|null, rangeStart: number|null, rangeEnd: number|null, resetAt: number|null, resetInSeconds: number|null}>|null}
+ */
+export function parseSubscriptionUsage(subscription) {
+  const usage = obj(obj(subscription).usage);
+  if (Object.keys(usage).length === 0) return null;
+  const out = {};
+  for (const [windowKey, [group, slot]] of Object.entries(USAGE_WINDOW_MAP)) {
+    const cell = obj(obj(usage[group])[slot]);
+    if (Object.keys(cell).length === 0) continue;
+    out[windowKey] = {
+      used: numOrNull(cell.used),
+      limit: countOf(cell.limit),
+      usagePct: numOrNull(cell.usage_pct),
+      rangeStart: shanghaiSeconds(cell.time_range_start),
+      rangeEnd: shanghaiSeconds(cell.time_range_end),
+      resetAt: shanghaiSeconds(cell.reset_at),
+      resetInSeconds: numOrNull(cell.reset_in_seconds)
+    };
+  }
+  return Object.keys(out).length === 0 ? null : out;
 }
 
 /**

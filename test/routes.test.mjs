@@ -80,13 +80,26 @@ const PLAN = {
   feature_texts: ["1500 次模型请求 / 5 小时"]
 };
 const PLANS_BODY = { code: 200, message: "ok", data: [PLAN] };
-// The subscription payload's real shape is UNOBSERVED (no session token was
-// available — see docs/AGNES-API.md), so the fake states only what the
-// plugin's own matcher needs: a plan identity under a plausible key name.
+// The subscription's real shape, observed live 2026-10-01 (docs/AGNES-API.md §4):
+// the identity keys the matcher reads, plus the `usage` block that carries the
+// platform's own per-window consumption. The fake keeps both so the panel is
+// exercised against the same field names the console uses.
 const SUBSCRIPTION_BODY = {
   code: 200,
   message: "ok",
-  data: { plan_uuid: "plan-starter", plan_name: "入门版", billing_cycle: "monthly" }
+  data: {
+    plan_uuid: "plan-starter",
+    plan_name: "入门版",
+    billing_cycle: "monthly",
+    usage: {
+      text_generation: {
+        windowed: { used: 548, limit: 1500, time_range_start: "2026-10-01T10:00:00", time_range_end: "2026-10-01T15:00:00", reset_at: "2026-10-01T15:00:00", reset_in_seconds: 692, usage_pct: 36.5 },
+        weekly: { used: 4454, limit: 15000, reset_at: "2026-10-05T00:00:00", reset_in_seconds: 292292, usage_pct: 29.7 }
+      },
+      image_generation: { daily: { used: 8, limit: 4000, reset_at: "2026-10-02T00:00:00", usage_pct: 0.2 } },
+      video_generation: { daily: { used: 28, limit: 500, reset_at: "2026-10-02T00:00:00", usage_pct: 5.6 } }
+    }
+  }
 };
 
 /** The paths the authenticated console stub answers, in match order. */
@@ -281,6 +294,20 @@ async function withNetwork(stub, body) {
       JSON.stringify((response.payload?.quota?.windows ?? []).map((w) => [w.key, w.limit])) ===
         JSON.stringify([["requests5h", 1500], ["requestsWeekly", 15000], ["imagesDaily", 4000], ["videoDaily", 500]]),
       JSON.stringify(response.payload?.quota?.windows));
+    // The windows also carry the platform's own per-window consumption, merged
+    // from the SAME subscription fetch the plan identity came from — quoted
+    // verbatim, never a `limit - total` this plugin computed.
+    check("each window carries the platform's own used figure",
+      JSON.stringify((response.payload?.quota?.windows ?? []).map((w) => [w.key, w.used])) ===
+        JSON.stringify([["requests5h", 548], ["requestsWeekly", 4454], ["imagesDaily", 8], ["videoDaily", 28]]),
+      JSON.stringify((response.payload?.quota?.windows ?? []).map((w) => [w.key, w.used])));
+    check("the 5-hour window carries its reset moment and range",
+      (() => {
+        const w = (response.payload?.quota?.windows ?? []).find((x) => x.key === "requests5h");
+        return w?.resetInSeconds === 692 && w?.usagePct === 36.5 &&
+          new Date(w?.resetAt * 1000).toISOString() === "2026-10-01T07:00:00.000Z";
+      })(),
+      JSON.stringify((response.payload?.quota?.windows ?? []).find((x) => x.key === "requests5h")));
     check("the account totals are parsed",
       response.payload?.quota?.totals?.totalRequests === 12345 &&
       response.payload?.quota?.totals?.activeDays === 7,

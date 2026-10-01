@@ -20,6 +20,13 @@
 - Agnes 不发布 per-pool 余额，只在滑动窗口上封顶四个维度（5h 请求 / 周请求 / 日图 / 日视频），控制台只给上限与**累计**用量——`limit − total` 无人能负责，所以面板头条从「剩余」换成「限额」，累计用量单独一行（宁少一个数，也不发明一个）。
 - 控制台未连接时不再整页只剩登录表单；额度正常显示时不再误挂「需要重新登录」。
 
+### 窗口内已用量（上线实测推翻旧结论）
+
+- **结论更正**：原来认为「控制台不提供窗口内的已用量」，实测 `/api/cn/user/subscription` 的 `usage` 块**就是**控制台「当前用量」那一屏的数据源，每窗口带 `used` / `limit` / `time_range_start` / `time_range_end` / `reset_at` / `reset_in_seconds` / `usage_pct`。旧结论让面板只显示上限、进度条永远缺席——数据一直在已下载的订阅响应里，只是没人解析。
+- **新增 `parseSubscriptionUsage`**（`parsers.ts`）：把 `usage` 归一成面板的四个窗口 key（`text_generation.windowed`→`requests5h`、`.weekly`→`requestsWeekly`、`image_generation.daily`→`imagesDaily`、`video_generation.daily`→`videoDaily`），时间戳按平台声明的 Asia/Shanghai 解析（UTC+8），缺字段读作 `null` 而不是 0。
+- **`quota.windows[]` 并入平台给的 `used` / 窗口起止 / 重置时间**；客户端 `QuotaWindowCard` 在 `used` 存在时画进度条并显示「已用 x / limit · y%」与「重置 时间」。**仍然不做减法**：窗口用量是平台逐字转写的，账号累计是另一段周期，`limit − total` 依旧被拒绝。
+- **契约与文案同步**：`EXPECTED_SHAPES.subscription` 由空数组填成真实身份键（`usage` 故意不要求，避免把「从未消费」误报成形状漂移）；`quota.windowNote` 中英文案、`docs/AGNES-API.md` §4 / §6 / 端点表、`docs/API.md` 相应更正。
+
 ### 视频生成 agent 工具（可选，默认关）
 
 与出图对称新增 `agnes_video_generate`：面板开关 + 「建任务→轮询→取 url」状态机（`VIDEO_MAX_POLLS` 防呆、无 30s 冷却门）。

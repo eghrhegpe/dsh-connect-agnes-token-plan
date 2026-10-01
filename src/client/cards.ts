@@ -99,15 +99,18 @@ function cycleLabel(cycle: unknown, tt: Tt): string {
  *
  * The LIMIT is the headline here, not a percentage — and that inversion is the
  * whole point of the Agnes rewrite. The SenseNova card led with "remaining %"
- * because the platform reported a live balance per pool. Agnes reports none:
- * it caps four dimensions over sliding windows and its console only publishes
- * cumulative usage, so `limit - total` would subtract two different periods and
- * print a number nobody can defend. The limit is a fact the platform states;
- * a "remaining" figure would be an invention.
+ * because the platform reported a live balance per pool. Agnes instead caps
+ * four dimensions over sliding windows and reports consumption only inside its
+ * own `subscription.usage` block; the account totals cover a DIFFERENT period,
+ * so a `limit - total` would subtract two things that were never on the same
+ * clock and print a number nobody can defend. The limit is a fact the platform
+ * states; a "remaining" figure would be an invention.
  *
- * When the platform DOES state a window's consumption (a subscription payload
- * that carries `used`), the bar and the used caption appear below the limit —
- * that is the one case where the panel has a real fraction to draw.
+ * When the subscription DOES report a window's consumption, the bar and the
+ * used caption appear below the limit, quoting the platform's own `used` —
+ * that is the one case where the panel has a real fraction to draw. The
+ * window's reset moment rides along as a fact, not a countdown the panel
+ * counts on its own.
  *
  * A window that is not an object at all (a row the Host flagged as
  * shape-drifted, or a field simply absent) renders NOTHING instead of throwing:
@@ -126,6 +129,16 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
   const used = typeof source.used === "number" && Number.isFinite(source.used) ? source.used : null;
   const pct = used !== null && limit > 0 ? Math.min(100, (used / limit) * 100) : null;
   const tone = usageTone(pct ?? 0);
+  // The window's own reset moment, when the subscription reported one. It is a
+  // fact the platform states, so it is quoted verbatim; the platform's own
+  // countdown is used only when the absolute time is missing.
+  const resetAt = typeof source.resetAt === "number" && Number.isFinite(source.resetAt) ? source.resetAt : null;
+  const resetInSeconds = typeof source.resetInSeconds === "number" && Number.isFinite(source.resetInSeconds) ? source.resetInSeconds : null;
+  const resetLine = resetAt !== null
+    ? format(tt("quota.resetAt"), { time: clockLong(resetAt) })
+    : resetInSeconds !== null
+      ? format(tt("quota.resetCountdown"), { minutes: Math.max(1, Math.round(resetInSeconds / 60)) })
+      : null;
   return h(
     "div",
     { style: S.quota },
@@ -147,7 +160,8 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
         ),
     pct === null
       ? null
-      : h("span", { style: S.quotaUsed }, `${tt("quota.used")} ${count(used)} / ${count(limit)}`)
+      : h("span", { style: S.quotaUsed }, `${tt("quota.used")} ${count(used)} / ${count(limit)} · ${pct.toFixed(1)}%`),
+    resetLine === null ? null : h("span", { style: { ...S.muted, fontSize: 11 } }, resetLine)
   );
 }
 
