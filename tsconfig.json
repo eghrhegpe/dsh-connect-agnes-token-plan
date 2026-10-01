@@ -10,7 +10,7 @@
     "checkJs": false,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "strict": false,
+    "strict": true,
     "noImplicitAny": false,
     "strictNullChecks": true,
     "verbatimModuleSyntax": true,

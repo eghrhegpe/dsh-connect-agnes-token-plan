@@ -211,7 +211,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
       state.error = note;
       effectiveLogger?.warn?.(
         `${pluginName}: cannot build the AgnesCode adapter: ${note}`
-          + (error?.code === "ERR_MODULE_NOT_FOUND"
+          + ((error as { code?: string } | null)?.code === "ERR_MODULE_NOT_FOUND"
             ? " — the llm peer packages ship with the Host; install this plugin where they resolve"
             : "")
       );

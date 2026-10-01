@@ -441,21 +441,22 @@ export function registerRoutes(ctx, wiring) {
       } catch (error) {
         // A rejected password is the common case, and it is the user's to
         // correct: report the reason and leave the panel usable.
-        const traceFile = await writeLoginTrace(error?.trace, str(error?.code, CODE.AUTH_ERROR));
+        const failure = error as { code?: unknown; trace?: unknown; detail?: unknown; retryAfterMs?: number };
+        const traceFile = await writeLoginTrace(failure?.trace, str(failure?.code, CODE.AUTH_ERROR));
         writeJson(response, 200, {
           ...(await tokenStore.state().catch(() => null)),
           ok: false,
-          code: str(error?.code, CODE.AUTH_ERROR),
+          code: str(failure?.code, CODE.AUTH_ERROR),
           error: error instanceof Error ? error.message : String(error),
           // The platform's own words ride along so the panel can show them
           // beneath the classified line.
-          ...(error?.detail === undefined ? {} : { detail: String(error.detail) }),
+          ...(failure?.detail === undefined ? {} : { detail: String(failure.detail) }),
           // The sanitized hop-by-hop record of this attempt: the panel links
           // to it, and a support question becomes answerable.
           ...(traceFile !== null ? { traceFile } : {}),
           // When the platform names a wait, the panel greys the form out for
           // that long: retrying inside the window is what extends a lockout.
-          ...(typeof error?.retryAfterMs === "number" ? { retryAfterMs: error.retryAfterMs } : {})
+          ...(typeof failure?.retryAfterMs === "number" ? { retryAfterMs: failure.retryAfterMs } : {})
         }, { "cache-control": "no-store" });
         return;
       }
