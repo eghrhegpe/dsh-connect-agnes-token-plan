@@ -1,15 +1,18 @@
 // docs.test.mjs —— 文档与引用一致性钉子（纯文件读取：无网络、无 peer 依赖、干净检出即可跑）
 //
-// 守住三类「一致性纪律」：
+// 守住五类「一致性纪律」：
 //   文档结构（1-6）：内部链接可解析、跨文件表格去重、README 行数上限、
 //                    DSH-PLUGIN.md 教学快照同步、API.md 快照契约、docs/ 孤儿文件
 //   事实引用（N=条目数本身、8）：PITFALLS 条数引用有效、src/ 注释里的模块名引用完整（含伪文件名扫描）
-//   考古纪律（12）：现行文档不许盖「修订（日期）」式内联补丁——决策沿革只登记在
-//                    docs/ADR.md 账本（规则本体见该文件「使用规则」）
 //   自述面与实际一致（9-11）：README 覆盖每个 tab、声明的 UI 位置与 client 槽位注册一致、
 //                    screenshots.json 声明的图真实存在于磁盘。这三条与 1-8 有本质区别：
 //                    前两组验的是「文档格式对不对」，它们验的是「文档有没有说实话」——
 //                    形式全绿而语义已漂，是本仓库踩过两次的坑（见 PITFALLS §25）。
+//   考古纪律（12）：现行文档不许盖「修订（日期）」式内联补丁——决策沿革只登记在
+//                    docs/ADR.md 账本（规则本体见该文件「使用规则」）
+//   peer 边界（13）：静态 `@deepseek-ai/*` import 只许 llm adapter 层——「内核 peer-free
+//                    才能缺席降级」这条自述承诺的静态面（与 9-11 同族：验的是文档说的
+//                    架构纪律在代码里真的成立，不是格式）
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve, relative, sep, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -524,6 +527,40 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
     }
     note(`考古纪律：受检 ${scanned} 篇现行文档零内联补丁；账本 ${heads.length} 条目形状合格（日期/状态齐）`);
   }
+}
+
+// 13) peer 边界：静态 `@deepseek-ai/*` import 只许出现在 llm adapter 壳
+{
+  // 「peer 缺席 → 该模块缺席、面板照常用」（AGENTS.md 三条事实 2、ARCHITECTURE §5
+  // 不变量 1）只有在内核不**静态**依赖 peer 时才成立：任何内核文件一碰静态 import，
+  // peer 解析失败炸的就是整个 bundle 的装载——缺席降级当场变成缺席全机。动态
+  // `import()` 恰是惰性机制本体，不在打击面；这里只钉静态边。豁免名单就是机制：
+  // 两个 llm adapter 壳（它们缺席才是「该模块缺席」的那个「该模块」）。
+  const ALLOW_STATIC_PEER = new Set(["llm-adapter.ts", "agnescode-llm-adapter.ts"]);
+  const collectTs = (dir) => {
+    const out = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...collectTs(p));
+      else if (entry.name.endsWith(".ts")) out.push(p);
+    }
+    return out;
+  };
+  const staticPeer = /(?:^|\n)(?:import|export)\b[^;]*?from\s*["'](@deepseek-ai\/[^"']+)/g;
+  let scanned = 0;
+  let offenders = 0;
+  for (const f of collectTs(join(ROOT, "src", "host"))) {
+    if (ALLOW_STATIC_PEER.has(basename(f))) continue;
+    scanned++;
+    const text = readFileSync(f, "utf8");
+    staticPeer.lastIndex = 0;
+    const hit = staticPeer.exec(text);
+    if (hit) {
+      offenders++;
+      bad(`peer 静态边界：${relative(ROOT, f)} 静态 import 了 "${hit[1]}"——内核不得静态依赖 Host peer（缺席降级只允许发生在 llm adapter 壳；惰性接入请走动态 import()`);
+    }
+  }
+  if (offenders === 0) note(`peer 边界：${scanned} 个内核文件零静态 peer import（adapter 壳 2 个豁免）`);
 }
 
 if (fails.length) {
