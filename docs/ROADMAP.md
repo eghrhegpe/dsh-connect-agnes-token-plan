@@ -343,6 +343,52 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 用）；② 复测只能证明**路由还在**，不能替代带凭据的端到端验证——真凭据下的信封形态、
 `refresh` 单用轮换、倍率字段都以 `test/raccoon.test.mjs` 的离线 fixture 为契约，需**（定期人工复核）**。
 
+## 6.3 第三上游形态：AgnesCode BFF（2026-10-01 契约探针 ✅，未立项实现）
+
+> **背景**：用户问及 `https://agnes-ai.cn/agnescode`（AgnesCode，独立编程助手产品，微信登录、
+> 与 Token Plan 认证域互不相通）。GitHub 参考件 `vibe-coding-labs/AgnesCode2Api`（协议翻译
+> 代理：AgnesCode → Anthropic/OpenAI）已完成一轮逆向——**只引用知识，不进 `upstream/`**
+> （[CONTRIBUTING.md](./CONTRIBUTING.md) 红线）。本节探针按 §6.1.2 同款纪律执行，另有
+> **一条最小推理请求为真实计费**（16 max_tokens，实测 65 token，本机账号当时有 1200 枚时效积分）。
+
+**形态判定：不需要「反代」。** 参考件存在的原因是 Claude Code 只说 Anthropic 协议，需要
+翻译层；本插件的 provider 机制直连 OpenAI 兼容端点，协议翻译对本插件是多余层。接入形态 =
+现有 `agnes-token-plan` provider 的同款复制（base + Bearer + OpenAI 端点）。
+
+**契约探针（CN 站，凭据来自本机会话文件，全程内存使用不落盘不打印）**：
+
+| 项 | 实测 | 判读 |
+|---|---|---|
+| BFF base（CN） | `https://api-agnes-code.agnes-ai.cn/v1` | 写在本机会话文件 `bffPublicBaseUrl` 字段里，**不硬编码**；国际站同构 `.com`。参考件把 `.com` 写成常量，正是 video.ts 踩过的「参考件默认国际站」同款坑 |
+| `POST /v1/chat/completions` | `200`，标准 OpenAI 信封（`reasoning_content`、usage 细分） | **零协议翻译**，provider 架构原样复用 |
+| `GET /v1/models` | `200`（带 `X-App-Id: 1` + `X-Platform: 1`） | 模型表与 `~/.agnes/config/config.yaml` 内置 `agnes` provider 一致（glm-5.2 / kimi-k3 / agnes-2.5 / 3.0 …） |
+| `GET /api/v2/subscription/credits-balance` | `200`，`total_balance: 1200`（time_sensitive） | **独立积分池**；语义是订阅池（`level` / `subscription_credits` / 时效 vs 永久），与 Token Plan 的 usage-overview 完全不同，不能套同一渲染。1200 是本机账号当时状态，非平台常量 |
+| `GET /api/v1/user/profile` | `200` | `auth_provider: wechat`、`app_id: agnes`、`current_subscription: null` |
+| token 生命周期 | JWT，`exp−iat ≈ 28 天` | 到期只能引导重登；**刷新端点未证实**——桌面 App 有 `auth-token-refresh-reservation` 机制，参考件 keepalive 只做失效检测、无续期实现 |
+
+**凭据来源（本机登录态采集，已验证解密链）**：Windows 桌面变体存
+`%APPDATA%\AgnesCode\code-auth-session.cn.v1`，Chromium os_crypt 形态（`v10` 前缀 +
+AES-256-GCM；密钥在同目录 `Local State` 的 `os_crypt.encrypted_key`，DPAPI CurrentUser
+包裹）。macOS 的 IDE 变体走 `state.vscdb` 明文 JSON（参考件 `pkg/auth/credentials.go`）。
+红线适用：解出的 JWT 只进 DSH 凭据服务，trace 只记形状（比照 §15）。备选路径是 OAuth
+deep-link（`issue-authorization-code` 用 JWT 换一次性 code → BFF `exchange-code` 换
+`access_token`，`client_id: agnes-code`，redirect `agnes://auth/callback`）——仅记录，未实测。
+
+**先例归属**：这将是本插件第一条「**本机登录态采集**」线（qoder / trae / workbuddy 族先例，
+§5.3 核实表）；Token Plan 仍是「自有登录」（`dsh-codearts-auth` 先例）。两种形态并存时隔离
+纪律照 [ARCHITECTURE.md](./ARCHITECTURE.md) §5.5 同款执行：独立 publisher / store / 凭据引用，
+对主注册影响恒为零；opt-in 默认关、失败降级为面板缺席。
+
+**对小浣熊 tab 的 UI 裁定：不取代。** raccoon tab 的四段式（开关 / 登录 / 积分 / 花名册）
+本身就是 workbuddy 式设计的一个实现，且事实纪律更严（`×N` 芯片区分「平台声明的真倍率」与
+「操作者伪倍率」）；微信扫码是它独有的入口形态，采集式 UI 无处安放。要吸收的是：①
+AgnesCode tab 采用 workbuddy 的「探测过哪些路径 + 逐档失败原因」诊断——本插件的凭据来源
+首次来自本地文件，「没装桌面 App / 未登录 / 加密字段拿不到密钥」必须分开说，这正是
+workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构（开关/登录/积分/花名册）若
+成型，抽共享骨架组件，统一设计落在骨架上，不落在互相模仿上。**明确不搬**：账号池（会话
+文件单账号，采集形态下多账号无源）、按请求体积的可用性测试（AgnesCode 限流触发条件未实测，
+不得默认与 workbuddy 上游同款）、模型逐项勾选（无真实需求前不建面）。
+
 ## 7. 优先级与时间盒
 
 | 优先级 | 项 | 侵入性 | 门禁 |
@@ -355,6 +401,7 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
 | **P2 ✅ 部分落地** | 第二上游 provider：已随 0.4.3 落地（三个 tab 之一 + `sensenova-raccoon`），2026-10-01 补做网关契约复测，**契约成立**（§6.1.2）；剩余未做的是 desktop 融合路径（第二**登录路径**，见 §6.1.1）——它已实测判死，维持观望 | 高（新上游 + 新凭据生命周期） | 已落地部分：`test/raccoon.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9；**仍缺**：带凭据的 live 端到端探针（比照 §2.2 给推理契约做的 `live-contract`） |
+| **P2 未排期** | 第三上游 AgnesCode（§6.3）：契约已探明（BFF OpenAI 兼容、零翻译、28 天 JWT、独立积分池），**未立项实现**；缺口是凭据采集宿主化（DPAPI + AES-GCM 链）与 credits-balance 的面板语义 | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | 未立项；落地时比照 raccoon 行建离线 fixture 契约 + live 探针档，UI 按 §6.3 裁定（五档路径诊断承重、不建账号池） |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 | 明确不做 | 伪倍率折进注册模型名（qoder ② 法：把倍率嵌进 DSH 原生选择器的模型名里，绕「选择器无旁路字段」限制）。2026-09-30 决议 | 低 | 现状即决议：`×N` 只作**面板侧标记**（模型花名册行尾 + 趋势图，同一匹配器、同一数值，均标「非官方」）。理由：① 倍率是操作者手填的对比数据、非平台计费事实，折进 DSH 全局模型名会把个人配置泄漏给所有会话；② qoder 嵌名是「DSH 无字段携带平台真实倍率」的 workaround，本插件的倍率本就没有平台出处，面板就是它唯一合理的位置；③ 模型名是 DSH 配置 / 选择器的稳定标识（id 匹配），加 `×N` 会破坏 id 语义 |
 
