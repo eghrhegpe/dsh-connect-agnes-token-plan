@@ -71,7 +71,7 @@ wiring/routes/provider/draw 四套件全绿、e2e-gate 通过。
 
 | 档 | 文件 | 内容 | 门禁 |
 |---|---|---|---|
-| 离线 | `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/agnes-contract.json`（seed：逐模型的 chat / vision / thinking 档位；`test/baselines/sensenova-contract.json` 是商汤时代的历史原件，仍留在原处供对照） | 断言 `llm-models.ts` 的 `toPiDescriptor` / `identifyVisionModel` / `isChatModel` 对契约表的输出与冻结值一致；`parsers.ts` 对契约表的解析结果；`routes.ts` 的 429 / quota 文案分类。契约表改动必须附「平台响应原文」证据（提交约定） | `npm test` 全绿 |
+| 离线 | `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/agnes-contract.json`（seed：逐模型的 chat / vision / thinking 档位；`test/baselines/sensenova-contract.json` 是商汤时代的历史原件，仍留在原处供对照） | 断言 `llm-models.ts` 的 `toPiDescriptor` / `identifyVisionModel` / `isChatModel` 对契约表的输出与冻结值一致；`parsers.ts` 对契约表的解析结果；`llm-retry.ts` / `codes.ts` 的 429 / quota 文案分类。契约表改动必须附「平台响应原文」证据（提交约定） | `npm test` 全绿 |
 | live | `test/live-contract.mjs`（不进 `npm test`，`npm run test:live:contract`） | 对 `api.agnes-ai.cn/v1/models` 发 1 请求核对目录仍含冻结字段（模态 / context_length / max_output_length / supported_sampling_parameters）；推理端点按契约表**每格 1 请求、限流友好**（每格失败记漂移不重试），红 = 平台方言漂移，修法走 `AGNES-API.md` §7 注释层，不静默改代码 | 手动 / CI best-effort |
 | 探针纪律（2026-09-30 扩） | 推理探针扩到 `reasoning_effort: low/medium`（每模型 2 请求、2s 退避）；**429 是节奏答案不是参数判读**——探针记 INDEFINITE、不计入失败、退出码 0，只有 4xx 参数拒绝才算「平台不支持」的负证据；探针结果**人工**写回冻结契约（`driftLog` 留平台响应原文），不自动改 `llm-models.ts` | 同上 |
 

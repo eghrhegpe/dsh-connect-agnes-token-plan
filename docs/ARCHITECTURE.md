@@ -40,13 +40,14 @@
 
 - `index.ts`：注册只读路由 `/api/dsh-connect-agnes-token-plan/snapshot`（聚合控制台数据，401 自动重登重试一次）+ 账号 / API Key / 模型清单 / 出图开关 / 视频开关 / AgnesCode 配置路由；模块装配与生命周期接线在 `lifecycle.ts`。
 - `host-config.ts`：配置契约——`CONFIG_DEFAULTS`、`resolveSettings` / `resolveAuthOverrides`（含嵌套 `auth:` 块拒绝）、`isAdmitted` 同源闸、`hostName` 解析。
-- `codes.ts`：全部错误码与平台原因码的唯一声明处。`agnes-auth.ts` 产出、`token-store.ts` 判定是否 parked、`routes.ts` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
+- `codes.ts`：全部错误码与平台原因码的唯一声明处。`agnes-auth.ts` 产出、`token-store.ts` 判定是否 parked、`routes/snapshot.ts` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
 - `token-store.ts` + `token-store/`：凭据服务里的令牌与账号存取、按期重登、401 拒绝记忆。子目录按职责拆成 `account` / `acquire` / `renewal` / `grant` / `throttle` / `state` 六块（拆分蓝图见 [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md)，行为由 `store-baseline.test.mjs` 冻结）。
 - `throttle-store.ts`：登录节流状态，写在插件自己的状态文件（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），跨进程跨重启生效。
 - `agnes-auth.ts`：**一跳**账号密码登录（`POST {consoleBase}/api/user/login`）+ 失败分类 + `Retry-After` 解析。`refresh()` 永远抛 `NO_REFRESH_TOKEN`，store 靠这个码落到重登。没有 OIDC / PKCE / JWE。
 - `console-client.ts`：控制台与模型目录的网络请求，带信封解包（`{code,message,data}`）、短生命周期缓存与 single-flight（并发轮询只发一次请求）。
 - `parsers.ts`：响应解析层——字符串数值 / epoch / ISO 归一、`checkShape` 漂移检测、`parseUsageSeries` 分桶求和、`quotaWindows` 四窗口、`matchCurrentPlan` 套餐匹配、`identifyVisionModel` 视觉模型识别。
-- `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 四窗口与累计用量组装 / vision 识别 / `llm` 状态块组装。`routes.ts` 只保留 HTTP 面（路由注册、同源闸、body 读取、`writeJson`），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
+- `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 四窗口与累计用量组装 / vision 识别 / `llm` 状态块组装。HTTP 面在 `routes/` 家族（见下条），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
+- `routes.ts` + `routes/`：八条路由的门面与分册（2026-10 拆分，照 token-store 术式先冻结再搬——`routes.test.mjs` / `agnescode.test.mjs` / `wiring.test.mjs` 拆分前后计数一致零漂移）。`routes.ts` 只保留 `registerRoutes` 门面（wiring 注入、注册顺序、八个 `off()` 回执）；子目录按域拆成 `http`（`writeJson`、同源闸拒答、限额 body 读取等共享原语）/ `snapshot` / `account` / `api-key` / `provider` / `models` / `tool-switch`（draw 与 video 共用一份 handler 体）/ `agnescode`（switch / harvest / logout，route 作用域状态）八块。
 - `trace.ts`：登录 trace 落盘（成功/失败，值级脱敏，仅留最近 20 个，权限 0600）。
 - `util.ts`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
 - `state-store.ts`：按 profile 分段的状态文件读写基建（catalog / provider / draw 三份状态共用，见 [PITFALLS.md](./PITFALLS.md) §23）。
