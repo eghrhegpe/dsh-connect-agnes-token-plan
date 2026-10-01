@@ -485,8 +485,8 @@ const GOOD_SESSION = {
 {
   section("fallback roster");
   try {
-    check("the fallback roster carries the seven probed models", AGNESCODE_FALLBACK_MODELS.length === 7);
-    check("the ids are unique", new Set(AGNESCODE_FALLBACK_MODELS.map((row) => row.id)).size === 7);
+    check("the fallback roster carries the eight probed models", AGNESCODE_FALLBACK_MODELS.length === 8);
+    check("the ids are unique", new Set(AGNESCODE_FALLBACK_MODELS.map((row) => row.id)).size === 8);
     check("member gating is stated, never guessed", AGNESCODE_FALLBACK_MODELS.every((row) => typeof row.memberOnly === "boolean"));
     check("every row declares a positive window (pi-ai does arithmetic on it)",
       AGNESCODE_FALLBACK_MODELS.every((row) => row.contextWindow > 0 && row.maxOutputLength > 0));

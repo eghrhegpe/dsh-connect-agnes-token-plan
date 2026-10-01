@@ -635,16 +635,19 @@ function numOrNullSafe(value: unknown) {
 }
 
 /**
- * The static fallback roster: the seven models the CN BFF listed at probe time
- * (2026-10-01, ROADMAP §6.3). All `model_type: text`, no multiplier concept
- * (billing is the credit pool, not per-model rates). Used ONLY when
- * `fetchAgnescodeCatalog` comes back empty; a fresh catalogue always wins.
+ * The static fallback roster: the eight models the CN BFF listed at probe time
+ * (2026-10-01 night re-probe, ROADMAP §6.3.1). All `model_type: text`, no
+ * multiplier concept — confirmed by that re-probe: no model row carries a
+ * credit/rate/price/cost key and all five rate-candidate endpoints 404
+ * (billing is the account-level credit pool, not per-model rates). Used ONLY
+ * when `fetchAgnescodeCatalog` comes back empty; a fresh catalogue always wins.
  */
 export const AGNESCODE_FALLBACK_MODELS = Object.freeze([
   { id: "agnes-3.0-flash", name: "Agnes 3.0 Flash", memberOnly: false, vision: false, contextWindow: 512_000, maxOutputLength: 65_536 },
   { id: "agnes-2.5-flash", name: "Agnes 2.5 Flash", memberOnly: false, vision: false, contextWindow: 512_000, maxOutputLength: 65_536 },
   { id: "agnes-2.5-pro", name: "Agnes 2.5 Pro", memberOnly: false, vision: false, contextWindow: 512_000, maxOutputLength: 65_536 },
   { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", memberOnly: true, vision: false, contextWindow: 1_000_000, maxOutputLength: 393_216 },
+  { id: "agnes-2.0-flash", name: "Agnes 2.0 Flash", memberOnly: false, vision: false, contextWindow: 512_000, maxOutputLength: 65_536 },
   { id: "glm-5.2", name: "GLM-5.2", memberOnly: true, vision: false, contextWindow: 1_000_000, maxOutputLength: 131_072 },
   { id: "kimi-k3", name: "Kimi K3", memberOnly: true, vision: false, contextWindow: 1_048_576, maxOutputLength: 131_072 },
   { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", memberOnly: true, vision: false, contextWindow: 1_000_000, maxOutputLength: 393_216 }
