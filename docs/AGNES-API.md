@@ -118,10 +118,37 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 官方 FAQ（[AGNES-API-docs/4、Token Plan FAQ.md](./AGNES-API-docs/4、Token Plan FAQ.md)）
 明说 **「RPM 限制和订阅配额会同时生效」**，并给出两套数值：
 
+**① RPM 完整表**（官方 FAQ §3–§5，2026-09-23 更新）：
+
+| 模型类型 | 用户类型 | 规格 | 允许 RPM | 实际 RPM |
+|---|---|---|---|---|
+| 文本 | `default` | — | 30 | **10** |
+| 文本 | `enterprise` | — | 60 | **20** |
+| 文本 | `TokenPlan` | — | 1000 | **1000** |
+| 图片 | `default` | 1K / 2K / 3K / 4K | 20 / 10 / 2 / 1 | **10 / 5 / 1 / 1** |
+| 图片 | `enterprise` | 1K / 2K / 3K / 4K | 60 / 40 / 2 / 2 | **40 / 20 / 1 / 1** |
+| 图片 | `TokenPlan` | 1K / 2K / 3K / 4K | 120 / 120 / 2 / 2 | **100 / 80 / 1 / 1** |
+| 视频 | `default` | — | 2 | **1** |
+| 视频 | `enterprise` | — | 2 | **2** |
+| 视频 | `TokenPlan` | — | 6 | **5** |
+
+> ⚠️ 顶部「文本 RPM 限额调整公告」表格只列了免费(10)与企业(20)，**漏了 Token Plan**，
+> 已加注标记；实际生效值以 §3 正文为准。
+
+**② 订阅配额三档表**（官方 FAQ §2，与 §4 控制台 `subscription` 一致）：
+
+| Plan | `agnes-3.0-flash` | `agnes-image-2.1-flash` | `agnes-video-2.5-flash` |
+|---|---|---|---|
+| **Starter（入门版）** | 每 5 小时 1,500 次；每周 15,000 次 | 每天 4,000 张 | 每天 500 秒 |
+| **Plus（专业版）** | 每 5 小时 7,500 次；每周 75,000 次 | 每天 4,000 张 | 每天 500 秒 |
+| **Pro（高级版）** | 每 5 小时 30,000 次；每周 300,000 次 | 每天 4,000 张 | 每天 500 秒 |
+
+计数口径：文本按**请求次数**、图片按**生成张数**、视频按**生成秒数**。
+
 | 限制层 | 维度 | 来源 |
 |---|---|---|
-| **RPM** | 每分钟请求数；Token Plan 用户文本 1000 RPM、图片 1K=100 / 2K=80 / 3K=2 / 4K=2、视频 5 | 官方 FAQ §3–§5 |
-| **订阅配额** | 每 5 小时 / 每周 文本请求次数、每天 图片张数、每天 视频秒数 | 控制台 `subscription`（§4） |
+| **RPM** | 每分钟请求数（上表①） | 官方 FAQ §3–§5 |
+| **订阅配额** | 每 5 小时 / 每周 文本请求次数、每天 图片张数、每天 视频秒数（上表②） | 控制台 `subscription`（§4） |
 
 **项目现状**：`quota.windows` 只覆盖**订阅配额**四窗口；**RPM 未读、面板不显示**。
 
@@ -345,9 +372,11 @@ peer 误判的**官方依据**：
    明说 429 也可能是「超过订阅配额」**——`llm-error-fix.ts` 的 `looksLikeRateLimit`
    以 `/\b429\b/` 作首判据，只要 message 没带 `quota exceeded` / `balance exhausted`
    等硬额度措辞就纠正回 RATE_LIMIT；若平台对订阅配额用尽也回 429 且 message 只写
-   「rate limit exceeded」，就会被**误判成限频**去退避重试。**改进方向**：加
-   「订阅配额耗尽」判据（如 message 含 `subscription quota` / `Token Plan quota`），
-   命中则保留 QUOTA——这是 `llm-error-fix.ts` 的下一个演进点，非当前 bug。
+   「rate limit exceeded」，就会被**误判成限频**去退避重试。**已落地**：`hardQuota`
+   新增「订阅/套餐配额耗尽」判据（message 含 `subscription quota` / `Token Plan quota`
+   / `订阅配额` / `Token Plan 配额` 等即保留 QUOTA），`test/error-fix.test.mjs` 用
+   三条例句钉住「429 + 订阅配额措辞 → 保留 QUOTA」，与「429 + 限频措辞 → 纠正
+   RATE_LIMIT」互相对照。
 
 > 其余错误码（400/401/403/404/408/409/413/415/422/431/499/500/502/503/504/
 > 520/522/524）均为 HTTP 标准语义，官方文档未给出 Agnes 专有 type 名，
