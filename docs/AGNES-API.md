@@ -227,8 +227,8 @@ README 里「两类 Key 共用输入框」的说法没错，但应补一句「�
 | `id` | ✅ | ✅ | 模型 id |
 | `input_modalities` | ✅ | ❌ | `identifyVisionModel` 只看它 → Agnes 上**恒 false**；面板「0 个支持图片输入」的含义是「读不到」，不是「测过没有」 |
 | `output_modalities` | ✅ | ❌ | `modality.ts` 的第一优先；缺则退回名称兜底 |
-| `context_length` | ✅ | ❌ | `contextWindowOf` 命名字段，缺则兜底 `128_000`——面板显示的是**兜底值**，不是平台声明 |
-| `max_output_length` | ✅ | ❌ | 同上 |
+| `context_length` | ✅ | ❌ | `contextWindowOf` 命名字段，缺则兜底 `128_000`——面板显示的是**兜底值**，不是平台声明。⚠️ 但**官方文档**明写 `agnes-2.5-flash` / `agnes-3.0-flash` = 512K、`agnes-2.5-pro` = 1M（差 4–8 倍），见 §7.1.2 |
+| `max_output_length` | ✅ | ❌ | `maxOutputLengthOf` 命名字段，缺则兜底；**已真机探针钉 `65_536`**（2026-10-01，与官方文档一致），见 §7.3 |
 | `supported_features` | ✅ | ❌ | 无字段可读，`reasoning: true` 改为无条件设置 |
 | `supported_endpoint_types` | ❌ | ✅ | 无判别力（现存 7 条全是 `["openai"]`） |
 
