@@ -167,10 +167,10 @@ export const CONFIG_DEFAULTS = Object.freeze({
  * @param {unknown} raw - the raw `trendMultipliers` config value.
  * @returns {Record<string, number>} the sanitized map.
  */
-export function resolveTrendMultipliers(raw) {
+export function resolveTrendMultipliers(raw: unknown) {
   const source = raw === undefined || raw === null ? CONFIG_DEFAULTS.trendMultipliers : raw;
   if (source === null || typeof source !== "object" || Array.isArray(source)) return { ...CONFIG_DEFAULTS.trendMultipliers };
-  const out = {};
+  const out: Record<string, number> = {};
   for (const [key, value] of Object.entries(source)) {
     if (typeof key === "string" && key !== "" && typeof value === "number" && Number.isFinite(value) && value > 0) {
       out[key] = value;
@@ -195,7 +195,7 @@ export function resolveTrendMultipliers(raw) {
  * @param {number} [max] - the upper clamp (inclusive); omit for no upper bound.
  * @returns {number} the clamped integer.
  */
-export function clampInt(raw, def, min, max = Infinity) {
+export function clampInt(raw: unknown, def: number, min: number, max: number = Infinity) {
   return Math.min(max, Math.max(min, Math.floor(num(raw, def))));
 }
 
@@ -209,7 +209,7 @@ export function clampInt(raw, def, min, max = Infinity) {
  * @param {object} config - the row's raw patch config.
  * @returns {{settings: object, configError: string|null}}
  */
-export function resolveSettings(config) {
+export function resolveSettings(config: Record<string, unknown>) {
   const source = obj(config);
   const consoleBase = str(source.consoleBase, CONFIG_DEFAULTS.consoleBase).replace(/\/+$/, "");
   const apiBase = str(source.apiBase, CONFIG_DEFAULTS.apiBase).replace(/\/+$/, "");
@@ -252,10 +252,10 @@ export function resolveSettings(config) {
         // first catalog poll still sees the previous catalog's set).
         writeImageModelIds: source.writeImageModelIds === true,
         imageModelIds: Array.isArray(source.imageModelIds)
-          ? source.imageModelIds.filter((id) => typeof id === "string")
+          ? source.imageModelIds.filter((id: string) => typeof id === "string")
           : CONFIG_DEFAULTS.imageModelIds,
         visionModels: Array.isArray(source.visionModels)
-          ? source.visionModels.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+          ? source.visionModels.filter((entry: unknown) => entry && typeof entry === "object" && !Array.isArray(entry))
           : CONFIG_DEFAULTS.visionModels,
         // Step three opt-in: register the OpenAI-compatible LLM provider
         // directly (strict boolean, like writeImageModelIds).
@@ -324,7 +324,7 @@ export function resolveSettings(config) {
  * @returns {object} the override object for `createAuth`.
  * @throws {Error} when the row looks like it nests overrides it does not read.
  */
-export function resolveAuthOverrides(source, consoleBase) {
+export function resolveAuthOverrides(source: Record<string, unknown>, consoleBase: string) {
   // ANY nested `auth` block is refused, not just the names below: none of its
   // keys are read, so a block of any shape is silently ignored. Testing for a
   // fixed list would leave `auth: { loginPath: ... }` — the exact key an
@@ -367,7 +367,7 @@ export function resolveAuthOverrides(source, consoleBase) {
  * @param {object} source - the row's raw patch config.
  * @returns {Set<string>} the admitted host names, lowercased.
  */
-export function resolveAllowedHosts(source) {
+export function resolveAllowedHosts(source: Record<string, unknown>) {
   const admitted = new Set(CONFIG_DEFAULTS.admittedHosts);
   const extra = Array.isArray(source.allowedHosts) ? source.allowedHosts : [];
   for (const entry of extra) {
@@ -382,7 +382,7 @@ export function resolveAllowedHosts(source) {
  * @param {string} host - the raw header value.
  * @returns {string} the name; bracketed for IPv6 literals.
  */
-export function hostName(host) {
+export function hostName(host: string) {
   // "[::1]:8080" keeps its brackets; "localhost:8080" loses its port.
   if (host.startsWith("[") && host.includes("]")) {
     return host.slice(0, host.indexOf("]") + 1);
@@ -407,7 +407,7 @@ export function hostName(host) {
   const colons = host.split(":");
   if (colons.length > 2) {
     // "address + port" = 2nd-to-last and last segments are BOTH digits.
-    if (/^\d+$/.test(colons[colons.length - 2]) && /^\d+$/.test(colons[colons.length - 1])) {
+    if (/^\d+$/.test(colons[colons.length - 2]!) && /^\d+$/.test(colons[colons.length - 1]!)) {
       return host.slice(0, host.lastIndexOf(":"));
     }
     return host;
@@ -448,7 +448,7 @@ export function hostName(host) {
  * @param {Set<string>} allowedHosts - the host names this Host answers as.
  * @returns {boolean} whether the request may be served.
  */
-export function isAdmitted(request, allowedHosts) {
+export function isAdmitted(request: { headers: { host?: string; origin?: unknown } }, allowedHosts: Set<string>) {
   const host = str(request.headers?.host, "").toLowerCase();
   if (host === "" || !allowedHosts.has(hostName(host))) return false;
   const origin = request.headers.origin;
