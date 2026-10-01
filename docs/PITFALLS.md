@@ -359,3 +359,18 @@
 - **修法**：抽 `switch-store.ts`（`createSwitchStore` + `createSwitchParser`），四个 store 只声明各自不同的事实（文件名 / 形状版本号 / 偏好 wire key / 报错措辞），继承回写与 save/forget 走同一个 `writePayload`（按各自 wire key 落位）；`doctor` 的三个 `parse*Payload` 改为 re-export store 的解析器（AgnesCode 那处内联判断同改）。
 - **验证**：新增 `test/switch-store.test.mjs`——**四个商店跑同一组断言**（84 条），其中"继承后重新构造 store 仍读得到"这条在修复前是红的（正是这个坑的复现）。重构前后 `store 112 / routes 190 / provider 204 / draw 70 / video 127 / agnescode 119 / wiring 44 / config 94 / contract 102 / doctor 39` 逐项计数一致。
 - **教训**：**抽原语不等于抽到那一层**——把 `writeStateFile` 收敛了，四个形状完全相同的调用方仍会各自发明"这一格写什么"。凡是"N 个同构文件"的局面，判断收敛是否到位的标准是**有没有一个所有 N 者共用的构造入口**，不是有没有共用函数。同理，"进程内答案正确"永远不能替代"重开一次读回来"——带短 TTL 缓存的状态层尤其如此，缓存会替错误写法遮羞。
+## 35. 同源闸「无 Origin 放行」不是漏洞——但那条分支必须留下痕迹
+
+- **现象**：审 `isAdmitted`（`src/host/host-config.ts`）时容易得出"闸是薄的"：`Origin` 缺失直接 `return true`，而它守着 `/account` `/api-key` `/models` `/provider` `/draw` `/video` `/agnescode` 七条路由。直觉的加固是"写方法必须带 `Origin`"。
+- **根因**：那条直觉是错的，而且错在没分清威胁模型。① 浏览器的**跨站 POST 必然发 `Origin`**，发了就被 `Origin`/`Host` 比对拦掉（现闸已经挡住了真正的跨站与 DNS rebinding）；② 同站 GET 不发 `Origin`，所以"缺失即放行"是**必须的**，不是疏漏；③ 因此走这条分支的只可能是**非浏览器客户端**，而它们本来就能自己伪造 `Origin` 与 `Host`。补那条规则换不来任何安全性，只增加摩擦，外加一个"面板被代理剥掉 `Origin` 就全站 403"的功能性风险。闸真正的承重层是 **Host 自己的 auth cookie**，`Origin` 只是纵深防御（该判断已写进 `isAdmitted` 的头注）。
+- **修法**：不改放行，改**可见性**——新增 `src/host/admission-audit.ts`：`isAdmittedWithAudit()` 放行结论与 `isAdmitted` **逐位相同**，只在"放行 + 未声明 `Origin` + 会改状态"三条件同时成立时记一笔（次数 / 时间 / 归一化方法名，**不含任何头值或凭据**），落共享 state 目录（与 `throttle` 同款，故意不按 profile 分段，§23）；`doctor` 报告中新增 `admission` 行。六条写路由改接审计版，只读的 `snapshot` 保持原闸。`test/admission-audit.test.mjs` 钉住"哪些情形留痕、哪些不留"与"新增写路由接错闸会红"。
+- **验证**：27 条新检查；`routes` 190 / `wiring` 44 / `doctor` 39 逐项与改动前一致（零回归，因为放行逻辑没动）。
+- **教训**：**"看起来缺一道检查"不等于"缺一道防护"**——先把威胁模型写清楚（谁会发这个头、谁不会、谁能伪造），再判断缺口在哪。判断完发现"不需要加固"时，也别停在"什么都不做"：把那条分支做成**可观测**的，这样"它到底有没有被走过"不再靠猜。另外，审计类文件的失败取向必须是"认不出 = 没发生过"且**不能抛**——它坏了不能让请求失败，但这也意味着**写错它会静默失效**（见 §36）。
+
+## 36. `writeStateFile` 要的是已序列化的字符串，传对象会静默落一个 `[object Object]`
+
+- **现象**：新写的状态文件读回来永远是 `null`，插桩看文件内容是字面量 `[object Object]`——没有异常、没有告警，只是"好像从没写过"。
+- **根因**：`src/host/state-store.ts` 的 `writeStateFile(file, payload, { temporary })` 内部是 `` `${payload}` ``（模板字符串），**不做 `JSON.stringify`**。每个既有调用方（`throttle-store` / `catalog-store` / `switch-store`）都自己先 `JSON.stringify(...)` 再传，所以这个契约只存在于调用方的示范里——新调用方按"传对象"的直觉写，就会静默产出一个不可解析的文件。
+- **修法**：调用处序列化，并在 `admission-audit.ts` 的调用点写了注释说明原因。审计/节流这类"读不出来就当作没发生"的文件，是这个坑危害最大的地方——它的失败方向与"真的没发生"完全同形。
+- **验证**：`test/admission-audit.test.mjs` 断言落盘文件恰好四个字段（`version/count/lastAt/lastMethod`）且能被 `JSON.parse`——传错类型时这条会红。
+- **教训**：**参数类型是"字符串"却长得像"载荷"的 API，是静默失败的温床**。收敛原语时（§34 的教训）把"I/O 怎么做"收上来了，但"传进去的东西是什么形状"留在了每个调用方的示范里——跟 §34 同一个病：抽到一半。

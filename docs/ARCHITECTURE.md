@@ -50,6 +50,7 @@
 - `routes.ts` + `routes/`：八条路由的门面与分册（2026-10 拆分，照 token-store 术式先冻结再搬——`routes.test.mjs` / `agnescode.test.mjs` / `wiring.test.mjs` 拆分前后计数一致零漂移）。`routes.ts` 只保留 `registerRoutes` 门面（wiring 注入、注册顺序、八个 `off()` 回执）；子目录按域拆成 `http`（`writeJson`、同源闸拒答、限额 body 读取等共享原语）/ `snapshot` / `account` / `api-key` / `provider` / `models` / `tool-switch`（draw 与 video 共用一份 handler 体）/ `agnescode`（switch / harvest / logout，route 作用域状态）八块。
 - `trace.ts`：登录 trace 落盘（成功/失败，值级脱敏，仅留最近 20 个，权限 0600）。
 - `util.ts`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
+- `admission-audit.ts`：同源闸的旁路审计——「不带 `Origin` 的写请求」记一笔（次数/时间/归一化方法名，不含任何头值），供 `doctor` 事后可见；放行结论不受它影响（见 [PITFALLS.md](./PITFALLS.md) §35）。
 - `state-store.ts`：按 profile 分段的状态文件读写基建——版本载荷、temp+rename 原子写、0600/0700、短 TTL 读缓存、§23 一次性继承缝（见 [PITFALLS.md](./PITFALLS.md) §23）。
 - `switch-store.ts`：**四个 opt-in 开关商店共用的一层**（provider / draw / video / AgnesCode）。「面板存过的值胜过配置默认值」+ 一个可选的 model 偏好，四份曾经互相复制；现在只有各自不同的事实（文件名、形状版本、偏好 wire key、报错措辞）留在 `provider-store.ts` / `draw-store.ts` / `video-store.ts` / `agnescode-switch-store.ts` 里，其余全在这一层（行为由 `test/switch-store.test.mjs` 对四者逐项冻结）。
 - `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` 经此模块注入并发 publish 门控。

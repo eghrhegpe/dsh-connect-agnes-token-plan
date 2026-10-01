@@ -33,6 +33,7 @@ import { parseVideoPayload } from "./video-store.ts";
 
 export { parseProviderPayload, parseDrawPayload, parseVideoPayload };
 import { surveyAgnescodeStorage } from "./agnescode.ts";
+import { ADMISSION_AUDIT_FILE, parseAdmissionAudit } from "./admission-audit.ts";
 
 /** A scope whose state the doctor reported on (a profile name, or "" for shared). */
 export interface DoctorScope {
@@ -79,6 +80,12 @@ export interface DoctorReport {
    * not a skipped one (`presentDirs: 0`).
    */
   agnescode: Awaited<ReturnType<typeof surveyAgnescodeStorage>> | null;
+  /**
+   * 不带 `Origin` 的写请求审计（次数 / 最后一次时间 / 方法）。`null` = 没发生过
+   * 或读不出来——**不是**零次：文件缺席与"零次"在这里是同一个答案，见
+   * `parseAdmissionAudit`。
+   */
+  admission: { count: number; lastAt: number; lastMethod: string } | null;
 }
 
 /** Read a state JSON, or `null` when absent / unreadable / not JSON. */
@@ -232,19 +239,41 @@ export async function diagnose(options: { dshHome?: string; env?: any; platform?
   } catch {
     agnescode = null;
   }
+  // 审计是共享目录里的一个文件（`throttle` 同款，不按 profile 分段），且与
+  // AgnesCode 盘点同理：读不出来不能把整份报告带走。
+  let admission: DoctorReport["admission"] = null;
+  try {
+    admission = parseAdmissionAudit(await readJson(join(sharedDir, ADMISSION_AUDIT_FILE)));
+  } catch {
+    admission = null;
+  }
   return {
     dshHome: home,
     plugin: name,
     scopes: profileScopes,
     shared: sharedScope,
     profiled: profiles.length > 0,
-    agnescode
+    agnescode,
+    admission
   };
 }
 
 /** Render a report as human-readable lines (the non-`--json` doctor output). */
 export function renderReport(report: any) {
   const lines = [`dshHome: ${report.dshHome}`];
+  // 审计行紧跟 dshHome：它回答的是"这台机器上有没有人打过无 Origin 的写"，
+  // 比任何单个 profile 的开关都更靠前——尤其 `/agnescode`（一次 POST 就会触发
+  // 本机解密 + 凭据落库 + provider 注册）。零次与"读不出来"都要如实说。
+  const admission = report.admission;
+  if (admission !== null && admission !== undefined) {
+    const when = admission.lastAt > 0 ? new Date(admission.lastAt).toISOString() : "unknown time";
+    lines.push(
+      `admission: ${String(admission.count)} state-changing request(s) admitted with no Origin`
+        + ` (last: ${admission.lastMethod} @ ${when})`
+        + " — 浏览器跨站 POST 必带 Origin 且已被闸拦，这类只能是非浏览器客户端；"
+        + "若有意外值，查 /agnescode 与 /account 的调用方"
+    );
+  }
   // The desktop App fact reads FIRST — the question it answers ("is the App
   // even here, in a shape we can read?") precedes any per-profile switch.
   const agnes = report.agnescode;

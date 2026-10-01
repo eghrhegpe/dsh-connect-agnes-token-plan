@@ -10,7 +10,8 @@
  * @module dsh-connect-agnes-token-plan/routes/api-key
  */
 
-import { isAdmitted, name } from "../host-config.ts";
+import { name } from "../host-config.ts";
+import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 
 /** The inference API-key route (`sk-…`), step three of the one-stop plan. */
@@ -32,7 +33,7 @@ export function registerApiKeyRoute(ctx, wiring) {
     handler: async (request, response) => {
       // Same trust fence as the other two routes: a foreign page must not be
       // able to plant or wipe an inference key.
-      if (!isAdmitted(request, settings.allowedHosts)) {
+      if (!isAdmittedWithAudit(request, settings.allowedHosts)) {
         refuseOrigin(response);
         return;
       }

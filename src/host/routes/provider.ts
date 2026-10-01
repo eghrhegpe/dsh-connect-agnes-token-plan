@@ -10,7 +10,8 @@
  * @module dsh-connect-agnes-token-plan/routes/provider
  */
 
-import { isAdmitted, name } from "../host-config.ts";
+import { name } from "../host-config.ts";
+import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 
 /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
@@ -32,7 +33,7 @@ export function registerProviderRoute(ctx, wiring) {
     handler: async (request, response) => {
       // Same trust fence as the other three routes: a foreign page must not be
       // able to flip model routing for the whole Host.
-      if (!isAdmitted(request, settings.allowedHosts)) {
+      if (!isAdmittedWithAudit(request, settings.allowedHosts)) {
         refuseOrigin(response);
         return;
       }

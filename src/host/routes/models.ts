@@ -10,7 +10,8 @@
  * @module dsh-connect-agnes-token-plan/routes/models
  */
 
-import { isAdmitted, name } from "../host-config.ts";
+import { name } from "../host-config.ts";
+import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { normalizeEnabledIds } from "../catalog-store.ts";
 import { catalogSignature } from "../provider-publish.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
@@ -37,7 +38,7 @@ export function registerModelsRoute(ctx, wiring) {
     handler: async (request, response) => {
       // Same fence as the other routes: a foreign page must not be able to
       // decide which models this Host offers.
-      if (!isAdmitted(request, settings.allowedHosts)) {
+      if (!isAdmittedWithAudit(request, settings.allowedHosts)) {
         refuseOrigin(response);
         return;
       }

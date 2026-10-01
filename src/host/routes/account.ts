@@ -11,7 +11,8 @@
  * @module dsh-connect-agnes-token-plan/routes/account
  */
 
-import { isAdmitted, name } from "../host-config.ts";
+import { name } from "../host-config.ts";
+import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { CODE } from "../codes.ts";
 import { writeLoginTrace } from "../trace.ts";
 import { str } from "../util.ts";
@@ -35,7 +36,7 @@ export function registerAccountRoute(ctx, wiring) {
     handler: async (request, response) => {
       // The same fence as the snapshot route: without it, any page the
       // browser visits could post an account into this panel.
-      if (!isAdmitted(request, settings.allowedHosts)) {
+      if (!isAdmittedWithAudit(request, settings.allowedHosts)) {
         refuseOrigin(response);
         return;
       }

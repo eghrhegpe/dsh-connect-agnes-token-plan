@@ -22,7 +22,8 @@
  * @module dsh-connect-agnes-token-plan/routes/agnescode
  */
 
-import { isAdmitted, name } from "../host-config.ts";
+import { name } from "../host-config.ts";
+import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { redactSecrets } from "../util.ts";
 import {
   fetchAgnescodeCatalog,
@@ -66,7 +67,7 @@ export function registerAgnescodeRoute(ctx, wiring) {
     kind: "exact",
     path: AGNESCODE_PATH,
     handler: async (request, response) => {
-      if (!isAdmitted(request, settings.allowedHosts)) {
+      if (!isAdmittedWithAudit(request, settings.allowedHosts)) {
         refuseOrigin(response);
         return;
       }

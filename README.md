@@ -90,7 +90,7 @@ npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本�
 - [docs/API.md](docs/API.md) — 路由与控制台端点
 - [docs/AGNES-API.md](docs/AGNES-API.md) — Agnes 接口全集（控制台额度侧 + 推理侧）
 - [docs/TESTING.md](docs/TESTING.md) — 测试体系
-- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑（34 条）
+- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑（36 条）
 - [CHANGELOG.md](CHANGELOG.md) — 版本变化
 
 AI 协作会话请先读 [AGENTS.md](AGENTS.md)。

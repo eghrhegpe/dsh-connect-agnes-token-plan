@@ -12,7 +12,8 @@
  * @module dsh-connect-agnes-token-plan/routes/tool-switch
  */
 
-import { isAdmitted, name } from "../host-config.ts";
+import { name } from "../host-config.ts";
+import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
@@ -56,7 +57,7 @@ export function registerToolSwitchRoute(ctx, { path, label, store, enabledKey, e
     handler: async (request, response) => {
       // Same trust fence as the other routes: a foreign page must not be able
       // to turn an agent tool on or off.
-      if (!isAdmitted(request, allowedHosts)) {
+      if (!isAdmittedWithAudit(request, allowedHosts)) {
         refuseOrigin(response);
         return;
       }
