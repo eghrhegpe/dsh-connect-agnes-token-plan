@@ -251,7 +251,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // "the console is unreachable" and "the plugin is broken". `bare` because the
   // tab body is not itself a card.
   const quotaPlaceholder = showSetupForm
-    ? h(AccountForm, { auth, onDone: () => void load(), tt, bare: true })
+    ? h(AccountForm, { auth, onDone: () => void load(), tt, bare: true, hasSnapshot: false })
     : h(
         "div",
         { style: S.empty },
@@ -358,7 +358,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                 ? h(
                     SectionCard,
                     { title: tt("auth.title"), open: openSections.account, onToggle: () => toggleSection("account"), tt },
-                    h(AccountForm, { auth, onDone: () => void load(), tt, bare: true })
+                    h(AccountForm, { auth, onDone: () => void load(), tt, bare: true, hasSnapshot: true })
                   )
                 : null
             )

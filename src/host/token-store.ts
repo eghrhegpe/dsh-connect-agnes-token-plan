@@ -308,7 +308,22 @@ export function createTokenStore(options) {
         // user must clear. The panel says so instead of showing a countdown
         // that would tick down to another attempt that never happens.
         needsUserAction: held !== null && held.parked,
-        error: state.lastError === null ? null : state.lastError instanceof Error ? state.lastError.message : String(state.lastError)
+        // A failure that has since been RESOLVED is not a failure.
+        //
+        // `lastError` is written and cleared by the acquisition path — but
+        // `getToken` returns a still-fresh cached token early, so a manual
+        // sign-in from the panel (which stores a token directly, never through
+        // `acquire`) never runs that clear. The result was a working panel
+        // whose header said "sign in again" for the rest of the Host's life:
+        // the successful login cleared the throttle record but not this
+        // string, so real quota rendered underneath a needs-login chip.
+        //
+        // Gated on the OUTCOME rather than patching every writer: if we hold a
+        // token the console has not refused, there is no current error to
+        // report, whatever the last attempt happened to say.
+        error: isFresh(stored)
+          ? null
+          : state.lastError === null ? null : state.lastError instanceof Error ? state.lastError.message : String(state.lastError)
       };
     }
   };

@@ -21,11 +21,26 @@ import { REFUSAL_TEXT } from "./snapshot.ts";
 import { S } from "./styles.ts";
 import type { AuthData } from "./wire.ts";
 
-export function AccountForm({ auth, onDone, tt, bare }: {
+export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
   auth?: AuthData | null;
   onDone?: () => void;
   tt: Tt;
   bare?: boolean;
+  /**
+   * Whether the panel this form sits in already has a snapshot to render.
+   *
+   * It gates ONE line: the post-save "saved and signed in, reading the
+   * quota…". That sentence is a progress claim, and it was never resolved —
+   * `saved` is only cleared by "clear the saved account", so once a reader
+   * signed in, the card underneath a fully rendered quota kept announcing
+   * that it was still reading it. Same shape as a stale `auth.error`: a
+   * transient state that outlives the moment it describes.
+   *
+   * The standalone form (no snapshot yet) still needs it — there the reader
+   * really is waiting. Inside the panel the numbers arriving ARE the
+   * confirmation, and `auth.saved` below still states the durable half.
+   */
+  hasSnapshot?: boolean;
 }): unknown {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -229,7 +244,7 @@ export function AccountForm({ auth, onDone, tt, bare }: {
       // cleared" must never read as "saved and signed in".
       forgotten
         ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("auth.forgotten"))
-        : saved
+        : saved && hasSnapshot !== true
           ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("auth.working"))
           : null,
       formError ? h("p", { style: S.formError, role: "alert" }, formError) : null,

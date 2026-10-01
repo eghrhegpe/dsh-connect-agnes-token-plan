@@ -372,6 +372,10 @@ async function withNetwork(stub, body) {
     const state = await store.state();
     check("a parked refusal has no countdown", state.retryAfterMs === null, String(state.retryAfterMs));
     check("a parked refusal asks the user instead", state.needsUserAction === true, String(state.needsUserAction));
+    // While it is parked and no token is held, the panel IS told about it —
+    // this is the other half of the check below.
+    check("a parked refusal is reported as the current error",
+      typeof state.error === "string" && state.error !== "", String(state.error));
 
     // The one path that may retry is the user submitting a corrected password.
     globalThis.fetch = await makeTokenStub(accepted);
@@ -380,6 +384,13 @@ async function withNetwork(stub, body) {
     check("a corrected password is accepted", fixed.needsUserAction === false, JSON.stringify(fixed));
     check("the parked flag is cleared once sign-in works", fixed.needsUserAction === false,
       String(fixed.needsUserAction));
+    // …and the ERROR string clears with it. It is written by the acquisition
+    // path and cleared by that same path — but `getToken` returns a still-fresh
+    // cached token EARLY, so a manual sign-in (which stores a token directly,
+    // never through `acquire`) never ran the clear. The panel then showed real
+    // quota under a "sign in again" chip for the rest of the Host's life: the
+    // successful login cleared the throttle record but not this string.
+    check("the resolved refusal stops being reported", fixed.error === null, String(fixed.error));
   }).catch((error) => fail("a wrong password is parked, not retried", error));
 }
 
