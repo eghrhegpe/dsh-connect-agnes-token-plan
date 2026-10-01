@@ -122,7 +122,7 @@ export function outputModalitiesOf(entry) {
   const declared = declaredOutputModalities(entry);
   if (declared !== null) return { modalities: declared, source: "declared" };
   const id = str(entry?.id, "");
-  const inferred = [];
+  const inferred: string[] = [];
   if (IMAGE_ID_PATTERN.test(id)) inferred.push(IMAGE_MODALITY);
   if (VIDEO_ID_PATTERN.test(id)) inferred.push(VIDEO_MODALITY);
   if (inferred.length > 0) return { modalities: inferred, source: "inferred" };

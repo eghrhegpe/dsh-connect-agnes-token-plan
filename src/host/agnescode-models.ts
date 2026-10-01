@@ -57,7 +57,7 @@ export function agnescodeRequestHeaders() {
  */
 export function agnescodeRoster(catalog) {
   const rows = Array.isArray(catalog) && catalog.length > 0 ? catalog : AGNESCODE_FALLBACK_MODELS;
-  const out = [];
+  const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier: number; contextWindow: number; maxOutputLength: number }> = [];
   for (const row of rows) {
     const id = str(row?.id, "");
     if (id === "") continue;
@@ -120,7 +120,7 @@ export function agnescodeToDescriptor(row: any, options: { bffBase?: string } = 
  */
 export function buildAgnescodeDescriptors(roster: any, options: { bffBase?: string } = {}) {
   const list = Array.isArray(roster) ? roster : agnescodeRoster(null);
-  const out = [];
+  const out: ReturnType<typeof agnescodeToDescriptor>[] = [];
   const seen = new Set();
   for (const row of list) {
     const id = str(row?.id, "");

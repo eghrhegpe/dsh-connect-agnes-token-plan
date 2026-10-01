@@ -82,7 +82,7 @@ export function localBackoffMs(attempt) {
  * legitimately absent.
  * @returns {Promise<{code: string, parked: boolean, until: number|null, attempt: number}|null>}
  */
-export async function readThrottle(wiring, state) {
+export async function readThrottle(wiring, _state) {
   const { throttleStore } = wiring;
   return await throttleStore.read().catch(() => null);
 }

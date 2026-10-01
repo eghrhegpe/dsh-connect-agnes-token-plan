@@ -98,7 +98,7 @@ const AGNESCODE_POLL_MS = 60_000;
  */
 export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: TabStatus) => void }): unknown {
   const [state, setState] = useState<AgnescodeState | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // When this tab last read its route successfully. The bar quotes it instead
   // of the snapshot's stamp: two different routes, two different cadences.
@@ -184,7 +184,9 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       const body = await postJson(AGNESCODE_PATH, { action: "harvest" });
       if (alive.current) {
         const harvestBlock = body?.harvest;
-        const attempts = Array.isArray((harvestBlock as { attempts?: unknown })?.attempts) ? (harvestBlock as { attempts: unknown[] }).attempts : [];
+        const attempts: AgnescodeHarvestAttempt[] = Array.isArray((harvestBlock as { attempts?: unknown })?.attempts)
+          ? (harvestBlock as { attempts: AgnescodeHarvestAttempt[] }).attempts
+          : [];
         setState((current) => (current ? { ...current, harvest: { ok: body?.ok === true, attempts } } : current));
         if (body?.ok === true) {
           setNote(tt("agnescode.harvestOk"));

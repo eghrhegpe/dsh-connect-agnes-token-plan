@@ -88,7 +88,7 @@ export function buildDrawEndpoint(apiBase) {
  */
 export function imageGenModelIds(entries) {
   const position = new Map();
-  const out = [];
+  const out: string[] = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!isImageGenModel(entry)) continue;
     const id = str(entry?.id, "");
@@ -342,7 +342,7 @@ export function defineDrawTool({
       // Two parameters + array return: the shape dsh-draw-router had to fix
       // (its upstream "Bug 1+2") — keep both, the renderer is called with the
       // call args first and the result second.
-      render: (args, result) => [{ type: "text", text: result?.hint || "图片已生成" }]
+      render: (_args, result) => [{ type: "text", text: result?.hint || "图片已生成" }]
     },
     timeoutMs: timeoutMs + 10_000,
     async execute(params) {

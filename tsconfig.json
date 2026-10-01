@@ -12,6 +12,11 @@
     "allowImportingTsExtensions": true,
     "strict": false,
     "noImplicitAny": false,
+    "strictNullChecks": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true

@@ -16,7 +16,7 @@
  *
  * @module dsh-connect-agnes-token-plan/throttle-store
  */
-import { rename, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { str, num } from "./util.ts";
 import { name } from "./host-config.ts";
@@ -135,7 +135,7 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
  * @returns {{read: Function, write: Function, clear: Function}} the store.
  */
 export function createMemoryThrottleStore(now = Date.now) {
-  let held = null;
+  let held: { version: number; [key: string]: unknown } | null = null;
   return {
     async read() {
       return parse(held, now);

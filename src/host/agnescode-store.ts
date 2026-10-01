@@ -82,7 +82,7 @@ export function serializeAgnescodeCredential(credential) {
  *   service, a resolver, or `null` (resolved on EVERY use, like `api-key-store`).
  * @returns {{save, forget, resolve, isExpired, state}}
  */
-export function createAgnescodeStore({ credentials = null } = {}) {
+export function createAgnescodeStore({ credentials = null }: { credentials?: (() => any) | null } = {}) {
   /** Fallback vault for a Host that has no credentials service. */
   const memory = new Map();
 

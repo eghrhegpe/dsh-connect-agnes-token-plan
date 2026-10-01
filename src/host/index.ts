@@ -103,7 +103,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   // token renewal, and password seal uses the configured hosts. A malformed
   // override must fail loudly here rather than become a baffling network error
   // on the first poll.
-  let auth = null;
+  let auth: ReturnType<typeof createAuth> | null = null;
   if (configError === null) {
     try {
       auth = createAuth(settings.auth);

@@ -66,7 +66,6 @@ import {
 } from "./token-store/grant.ts";
 import {
   throttleError as throttleErrorImpl,
-  localBackoffMs as localBackoffMsImpl,
   readThrottle as readThrottleImpl,
   writeThrottle as writeThrottleImpl,
   clearThrottle as clearThrottleImpl,
@@ -173,7 +172,7 @@ export function createTokenStore(options) {
      * @returns {Promise<string>}
      */
     async getToken() {
-      if (isFresh(state.cached)) return state.cached.accessToken;
+      if (state.cached !== null && isFresh(state.cached)) return state.cached.accessToken;
       // One acquisition in flight: a panel poll storm must not trigger a
       // login stampede or a burst of refresh-token rotations.
       state.inflight ??= acquire()

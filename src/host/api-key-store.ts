@@ -37,7 +37,13 @@ export const API_KEY_REF = "AGNES_TOKEN_PLAN_API_KEY";
  * @param {object} [options.env] - environment source; defaults to `process.env`.
  * @returns {{save: Function, forget: Function, resolve: Function, state: Function}}
  */
-export function createApiKeyStore({ credentials = null, env = process.env } = {}) {
+export function createApiKeyStore({
+  credentials = null,
+  env = process.env
+}: {
+  credentials?: (() => any) | null;
+  env?: Record<string, string | undefined>;
+} = {}) {
   /** Fallback vault for a Host that has no credentials service. */
   const memory = new Map();
 
@@ -45,21 +51,6 @@ export function createApiKeyStore({ credentials = null, env = process.env } = {}
     const value = typeof credentials === "function" ? credentials() : credentials;
     return value ?? null;
   };
-
-  /** The reference backend: the real service when attached, else memory. */
-  const backend = () =>
-    resolveService() ?? {
-      async resolve(ref) {
-        const value = memory.get(ref);
-        return typeof value === "string" && value !== "" ? { value, source: "memory" } : undefined;
-      },
-      async set(ref, value) {
-        memory.set(ref, value);
-      },
-      async unset(ref) {
-        memory.delete(ref);
-      }
-    };
 
   return {
     /**

@@ -55,7 +55,7 @@ export function parseGrant(record) {
  * @param {object} wiring - the store context wiring.
  * @param {object} state - the store context state.
  */
-export async function readStored(wiring, state) {
+export async function readStored(wiring, _state) {
   const { backend, key } = wiring;
   try {
     return parseGrant(await backend().readRecord(key));

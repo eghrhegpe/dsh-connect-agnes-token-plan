@@ -225,7 +225,6 @@ export async function buildSnapshotBody({
   const providerState = publisher.state;
   const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
 
-  const now = Math.floor(Date.now() / 1000);
   const { startDate, endDate } = usageWindow(settings.usageDays);
   // THE AUTH PROBE — and, since the panel learned to degrade, one source among
   // five rather than the gate on all of them.
@@ -383,7 +382,7 @@ export async function buildSnapshotBody({
   // wired (the publisher takes the list, the flip detector below watches it)
   // because a second provider absorbed into this plugin may well have a real
   // per-model signal.
-  const unavailableModelIds = [];
+  const unavailableModelIds: string[] = [];
   // Which of the callable models can take image input — step one of the
   // vision plan (ARCHITECTURE.md §5.1): the info, not the execution.
   // Absent API key → no catalog → the list is simply undeclared, not "none".

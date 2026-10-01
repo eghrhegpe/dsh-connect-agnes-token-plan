@@ -267,7 +267,7 @@ export async function defaultDpapiUnprotect(wrapped) {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true
     });
-    const chunks = [];
+    const chunks: Buffer[] = [];
     let failure = "";
     // A hung PowerShell must not hold the harvest (and, through the request
     // path, the publish chain) forever: 10 s is generous for a local DPAPI
@@ -319,7 +319,12 @@ export async function defaultDpapiUnprotect(wrapped) {
  * @param {(wrapped: Buffer) => Promise<Buffer>} [options.dpapiUnprotect] - injected DPAPI.
  * @returns {Promise<{ok: boolean, session?: object, attempts: object[]}>}
  */
-export async function harvestAgnescodeLocalSession(options: any = {}) {
+export async function harvestAgnescodeLocalSession(
+  options: any = {}
+): Promise<
+  | { ok: false; attempts: Array<{ file: string | null; tier: string; detail: string }> }
+  | { ok: true; attempts: Array<{ file: string | null; tier: string; detail: string }>; session: { accessToken: string; userId: string; nickname: string; bffBase: string } }
+> {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const readFile = options.readFile ?? (async (path) => (await import("node:fs/promises")).readFile(path));
@@ -327,7 +332,7 @@ export async function harvestAgnescodeLocalSession(options: any = {}) {
   const dpapiUnprotect = options.dpapiUnprotect ?? defaultDpapiUnprotect;
 
   /** One tier row: {file, tier, detail?} — detail carries shapes, never values. */
-  const attempts = [];
+  const attempts: Array<{ file: string | null; tier: string; detail: string }> = [];
 
   // Windows is the only platform with a VERIFIED harvest path (os_crypt key
   // via DPAPI + PowerShell). The darwin/linux candidates below describe where
@@ -351,7 +356,7 @@ export async function harvestAgnescodeLocalSession(options: any = {}) {
   }
 
   for (const appDir of appDirs) {
-    let fileNames = [];
+    let fileNames: string[] = [];
     try {
       fileNames = (await readDir(appDir)).filter((name) => AGNESCODE_SESSION_FILE_PATTERN.test(name));
     } catch {
@@ -453,7 +458,7 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
     const body = obj(await response.json().catch(() => ({})));
     const models = Array.isArray(body.data) ? body.data : [];
     const seen = new Set();
-    const out = [];
+    const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; contextWindow: number; maxOutputLength: number }> = [];
     for (const raw of models) {
       const model = obj(raw);
       const id = str(model.id, "");

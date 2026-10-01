@@ -25,7 +25,7 @@
  * @module dsh-connect-agnes-token-plan/agnescode-publish
  */
 
-import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME, agnescodeRoster } from "./agnescode-models.ts";
+import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME } from "./agnescode-models.ts";
 import { str, redactSecrets } from "./util.ts";
 import { name as pluginName } from "./host-config.ts";
 import type { AgnescodePublisherDeps } from "./types.ts";
@@ -75,7 +75,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
   /** The live AgnesCode registration state. */
   const state = {
     /** The roster the current registration was built from. */
-    rows: [],
+    rows: [] as unknown[],
     /** The per-account BFF base the current registration addresses. */
     bffBase: "",
     /** A cheap signature of the offered roster (ids + vision bits + base). */
@@ -85,11 +85,11 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     /** Whether the AgnesCode provider pair is registered without error. */
     registered: false,
     /** The last registration error, surfaced secret-free in the snapshot. */
-    error: null,
-    releaseAdapter: null,
-    releaseDirectory: null,
+    error: null as string | null,
+    releaseAdapter: null as (() => void) | null,
+    releaseDirectory: null as (() => void) | null,
     /** The built adapter the active release functions belong to. */
-    built: null
+    built: null as any
   };
 
   /** Set once the plugin is disposed; a later publish is a no-op. */

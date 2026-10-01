@@ -39,7 +39,7 @@ export const CATALOG_VERSION = 1;
 export function normalizeEnabledIds(raw) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set();
-  const out = [];
+  const out: string[] = [];
   for (const item of raw) {
     const id = str(item, "");
     if (id === "" || seen.has(id)) continue;
@@ -264,7 +264,7 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
  * @returns {CatalogStore}
  */
 export function createMemoryCatalogStore(now = Date.now) {
-  let held = null;
+  let held: { version: number; fetchedAt: number; entries: object[]; enabledModelIds: string[] } | null = null;
   return {
     async list() {
       return held === null ? [] : held.entries;

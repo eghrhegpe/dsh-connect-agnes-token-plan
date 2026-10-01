@@ -249,7 +249,7 @@ export function PlanCard({ quota, tt }: { quota?: QuotaData | null; tt: Tt }): u
           plan.billingCycle ? h("span", { style: S.chip }, cycleLabel(plan.billingCycle, tt)) : null,
           // The price is money the user pays, so it reads as a figure, not a
           // pill — same reasoning as the old grant balance.
-          plan.priceMinor > 0
+          plan.priceMinor !== undefined && plan.priceMinor > 0
             ? h("span", { style: S.grantChip }, `${money(plan.priceMinor, plan.currency)}${plan.billingCycle === "yearly" ? tt("quota.perYear") : tt("quota.perMonth")}`)
             : null,
           h("span", { style: S.spacer }),
@@ -298,16 +298,16 @@ export function PlanCard({ quota, tt }: { quota?: QuotaData | null; tt: Tt }): u
             catalogue.map((entry) => {
               const limits = entry.limits ?? {};
               const parts = [
-                limits.requests5h > 0 ? `${count(limits.requests5h)}${tt("quota.unit.requests")} / ${limits.requestsWindowH || 5}h` : "",
-                limits.requestsWeekly > 0 ? `${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}` : "",
-                limits.imagesDaily > 0 ? `${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}` : ""
+                limits.requests5h !== undefined && limits.requests5h > 0 ? `${count(limits.requests5h)}${tt("quota.unit.requests")} / ${limits.requestsWindowH || 5}h` : "",
+                limits.requestsWeekly !== undefined && limits.requestsWeekly > 0 ? `${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}` : "",
+                limits.imagesDaily !== undefined && limits.imagesDaily > 0 ? `${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}` : ""
               ].filter((part) => part !== "");
               return h(
                 "div",
                 { key: entry.uuid || String(entry.planId), style: S.catalogueRow },
                 h("span", { style: S.catalogueName }, entry.displayName || entry.name || ""),
                 h("span", { style: S.muted }, cycleLabel(entry.billingCycle, tt)),
-                entry.priceMinor > 0 ? h("span", { style: S.muted }, money(entry.priceMinor, entry.currency)) : null,
+                entry.priceMinor !== undefined && entry.priceMinor > 0 ? h("span", { style: S.muted }, money(entry.priceMinor, entry.currency)) : null,
                 h("span", { style: S.catalogueLimits }, parts.join(" · "))
               );
             })

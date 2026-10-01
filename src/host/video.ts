@@ -237,7 +237,7 @@ export function isVideo25Flash(model) {
  */
 export function videoGenModelIds(entries) {
   const position = new Map();
-  const out = [];
+  const out: string[] = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!isVideoGenModel(entry)) continue;
     const id = str(entry?.id, "");
@@ -474,7 +474,7 @@ export const VIDEO25_DEFAULT_ASPECT = "16:9";
 export function nearestAspect25(width, height) {
   const valid = typeof width === "number" && width > 0 && typeof height === "number" && height > 0;
   const target = valid ? width / height : 16 / 9;
-  let best = VIDEO25_ASPECT_TABLE.find((row) => row.ratio === VIDEO25_DEFAULT_ASPECT);
+  let best = VIDEO25_ASPECT_TABLE.find((row) => row.ratio === VIDEO25_DEFAULT_ASPECT) ?? VIDEO25_ASPECT_TABLE[0];
   for (const row of VIDEO25_ASPECT_TABLE) {
     if (Math.abs(row.value - target) < Math.abs(best.value - target)) best = row;
   }
@@ -950,7 +950,7 @@ export function defineVideoTool({
       },
       // Same two-parameter render shape `defineDrawTool` uses: the renderer is
       // called with the call args first and the result second.
-      render: (args, result) => [{ type: "text", text: result?.hint || "视频已生成" }]
+      render: (_args, result) => [{ type: "text", text: result?.hint || "视频已生成" }]
     },
     timeoutMs: budget + 60_000,
     async execute(params) {

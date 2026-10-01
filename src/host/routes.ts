@@ -73,7 +73,7 @@ function writeJson(res, status, body, headers = {}) {
  * @returns {Promise<{ok: true, value: object} | {ok: false, error: string}>}
  */
 async function readJsonBody(request, limit = MAX_ACCOUNT_BODY_BYTES) {
-  const chunks = [];
+  const chunks: Buffer[] = [];
   let received = 0;
   try {
     for await (const chunk of request) {
@@ -695,8 +695,8 @@ export function registerRoutes(ctx, wiring) {
   //   * the single-flight comment below only holds across requests if the
   //     promise outlives one, and the panel genuinely does poll while a walk
   //     runs.
-  let lastHarvest = null;
-  let agnescodeHarvestInFlight = null;
+  let lastHarvest: { ok: boolean; attempts: Array<{ file: string | null; tier: string; detail: string }> } | null = null;
+  let agnescodeHarvestInFlight: Promise<{ ok: boolean; attempts: Array<{ file: string | null; tier: string; detail: string }> }> | null = null;
   // The GET self-heal's cooldown stamp (see the GET branch): one repair
   // publish per window, so a persistently failing publish cannot rebuild the
   // adapter on every panel poll.
@@ -718,9 +718,9 @@ export function registerRoutes(ctx, wiring) {
         let loggedIn = false;
         let nickname = "";
         let bffBase = "";
-        let expiresAtMs = null;
-        let balance = null;
-        let error = null;
+        let expiresAtMs: number | null = null;
+        let balance: unknown = null;
+        let error: string | null = null;
         try {
           if (agnescodeStore !== null && agnescodeStore !== undefined) {
             const state = await agnescodeStore.state().catch(() => null);
@@ -741,7 +741,7 @@ export function registerRoutes(ctx, wiring) {
         // The roster the adapter offers: the live catalogue when a credential
         // exists, else the static fallback so the panel still shows the
         // known models.
-        let models = null;
+        let models: unknown = null;
         try {
           if (agnescodeStore !== null && agnescodeStore !== undefined) {
             const { credential } = await agnescodeStore.resolve().catch(() => ({ credential: null }));

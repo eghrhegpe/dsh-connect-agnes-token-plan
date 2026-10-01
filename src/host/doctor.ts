@@ -122,7 +122,7 @@ export function parseCatalogPayload(raw) {
  * @returns {Promise<DoctorScope>} the populated scope.
  */
 async function readScope(stateDir, profile) {
-  const scope = {
+  const scope: DoctorScope = {
     profile: profile === "" ? null : profile,
     stateDir,
     providerPanel: null,
@@ -196,7 +196,7 @@ async function readScope(stateDir, profile) {
 async function listProfiles(stateRoot) {
   try {
     const entries = await readdir(stateRoot);
-    const profiles = [];
+    const profiles: string[] = [];
     for (const entry of entries) {
       // The shared (pre-§23) layout lives at `state/<plugin>/`; that directory
       // is a PLUGIN, not a profile, so it must not be read back as one.

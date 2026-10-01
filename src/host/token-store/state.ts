@@ -130,7 +130,7 @@ export function createStoreContext({
 
   const state = {
     /** In-memory token for this process; the record is the durable truth. */
-    cached: null,
+    cached: null as { accessToken: string; refreshToken: string; expiresAt: number | null } | null,
     /**
      * Tokens the console has already rejected.
      *
@@ -139,11 +139,11 @@ export function createStoreContext({
      * still looks valid. Without this the store would re-read the same record
      * and replay the token the console just refused.
      */
-    rejected: new Set(),
+    rejected: new Set<string>(),
     /** One in-flight acquisition, so N concurrent polls share one login. */
-    inflight: null,
+    inflight: null as Promise<string> | null,
     /** Last failure, surfaced to the panel instead of a bare "not configured". */
-    lastError: null,
+    lastError: null as unknown,
     /**
      * A refusal that must not be repeated on a timer.
      *
@@ -156,7 +156,7 @@ export function createStoreContext({
      * to a cap. `parked` marks a credential-shaped refusal, which has no
      * deadline at all: waiting cannot make a wrong password right.
      */
-    throttle: null,
+    throttle: null as unknown,
     /**
      * How many refusals in a row this store has seen.
      *

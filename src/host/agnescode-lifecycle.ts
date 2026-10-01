@@ -65,14 +65,14 @@ export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapter
   // Single-flight + backoff state shared across all resolveToken calls for
   // this wiring instance (the equivalent of the closure variables the old
   // inline version held in apply()'s scope).
-  const harvest = { inFlight: null, blockedUntil: 0 };
+  const harvest: { inFlight: Promise<unknown> | null; blockedUntil: number } = { inFlight: null, blockedUntil: 0 };
 
   // The cross-base rebuild reads the live publisher's `state.bffBase`, so the
   // resolveToken closure must be built AFTER the publisher exists. A deferred
   // holder breaks the circular construction: the publisher's options carry
   // the holder, the holder's fill happens one line after the constructor
   // returns.
-  const holder = { current: null };
+  const holder: { current: ReturnType<typeof createAgnescodePublisher> | null } = { current: null };
 
   const resolveToken = async () => {
     const { credential } = await store.resolve();

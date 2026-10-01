@@ -240,7 +240,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     return () => {
       alive = false;
       stop();
-      if (typeof document !== "undefined" && document.addEventListener) {
+      if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
     };

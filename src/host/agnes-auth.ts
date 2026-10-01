@@ -256,7 +256,7 @@ export async function loginWith(
 ) {
   const username = str(credentials?.username, "");
   const password = typeof credentials?.password === "string" ? credentials.password : "";
-  const hops = [];
+  const hops: unknown[] = [];
   const trace = {
     hop(entry) {
       hops.push(entry);
@@ -317,7 +317,7 @@ export async function loginWith(
   }
 
   const text = await response.text().catch(() => "");
-  let body = null;
+  let body: unknown = null;
   try {
     body = JSON.parse(text);
   } catch {

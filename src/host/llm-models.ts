@@ -405,7 +405,7 @@ export function isModelEnabled(enabledIds, id) {
  */
 export function rosterOf(entries) {
   const position = new Map();
-  const out = [];
+  const out: Array<{ id: string; name: string; vision: boolean }> = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
     // Image-generation models are not chat models and are not offered (see
     // `isChatModel`): the roster and the registered offer must agree about
@@ -447,7 +447,7 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
   const blocked = new Set(Array.isArray(unavailableModelIds) ? unavailableModelIds : []);
   const filtered = filterByEnabled(entries, enabledIds).filter(isChatModel);
   const seen = new Map();
-  const out = [];
+  const out: (ReturnType<typeof toPiDescriptor> | undefined)[] = [];
   for (const entry of Array.isArray(filtered) ? filtered : []) {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
     const id = str(entry.id, "");
@@ -487,10 +487,10 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
  * @param {string[]} [blockedIds] - model ids to report as unavailable.
  * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number, maxOutputLength: number, thinkingLevels: string[]}[]}
  */
-export function rosterWithAvailability(entries, blockedIds = []) {
+export function rosterWithAvailability(entries, blockedIds: string[] = []) {
   const blocked = new Set(Array.isArray(blockedIds) ? blockedIds : []);
   const position = new Map();
-  const out = [];
+  const out: Array<{ id: string; name: string; vision: boolean; available: boolean; quotaExhausted: boolean; contextWindow: number; maxOutputLength: number; thinkingLevels: string[] }> = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!isChatModel(entry)) continue;
     const id = str(entry?.id, "");

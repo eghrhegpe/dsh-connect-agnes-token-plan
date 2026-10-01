@@ -123,7 +123,7 @@ export function createAgnescodeAdapter({
   const inner = new PiAiAdapter({
     profiles: () => profiles,
     auth: INERT_AUTH,
-    resolveApiKey: async () => resolveToken(),
+    resolveApiKey: async () => resolveToken?.() ?? "",
     resolveAttachments: () => get?.("attachments"),
     resolveImageAccess: undefined
   });

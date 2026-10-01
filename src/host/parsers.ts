@@ -127,7 +127,7 @@ export function parseUsageOverview(body) {
  */
 export function parseUsageSeries(body, days) {
   const items = Array.isArray(obj(body).items) ? obj(body).items : [];
-  const buckets = [];
+  const buckets: Array<{ bucket: string; requestCount: number; textTokens: number; imageCount: number; videoSeconds: number }> = [];
   for (const entry of items) {
     const source = obj(entry);
     const bucket = str(source.bucket, "");
@@ -343,7 +343,7 @@ export function readSubscriptionExpiry(subscription) {
  */
 export function quotaWindows(plan) {
   const source = obj(plan);
-  const windows = [];
+  const windows: Array<{ key: string; unit: string; limit: number; windowHours: number }> = [];
   const requests5h = countOf(source.concurrencyLimit);
   if (requests5h > 0) {
     windows.push({

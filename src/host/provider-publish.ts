@@ -89,11 +89,11 @@ export function createProviderPublisher(deps: HostDeps = {}) {
    */
   const state = {
     /** The catalog entries the current registration was built from. */
-    entries: [],
+    entries: [] as unknown[],
     /** The curated allow-list at registration time (empty = all models). */
-    enabledIds: [],
+    enabledIds: [] as string[],
     /** The last quota-exhausted model ids published to the picker. */
-    unavailableIds: [],
+    unavailableIds: [] as string[],
     /** A cheap signature of the offered set (catalog ids + vision bits + allow-list). */
     signature: "",
     /** A cheap signature of the quota-exhausted set; flips when a pool crosses zero. */
@@ -103,11 +103,11 @@ export function createProviderPublisher(deps: HostDeps = {}) {
     /** Whether our provider pair is currently registered without error. */
     registered: false,
     /** The last registration error, surfaced secret-free in the snapshot. */
-    error: null,
-    releaseAdapter: null,
-    releaseDirectory: null,
+    error: null as string | null,
+    releaseAdapter: null as (() => void) | null,
+    releaseDirectory: null as (() => void) | null,
     /** The built adapter the active release functions belong to. */
-    built: null
+    built: null as any
   };
 
   /** Set once the plugin is disposed; a publish that arrives after dispose
