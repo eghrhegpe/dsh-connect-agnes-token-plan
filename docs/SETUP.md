@@ -114,5 +114,5 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 | 快照接口没有 `auth` 字段 | 跑的还是旧代码 | 完全退出 DSH（含托盘）再启动（见 §4） |
 | 面板提示需要重新登录 | 令牌被拒且环境里已无密码 | 面板表单填一次账号密码即可 |
 | 面板「可看图」一行缺失，但 `/v1/models` 有模型 | 没有 API key，模型目录没拉（`catalogAvailable: false`），视觉清单随之不显示 | 在面板「API Key」卡粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可；写入 DSH 凭据服务引用），或在用户级 env 变量层配 `AGNES_TOKEN_PLAN_API_KEY`；下一轮 poll 自动亮起来，无需重启 |
-| 「可看图」清单为空但 catalog 有模型 | 平台当前没有一个模型声明 `input_modalities` 含 `image`（或平台该字段缺失） | 对照 `catalogModels` 里各模型的 `input_modalities` 实际值；Agnes 每个条目都带此字段，空清单应是真的没有可看图模型 |
+| 「可看图」清单为空但 catalog 有模型 | Agnes 目录条目**不带** `input_modalities`（§7.1 实测只有 `id`/`object`/`created`/`owned_by`/`supported_endpoint_types` 五个字段），`identifyVisionModel` 只能读目录 → 恒 false | **这是「读不到」，不是「没有」**——官方文档（`docs/AGNES-API-docs/`）明说 `agnes-3.0-flash` / `agnes-2.5-pro` / `agnes-2.5-flash` 支持「文本 + 图像 URL 输入」。空清单不能当作「真没有可看图模型」的证据；要补 vision 需按 §7.1.1 的硬编码清单路线 |
 | `quota.planUnknown` | 订阅 payload 没有可匹配的套餐身份（uuid / 名称） | 套餐对比卡照常显示（公开目录）；当前套餐上限需要 `/api/cn/user/subscription` 返回可识别的套餐名或 uuid，见 [AGNES-API.md](./AGNES-API.md) §5 |

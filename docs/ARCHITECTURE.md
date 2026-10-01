@@ -164,16 +164,22 @@ client.js: interpretSnapshot(body) → {data, error}
 
 **第一步（本期，已完成）**：插件从 `GET /v1/models` 的 `catalogModels` 算出
 `visionModels`（可看图模型清单），发进 `/snapshot`，面板加一行展示。
-识别依据：**已确认（拉真实响应）**——`/v1/models` 在**每个**模型
-条目上都带结构化字段 `input_modalities`（字符串数组，如
-`["text","image"]`）与 `output_modalities`，所以按字段判定：`"image"` 出现在
-`input_modalities` 里即可看图；名字规律（`vl` / `vision`）仅作为「平台若某
-天不返回模态字段」的兜底，并标 `source: "name"` 注明是按名字推断。实测：
-`deepseek-v4-flash`、`glm-5.2`、`kimi-k3` 等模型 input 仅 `["text"]`；
-`Agnes-6.8-flash-lite` input 为 `["text","image"]`（即可看图模型）；
-`Agnes-u1-fast`、`Agnes-u1.5-lite` input 仅 `["text"]` 但 output 为
-`["image"]`（出图模型，不是看图模型——只看 `input_modalities` 的判定天然
-把它们排除，名字规律若只看 `-lite` 会误判，所以名字兜底里已删掉 `flash-lite`）。
+识别依据：**已确认（拉真实响应）**——该判据原是商汤 `/v1/models` 的形态
+（每个条目带 `input_modalities` / `output_modalities` 结构化字段），但
+**Agnes 目录条目只有 5 个字段**（`id`/`object`/`created`/`owned_by`/
+`supported_endpoint_types`，见 [AGNES-API.md](./AGNES-API.md) §7.1），
+`input_modalities` **完全缺失** → `identifyVisionModel` 在 Agnes 上**恒 false**。
+所以 Agnes 的 `visionModels` 恒为空——**不是「没有可看图模型」，是「目录读不到」**；
+官方文档明说 `agnes-3.0-flash` / `agnes-2.5-pro` / `agnes-2.5-flash` 支持
+「文本 + 图像 URL 输入」（见 `AGNES-API.md` §7.1.1 的待补清单）。
+
+名字规律兜底（`vl` / `vision`）保留作为「平台若某天不返回模态字段」的退路，
+标 `source: "name"` 注明是按名字推断。**商汤时代的例子**（`deepseek-v4-flash` /
+`glm-5.2` / `kimi-k3` input 仅 `["text"]`；`Agnes-6.8-flash-lite` input 为
+`["text","image"]`；`Agnes-u1-fast` / `Agnes-u1.5-lite` output 为 `["image"]`）
+已随迁移**作废**——这些模型不在 Agnes 目录里，仅保留作「字段判定 vs 名字兜底」
+的机制说明：只看 `input_modalities` 天然排除出图模型；名字兜底已删掉
+`flash-lite` 以免误判。
 
 另外，API key 的读取路径按 DSH 官方 provider 惯例改为**先经 credentials 服务
 的参考层**（`ctx.get("credentials")?.resolve("AGNES_TOKEN_PLAN_API_KEY")`，对应
@@ -261,7 +267,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 |---|---|---|
 | `@alaxrpg/dsh-sensenova-provider`（desktop） | **直接竞品**：同样走商汤 OIDC+PKCE、注册 LLM provider，带多 Key 轮换与 vision | 证明「额度 + provider 合一」在 DSH 生态成立；其多 Key 轮换是本插件没有的能力，但 Token Plan 同账号共享额度池、换 Key 不换池，**不吸收**（见 [ROADMAP.md](./ROADMAP.md) §1） |
 | `dsh-retry-boost` | 429 自愈网关：多 Key 池化、AIMD 限速；专门处理 SenseNova 把「配额不足」（insufficient_quota）混进 429 被误判重试的问题 | 429 自愈模块的同类先例；吸收时必须区分「限频（可退避重试）」与「配额不足（换 Key / 停）」 |
-| `dsh-draw-router` | 绘图路由，含 `sensenova-u1-fast` 出图（同一模型在现行 catalog 里叫 `Agnes-u1-fast`） | 出图路由的对接参考（`Agnes-u1-fast` 即 catalog 里 output 为 `["image"]` 的出图模型，§5.1 已识别）；参考件放 `upstream/dsh-draw-router/` 作对照 |
+| `dsh-draw-router` | 绘图路由，含 `sensenova-u1-fast` 出图（商汤时代命名，现行 Agnes catalog 里**没有** `Agnes-u1-fast`——出图模型是 `agnes-image-2.1-flash` / `agnes-image-2.5-flash`） | 出图路由的对接参考（§5.4）；参考件放 `upstream/dsh-draw-router/` 作对照 |
 | `mmx-quota-tool` | 聚合面板基准：实时积分面板、跨 provider 汇总、用量告警 | 面板 UX 基准（实时性、告警形态）向它对齐；跨 provider 聚合本身**不**吸收 |
 | `dsh-provider-quota` / `dsh-musage` | 品类对照：泛化的「provider 额度面板」 | 定位边界样本：本插件不泛化成通用额度面板，只深耕商汤 |
 | `dsh-codearts-auth`（`upstream/deepseek-harness-codearts-master`） | **多 provider 聚合登录插件**：codearts / buddy / workbuddy / lobsterai / qoder / loomy / raccoon / trae 各写一套自有登录流（IAM OAuth、扫码轮询、短信），凭据一律进 DSH 凭据服务；其中小浣熊走微信扫码——因官方深链回调 `office-raccoon://auth/callback` 写死、宿主 Node 收不到 | 「自有登录 + 凭据服务」形态的完整先例（与本插件同机制）；其跨 provider 泛化正是 §5 不变量 3 划出的边界，**不吸收**。小浣熊部分的事实见 [ROADMAP.md](./ROADMAP.md) §6.1.1 |
@@ -278,7 +284,7 @@ draw-router 的多源能力时才有意义。
 | 维度 | dsh-draw-router（现状） | 本插件（现状） |
 |---|---|---|
 | 出图模型识别 | 名字正则 `DRAW_MODEL_PATTERNS`（line 25-34：`/image/i`、`/u1-fast/i`、`/wan/i`、`/flux/i`…命中才认），探测自己另调一次 `GET /v1/models` | `modality.ts` 三级判定：`output_modalities` 字段优先 → `agnes-image-*` 名称兜底 → 默认 `text`，catalog 每小时已有 |
-| 识别质量 | 实锤会漏：两把出图模型 `Agnes-u1-fast` / `Agnes-u1.5-lite`（§5.1）里，前者因 `/u1-fast/i` 是子串匹配仍能命中，**`u1.5-lite` 一条正则都不命中**——装它配同一源，`draw_image` 默认永远挑不到 u1.5-lite | 两把都识别 |
+| 识别质量 | 实锤会漏：现行出图模型 `agnes-image-2.1-flash` / `agnes-image-2.5-flash` 里，`/image/i` 能命中 `-image-`，但若平台改名/加后缀（如将来出现 `agnes-img-*`）`/image/i` 就漏了——商汤时代的 `Agnes-u1.5-lite` 正是这种漏（`/u1-fast/i` 一条正则都不命中） | 两把都识别 |
 | 出图执行 | `buildEndpoint` 拼 `{base}/v1/images/generations`（line 72-79）→ `POST {model, prompt, n, response_format}` → 取 `data[0].url / b64_json`（line 209-261），约 80 行 | 无（待吸收的全部增量） |
 | 凭据 | 明文写进插件目录 `draw-config.json`（line 140-151） | DSH 凭据服务，不落盘 |
 
