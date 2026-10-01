@@ -57,9 +57,16 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 | `fallbackExpiresInSeconds` | `0` → `604800` | access token 不是可读 JWT 时假定的寿命（7 天）。**方向是刻意的**：估短了每轮轮询都要花一次真实登录，而 Agnes 有失败次数锁定 |
 | `writeImageModelIds` | `false` | 视觉第二步（§5.1）：**opt-in**，是否把识别出的可看图模型清单写进本插件自己的 DSH settings row（`imageModelIds` / `visionModels` 两个字段），供后续 LLM connect 插件读取。默认关，纯读信息层 |
 | `registerProvider` | `false` | 第三步（§5.2）：**opt-in**，是否由本插件直接向 DSH 注册 OpenAI 兼容 LLM provider（id `agnes-token-plan`，直连 `apiBase`）。开启后在面板「接入 API」保存 API Key 即可（免费版 `sk-` 或 Token Plan `cpk-` 皆可），catalog 轮询自动建/刷新模型列表，vision 模型自动带图片输入；catalog 与允许清单只存插件私有状态文件。默认关——注册模型源是 Host 级变更 |
-| `drawEnabled` | `false` | 出图吸收（§5.4 接法 B）：**opt-in**，是否给 agent 注册 `agnes_draw_image` 工具（POST `{apiBase}/images/generations`，用面板保存的 `AGNES_TOKEN_PLAN_API_KEY`）。出图模型由 catalog 的 `output_modalities` 结构化识别（不用名字正则），Key 每次调用现取；失败后 30s 冷却。默认关——agent 工具是 Host 级变更；无 tools 服务的 Host 上该工具静默缺席。面板「接入 API」区有真开关（`POST /api/<name>/draw`），勾选保存后在插件私有状态文件里记录，立即生效、无需重启 Host |
-| `drawModelId` | `""` | 首选出图模型 id；留空 = catalog 里第一把出图模型（如 `Agnes-u1-fast`）。工具调用显式传 `model` 时以调用为准 |
+| `drawEnabled` | `false` | 出图吸收（§5.4 接法 B）：**opt-in**，是否给 agent 注册 `agnes_draw_image` 工具（POST `{apiBase}/images/generations`，用面板保存的 `AGNES_TOKEN_PLAN_API_KEY`）。出图模型由 catalog 的 `output_modalities` **当平台声明时**识别，未声明时退回模型 id 里 `image` 段匹配（Agnes 网关的这个字段**完全不返回**，见 `AGNES-API.md` §7.1，名字兜底才是实际命中的路径）；Key 每次调用现取；失败后 30s 冷却。默认关——agent 工具是 Host 级变更；无 tools 服务的 Host 上该工具静默缺席。面板「接入 API」区有真开关（`POST /api/<name>/draw`），勾选保存后在插件私有状态文件里记录，立即生效、无需重启 Host |
+| `drawModelId` | `""` | 首选出图模型 id；留空 = catalog 里第一把出图模型（按 `output_modalities` 字段 / `agnes-image-*` 名称判定，不写死示例）。工具调用显式传 `model` 时以调用为准 |
 | `drawTimeoutMs` | `120000` | 单次出图请求超时（出图模型很慢，别用对话级超时）；下限 5000 |
+| `videoEnabled` | `false` | 视频吸收（与 §5.4 接法 B 对称）：**opt-in**，是否给 agent 注册 `agnes_video_generate` 工具（**异步任务制**——建任务 POST `{apiBase}/videos`，轮询 `GET {host}/agnesapi`，协议细节见 `AGNES-API.md` §7.5）。只覆盖 **V2.0 参数体系**（`width`/`height`/`num_frames`/`frame_rate`，2.5 家族因参数体系互斥被排除，见 §7.5.1）。与出图同理：无 tools 服务的 Host 上静默缺席；面板「接入 API」区有真开关（`POST /api/<name>/video`）。默认关 |
+| `videoModelId` | `""` | 首选视频模型 id；留空 = catalog 里第一个 V2.0 视频模型。2.5 家族的 id 不会被接受为合法偏好（见 §7.5.1） |
+| `videoTimeoutMs` | `600000` | 一次视频**整任务**的超时（建任务 + 轮询），分钟级；下限 30000 |
+| `videoWidth` | `1152` | V2.0 帧宽，直传 |
+| `videoHeight` | `768` | V2.0 帧高，直传 |
+| `videoNumFrames` | `121` | 帧数，必须 ≤ 441 且 `8n+1`（81/121/161/241/441）；非法值被**拒绝**而非夹取（`AGNES-API.md` §7.5.1 解释原因） |
+| `videoFrameRate` | `24` | 帧率，1–60 |
 
 端点类字段仅在企业镜像 / 预发环境指向别的主机时才需要动；全部不配即等于平台默认值。任意端点覆盖若不是合法的 http(s) 绝对地址，插件在**挂载时**就报 `config_error`（面板顶部显示），而不是等到第一次轮询才变成莫名其妙的网络错误。
 

@@ -296,8 +296,8 @@ export function defineDrawTool({
   return defineTool({
     name: DRAW_TOOL_NAME,
     description:
-      "Generate an image with the Agnes Token Plan key (e.g. Agnes-u1-fast). " +
-      "Models are auto-discovered from this key's catalog; pass `model` only when you specifically need one.",
+      "Generate an image with the Agnes Token Plan key. " +
+      "Omit `model` to let the catalog's default image model be used; pass `model` only when you need a particular one — the available image model ids are reported in the result after the first successful call.",
     parameters: {
       prompt: { type: "string", required: true, description: "Image generation prompt" },
       model: { type: "string", description: "Agnes image model id; defaults to the first discovered one" },
@@ -360,9 +360,11 @@ export function defineDrawTool({
         cooldown.trip();
         throw error;
       }
+      const ids = imageGenModelIds(entries);
+      const modelList = ids.length > 0 ? `\n可用出图模型: ${ids.join(", ")}` : "";
       const hint = result.url !== ""
-        ? `图片已生成!\n模型: ${result.model}\nURL: ${result.url}\n请直接输出 Markdown: ![图](${result.url})`
-        : `图片已生成!\n模型: ${result.model}\n(base64 图片数据，请以 data:image/png;base64,… 形式在对话中展示)`;
+        ? `图片已生成!\n模型: ${result.model}\nURL: ${result.url}\n请直接输出 Markdown: ![图](${result.url})${modelList}`
+        : `图片已生成!\n模型: ${result.model}\n(base64 图片数据，请以 data:image/png;base64,… 形式在对话中展示)${modelList}`;
       return {
         source: "agnes",
         model: result.model,
