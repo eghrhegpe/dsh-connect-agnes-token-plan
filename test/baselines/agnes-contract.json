@@ -1,28 +1,94 @@
 {
   "meta": {
-    "source": "AGNES-API.md §7 (seed, 待 test:live:contract 实测刷新)",
-    "note": "Agnes 推理契约基线（seed）。baseUrl / apiKeyRef 已确证（源码 host-config.ts CONFIG_DEFAULTS.apiBase、api-key-store.ts API_KEY_REF）。模型清单与逐模型思考方言为 seed，待真机 npm run test:live:contract 实测回填——不得臆造。改表必须附平台响应原文证据（提交约定，见 AGNES-API.md §7.4 的漂移纪律）。",
+    "source": "AGNES-API.md §7（2026-10-01 真机实测回填，seed 已退役）",
+    "note": "Agnes 推理契约基线。目录清单与逐模型思考方言均为 2026-10-01 真机实测（/v1/models 轮询 + reasoning_effort 全阶梯探针，max_tokens=8，stream=false；429 记 INDEFINITE、退避重跑后取干净判读）。改表必须附平台响应原文证据（AGNES-API.md §7.4 漂移纪律），不得臆造。",
     "baseUrl": "https://api.agnes-ai.cn/v1",
     "apiKeyRef": "AGNES_TOKEN_PLAN_API_KEY",
-    "driftLog": []
+    "maxTokensCap": 65536,
+    "driftLog": [
+      "2026-10-01 目录回填：seed 的 deepseek-v4.1-flash（SenseNova 时代 id）退役；live 目录 7 条：agnes-2.0-flash / agnes-2.5-flash / agnes-3.0-flash / agnes-image-2.1-flash / agnes-image-2.5-flash / agnes-video-2.5-flash / agnes-video-v2.0（/v1/models → 200）。同日早些时候记录的 11 条清单（含 agnes-2.5-pro / -alpha / -beta，见 AGNES-API.md §7.1 旧版）已不复现——目录在当天内收缩。image/video 模型行不带 imageGen 标记：Agnes 目录不声明 output_modalities，live-contract 的声明位检查会误红；运行时排除靠 modality.ts 的 id 名称层（contract.test §3 以合成条目覆盖该层）。",
+      "2026-10-01 effort 全阶梯（逐模型逐档，max_tokens=8）：agnes-2.0-flash 与 agnes-2.5-flash 的 xhigh → 400，平台校验器原文：'literal_error', 'loc': ('body', 'reasoning_effort'), 'msg': \"Input should be 'none', 'low', 'medium', 'high' or 'max'\"（前缀 ***.BadRequestError: OpenAIException，响应体含平台自己的 REDACTED 字样）——合法集不含 xhigh；agnes-3.0-flash 的上游校验器更宽，xhigh/max 均 200。max 在三个模型全部 200——SenseNova 时代 max 为 glm 独占，Agnes 不是。",
+      "2026-10-01 thinkingField：三个 chat 模型的 message 键均为 content+role+reasoning_content（none 档为 content+role，思考关闭、finish=stop；其余档 max_tokens=8 截断 finish=length）——pi-ai 读 reasoning_content 拼写成立。",
+      "2026-10-01 max_tokens 上限：32768 / 65536 / 缺省不发均 200（65536 在 agnes-2.5-flash 与 agnes-2.0-flash 复测），131072 → 400 平台原文「max_tokens 不能超过 65536」（request id 20261001072838712216301z4CHT670）。固化为 meta.maxTokensCap + live-contract §2c 护栏；descriptor 经 PROBED_MAX_TOKENS 声明该值。",
+      "2026-10-01 判读纪律披注：agnes-2.0-flash 的 low/high/max 首轮 429（探针节奏撞上 rpm 窗口），60s 退避重跑后全部 200——基线记录的是干净重跑的判读，不是 429 那一轮。",
+      "2026-10-01 基线 cell 键由 seed 的 off 更名为 none：记录的是平台 wire 值的接受度（reasoning_effort 的关思考拼写是 none），与 sensenova-contract.json 词汇一致。"
+    ]
   },
   "models": [
     {
-      "id": "deepseek-v4.1-flash",
+      "id": "agnes-2.0-flash",
       "chat": true,
       "visionInput": false,
-      "thinkingField": "pending-probe",
+      "thinkingField": "reasoning_content",
       "reasoningEffort": {
-        "off": "pending",
-        "low": "pending",
-        "medium": "pending",
-        "high": "pending",
-        "xhigh": "pending",
-        "max": "pending"
+        "none": true,
+        "low": true,
+        "medium": true,
+        "high": true,
+        "xhigh": false,
+        "max": true,
+        "default": "high"
       },
-      "thinkingObject": "pending-probe",
-      "status": "ok",
-      "supportedSamplingParameters": ["temperature", "stop"]
+      "thinkingObject": "untested",
+      "status": "ok"
+    },
+    {
+      "id": "agnes-2.5-flash",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "reasoning_content",
+      "reasoningEffort": {
+        "none": true,
+        "low": true,
+        "medium": true,
+        "high": true,
+        "xhigh": false,
+        "max": true,
+        "default": "high"
+      },
+      "thinkingObject": "untested",
+      "status": "ok"
+    },
+    {
+      "id": "agnes-3.0-flash",
+      "chat": true,
+      "visionInput": false,
+      "thinkingField": "reasoning_content",
+      "reasoningEffort": {
+        "none": true,
+        "low": true,
+        "medium": true,
+        "high": true,
+        "xhigh": true,
+        "max": true,
+        "default": "high"
+      },
+      "thinkingObject": "untested",
+      "status": "ok"
+    },
+    {
+      "id": "agnes-image-2.1-flash",
+      "chat": false,
+      "visionInput": false,
+      "modalityMetadata": "none"
+    },
+    {
+      "id": "agnes-image-2.5-flash",
+      "chat": false,
+      "visionInput": false,
+      "modalityMetadata": "none"
+    },
+    {
+      "id": "agnes-video-2.5-flash",
+      "chat": false,
+      "visionInput": false,
+      "modalityMetadata": "none"
+    },
+    {
+      "id": "agnes-video-v2.0",
+      "chat": false,
+      "visionInput": false,
+      "modalityMetadata": "none"
     }
   ]
 }

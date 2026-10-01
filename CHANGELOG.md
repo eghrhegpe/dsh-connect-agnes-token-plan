@@ -28,6 +28,12 @@
 - descriptor 现声明实测平台上限 `maxTokens: 65_536`（`PROBED_MAX_TOKENS`）。真机探针（2026-10-01，`api.agnes-ai.cn/v1`）：32768 / 65536 / 缺省不发均 200（65536 在 agnes-2.5-flash 与 agnes-2.0-flash 复测通过），131072 → 400 平台原文「max_tokens 不能超过 65536」。每轮实际上限为 `min(65536, contextWindow − prompt − 4096)`。
 - 契约钉点同步：`test/provider.test.mjs` / `test/contract.test.mjs` 翻正为钉 65536；`docs/AGNES-API.md` §7.3、`docs/ARCHITECTURE.md` §5.2 同步。
 
+### 契约基线 seed 退役：真机全阶梯回填（选择器档位面变化）
+
+- `test/baselines/agnes-contract.json` 从单条 SenseNova 时代 seed（`deepseek-v4.1-flash`，全 pending）回填为 2026-10-01 真机实测：live 目录 7 条（`agnes-2.5-pro` / `-alpha` / `-beta` 当天内消失，已记入漂移），三个 chat 模型的 `reasoning_effort` 全阶梯 + thinking 字段拼写（统一 `message.reasoning_content`）逐项取证，全部附平台响应原文于 `driftLog`。
+- `PROBED_EFFORT` 随之换血（Agnes id + 实测 cell），选择器档位面变化：**`max` 档在全部三个 Agnes chat 模型上开放**（SenseNova 时代 max 是 glm 独占），`xhigh` 仅 `agnes-3.0-flash` 开放（2.0/2.5 被平台校验器 400，其自报合法集 `'none', 'low', 'medium', 'high' or 'max'` 不含 xhigh）；`off/low/medium/high` 面不变。
+- `live-contract` 新增 §2c `max_tokens` 上限双向护栏（上限须仍 200、两倍须仍 400），基线 `meta.maxTokensCap` 固化该事实；`docs/AGNES-API.md` §7.1/§7.2 的 ⏳ 待实测注记了结。
+
 ## [0.5.0] — 2026-10-01
 
 **独立仓库首次发布**：新包名 `dsh-connect-agnes-token-plan` 首次上 npm。全面更名并切换登录线（Agnes 一跳登录），额度模型改为账号级四窗口，新增视频生成 agent 工具与第三上游 AgnesCode。

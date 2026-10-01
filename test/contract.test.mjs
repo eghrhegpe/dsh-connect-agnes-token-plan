@@ -60,8 +60,10 @@ function fail(name, error) {
   results.push({ name, pass: false, detail: String(error?.message ?? error) });
 }
 
-/** The thinking levels the baseline freezes, in the picker's ladder order. */
-const EFFORT_CELLS = ["off", "low", "medium", "high", "xhigh", "max"];
+/** The thinking levels the baseline freezes, in the picker's ladder order.
+ *  The cell KEY is the platform's wire spelling (`none` — what the off level
+ *  dispatches to), matching sensenova-contract.json's vocabulary. */
+const EFFORT_CELLS = ["none", "low", "medium", "high", "xhigh", "max"];
 
 // --- 0. the baseline's own discipline -------------------------------------
 // The two `meta` facts are not opinions: they are read off the source, so the
@@ -79,6 +81,11 @@ const EFFORT_CELLS = ["off", "low", "medium", "high", "xhigh", "max"];
     String(contract.models.length));
 
   for (const model of contract.models) {
+    // The effort ladder is a CHAT-model question: image/video rows are
+    // presence guards only (their chat endpoint 400s by design), so they
+    // carry no reasoningEffort at all and demanding cells here would force
+    // fake verdicts into the baseline.
+    if (model.chat !== true) continue;
     for (const level of EFFORT_CELLS) {
       const cell = model.reasoningEffort?.[level];
       check(`${model.id} reasoningEffort.${level} is a frozen verdict or "pending"`,
@@ -92,6 +99,16 @@ const EFFORT_CELLS = ["off", "low", "medium", "high", "xhigh", "max"];
 // (`console-client.js` keeps each `/v1/models` row whole, plus the plugin's
 // `id`). Build them exactly the way the provider would see them.
 function entryFor(model) {
+  if (model.modalityMetadata === "none") {
+    // The Agnes reality: the catalog entry carries NO modality metadata, so
+    // both predicates must fall through to the id-name layer (modality.ts
+    // resolution level 2). Synthesizing the fields here would hide a name
+    // regression behind a declaration the platform never sends.
+    return {
+      id: model.id,
+      ...(model.contextLength !== undefined ? { context_length: model.contextLength } : {})
+    };
+  }
   return {
     id: model.id,
     input_modalities: model.visionInput ? ["text", "image"] : ["text"],
@@ -157,7 +174,7 @@ for (const model of contract.models) {
   } catch (error) { fail(`${model.id} descriptor`, error); }
 }
 
-// --- 3. isChatModel excludes the image-generation + 404/403 models -------
+// --- 3. isChatModel excludes the image/video generation + 404/403 models --
 for (const model of contract.models) {
   const entry = entryFor(model);
   if (model.imageGen === true) {
@@ -168,6 +185,12 @@ for (const model of contract.models) {
     // (the panel greys it with the reason instead of hiding it).
     check(`${model.id} stays a chat model despite its plan status (${model.status})`,
       isChatModel(entry) === true, "isChatModel should be true");
+  } else if (model.modalityMetadata === "none") {
+    // The Agnes reality: no declared modalities to lean on, so the exclusion
+    // must come from the id's own family segment (`agnes-image-*` /
+    // `agnes-video-*`) — modality.ts resolution level 2.
+    check(`${model.id} is excluded from chat by its id name alone (the catalog declares no modalities)`,
+      isChatModel(entry) === false, "isChatModel should be false via the name layer");
   }
 }
 
@@ -181,19 +204,26 @@ for (const model of contract.models) {
 }
 
 // --- 5. the thinking gate: a probed id rides the table, an unknown one the safe-set
-// This is the distinction the whole per-model gate rests on. A model PRESENT
-// in the probe table gets exactly the levels its cells proved; a model ABSENT
-// from it (an id Agnes added this morning) is given the OpenAI-compatible
-// safe-set so the picker is never empty, while the extended levels stay closed.
+// A model PRESENT in the probe table gets exactly the levels its cells proved
+// (§2 pins every cell); a model ABSENT from it (an id Agnes added this
+// morning) is given the OpenAI-compatible safe-set so the picker is never
+// empty, while the extended levels stay closed. The one place the two branches
+// visibly differ today is agnes-3.0-flash's xhigh: the table OPENS it (probed
+// 200 on a wider upstream validator) where the safe-set keeps it closed — so
+// this section fails if the table branch ever degrades into the safe-set.
 {
-  // The contract's own known id: `deepseek-v4.1-flash` has every extended cell
-  // closed, and it must NOT silently inherit the safe-set just because those
-  // cells are false.
-  const known = thinkingLevelMapFor({ id: "deepseek-v4.1-flash" });
-  check("a known id with unproven levels does NOT inherit the safe-set",
-    known.low === null && known.medium === null, JSON.stringify(known));
-  check("a known id still gets the platform default + the off spelling",
-    known.high === "high" && known.off === "none", JSON.stringify(known));
+  const known = thinkingLevelMapFor({ id: "agnes-3.0-flash" });
+  check("a known id rides its probed cells, not the safe-set (3.0-flash xhigh open where the safe-set stays closed)",
+    known.xhigh === "xhigh", JSON.stringify(known));
+  check("xhigh stays closed where the validator refused it (union text has no xhigh: 2026-10-01, 2.0/2.5 both 400)",
+    thinkingLevelMapFor({ id: "agnes-2.0-flash" }).xhigh === null &&
+    thinkingLevelMapFor({ id: "agnes-2.5-flash" }).xhigh === null,
+    JSON.stringify([thinkingLevelMapFor({ id: "agnes-2.0-flash" }).xhigh,
+      thinkingLevelMapFor({ id: "agnes-2.5-flash" }).xhigh]));
+  check("max is open on every known chat model (2026-10-01 ladder; a dialect flip from the SenseNova era)",
+    thinkingLevelMapFor({ id: "agnes-2.0-flash" }).max === "max" &&
+    thinkingLevelMapFor({ id: "agnes-2.5-flash" }).max === "max" &&
+    thinkingLevelMapFor({ id: "agnes-3.0-flash" }).max === "max");
 
   const unknown = thinkingLevelMapFor({ id: "a-model-added-tomorrow" });
   check("an unprobed id is offered the OpenAI-compatible safe-set",
@@ -222,13 +252,18 @@ for (const model of contract.models) {
   check("every descriptor carries the plugin's own provider id",
     offered.every((d) => d.provider === LLM_PROVIDER_ID), JSON.stringify(offered.map((d) => d.provider)));
 
-  // The image-gen family (404 on the chat endpoint) is the only one the picker
-  // excludes: `output_modalities: ["image"]` is the load-bearing signal, never
-  // a name pattern or a status code.
+  // The image/video generation family (400 on the chat endpoint, "请使用
+  // /v1/images/generations" / "/v1/videos") is the only one the picker
+  // excludes. On Agnes the catalog declares no modality field, so the
+  // load-bearing signal is the id's family segment via modality.ts's name
+  // layer (the `modalityMetadata: "none"` rows); a platform that DOES declare
+  // `output_modalities` is covered by an `imageGen: true` row instead.
   const imageGenIds = contract.models.filter((m) => m.imageGen === true).map((m) => m.id);
-  check("buildDescriptors excludes every image-gen model from the offer",
-    imageGenIds.every((id) => !offeredIds.includes(id)),
-    JSON.stringify({ offered: offeredIds, imageGen: imageGenIds }));
+  const nameExcludedIds = contract.models.filter((m) => m.modalityMetadata === "none").map((m) => m.id);
+  check("buildDescriptors excludes every non-chat model from the offer (declared or name-inferred)",
+    imageGenIds.every((id) => !offeredIds.includes(id)) &&
+    nameExcludedIds.every((id) => !offeredIds.includes(id)),
+    JSON.stringify({ offered: offeredIds, imageGen: imageGenIds, nameExcluded: nameExcludedIds }));
 
   // Nothing handed in: the offer is the whole chat set and every roster row is
   // available. Agnes allocates no quota per model, so an empty blocked set is

@@ -160,10 +160,12 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
  "owned_by":"custom","supported_endpoint_types":["openai"]}
 ```
 
-`success: true` + `supported_endpoint_types` 是 new-api 血统的签名。当时目录 11 条：
-`agnes-2.0-flash`、`agnes-2.5-flash`、`agnes-2.5-pro`、`agnes-2.5-pro-alpha`、
-`agnes-2.5-pro-beta`、`agnes-3.0-flash`、`agnes-image-2.1-flash`、
-`agnes-image-2.5-flash`、`agnes-video-2.5`、`agnes-video-2.5-flash`、`agnes-video-v2.0`。
+`success: true` + `supported_endpoint_types` 是 new-api 血统的签名。目录**当天内收缩过一次**：
+早些时候读到 11 条（含 `agnes-2.5-pro` / `-alpha` / `-beta` / `agnes-video-2.5`），
+同日晚些的 ladder 探针时只剩 7 条——`agnes-2.0-flash`、`agnes-2.5-flash`、
+`agnes-3.0-flash`、`agnes-image-2.1-flash`、`agnes-image-2.5-flash`、
+`agnes-video-2.5-flash`、`agnes-video-v2.0`（已冻结进契约基线 `agnes-contract.json`，
+漂移由 live-contract §1 把守）。
 
 因此 **SenseNova 的那一套字段名在这里一个都不存在**——下表右两列才是 Agnes 的实况：
 
@@ -175,7 +177,7 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 | `context_length` | ✅ | ❌ | `contextWindowOf` 命名字段，缺则兜底 `128_000`——面板显示的是**兜底值**，不是平台声明 |
 | `max_output_length` | ✅ | ❌ | 同上 |
 | `supported_features` | ✅ | ❌ | 无字段可读，`reasoning: true` 改为无条件设置 |
-| `supported_endpoint_types` | ❌ | ✅ | 无判别力（11 条全是 `["openai"]`） |
+| `supported_endpoint_types` | ❌ | ✅ | 无判别力（现存 7 条全是 `["openai"]`） |
 
 **模态判定（`src/host/modality.ts`）**——Agnes 上唯一可用的信号是 id 自己的命名：
 
@@ -194,12 +196,12 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 > 视频同理指向 `/v1/videos`。这是目前唯一由平台直接声明模态的来源，但只能**逐次探测**
 > 才拿得到（要花请求、且随套餐变化），不适合当目录判定的依据。
 
-> ⏳ **待 live-contract 实测**：各模型的 `reasoning_effort` 支持面尚未用真机核验。先以
-> [../test/baselines/agnes-contract.json](../test/baselines/agnes-contract.json)
-> 的 seed 基线占位；跑 [../test/live-contract.mjs](../test/live-contract.mjs)
-> （`npm run test:live:contract`，设 `AGNES_TOKEN_PLAN_API_KEY`）后回填。
+> ✅ **已实测回填（2026-10-01）**：`reasoning_effort` 全阶梯与 thinking 字段拼写已用真机
+> 探针核验（见 [../test/baselines/agnes-contract.json](../test/baselines/agnes-contract.json)
+> 的 `driftLog` 与下文 §7.2/§7.3），seed 基线退役。后续漂移由
+> [`test:live:contract`](../test/live-contract.mjs) 把守。
 
-### 7.2 思考档位（未探测模型的 safe-set）
+### 7.2 思考档位（safe-set 只服务未知 id）
 
 `thinkingLevelMapFor` 对**未知模型 id**（不在 `PROBED_EFFORT` 表）给出 Agnes
 safe-set，保证选择器不空：
@@ -214,13 +216,15 @@ safe-set，保证选择器不空：
 | `xhigh` | `null` | 待 per-model probe 证明 |
 | `max` | `null` | 待 per-model probe 证明 |
 
-已知 id（在 `PROBED_EFFORT` 表，如 `deepseek-v4.1-flash`）走表分支：仅 `high`
-恒开，`low`/`medium` 按表开关（`deepseek-v4.1-flash` 当前全 `false` → 关），
-`xhigh`/`max` 恒关直到真机 200 证明。
+**已知 id（`PROBED_EFFORT` 表，2026-10-01 全阶梯真机实测）**：三个 chat 模型的
+`none`/`low`/`medium`/`high`/`max` 全部 200（关思考时 message 不带 reasoning
+字段）；`xhigh` 仅 `agnes-3.0-flash` 200——2.0/2.5 的校验器 400 并自报合法集
+`'none', 'low', 'medium', 'high' or 'max'`（不含 xhigh），3.0 的上游校验器更宽。
+`max` 全开是相对 SenseNova 时代的方言翻转（当时 max 是 glm 独占），表必须跟随
+平台逐模型的事实。思考字段拼写三模型统一为 `message.reasoning_content`。
 
-> ⏳ `PROBED_EFFORT` 目前仍载 SenseNova 时代的模型 id 与实测结论；Agnes 真实目录
-> 拿到后需按 [`test:live:contract`](../test/live-contract.mjs) 回放刷新该表与基线
-> `driftLog`，**不得臆造**。未知模型走上面的 safe-set，选择器永不空。
+> 未知 id 走上面的 safe-set，选择器永不空；已知 id 走表分支，关闭档不因
+> safe-set 而放开。改表必须附平台响应原文证据（基线 `driftLog` 纪律）。
 
 ### 7.3 请求 / 响应（已知约束）
 
@@ -235,8 +239,11 @@ safe-set，保证选择器不空：
   `clampMaxTokensToContext` 安全余量 4096）；目录无 `max_output_length` 可读，
   面板该段仍按「未声明不画」处理。
 - `reasoning: true` + `thinkingLevelMap`：DSH 思考强度选择器照常工作。
-- 思考字段拼写、逐模型 `reasoning_effort` 支持面、图像输入方言：**待 Agnes 真机
-  probe**，未实测前不写死（参见 [PITFALLS.md](./PITFALLS.md) 关于「文档须说实话」的纪律，形式全绿而语义已漂是踩过的坑）。
+- **思考字段拼写（已实测 2026-10-01）**：三个 chat 模型统一回
+  `message.reasoning_content`（`none` 档无思考字段）——pi-ai 读该拼写成立。
+  逐模型 `reasoning_effort` 支持面见 §7.2 的 `PROBED_EFFORT` 表。
+- 图像输入方言：**仍未 probe**（目录无 `input_modalities` 可读，无模型被标
+  vision），不写死（参见 [PITFALLS.md](./PITFALLS.md) 关于「文档须说实话」的纪律，形式全绿而语义已漂是踩过的坑）。
 
 ### 7.4 live-contract 护栏（漂移检测）
 
@@ -245,8 +252,9 @@ safe-set，保证选择器不空：
 [../test/baselines/agnes-contract.json](../test/baselines/agnes-contract.json)
 冻结的契约回放到 Agnes `/v1/models` 与少量推理探针：
 
-- 目录漂移（字段改名、模态拼写变化）先在这里变红，先于面板静默降级。
-- 一次 `/v1/models` 轮询 + 每模型 `low`/`medium` 两档探针（2s 退避，`429` 记
+- 目录漂移（字段改名、模态拼写变化、模型增删）先在这里变红，先于面板静默降级。
+- 一次 `/v1/models` 轮询 + 每模型 `low`/`medium` 两档探针 + `max_tokens` 上限
+  双向护栏（§2c：`meta.maxTokensCap` 须仍 200、两倍须仍 400；2s 退避，`429` 记
   INDEFINITE 不当判读，仅 4xx 参数拒绝算红）。
 - 红 = 信息而非回归：修复落在本文 §7 注释层 + 刷新基线 JSON，绝不改 `llm-models.ts`
   逻辑。

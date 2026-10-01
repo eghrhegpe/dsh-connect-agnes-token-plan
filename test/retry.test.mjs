@@ -179,21 +179,18 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
       JSON.stringify(byId.m1.thinkingLevels) === JSON.stringify(["off", "low", "medium", "high"]),
       JSON.stringify(byId.m1.thinkingLevels));
     // Extended levels are per-model and gated on the frozen probe table
-    // (`PROBED_EFFORT` in llm-models.ts): `xhigh` only deepseek-v4-flash,
-    // `max` only glm-5.2. An id ABSENT from the table (unknown) is offered
-    // the Agnes safe-set off/low/medium/high; an id PRESENT with a level set
-    // `false` keeps it closed. The 2026-09-30 probe round opened `low`/
-    // `medium` on the models it answered 200 for (v4-flash / glm-5.2 /
-    // flash-lite / deepseek-flash / kimi-k3 per model — see the baseline), so
-    // those rows carry the full proven ladder; an unknown id gets off/low/
-    // medium/high.
+    // (`PROBED_EFFORT` in llm-models.ts, 2026-10-01 live ladder): `max` open
+    // on every Agnes chat model, `xhigh` only agnes-3.0-flash (the 2.0/2.5
+    // validator union lists no xhigh). An id ABSENT from the table (unknown)
+    // is offered the Agnes safe-set off/low/medium/high; an id PRESENT with a
+    // level set `false` keeps it closed — see the baseline's driftLog.
     check("probed models carry their full proven ladder; unknown ids get off/low/medium/high; minimal never offered",
-      supportedThinkingLevels({ id: "glm-5.2" }).join(",") === "off,low,medium,high,max" &&
-      supportedThinkingLevels({ id: "deepseek-v4-flash" }).join(",") === "off,low,medium,high,xhigh" &&
+      supportedThinkingLevels({ id: "agnes-3.0-flash" }).join(",") === "off,low,medium,high,xhigh,max" &&
+      supportedThinkingLevels({ id: "agnes-2.5-flash" }).join(",") === "off,low,medium,high,max" &&
       supportedThinkingLevels({ id: "anything-else" }).join(",") === "off,low,medium,high",
       [
-        "glm-5.2=" + supportedThinkingLevels({ id: "glm-5.2" }).join(","),
-        "v4-flash=" + supportedThinkingLevels({ id: "deepseek-v4-flash" }).join(","),
+        "3.0-flash=" + supportedThinkingLevels({ id: "agnes-3.0-flash" }).join(","),
+        "2.5-flash=" + supportedThinkingLevels({ id: "agnes-2.5-flash" }).join(","),
         "other=" + supportedThinkingLevels({ id: "anything-else" }).join(",")
       ].join(" | "));
 

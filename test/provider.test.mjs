@@ -83,31 +83,27 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
       thinkingLevelMapFor({ id: "any" }).off === "none");
     check("minimal is not offered (unverified on this gateway)",
       thinkingLevelMapFor({ id: "any" }).minimal === null);
-    check("an unprobed model offers the safe low/medium/high set (Agnes advertises these) and keeps xhigh/max closed",
+    check("an unprobed model offers the safe low/medium/high set (the platform's own effort union) and keeps xhigh/max closed",
       thinkingLevelMapFor({ id: "any" }).xhigh === null &&
       thinkingLevelMapFor({ id: "any" }).max === null &&
       thinkingLevelMapFor({ id: "any" }).low === "low" &&
       thinkingLevelMapFor({ id: "any" }).medium === "medium" &&
       thinkingLevelMapFor({ id: "any" }).high === "high");
-    check("xhigh is offered only on deepseek-v4-flash (probed 200)",
-      thinkingLevelMapFor({ id: "deepseek-v4-flash" }).xhigh === "xhigh");
-    check("low/medium are offered where the 2026-09-30 probe recorded 200 (v4-flash / glm-5.2 / flash-lite / deepseek-flash-medium / kimi-k3-medium)",
-      thinkingLevelMapFor({ id: "deepseek-v4-flash" }).low === "low" &&
-      thinkingLevelMapFor({ id: "deepseek-v4-flash" }).medium === "medium" &&
-      thinkingLevelMapFor({ id: "glm-5.2" }).low === "low" &&
-      thinkingLevelMapFor({ id: "glm-5.2" }).medium === "medium" &&
-      thinkingLevelMapFor({ id: "Agnes-6.8-flash-lite" }).low === "low" &&
-      thinkingLevelMapFor({ id: "kimi-k3" }).medium === "medium" &&
-      thinkingLevelMapFor({ id: "deepseek-flash" }).medium === "medium" &&
-      // indefinite (429 rhythm answers, not 400) stay closed:
-      thinkingLevelMapFor({ id: "deepseek-v4-pro" }).low === null &&
-      thinkingLevelMapFor({ id: "deepseek-v4-pro" }).medium === null &&
-      thinkingLevelMapFor({ id: "deepseek-flash" }).low === null &&
-      thinkingLevelMapFor({ id: "kimi-k3" }).low === null);
-    check("max is rejected off by default (400 on flash-lite / v4-flash)",
-      thinkingLevelMapFor({ id: "Agnes-6.8-flash-lite" }).max === null);
-    check("glm-5.2 alone offers max (probed 200)",
-      thinkingLevelMapFor({ id: "glm-5.2" }).max === "max");
+    check("xhigh is offered only on agnes-3.0-flash (2026-10-01 ladder: 200 there; 400 on 2.0/2.5 — the validator union lists no xhigh)",
+      thinkingLevelMapFor({ id: "agnes-3.0-flash" }).xhigh === "xhigh" &&
+      thinkingLevelMapFor({ id: "agnes-2.0-flash" }).xhigh === null &&
+      thinkingLevelMapFor({ id: "agnes-2.5-flash" }).xhigh === null);
+    check("low/medium are offered on every known chat model (2026-10-01 ladder, all 200)",
+      thinkingLevelMapFor({ id: "agnes-2.0-flash" }).low === "low" &&
+      thinkingLevelMapFor({ id: "agnes-2.0-flash" }).medium === "medium" &&
+      thinkingLevelMapFor({ id: "agnes-2.5-flash" }).low === "low" &&
+      thinkingLevelMapFor({ id: "agnes-2.5-flash" }).medium === "medium" &&
+      thinkingLevelMapFor({ id: "agnes-3.0-flash" }).low === "low" &&
+      thinkingLevelMapFor({ id: "agnes-3.0-flash" }).medium === "medium");
+    check("max is open on every known chat model (2026-10-01 ladder, all 200 — a dialect flip from the SenseNova era where max was glm-only)",
+      thinkingLevelMapFor({ id: "agnes-2.0-flash" }).max === "max" &&
+      thinkingLevelMapFor({ id: "agnes-2.5-flash" }).max === "max" &&
+      thinkingLevelMapFor({ id: "agnes-3.0-flash" }).max === "max");
     check("cost is zeroed on all four fields", JSON.stringify(descriptor.cost) === JSON.stringify(NO_COST) &&
       descriptor.cost.input === 0 && descriptor.cost.output === 0 &&
       descriptor.cost.cacheRead === 0 && descriptor.cost.cacheWrite === 0);

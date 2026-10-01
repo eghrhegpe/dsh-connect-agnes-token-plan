@@ -37,8 +37,9 @@
  *    at all (live-verified 2026-10-01), so there is nothing to read. The map
  *    pins picker levels to platform-valid wire values:
  *    `off: "none"` (the platform's off spelling — "off" itself 400s),
- *    `minimal: null` (unverified on this gateway), and `max` only on glm-5.2
- *    (probed 200; rejected 400 on flash-lite / deepseek-v4-flash).
+ *    `minimal: null` (unverified on this gateway), and the extended levels
+ *    strictly per the live ladder (2026-10-01: `max` on every Agnes chat
+ *    model, `xhigh` on agnes-3.0-flash only — see PROBED_EFFORT).
  *
  * @module dsh-connect-agnes-token-plan/llm-models
  */
@@ -186,20 +187,20 @@ export { isChatModel };
  * DSH's picker offers levels from `getSupportedThinkingLevels(model)`
  * (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`), and pi-ai's
  * openai-completions dispatch sends `reasoning_effort = map[level] ?? level`.
- * Agnes's OpenAI-compat gateway accepts `none`/`low`/`medium`/`high`/
- * `xhigh` on every chat model, rejects `off` (the OpenAI spelling) and
- * `minimal`, and rejects `max` everywhere except glm-5.2 (all probed
- * 2026-09-29; the platform's own error lists `low, medium, high, xhigh,
- * none`). So:
+ * Agnes's OpenAI-compat gateway rejects `off` (the OpenAI spelling) and
+ * `minimal`; the extended levels are PER-MODEL, per the 2026-10-01 live
+ * ladder (see PROBED_EFFORT): `xhigh` only on agnes-3.0-flash, `max` on
+ * every Agnes chat model. So:
  *
  * - `off: "none"` — the picker's "关闭" must send `none`, not `off`;
- *   - `low`/`medium` — per-model, gated on the PROBED_EFFORT table. A model
- *     PRESENT in that table with a level set `false` keeps it closed; a model
- *     ABSENT from it (an unknown id) is given the Agnes safe-set
- *     `low`/`medium`/`high` so the picker is never empty. The live-contract
- *     replay (`test/live-contract.mjs`) probes the per-model levels and flips
- *     the table cells once a model's 200 is recorded.
- * - `max` — `"max"` on glm-5.2 only, `null` elsewhere.
+ *   - `low`/`medium` — 200 on every known chat model; a model ABSENT from
+ *     the table (an unknown id) still gets them via the Agnes safe-set so
+ *     the picker is never empty. A model PRESENT in the table with a level
+ *     set `false` keeps it closed. The live-contract replay
+ *     (`test/live-contract.mjs`) probes the per-model levels and flips the
+ *     table cells once a model's 200 is recorded.
+ * - `xhigh`/`max` — per the table; the safe-set keeps both closed for
+ *   unknown ids.
  *
  * A value of `null` means "the picker must not offer this level"; a string is
  * the wire spelling the level dispatches to.
@@ -207,49 +208,39 @@ export { isChatModel };
  * @returns {object} the thinkingLevelMap.
  */
 /**
- * Per-model 思考档位 probe table (frozen 2026-09-29, mirrored from
- * `test/baselines/agnes-contract.json` §reasoningEffort).
+ * Per-model 思考档位 probe table (frozen 2026-10-01 from the live ladder
+ * replay, mirrored from `test/baselines/agnes-contract.json`
+ * §reasoningEffort — every cell is a platform answer, not a guess).
  *
  * The baseline records which `reasoning_effort` values the platform
- * answered 200 for per model:
+ * answered 200 for per model (full ladder none/low/medium/high/xhigh/max,
+ * max_tokens=8; 429 cells re-run clean before recording):
  *   - `high` — the platform default for every chat model;
- *   - `none` — 关思考, probed 200 on every model;
- *   - `xhigh` — ONLY probed 200 on deepseek-v4-flash;
- *   - `max`   — ONLY probed 200 on glm-5.2;
- *   - `low` / `medium` — 2026-09-30 live-contract replay probed 200 on
- *     Agnes-6.8-flash-lite / deepseek-v4-flash / glm-5.2 (both) and on
- *     deepseek-flash's `medium` (its `low` cell is still INDEFINITE — the
- *     probe hit a 429 rpm window, not a 400, so it is "not measured" not
- *     "unsupported"); deepseek-v4-pro's low/medium are also INDEFINITE for
- *     the same reason. INDEFINITE cells stay closed in this table until a
- *     clean re-run records a 200 (or a 400, which would close them
- *     permanently).
+ *   - `none` — thinking off, 200 on every model (the message drops the
+ *     reasoning field entirely);
+ *   - `low` / `medium` — 200 on every chat model;
+ *   - `xhigh` — ONLY agnes-3.0-flash. On 2.0/2.5 the platform 400s and its
+ *     validator states the union itself: "Input should be 'none', 'low',
+ *     'medium', 'high' or 'max'" — xhigh is not in it. 3.0-flash's upstream
+ *     runs a wider validator and answers 200.
+ *   - `max` — 200 on EVERY Agnes chat model. A real dialect flip from the
+ *     SenseNova era, where max was glm-5.2-only: the table follows the
+ *     platform per model, never the family history.
  *
  * The panel roster line must not quote a level the platform may 400 on.
- * For Agnes, a model ABSENT from this table (an unknown / future id) is
- * offered the safe OpenAI-compatible set the provider row advertises —
- * `off`→`none`, plus `low`/`medium`/`high` — while `xhigh`/`max` stay closed
- * until a live-contract probe proves them on a specific model. A model
- * PRESENT here (even all-`false`) is a known id whose extended levels were
- * never confirmed, so its closed levels stay closed. A new model that turns
- * out to accept an extra level is added here WITH its probe evidence (see the
- * baseline's `driftLog` discipline), never assumed.
+ * A model ABSENT from this table (an unknown / future id) is offered the
+ * safe OpenAI-compatible set — `off`→`none`, plus `low`/`medium`/`high` —
+ * while `xhigh`/`max` stay closed until a live-contract probe proves them
+ * on that specific model. A model PRESENT here (even all-`false`) is a
+ * known id whose closed levels stay closed even where the safe-set would
+ * open them. A new model that turns out to accept an extra level is added
+ * here WITH its probe evidence (the baseline's `driftLog` discipline),
+ * never assumed.
  */
 const PROBED_EFFORT = Object.freeze({
-  "deepseek-v4-flash": { low: true, medium: true, high: true, xhigh: true, max: false },
-  "glm-5.2":           { low: true, medium: true, high: true, xhigh: false, max: true },
-  "Agnes-6.8-flash-lite": { low: true, medium: true, high: true, xhigh: false, max: false },
-  "deepseek-v4-pro":   { low: false, medium: false, high: true, xhigh: false, max: false },
-  // deepseek-flash: medium probed 200; low is INDEFINITE (429, re-run
-  // pending) so it stays closed — "not measured" is not "supported".
-  "deepseek-flash":    { low: false, medium: true, high: true, xhigh: false, max: false },
-  // kimi-k3: medium probed 200; low is INDEFINITE (429, re-run pending).
-  "kimi-k3":           { low: false, medium: true, high: true, xhigh: false, max: false },
-  // deepseek-v4.1-flash: a 403 plan-restricted model (not image-gen). No
-  // extended level was ever proven on it, so every level but the platform
-  // default `high` stays closed — it rides the probed branch, not the unprobed
-  // Agnes safe-set, exactly like the other known ids.
-  "deepseek-v4.1-flash": { low: false, medium: false, high: true, xhigh: false, max: false }
+  "agnes-2.0-flash": { low: true, medium: true, high: true, xhigh: false, max: true },
+  "agnes-2.5-flash": { low: true, medium: true, high: true, xhigh: false, max: true },
+  "agnes-3.0-flash": { low: true, medium: true, high: true, xhigh: true, max: true }
 });
 
 export function thinkingLevelMapFor(entry) {

@@ -158,11 +158,44 @@ for (const model of contract.models) {
   await sleep(PROBE_BACKOFF_MS);
 }
 
-/** One chat-completion probe, unwrapped into {response, text, status}. */
-async function probeOnce(modelId, effort) {
+// --- 2c. the max_tokens cap stays honest ---------------------------------
+// `meta.maxTokensCap` (65536) was captured from the platform's own refusal
+// text ("max_tokens 不能超过 65536", 2026-10-01). The descriptor pins that
+// figure as PROBED_MAX_TOKENS (llm-models.ts), so two cheap probes keep it
+// from going stale: the cap must stay ACCEPTED and double the cap must stay
+// REFUSED. Either flip is contract drift — refresh the baseline, AGNES-API.md
+// §7.3 and the constant together, never one alone.
+{
+  const cap = contract.meta.maxTokensCap;
+  const model = contract.models.find((m) => m.chat === true && m.status === "ok");
+  if (Number.isInteger(cap) && cap > 0 && model) {
+    const atCap = await probeOnce(model.id, "high", { max_tokens: cap });
+    if (atCap.status === 429) {
+      check(`${model.id} max_tokens=${cap} probe INDEFINITE (rate-limited)`, true,
+        `HTTP 429 ${atCap.text.slice(0, 120)} — re-run after the window clears`);
+    } else {
+      check(`${model.id} max_tokens=${cap} still accepted (the PROBED_MAX_TOKENS ceiling)`,
+        atCap.status >= 200 && atCap.status < 300, `HTTP ${atCap.status} ${atCap.text.slice(0, 120)}`);
+    }
+    await sleep(PROBE_BACKOFF_MS);
+    const over = await probeOnce(model.id, "high", { max_tokens: cap * 2 });
+    if (over.status === 429) {
+      check(`${model.id} max_tokens=${cap * 2} probe INDEFINITE (rate-limited)`, true,
+        `HTTP 429 ${over.text.slice(0, 120)} — re-run after the window clears`);
+    } else {
+      check(`${model.id} max_tokens=${cap * 2} still refused (the cap statement)`,
+        over.status === 400, `HTTP ${over.status} ${over.text.slice(0, 120)}`);
+    }
+    await sleep(PROBE_BACKOFF_MS);
+  }
+}
+
+/** One chat-completion probe, unwrapped into {response, text, status}.
+ *  `extraBody` merges over the default probe body (§2c overrides max_tokens). */
+async function probeOnce(modelId, effort, extraBody = {}) {
   let response;
   try {
-    response = await fetchProbe(modelId, effort);
+    response = await fetchProbe(modelId, effort, extraBody);
   } catch (error) {
     // A transport failure is a "did not reach the platform" answer, not a
     // level verdict: record it, keep running, exit non-zero is not our job
@@ -185,7 +218,7 @@ function sleep(ms) {
 }
 
 /** One chat-completion probe; its result is evidence, not a code fix. */
-async function fetchProbe(modelId, effort) {
+async function fetchProbe(modelId, effort, extraBody = {}) {
   return fetch(`${BASE_URL}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
@@ -194,7 +227,8 @@ async function fetchProbe(modelId, effort) {
       messages: [{ role: "user", content: "ping" }],
       reasoning_effort: effort,
       max_tokens: 8,
-      stream: false
+      stream: false,
+      ...extraBody
     }),
     signal: AbortSignal.timeout(60_000)
   });
