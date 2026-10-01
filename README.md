@@ -1,6 +1,6 @@
 # dsh-connect-agnes-token-plan
 
-Agnes 接入的 DSH **Plugins 页**插件卡**全家桶**（四个 tab）：① **积分额度** tab——登录一次 Agnes 控制台，实时查看四类额度窗口与账号累计用量，令牌失效自动重登，之后无需再管；② **接入 API** tab——把 Agnes 模型注册为 DSH provider，参与对话与出图；③ **小浣熊** tab（可选、默认关）——微信扫码接入第二个上游 `xiaohuanxiong.com`；④ **AgnesCode** tab（可选、默认关）——读取本机 AgnesCode 桌面端登录态接入第三个上游。三条上游凭据相互独立。此外 429 自愈在后台生效：限频被误判为"额度耗尽"时在 Host 侧纠正回退避重试，模型不会无端消失。
+Agnes 接入的 DSH **Plugins 页**插件卡**全家桶**（三个 tab）：① **积分额度** tab——登录一次 Agnes 控制台，实时查看四类额度窗口与账号累计用量，令牌失效自动重登，之后无需再管；② **接入 API** tab——把 Agnes 模型注册为 DSH provider，参与对话与出图；③ **AgnesCode** tab（可选、默认关）——读取本机 AgnesCode 桌面端登录态接入桌面端上游。两条上游凭据相互独立。此外 429 自愈在后台生效：限频被误判为"额度耗尽"时在 Host 侧纠正回退避重试，模型不会无端消失。
 
 ## 功能
 
@@ -20,10 +20,9 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 - **套餐对比**：平台**公开**的套餐目录（六档：入门版 / 专业版 / 高级版 × 月付 / 年付），无需登录即可读，用来回答"升级能买到什么"
 - **模型清单**：当前 Key 实际能调哪些模型，其中哪些能看图（按平台 `input_modalities` 判定，不靠名字猜）
 - **可选接入**：把 Agnes 模型接进 DSH 对话，思考强度可选；并可注册出图 / 视频工具
-- **第二个上游（默认关）**：面板「小浣熊」tab 微信扫码接入 `xiaohuanxiong.com`，独立凭据、独立 provider，与 Token Plan 互不干涉
-- **第三个上游（默认关）**：面板「AgnesCode」tab 读取本机 AgnesCode 桌面端的登录态，独立 provider 与独立积分池
+- **桌面端上游（默认关）**：面板「AgnesCode」tab 读取本机 AgnesCode 桌面端的登录态，独立 provider 与独立积分池
 
-面板**不代你操作账务**：不改套餐、不代扣额度、不碰 Key 明文；数据来自 Agnes 控制台自己的 API，与网页控制台口径一致。真正会「动」的四部分——注册 provider、挂出图工具、接第二个上游、接 AgnesCode——全部 opt-in 且**默认关闭**，不打开时插件退化为纯信息展示。
+面板**不代你操作账务**：不改套餐、不代扣额度、不碰 Key 明文；数据来自 Agnes 控制台自己的 API，与网页控制台口径一致。真正会「动」的四部分——注册 provider、挂出图工具、挂视频工具、接入 AgnesCode 桌面端上游——全部 opt-in 且**默认关闭**，不打开时插件退化为纯信息展示。
 
 **注册 provider 时**（面板开关打开），插件把 Agnes 模型接进 DSH 的对话模型选择器，并在 Host 侧纠正 peer 对限频 429 的误判（Agnes 把速率上限错命名为 `quota_exceeded_error`，会被判成额度耗尽而不重试）——限频真正退避重试，模型不再无端 "消失"。
 
@@ -68,11 +67,7 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 
 面板「视频工具」卡（在「出图工具」下方，默认展开）打开开关后，Host 给 agent 注册工具 `agnes_video_generate`（首选模型由 `videoModelId` 指定），鉴权同样走 `AGNES_TOKEN_PLAN_API_KEY`。与出图**不同**的是协议：图片一次请求同步返回，视频是**异步任务制**——建任务后轮询到完成。**V2.0 与 2.5 两个参数体系都覆盖**，工具按选中模型分派请求体：V2.0（`agnes-video-v2.0`）走 `width`/`height`/`num_frames`/`frame_rate`，2.5（`agnes-video-2.5` / `agnes-video-2.5-flash`）走 `mode`/`seconds`/`size`/`aspect_ratio`。两套字段互斥、永不同时发给同一模型，但处理是**不对称**的：V2.0 帧数字段发到 2.5 模型会被换算成最接近的整秒（`121 @ 24fps → 5s`），保留「不判断家族也能出片」的退路；反过来，2.5 专有字段发到 V2.0 模型会**当场报错并给出修法**——工具不会静默丢弃，丢弃等于让你以为拿到 10 秒 2K、实际拿到 5 秒 720P。自动选择优先 V2.0，目录里没有 V2.0 时回落第一个 2.5 模型；面板仍会把 2.5 家族单独点名。协议细节与校验规则见 [docs/AGNES-API.md](docs/AGNES-API.md) §7.5。
 
-## 第二个上游：小浣熊（可选，默认关）
-
-面板「小浣熊」tab 用微信扫码登录 `xiaohuanxiong.com`，并以 provider id `sensenova-raccoon`（显示名 SenseNova Raccoon）注册**独立** provider。登录后显示积分余额与模型清单，每个模型带**上下文窗口 / 最大输出**与积分倍率（`free` / `×0.75` 这类，由网关目录声明；目录没给就不显示，不猜）。它与 Token Plan 同属**商汤（SenseTime）旗下**的两条产品线，所以放在同一个插件里顺理成章；但两者的**认证域与额度口径互不相通**（那边是独立积分余额，这边是四个限流窗口），凭据也各走一套——它不是 Token Plan 的第二条登录路径，实测依据见 [docs/ROADMAP.md](docs/ROADMAP.md) §6.1.1。
-
-## 第三个上游：AgnesCode（可选，默认关）
+## 桌面端上游：AgnesCode（可选，默认关）
 
 面板「AgnesCode」tab 接的是 **AgnesCode 桌面端**的登录态：微信扫码发生在桌面 App 里，本插件只**读取** App 留在本机的加密会话文件（Chromium os_crypt，密钥经系统 DPAPI 解封，全程内存使用、不落盘不显示；解出的凭据随后存入 DSH 凭据服务，与账号密码同一纪律），并以 provider id `sensenova-agnescode`（显示名 SenseNova AgnesCode）注册**独立** provider。它的接口地址写在会话文件里、**按账号跟随**（钉死在 Agnes 域名族内，地址不对就拒绝使用）；显示的积分是**订阅池**口径（时效 + 永久），模型清单带「会员」标记（会员门槛是账号状态，不是模型不存在，所以标记而不隐藏）。检测不到登录态时，面板逐条列出**探测过哪些文件、各自为什么没成**——「没装 App」「解不开密」「会话里没有令牌」是三种不同的处理方式，不会笼统叫你重新登录。JWT 有效期约 28 天，过期后开一次桌面 App 再点「检测本机登录态」即可；协议探针记录见 [docs/ROADMAP.md](docs/ROADMAP.md) §6.3。
 
@@ -81,7 +76,7 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 provider / 出图开关的生效值存在插件私有状态文件里（`$DSH_HOME/state/<name>/`），不在任何配置或路由上——查"到底开没开"用 doctor，它只读状态文件、不碰凭据，Host 没起也能跑：
 
 ```powershell
-npm run doctor          # 人读：每个 profile 的 provider / draw / video / raccoon / agnescode 开关与模型清单
+npm run doctor          # 人读：每个 profile 的 provider / draw / video / agnescode 开关与模型清单
 npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本）
 ```
 

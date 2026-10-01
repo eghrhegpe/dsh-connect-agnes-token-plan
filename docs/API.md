@@ -117,7 +117,7 @@
 ```
 
 - `ok:false` 是**兜底路径**，只在 `buildSnapshotBody` 之外失败时出现（路由挂掉、Host 不可达、`config_error`）。body 带 `code`（`not_configured` / `jwt_expired` / `auth_error` / `config_error` / `account_locked` 等）与 `auth` 块。
-- **控制台读不到时 body 仍然是 `ok:true`**：`quota.consoleConnected:false` 加上 `quota.error.code`（`not_configured` / `auth_error` / `console_error`）。这样 API Key tab 和小浣熊 tab 仍然可达——它们一个不读控制台、一个连的是另一个上游，被一个缺席模块一起埋掉正是 `ARCHITECTURE.md` §5 禁止的。
+- **控制台读不到时 body 仍然是 `ok:true`**：`quota.consoleConnected:false` 加上 `quota.error.code`（`not_configured` / `auth_error` / `console_error`）。这样 API Key tab 和 AgnesCode tab 仍然可达——它们一个不读控制台、一个连的是桌面 App 上游，被一个缺席模块一起埋掉正是 `ARCHITECTURE.md` §5 禁止的。
 - Host 内部：临近过期时用保存的账号重新登录一次；Agnes 不发 refresh_token，所以「续期」就是重登。
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
 - **额度与用量是两条独立事实**：`quota.windows` 是平台声明的上限，`quota.totals` 与 `usage` 是平台报出的累计量。滚动窗口内的已用量平台不提供，所以 Host 不做任何减法——`limit - total` 会相减两个不同周期。
@@ -192,13 +192,9 @@
 
 > ⚠️ **两条 id 的校验强度不同，别混为一谈**：面板偏好 `videoModelId` 必须**在目录里**才被采信，认不出就退回自动选择（目录第一个 V2.0 模型，无 V2.0 则第一个 2.5 模型）；而工具调用里显式传的 `model` **原样直传、不查目录**（`pickVideoModel` 对非空请求直接返回）。刻意如此：写错的 id 由平台自己回 400、错误立刻可见，若静默换成别的模型，agent 会以为拿到了它要的那一档。是否存在于目录里是**调用时**的事实，不是保存时能断言的。
 
-### `GET|POST /api/dsh-connect-agnes-token-plan/raccoon`
-
-第二个上游（小浣熊网关）的开关与状态。它与 Token Plan **同属商汤旗下，但认证域互不相通**：凭据、store、publisher 全部隔离，改动它对本插件主链路的影响应恒为零。契约与复测表见 [ROADMAP.md](./ROADMAP.md) §6.1.2。
-
 ### `GET|POST /api/dsh-connect-agnes-token-plan/agnescode`
 
-第三个上游（AgnesCode 桌面端登录态）的开关与状态，隔离纪律与 `/raccoon` 同款。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, balance, models, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是会话文件里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久），不是 Token Plan 的窗口语义；`models` 行带 `memberOnly` 标记（门槛是账号状态，标记而不隐藏）。`POST` 动作三种：`{action:"switch", enabled}`、`{action:"harvest"}`（重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**——tier 代码 + 形状事实，令牌永不进响应）、`{action:"logout"}`（解除关联并释放注册）。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
+桌面端上游（AgnesCode 桌面端登录态）的开关与状态，独立存证与凭据，与主链路完全隔离。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, balance, models, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是会话文件里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久），不是 Token Plan 的窗口语义；`models` 行带 `memberOnly` 标记（门槛是账号状态，标记而不隐藏）。`POST` 动作三种：`{action:"switch", enabled}`、`{action:"harvest"}`（重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**——tier 代码 + 形状事实，令牌永不进响应）、`{action:"logout"}`（解除关联并释放注册）。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
 
 ---
 
@@ -219,8 +215,8 @@ HTTP 层与信封层各判一次。字段级事实与实测证据见
 | `https://api.agnes-ai.cn/v1/models` | GET | 套餐覆盖模型里本 Key 真正能调哪些（只读、不计费、不占额度） | `Bearer <AGNES_TOKEN_PLAN_API_KEY>` |
 
 **五个源一律软失败**：任何一个缺席，面板照常显示已到的部分，并在 `quota.error` 里点名缺席的那一个。
-`overview` 曾经是唯一致命源（它失败即整个 body 走 `ok:false`），那条路把三个 tab 一起埋掉——
-包括一个不读控制台的 API Key tab，和一个连的是**另一个上游**的小浣熊 tab。现在它只是五个源里
+`overview` 曾经是唯一致命源（它失败即整个 body 走 `ok:false`），那条路把全部 tab 一起埋掉——
+包括一个不读控制台的 API Key tab，和一个连的是**另一个上游**的 AgnesCode tab。现在它只是五个源里
 的第一个：失败时 `quota.consoleConnected:false`，`quota.totals` 为 `null`（**不是零值块**），
 面板在额度 tab 内明说「控制台未连接」并把登录卡展开，另两个 tab 一个点击之外。
 `plans` 匿名可读，所以它是唯一在未登录时也照样能展示的额度来源。

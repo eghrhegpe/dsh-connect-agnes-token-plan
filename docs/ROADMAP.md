@@ -231,6 +231,11 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 
 ## 6.1 竞品参照：raccoon 的机制点（可选模式范本）
 
+> ⚠️ **本节所涉的小浣熊第二上游已于 2026-10-01 从本插件移除**：Agnes 插件不再承载商汤小浣熊线
+> （兄弟插件 `dsh-connect-sensenova-token-plan` 保留该线并继续演进）。本节保留为机制研究与
+> 历史裁定记录——实现坐标（`src/host/raccoon*.ts`、`src/client/raccoon-tab.ts`、
+> `test/raccoon.test.mjs`）均已删除，别再按文中的文件路径去找实现。
+
 > 仅作**机制参考，不抄代码**。参照对象：`liudapeng0311/dsh-raccoon-work`（DSH 小浣熊 Connect，接入商汤小浣熊桌面 App 模型）。
 > 关键事实：它接的是**小浣熊桌面 App 登录态网关**（`xiaohuanxiong.com/api/web/llm/v2` + box-agent 登录态文件），**不是** Token Plan 配额池——限流宇宙与我们不同，故「它不限速」是源差异、非技术碾压。
 
@@ -405,8 +410,8 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 | **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.ts`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.ts` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs`（56 项）已落地；离线 12 套件全绿 |
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
-| **P2 ✅ 部分落地** | 第二上游 provider：已随 0.4.3 落地（三个 tab 之一 + `sensenova-raccoon`），2026-10-01 补做网关契约复测，**契约成立**（§6.1.2）；剩余未做的是 desktop 融合路径（第二**登录路径**，见 §6.1.1）——它已实测判死，维持观望 | 高（新上游 + 新凭据生命周期） | 已落地部分：`test/raccoon.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9；**仍缺**：带凭据的 live 端到端探针（比照 §2.2 给推理契约做的 `live-contract`） |
-| **P2 ✅ 落地（2026-10-01）** | 第三上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第四个 tab + `test/agnescode.test.mjs`（101 项）；三路子代理审核后修复 4 条 P1（挂载种子死守卫——raccoon 同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读两个开关、render 首帧钉四 tab）；**仍缺**：带凭据的 live 端到端探针档（比照 `live-contract`）、真 DPAPI 路径（`defaultDpapiUnprotect`）零自动覆盖（可加平台守卫的可选档）、会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9（四 tab 全覆盖）+ render 首帧四 tab 断言 |
+| **P2 ✅ 已落地后移除（2026-10-01）** | 第二上游 provider（小浣熊 / `sensenova-raccoon`）：曾随 0.4.3 落地、2026-10-01 续做网关契约复测**契约成立**（§6.1.2），但已随 Agnes 线独立**整条移除**（兄弟插件保留该线）——移除即本项终态，无「剩余未做」 | 高（新上游 + 新凭据生命周期） | 移除时同删 `test/raccoon.test.mjs`（离线 101 项）与全部接线/文档；`docs.test.mjs` 检查 9 改钉三 tab |
+| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第三个 tab + `test/agnescode.test.mjs`（101 项）；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）；**仍缺**：带凭据的 live 端到端探针档（比照 `live-contract`）、真 DPAPI 路径（`defaultDpapiUnprotect`）零自动覆盖（可加平台守卫的可选档）、会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9（三 tab 全覆盖）+ render 首帧三 tab 断言 |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 | 明确不做 | 伪倍率折进注册模型名（qoder ② 法：把倍率嵌进 DSH 原生选择器的模型名里，绕「选择器无旁路字段」限制）。2026-09-30 决议 | 低 | 现状即决议：`×N` 只作**面板侧标记**（模型花名册行尾 + 趋势图，同一匹配器、同一数值，均标「非官方」）。理由：① 倍率是操作者手填的对比数据、非平台计费事实，折进 DSH 全局模型名会把个人配置泄漏给所有会话；② qoder 嵌名是「DSH 无字段携带平台真实倍率」的 workaround，本插件的倍率本就没有平台出处，面板就是它唯一合理的位置；③ 模型名是 DSH 配置 / 选择器的稳定标识（id 匹配），加 `×N` 会破坏 id 语义 |
 

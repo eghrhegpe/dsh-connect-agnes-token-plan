@@ -1,8 +1,8 @@
 /**
  * The peer-dependent half of the directly-registered AgnesCode provider —
- * "third upstream provider" (ROADMAP §6.3).
+ * the desktop-app upstream (ROADMAP §6.3).
  *
- * Mirrors `raccoon-llm-adapter.ts`'s shape: ONE `PiAiAdapter` carrying ONE
+ * ONE `PiAiAdapter` carrying ONE
  * profile (`sensenova-agnescode` → the credential's per-account BFF base), an
  * INERT pi-ai auth plane (the AgnesCode JWT is resolved per request from the
  * plugin's own credential store, pi-ai never manufactures it), and no token
@@ -13,7 +13,7 @@
  * `model_type: "text"` with no image modality fact (ROADMAP §6.3), so there
  * is nothing honest to advertise — a vision answer here would be an invented
  * fact. If the platform later declares image input, this is the one place to
- * add the hooks (mirror `raccoon-llm-adapter.ts`).
+ * add the hooks (mirror the Token Plan adapter's wiring).
  *
  * The descriptor mapping lives in the peer-free `agnescode-models.ts`, so this
  * module holds only assembly against the runtime and is exercised by the

@@ -94,8 +94,8 @@ url: https://github.com/eghrhegpe/dsh-connect-agnes-token-plan
 name: eghrhegpe/dsh-connect-agnes-token-plan
 category: usage
 description:
-  en: 'Agnes Token Plan quota panel rendered as a config card on the Harness Plugins page: account-wide quota windows (5-hour requests, weekly requests, daily images, daily video) plus cumulative usage with a daily chart and the public plan catalogue, all read from the Agnes console API, with in-panel sign-in and automatic re-login. Three opt-in switches, off by default, register Agnes models and the Xiaohuanxiong upstream as LLM providers and expose an image-generation tool to the agent.'
-  zh: '在 Harness 的 Plugins 页以插件卡显示 Agnes 控制台的 Token Plan 额度：账号级四类额度窗口（5 小时请求、每周请求、每日图片、每日视频）、账号累计用量与按日柱图、以及公开套餐目录，支持面板内登录与令牌失效后自动重登。另有三个默认关闭的可选开关，用于把 Agnes 模型与小浣熊上游注册为 DSH 提供方，并向 agent 暴露出图工具。'
+  en: 'Agnes Token Plan quota panel rendered as a config card on the Harness Plugins page: account-wide quota windows (5-hour requests, weekly requests, daily images, daily video) plus cumulative usage with a daily chart and the public plan catalogue, all read from the Agnes console API, with in-panel sign-in and automatic re-login. Four opt-in switches, off by default, register the Agnes models as an LLM provider, connect the AgnesCode desktop-app login state as a second upstream provider, and expose image- and video-generation tools to the agent.'
+  zh: '在 Harness 的 Plugins 页以插件卡显示 Agnes 控制台的 Token Plan 额度：账号级四类额度窗口（5 小时请求、每周请求、每日图片、每日视频）、账号累计用量与按日柱图、以及公开套餐目录，支持面板内登录与令牌失效后自动重登。另有四个默认关闭的可选开关：把 Agnes 模型注册为 DSH 推理提供方、接入 AgnesCode 桌面端上游，并向 agent 暴露图片与视频生成工具。'
 ```
 
 含 `: ` 的描述必须加引号，否则 YAML 解析失败；`en` 必填且以句号结尾，`zh` 可选。
@@ -103,7 +103,7 @@ description:
 **截图（`screenshots.json`）必须与当前 UI 一致**——它是市场页的第一屏，比描述更先被看到，却也是最容易在 UI 迁移后烂掉的东西：
 
 - **当前 2 张已重截**（2026-10-01，0.4.3 面板归位之后）：`assets/panel-credit.png`（「积分额度」tab：池卡 + 每模型消耗）、`assets/panel-API-provider.png`（「接入 API」tab：语言模型开关 + 花名册勾选）。旧两张 `panel-credit-pools.png` / `panel-provider-setup.png` 拍于归位之前（标题还是「积分面板」、右上角挂着已摘掉的「返回会话」按钮、无 tab bar、模型行带已删的「纯文本」徽章），已删除。
-- 重截条目与 tab 覆盖同理，**每张必须对应一个真实 tab**；仍缺第 ③ 张「小浣熊」= 扫码登录 / 余额 / 花名册。
+- 重截条目与 tab 覆盖同理，**每张必须对应一个真实 tab**；仍缺第 ③ 张「AgnesCode」= 登录态检测 / 余额 / 花名册。
 - **清单与资产必须同一次提交**（2026-10-01 实测事故）：重截换名那次 `assets/` 与 git 都已换成新名，唯独 `screenshots.json` 还指着两个已不存在的文件——工作树干净、构建通过、其余十条检查全绿，**没有任何东西在报错**，而市场按这份清单取图，推上去就是图裂。现由 `docs.test.mjs` 检查 11 兜住：每条路径必须真实存在、是图片扩展名、1–8 张、且为仓库根相对路径。
 - **不要凭想象补图**——画一个不存在的界面比没有图更坏，本插件的市场描述是「每句都会被对照代码核对」。
 

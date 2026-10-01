@@ -649,17 +649,17 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     // The tab bar is part of the FIRST FRAME too, and that is a separate bug
     // from the one above. It used to live INSIDE the `data` branch, so a
     // console nobody had signed in to replaced the whole page with a form —
-    // taking the API-key tab and the Raccoon tab down with it, neither of
+    // taking the other tabs down with it, none of
     // which reads the console at all (ARCHITECTURE.md §5). "No snapshot yet"
-    // and "no console account" must both leave the four tabs reachable.
-    check("the first frame already carries all four tabs",
-      firstFrame.includes("tab.quota") && firstFrame.includes("tab.api") && firstFrame.includes("tab.raccoon") && firstFrame.includes("tab.agnescode"),
+    // and "no console account" must both leave the three tabs reachable.
+    check("the first frame already carries all three tabs",
+      firstFrame.includes("tab.quota") && firstFrame.includes("tab.api") && firstFrame.includes("tab.agnescode"),
       firstFrame.join("\n"));
     // …and the quota tab's body is a TAB's content, not the page: the loading
     // line renders inside the tab strip, so switching tabs is possible before
     // the first answer arrives.
     check("the first frame keeps the loading line inside the tab strip",
-      firstFrame.indexOf("tab.raccoon") < firstFrame.indexOf("panel.loading"),
+      firstFrame.indexOf("tab.agnescode") < firstFrame.indexOf("panel.loading"),
       firstFrame.join("\n"));
   }
 }
@@ -761,7 +761,6 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     ModelPicker: render.ModelPicker({ llm, onDone: () => {}, tt }),
     DrawSwitch: render.DrawSwitch({ llm, onDone: () => {}, tt }),
     VideoSwitch: render.VideoSwitch({ llm, onDone: () => {}, tt }),
-    RaccoonTab: render.RaccoonTab({ tt }),
     PanelPage: render.PanelPage({ onClose: () => {}, tt, localeSubscribe: undefined })
   };
 
@@ -857,74 +856,22 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
       models: [{ id: "Agnes-6.8-flash-lite", name: "Agnes 6.8 Flash Lite", contextWindow: 262144, maxOutputLength: 65536 }],
       enabledIds: [], busy: false, tt
     });
-    const raccoonTree = treeOf(render.RaccoonRoster, {
-      models: [{ id: "raccoon-v1", name: "Raccoon v1", multiplier: 0, vision: true }], tt
+    const rowList = findAll(rosterTree, (props) => props.style?.flexDirection === "column"
+      && props.style?.borderBottom !== undefined);
+    // Non-vacuity first: an empty tree would satisfy "no offenders" while
+    // asserting nothing, which is how the draw regression shipped.
+    check("ModelRoster renders its rows at all",
+      rowList.length === 1, `rows=${rowList.length}`);
+    const offenders = rowList.filter((row) => {
+      const kids = (Array.isArray(row.children) ? row.children.flat(Infinity) : [row.children ?? []])
+        .filter((child) => child && typeof child === "object");
+      return kids.some((child) => child.props?.style === S.modelName || child.props?.style === S.modelBadge);
     });
-    for (const [name, tree] of [["ModelRoster", rosterTree], ["RaccoonRoster", raccoonTree]]) {
-      const rowList = findAll(tree, (props) => props.style?.flexDirection === "column"
-        && props.style?.borderBottom !== undefined);
-      // Non-vacuity first: an empty tree would satisfy "no offenders" while
-      // asserting nothing, which is how the draw regression shipped.
-      check(`${name} renders its rows at all`,
-        rowList.length === 1, `${name} rows=${rowList.length}`);
-      const offenders = rowList.filter((row) => {
-        const kids = (Array.isArray(row.children) ? row.children.flat(Infinity) : [row.children ?? []])
-          .filter((child) => child && typeof child === "object");
-        return kids.some((child) => child.props?.style === S.modelName || child.props?.style === S.modelBadge);
-      });
-      check(`${name} wraps every row's name/badge in modelRowHead`,
-        offenders.length === 0, `${offenders.length} row(s) stack their name/badge`);
-      check(`${name} names its model in the head line`,
-        findAll(tree, (props) => props.style === S.modelName).length === 1,
-        `${name} name spans=${findAll(tree, (props) => props.style === S.modelName).length}`);
-    }
-  }
-
-  // The Raccoon roster's parameter line: the gateway ALREADY declares the
-  // window and the output ceiling, the Host has normalized them since the
-  // first release, and a name-only row was this component dropping data it
-  // held. So the line is asserted in both directions — it must appear when
-  // the figures are there, and must NOT appear empty when they are not.
-  //
-  // The thinking ladder is asserted ABSENT on purpose. This provider
-  // registers `reasoning: false` (pi-ai cannot emit `extra_body.thinking`,
-  // the gateway's only working channel), so quoting levels would promise a
-  // selector the DSH picker never offers — the one thing worse than a sparse
-  // row is a row that lies. `tt` returns the key verbatim here, so each
-  // segment is pinned by WHICH template rendered, not by translated text.
-  {
-    const full = treeOf(render.RaccoonRoster, {
-      models: [{ id: "sn-glm-5-3", name: "GLM-5.3", multiplier: 0.75, vision: true, contextWindow: 1_000_000, maxOutputLength: 65_536 }],
-      tt
-    });
-    const meta = findAll(full, (props) => props.style === S.modelMeta);
-    const metaText = meta.map((row) => texts(row).join("")).join(" | ");
-    check("the raccoon row quotes the declared window and output ceiling",
-      meta.length === 1 && metaText.includes("llm.contextBadge") && metaText.includes("llm.metaOutput"),
-      `meta lines=${meta.length} text=${metaText}`);
-    check("the raccoon row never quotes a thinking ladder",
-      !texts(full).join("").includes("llm.metaLevels"),
-      texts(full).join(" | "));
-    check("the raccoon row draws a rate chip for a priced model",
-      texts(full).join("").includes("×0.75"),
-      texts(full).join(" | "));
-    // The rate tooltip must be the RACCOON one. `llm.rosterRateTitle` calls the
-    // figure a pseudo, operator-side number ("非官方") because the Token Plan
-    // rate really is configured by the operator — but this rate comes straight
-    // from the gateway catalogue, and reusing that string would libel real
-    // data as invented. Cheap to share, expensive to get wrong.
-    const rateChips = findAll(full, (props) => props.style === S.modelRate);
-    check("the raccoon rate chip does not borrow the Token Plan's pseudo-rate tooltip",
-      rateChips.length === 1 && rateChips[0].props?.title === "raccoon.rateTitle",
-      `chips=${rateChips.length} title=${rateChips.map((chip) => chip.props?.title).join(",")}`);
-
-    const bare = treeOf(render.RaccoonRoster, { models: [{ id: "x", name: "X" }], tt });
-    check("a row with no declared figures draws no empty parameter line",
-      findAll(bare, (props) => props.style === S.modelMeta).length === 0,
-      texts(bare).join(" | "));
-    check("a free model reads as free, not as a rate of zero",
-      texts(treeOf(render.RaccoonRoster, { models: [{ id: "f", name: "F", multiplier: 0 }], tt })).join("").includes("raccoon.free"),
-      texts(treeOf(render.RaccoonRoster, { models: [{ id: "f", name: "F", multiplier: 0 }], tt })).join(" | "));
+    check("ModelRoster wraps every row's name/badge in modelRowHead",
+      offenders.length === 0, `${offenders.length} row(s) stack their name/badge`);
+    check("ModelRoster names its model in the head line",
+      findAll(rosterTree, (props) => props.style === S.modelName).length === 1,
+      `name spans=${findAll(rosterTree, (props) => props.style === S.modelName).length}`);
   }
 }
 

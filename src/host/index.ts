@@ -35,14 +35,10 @@ import { createFileDrawStore } from "./draw-store.ts";
 import { createFileVideoStore } from "./video-store.ts";
 import { profileSegment } from "./state-store.ts";
 import { createApiKeyStore } from "./api-key-store.ts";
-import { createRaccoonStore } from "./raccoon-store.ts";
-import { createFileRaccoonStore } from "./raccoon-switch-store.ts";
-import { createRaccoonPublisher } from "./raccoon-publish.ts";
 import { createAgnescodeStore } from "./agnescode-store.ts";
 import { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
 import { createAgnescodePublisher } from "./agnescode-publish.ts";
 import { harvestAgnescodeLocalSession, decodeAgnescodeJwtExpMs, AGNESCODE_FALLBACK_MODELS } from "./agnescode.ts";
-import { RACCOON_FALLBACK_MODELS } from "./raccoon.ts";
 
 /** How long a failed re-harvest blocks further re-harvest attempts. */
 const AGNESCODE_REHARVEST_BACKOFF_MS = 60_000;
@@ -140,7 +136,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   // Two profiles can host this plugin at once and they are NOT the same build
   // (see PITFALLS §22): the Desktop profile runs an installed copy, the web
   // profile commonly symlinks this source tree. Each therefore gets its OWN
-  // directory for the three switch-shaped states below, derived from the Host's
+  // directory for the switch-shaped states below, derived from the Host's
   // optional `profileContext.name`. `null` (no service, no name, unsafe name)
   // degrades to today's single shared directory — behaviour unchanged.
   // The throttle deliberately stays shared; see `throttle-store.ts`.
@@ -209,67 +205,13 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     publisher.publish(entries, enabledIds, unavailableModelIds);
   const releaseProvider = () => publisher.release();
 
-  // ── Second upstream provider: Raccoon Work (商汤小浣熊) — ROADMAP §6.1 ──
-  // A fully independent credential + registration pair. It NEVER touches the
-  // Token Plan publisher's state (its own `createRaccoonPublisher`), and the
-  // desktop `~/.box-agent` token route is rejected by design (§6.1.1): the
-  // credential is only ever the DSH credentials-service reference that the
-  // panel's self-built QR login writes. The switch is opt-in default OFF —
-  // a Host that never touches the Raccoon tab registers no Raccoon provider.
-  const raccoonStore = createRaccoonStore({
-    credentials: () => ctx.get("credentials") ?? null
-  });
-  const raccoonSwitch = createFileRaccoonStore({ profile });
-  const raccoonPublisher = createRaccoonPublisher({
-    panelSwitch: () => raccoonSwitch.enabled().catch(() => null),
-    resolveToken: async () => {
-      const { credential } = await raccoonStore.resolve();
-      if (credential === null) return "";
-      // Keep the credential inside its expiry window before every request:
-      // the refresh token is single-use, so refresh eagerly and re-store.
-      if (await raccoonStore.isExpired().catch(() => false)) {
-        await raccoonStore.refresh().catch(() => {});
-      }
-      const { credential: live } = await raccoonStore.resolve();
-      return live?.accessToken ?? "";
-    },
-    getLlm: (service) => getService(service),
-    loadAdapterModule: deps.loadRaccoonAdapterModule ?? (() => import("./raccoon-llm-adapter.ts")),
-    emit: (event) => {
-      try {
-        ctx.emit?.(event);
-      } catch {
-        // A Host that refuses the event still has the registration; readers
-        // refresh on their own cadence.
-      }
-    },
-    logger: ctx.logger
-  });
-  // Mount seed: if the switch is already on and a credential was stored before
-  // this restart, offer the Raccoon models before the first poll. A fresh
-  // publisher's `state.rows` is ALWAYS empty (nothing fills it before this
-  // IIFE runs), so the roster here is the static fallback — a catalog drift
-  // merely rebuilds on the next switch/login. (The previous seed guarded on
-  // `state.rows.length > 0`, which is a fresh-construction tautology and
-  // never seeded anything.)
-  void (async () => {
-    try {
-      const switchState = await raccoonSwitch.enabled().catch(() => null);
-      if (switchState === true) {
-        await raccoonPublisher.publish(RACCOON_FALLBACK_MODELS, "");
-      }
-    } catch {
-      // No seed: the first switch/login publishes.
-    }
-  })();
-
-  // ── Third upstream provider: AgnesCode (爱思编程) — ROADMAP §6.3 ──
+  // ── Desktop-app upstream provider: AgnesCode (爱思编程) — ROADMAP §6.3 ──
   // The plugin's FIRST "local-login-state harvest" line (workbuddy precedent
   // family): the credential is read from the desktop App's os_crypt session
   // file, not obtained by any login this plugin performs. A fully independent
-  // credential + registration pair — it NEVER touches the Token Plan or
-  // Raccoon publishers' state — and the switch is opt-in default OFF: a Host
-  // that never opens the AgnesCode tab registers no AgnesCode provider.
+  // credential + registration pair — it NEVER touches the Token Plan
+  // publisher's state — and the switch is opt-in default OFF: a Host that
+  // never opens the AgnesCode tab registers no AgnesCode provider.
   const agnescodeStore = createAgnescodeStore({
     credentials: () => ctx.get("credentials") ?? null
   });
@@ -341,7 +283,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   // Mount seed: if the switch survived a restart, re-register from the
   // fallback roster + the stored credential's per-account base. A fresh
   // publisher's `state.rows` is ALWAYS empty, so the previous guard on it
-  // never seeded anything (the same tautology the Raccoon seed carried); the
+  // never seeded anything (the same fresh-construction tautology); the
   // live catalogue still wins on the next switch/harvest action.
   void (async () => {
     try {
@@ -408,21 +350,16 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     resolveApiKey,
     visionPublish,
     logger: ctx.logger,
-    // Raccoon (second upstream provider, ROADMAP §6.1): its own store,
-    // switch, and publisher — a fully independent registration that never
-    // touches the Token Plan publisher above.
-    raccoonStore,
-    raccoonSwitch,
-    raccoonPublisher,
-    // AgnesCode (third upstream provider, ROADMAP §6.3): same isolation, but
-    // its credential is HARVESTED from the desktop App's session file (the
-    // route owns the harvest-then-save walk) rather than logged-in here.
+    // AgnesCode (desktop-app upstream provider, ROADMAP §6.3): an independent
+    // registration that never touches the Token Plan publisher above; its
+    // credential is HARVESTED from the desktop App's session file (the route
+    // owns the harvest-then-save walk) rather than logged-in here.
     agnescodeStore,
     agnescodeSwitch,
     agnescodePublisher
   };
 
-  // The six route handlers (trust fence, method allowances, body ceilings,
+  // The route handlers (trust fence, method allowances, body ceilings,
   // trace writes, publish-after-save) — see routes.ts.
   const offs = registerRoutes(ctx, wiring);
   // Mount-time side effects (persisted-catalog seed, draw/video tools, vision

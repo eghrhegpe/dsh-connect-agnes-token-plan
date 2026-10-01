@@ -5,7 +5,7 @@
  * slot). The card renders the Agnes Token Plan quota — the current plan's four
  * rate-limit windows (requests per 5 h / per week, images per day, video per
  * day), the account's cumulative usage, and the per-bucket usage chart — plus
- * the four-tab layout (quota / api / raccoon / agnescode). The data comes from
+ * the three-tab layout (quota / api / agnescode). The data comes from
  * the Host's read-only snapshot route, polled only while the card is mounted —
  * the Client folds no session events of its own.
  *
@@ -66,9 +66,7 @@ import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch, VideoSwi
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage } from "./panel-page.ts";
-import { RaccoonRoster, RaccoonTab } from "./raccoon-tab.ts";
 import { AgnescodeRoster, AgnescodeTab } from "./agnescode-tab.ts";
-import { buildQrMatrix, qrDataUrl } from "./qr.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
   inject: string[];
@@ -124,16 +122,9 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       ModelRoster,
       ModelPicker,
       PanelPage,
-      RaccoonTab,
-      RaccoonRoster,
       AgnescodeTab,
       AgnescodeRoster
-    }),
-    // The Raccoon QR encoder lives on the test surface too: the suite
-    // differential-tests it against the upstream zero-dep reference (the
-    // shipped code must not import `upstream/`), and the tab's fallback
-    // path (`qrDataUrl` throwing) is exercised through the same export.
-    qr: Object.freeze({ buildQrMatrix, qrDataUrl })
+    })
   });
 
   return { inject, apply, panel };

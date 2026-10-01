@@ -15,7 +15,6 @@ import type { SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PlanCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
 import { DrawSwitch, VideoSwitch } from "./provider-controls.ts";
-import { RaccoonTab } from "./raccoon-tab.ts";
 import { AgnescodeTab } from "./agnescode-tab.ts";
 
 export function PanelPage({ onClose, tt, localeSubscribe }: {
@@ -47,17 +46,17 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // editor stays closed — it holds a secret field, and it is a prerequisite
   // the three cards above point at rather than the thing being configured.
   const [openSections, setOpenSections] = useState({ quota: true, usage: true, account: false, provider: true, draw: true, video: true, llm: false });
-  // Four fixed perspectives: "quota" is the daily reading (plan, windows,
+  // Three fixed perspectives: "quota" is the daily reading (plan, windows,
   // account totals), "api" is the Token Plan wiring (key, provider push,
-  // draw, video), "raccoon" is the SECOND upstream provider (ROADMAP
-  // §6.1), and "agnescode" the THIRD (ROADMAP §6.3) — each an independent
-  // credential + switch sharing no pool semantics with the others.
+  // draw, video), and "agnescode" is the desktop-app upstream (ROADMAP
+  // §6.3) — each an independent credential + switch sharing no pool
+  // semantics with the others.
   //
   // The tab bar renders from the FIRST FRAME, whatever the snapshot says. It
   // used to appear only once a body had landed, which meant a console nobody
   // had signed in to replaced the whole page with a form — including the two
   // tabs that never read the console.
-  const [activeTab, setActiveTab] = useState<"quota" | "api" | "raccoon" | "agnescode">("quota");
+  const [activeTab, setActiveTab] = useState<"quota" | "api" | "agnescode">("quota");
 
   // The Host half registers the dictionaries, but a runtime language switch
   // only reaches this page through the locale face's subscribe: without it a
@@ -232,17 +231,16 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   const authManage = auth !== null;
   // The tab bar renders UNCONDITIONALLY, and that is the point of this block.
   // It used to live inside the `data` branch, so a console that had never been
-  // signed in took all three tabs down with it — two of which do not read the
-  // console at all. The API tab works off the stored API key; the Raccoon tab
-  // reaches a DIFFERENT upstream with its own credential. Gating them on the
-  // quota snapshot blanked three independent modules because one was missing,
-  // which is what ARCHITECTURE.md §5 forbids.
+  // signed in took the other tabs down with it — two of which do not read the
+  // console at all (the API tab works off the stored API key; the AgnesCode
+  // tab reaches its own desktop-app upstream). Gating them on the quota
+  // snapshot blanked independent modules because one was missing, which is
+  // what ARCHITECTURE.md §5 forbids.
   const tabBar = h(
     "div",
     { style: S.tabBar, role: "tablist" },
     h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: { ...S.tab, ...(activeTab === "quota" ? S.tabActive : {}) }, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
     h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api")),
-    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "raccoon", style: { ...S.tab, ...(activeTab === "raccoon" ? S.tabActive : {}) }, onClick: () => setActiveTab("raccoon") }, tt("tab.raccoon")),
     h("button", { type: "button", role: "tab", "aria-selected": activeTab === "agnescode", style: { ...S.tab, ...(activeTab === "agnescode" ? S.tabActive : {}) }, onClick: () => setActiveTab("agnescode") }, tt("tab.agnescode"))
   );
 
@@ -371,21 +369,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
           // notices. Order is WHAT THE READER CAME FOR, not dependency
           // order: the three feature cards lead (and open), the key editor
           // trails because it is the prerequisite they point back at.
-          : activeTab === "raccoon"
-            // The Raccoon provider (ROADMAP §6.1) is a SECOND upstream, with
-            // its own credential and its own data source (the /raccoon route
-            // this tab polls) — it never touches the Token Plan snapshot, so
-            // it renders from its own card, not from `data`.
-            ? h(
-                "div",
-                { style: { marginTop: 22 } },
-                h(
-                  SectionCard,
-                  { title: tt("raccoon.title"), open: true, onToggle: () => {}, tt },
-                  h(RaccoonTab, { tt })
-                )
-              )
-            : activeTab === "agnescode"
+          : activeTab === "agnescode"
               // The AgnesCode provider (ROADMAP §6.3) is a THIRD upstream —
               // same independence, but its credential is harvested from the
               // desktop App's session file (the /agnescode route), so its

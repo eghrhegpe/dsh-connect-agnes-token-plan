@@ -1,6 +1,6 @@
 /**
  * AgnesCode catalogue entry → pi-ai model descriptor mapping — the peer-free
- * half of the third upstream provider. Mirrors `raccoon-models.ts`'s
+ * half of the desktop-app upstream provider. Same peer-free
  * discipline: plain objects only (no Host peer import); `agnescode-llm-adapter.ts`
  * is the peer-dependent half.
  *
@@ -105,7 +105,7 @@ export function agnescodeToDescriptor(row: any, options: { bffBase?: string } = 
     contextWindow: num(row?.contextWindow) ?? 512_000,
     maxTokens: num(row?.maxOutputLength) ?? 32_000,
     headers: agnescodeRequestHeaders(),
-    // Same OpenAI-compat CN gateway family as the Raccoon route: pin the
+    // Same OpenAI-compat CN gateway family: pin the
     // classic `max_tokens` field and the legacy system role (the developer
     // role is unverified here — pin it false, the safe direction).
     compat: { maxTokensField: "max_tokens", supportsDeveloperRole: false }

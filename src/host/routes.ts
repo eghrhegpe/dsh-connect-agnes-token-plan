@@ -18,15 +18,6 @@ import { str, redactSecrets } from "./util.ts";
 import { normalizeEnabledIds } from "./catalog-store.ts";
 import { catalogSignature } from "./provider-publish.ts";
 import {
-  generateRaccoonQrCode,
-  raccoonQrLoginUrl,
-  pollRaccoonQrLogin,
-  fetchRaccoonCatalog,
-  fetchRaccoonBalance,
-  RACCOON_QR_STATUS,
-  RACCOON_FALLBACK_MODELS
-} from "./raccoon.ts";
-import {
   fetchAgnescodeCatalog,
   fetchAgnescodeBalance,
   harvestAgnescodeLocalSession,
@@ -48,18 +39,10 @@ const MODELS_PATH = `/api/${name}/models`;
 const DRAW_PATH = `/api/${name}/draw`;
 /** The video-tool switch route (same discipline, its own store and opt-in). */
 const VIDEO_PATH = `/api/${name}/video`;
-/** The Raccoon provider route (ROADMAP §6.1 "second upstream provider"). */
-const RACCOON_PATH = `/api/${name}/raccoon`;
-/** Ceiling on a Raccoon action body: the login POST only needs the scan code. */
-const MAX_RACCOON_BODY_BYTES = 2048;
 /** The AgnesCode provider route (ROADMAP §6.3 "third upstream provider"). */
 const AGNESCODE_PATH = `/api/${name}/agnescode`;
 /** Ceiling on an AgnesCode action body: every action posts a bare `{action}`. */
 const MAX_AGNESCODE_BODY_BYTES = 2048;
-/** The QR login's overall deadline; a scan that takes longer is voided. */
-const RACCOON_LOGIN_DEADLINE_MS = 5 * 60 * 1000;
-/** One QR poll cadence, so a login wait loops at the gateway's own rate. */
-const RACCOON_POLL_MS = 2_000;
 /** Ceiling on a submitted account, so a hostile page cannot stream a body. */
 const MAX_ACCOUNT_BODY_BYTES = 4096;
 /** Ceiling on the curated allow-list: a catalogue this large is a posting accident. */
@@ -325,11 +308,11 @@ function registerToolSwitchRoute(ctx, { path, label, store, enabledKey, enabledS
  *   video switch route reads and writes it (a SEPARATE opt-in from drawing).
  * @param {object} [wiring.logger] - `ctx.logger` (Host logging), used by the
  *   trace-write handler; optional so tests may omit it.
- * @returns {Function[]} the seven `off()` unregister callbacks, in registration
+ * @returns {Function[]} the eight `off()` unregister callbacks, in registration
  *   order — `teardown` runs them last.
  */
 export function registerRoutes(ctx, wiring) {
-  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, drawStore, videoStore, publisher, providerState, publishProvider, visionPublish, logger, raccoonStore, raccoonSwitch, raccoonPublisher, agnescodeStore, agnescodeSwitch, agnescodePublisher } = wiring;
+  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, drawStore, videoStore, publisher, providerState, publishProvider, visionPublish, logger, agnescodeStore, agnescodeSwitch, agnescodePublisher } = wiring;
 
   const offRoute = ctx.webServer.register({
     kind: "exact",
@@ -694,252 +677,11 @@ export function registerRoutes(ctx, wiring) {
     allowedHosts: settings.allowedHosts
   });
 
-  // The Raccoon route (ROADMAP §6.1 "second upstream provider"). One route,
-  // one GET + one POST: the GET reports the secret-free state a tab renders
-  // (switch value, login state, balance, offered roster, registration status);
-  // the POST carries `{ action }` for the four panel actions. The QR login is
-  // a single server-side walk (no client long-poll): the route generates the
-  // scan code, blocks up to the login deadline polling the gateway every 2 s,
-  // and answers with the scan URL to display the moment it is issued. The
-  // credential never touches this plugin's directory, git, or logs — it goes
-  // straight to the DSH credentials service through `raccoonStore`.
-  // The in-flight QR login state lives OUTSIDE the handler: a handler-local
-  // would be re-initialized to null on EVERY request (each call re-runs the
-  // function body), so a GET arriving while the POST login walk is waiting
-  // could never see the scan — the tab would poll forever with no QR to
-  // render. One scan per process (the single long-poll owns it); cleared when
-  // the walk settles.
-  let raccoonScan: { code: string; url: string } | null = null;
-  // The LAST harvest walk's diagnosis rows (the /agnescode GET's `harvest`
-  // block). Route-scoped like `raccoonScan`, for the same reason: a
-  // handler-local resets on EVERY request, and the tab's 60 s poll (plus the
-  // `void load()` a harvest itself triggers) would wipe the rows before the
-  // user read them — the workbuddy diagnosis is the tab's whole point.
-  let lastHarvest: { ok: boolean; attempts: object[] } | null = null;
-  // One harvest walk at a time: the walk spawns PowerShell, and two tabs (or
-  // a poll racing a click) must share one walk instead of racing two.
-  let agnescodeHarvestInFlight: Promise<{ ok: boolean; attempts: object[] }> | null = null;
-  const offRaccoon = ctx.webServer.register({
-    kind: "exact",
-    path: RACCOON_PATH,
-    handler: async (request, response) => {
-      if (!isAdmitted(request, settings.allowedHosts)) {
-        refuseOrigin(response);
-        return;
-      }
-      // The GET's secret-free state, reused by every POST branch so a mutation
-      // always re-reports the same facts a GET would. The `scanUrl`/`code` it
-      // carries are the scan the pending login walk last issued.
-      const raccoonState = async () => {
-        const switchState = await (raccoonSwitch ? raccoonSwitch.enabled() : null).catch(() => null);
-        const effectiveEnabled = switchState === true;
-        let loggedIn = false;
-        let nickname = "";
-        let balance = null;
-        let error = null;
-        try {
-          if (raccoonStore !== null && raccoonStore !== undefined) {
-            const state = await raccoonStore.state().catch(() => null);
-            loggedIn = state?.hasCredential === true;
-            nickname = state?.nickname ?? "";
-            if (loggedIn) {
-              const { credential } = await raccoonStore.resolve().catch(() => ({ credential: null }));
-              if (credential?.accessToken) {
-                balance = await fetchRaccoonBalance(credential).catch(() => null);
-              }
-            }
-          }
-        } catch (why) {
-          error = redactSecrets(why instanceof Error ? why.message : String(why));
-        }
-        // The roster the adapter offers: the live catalogue when a credential
-        // exists (the switch's own publish reads it too), else the static
-        // fallback so the panel still shows the known models.
-        let models = null;
-        try {
-          if (raccoonStore !== null && raccoonStore !== undefined) {
-            const { credential } = await raccoonStore.resolve().catch(() => ({ credential: null }));
-            if (credential?.accessToken) {
-              models = await fetchRaccoonCatalog(credential).catch(() => null);
-            }
-          }
-        } catch {
-          models = null;
-        }
-        const roster = models !== null && Array.isArray(models) && models.length > 0
-          ? models
-          : RACCOON_FALLBACK_MODELS;
-        const publisherState = raccoonPublisher?.state ?? null;
-        return {
-          ok: true,
-          enabled: effectiveEnabled,
-          switchSource: switchState === null ? "off" : "panel",
-          loggedIn,
-          nickname,
-          // The in-flight scan (if a login walk is waiting): the tab re-renders
-          // its QR from this on every poll, so a second tab / a refresh
-          // continues the SAME scan instead of voiding it.
-          ...(raccoonScan !== null ? { scanUrl: raccoonScan.url, scanCode: raccoonScan.code } : {}),
-          balance,
-          models: roster,
-          providerRegistered: publisherState?.registered === true,
-          ...(publisherState?.error !== null && publisherState?.error !== undefined ? { providerError: publisherState.error } : {}),
-          ...(error !== null ? { error } : {})
-        };
-      };
-
-      const method = request.method === undefined ? "GET" : request.method;
-      if (method === "GET") {
-        writeJson(response, 200, await raccoonState(), { "cache-control": "no-store" });
-        return;
-      }
-      if (method !== "POST") {
-        refuseMethod(response);
-        return;
-      }
-      const body = await readJsonBody(request, MAX_RACCOON_BODY_BYTES);
-      if (!body.ok) {
-        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
-        return;
-      }
-      const { action } = body.value;
-      const answer = async (extra = {}) => {
-        const state = await raccoonState();
-        writeJson(response, 200, { ...state, ...extra }, { "cache-control": "no-store" });
-      };
-
-      // ── switch: register / deregister the Raccoon provider with DSH ──
-      if (action === "switch") {
-        if (typeof body.value.enabled !== "boolean") {
-          writeJson(response, 400, { ok: false, error: "expected { action: \"switch\", enabled: boolean }" }, { "cache-control": "no-store" });
-          return;
-        }
-        if (raccoonSwitch === null || raccoonSwitch === undefined) {
-          await answer({ ok: false, error: "the raccoon switch is unavailable" });
-          return;
-        }
-        try {
-          await raccoonSwitch.save(body.value.enabled);
-          // Drive the registration with the CURRENT roster: the switch decides
-          // whether the models are offered at all. A missing token degrades to
-          // a clean release inside the publisher (the `not_configured` reason).
-          if (raccoonPublisher !== null && raccoonPublisher !== undefined) {
-            let rows = RACCOON_FALLBACK_MODELS;
-            let officeIdentity = "";
-            try {
-              const { credential } = raccoonStore ? await raccoonStore.resolve().catch(() => ({ credential: null })) : { credential: null };
-              if (credential?.accessToken) {
-                const live = await fetchRaccoonCatalog(credential).catch(() => null);
-                if (live !== null && live.length > 0) rows = live;
-                officeIdentity = credential.officeIdentity ?? "";
-              }
-            } catch {
-              // Fallback roster is already the safe default.
-            }
-            await raccoonPublisher.publish(rows, officeIdentity);
-          }
-        } catch (error) {
-          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
-          return;
-        }
-        await answer();
-        return;
-      }
-
-      // ── login: start a WeChat-QR walk and block until it settles ──
-      if (action === "login") {
-        if (raccoonStore === null || raccoonStore === undefined) {
-          await answer({ ok: false, error: "the raccoon credential store is unavailable" });
-          return;
-        }
-        const code = generateRaccoonQrCode();
-        const scanUrl = raccoonQrLoginUrl(code);
-        // The scan is in flight now: a GET the tab makes while this walk is
-        // waiting reports the SAME code/URL (see `raccoonState`), so a refresh
-        // or a second tab continues the scan instead of voiding it.
-        raccoonScan = { code, url: scanUrl };
-        const deadline = Date.now() + RACCOON_LOGIN_DEADLINE_MS;
-        let settled = null;
-        let canceled = false;
-        while (Date.now() < deadline) {
-          const poll = await pollRaccoonQrLogin(code).catch(() => ({ status: RACCOON_QR_STATUS.PENDING }));
-          if (poll.status === RACCOON_QR_STATUS.SUCCESS) {
-            settled = poll;
-            break;
-          }
-          if (poll.status === RACCOON_QR_STATUS.CANCELED) {
-            canceled = true;
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, RACCOON_POLL_MS));
-        }
-        raccoonScan = null;
-        if (settled === null) {
-          // Timed out or the phone canceled: the panel says "try again".
-          await answer({ ok: false, status: canceled ? "canceled" : "timeout" });
-          return;
-        }
-        // The scan worked: persist the pair to the credentials service (the
-        // refresh token is single-use, so the store owns that write-back),
-        // then drive the registration if the switch is on.
-        try {
-          await raccoonStore.save({
-            accessToken: settled.accessToken,
-            refreshToken: settled.refreshToken,
-            ...(settled.expiresAtMs !== undefined ? { expiresAtMs: settled.expiresAtMs } : {}),
-            // The QR success envelope carries the nickname — store it, or the
-            // panel's "已登录：" line has nothing to show.
-            ...(settled.nickname !== undefined && settled.nickname !== "" ? { nickname: settled.nickname } : {})
-          });
-        } catch (error) {
-          await answer({ ok: false, status: "logged_in", error: redactSecrets(error instanceof Error ? error.message : String(error)) });
-          return;
-        }
-        if (raccoonPublisher !== null && raccoonPublisher !== undefined && raccoonPublisher.isDisposed() === false) {
-          const switchState = raccoonSwitch ? await raccoonSwitch.enabled().catch(() => null) : null;
-          if (switchState === true) {
-            let rows = RACCOON_FALLBACK_MODELS;
-            let officeIdentity = "";
-            const live = settled.accessToken ? await fetchRaccoonCatalog({ access_token: settled.accessToken }).catch(() => null) : null;
-            if (live !== null && live.length > 0) rows = live;
-            const liveCredential = await raccoonStore.resolve().catch(() => ({ credential: null }));
-            officeIdentity = liveCredential?.credential?.officeIdentity ?? officeIdentity;
-            await raccoonPublisher.publish(rows, officeIdentity);
-          }
-        }
-        await answer({ ok: true, status: "logged_in" });
-        return;
-      }
-
-      // ── logout: forget the stored credential and release the provider ──
-      if (action === "logout") {
-        if (raccoonStore === null || raccoonStore === undefined) {
-          await answer({ ok: false, error: "the raccoon credential store is unavailable" });
-          return;
-        }
-        try {
-          await raccoonStore.forget();
-          if (raccoonPublisher !== null && raccoonPublisher !== undefined) {
-            await raccoonPublisher.publish(RACCOON_FALLBACK_MODELS, "");
-          }
-        } catch (error) {
-          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
-          return;
-        }
-        await answer({ ok: true, status: "logged_out" });
-        return;
-      }
-
-      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"login\"|\"logout\" }" }, { "cache-control": "no-store" });
-    }
-  });
-
-  // ── The AgnesCode route: the third upstream provider (ROADMAP §6.3) ──
-  // Same shape as the Raccoon route, with ONE structural difference: there is
-  // no in-panel login walk. The credential is HARVESTED from the desktop
-  // App's os_crypt session file (the user logs in THERE, WeChat-side), so the
-  // login-equivalent action is「重新检测」— a harvest-then-save walk whose
-  // failure mode is the per-file diagnosis list the tab renders.
+  // ── The AgnesCode route: the desktop-app upstream provider (ROADMAP §6.3) ──
+  // The credential is HARVESTED from the desktop App's os_crypt session file
+  // (the user logs in THERE, WeChat-side), so the login-equivalent action is
+  // 「重新检测」— a harvest-then-save walk whose failure mode is the per-file
+  // diagnosis list the tab renders.
   const offAgnescode = ctx.webServer.register({
     kind: "exact",
     path: AGNESCODE_PATH,
@@ -1145,5 +887,5 @@ export function registerRoutes(ctx, wiring) {
     }
   });
 
-  return [offRoute, offAccount, offApiKey, offProvider, offModels, offDraw, offVideo, offRaccoon, offAgnescode];
+  return [offRoute, offAccount, offApiKey, offProvider, offModels, offDraw, offVideo, offAgnescode];
 }

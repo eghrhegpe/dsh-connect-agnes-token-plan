@@ -1,16 +1,16 @@
 /**
- * The fourth panel tab: the AgnesCode（爱思编程）provider — "third upstream
- * provider" (ROADMAP §6.3).
+ * The third panel tab: the AgnesCode（爱思编程）provider — the desktop-app
+ * upstream (ROADMAP §6.3).
  *
- * It is a SEPARATE data source from the Token Plan snapshot AND from the
- * Raccoon tab: this tab owns a small, self-managed poll loop over the plugin's
+ * It is a SEPARATE data source from the Token Plan snapshot: this tab owns a
+ * small, self-managed poll loop over the plugin's
  * own `/agnescode` route (stop when the tab leaves, one refresh on entry), and
  * renders one card with, in order: the provider switch (opt-in, default off),
  * the credential state (linked account + per-account base + expiry, or the
  * harvest walk whose per-file diagnosis rows are the workbuddy five-tier
  * discipline), the credit pool, and the model roster the adapter offers.
- * Nothing here touches the Token Plan or Raccoon semantics — the tabs are
- * three providers, deliberately independent.
+ * Nothing here touches the Token Plan semantics — the tabs are
+ * deliberately independent.
  *
  * There is NO in-panel login: the WeChat scan happens inside the desktop App,
  * so the login-equivalent is「检测本机登录态」(a harvest walk). A failed walk
@@ -18,7 +18,7 @@
  * "key unavailable", "decryption failed" want different user advice and never
  * share a sentence.
  *
- * Hook-based like `RaccoonTab`. The tab's own frame is unreachable from the
+ * Hook-based like the quota tab. The tab's own frame is unreachable from the
  * render suite (its data is internal state, so it always renders the
  * unlinked view); the roster it draws is therefore split into the hook-free
  * {@link AgnescodeRoster}, which the suite CAN mount and pin, and this tab's
@@ -190,7 +190,7 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
       h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, tt("agnescode.switch"))
     ),
     // Registration status: the switch says "wants", this line says "is".
-    // The same three-way shape as the Raccoon tab — a failed registration
+    // A failed registration
     // stays visible even while the switch is OFF.
     state !== null
       ? state.providerRegistered === true
@@ -296,12 +296,12 @@ export function AgnescodeTab({ tt }: { tt: Tt }): unknown {
 /**
  * The model roster the AgnesCode adapter offers, as a hook-free component.
  *
- * Split out of {@link AgnescodeTab} for the same reason `RaccoonRoster` is:
+ * Split out of {@link AgnescodeTab} for the same reason the other rosters are:
  * the tab's data is internal state, so the render suite can only ever reach
  * the unlinked frame — a roster inlined there is unassertable. The row is the
  * SAME two-line shape as the sibling rosters (head line over an indented
  * parameter line), sharing `S.modelRow`'s contract. What it carries instead
- * of the Raccoon rate chip is the `memberOnly` badge — the platform-declared
+ * of a rate chip is the `memberOnly` badge — the platform-declared
  * gating fact this provider HAS; no multiplier chip exists here because the
  * upstream declares no per-model rate (billing is the credit pool), and
  * inventing one would libel the roster.

@@ -244,7 +244,7 @@ for (const model of contract.models) {
     JSON.stringify(roster.map((row) => [row.id, row.thinkingLevels.join("/")])));
 
   // Handed in: the offer drops it, the roster keeps it greyed. This is the
-  // mechanism the second absorbed upstream (raccoon) reuses.
+  // mechanism the sibling upstream reuses.
   const blockedId = chatIds[0];
   const blockedOffer = buildDescriptors(allEntries, { baseUrl, enabledIds: [], unavailableModelIds: [blockedId] });
   check("buildDescriptors drops a handed-in unavailable id from the offer",

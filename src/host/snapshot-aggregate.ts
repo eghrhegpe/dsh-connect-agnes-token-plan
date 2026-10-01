@@ -28,9 +28,8 @@
  * sources that answered still render. The account's usage overview is not
  * exempt — it is the auth probe (`quota.consoleConnected` is its outcome), but
  * letting it reject the snapshot made the panel all-or-nothing: a console that
- * was never signed in blanked the API-key tab and the Raccoon tab too, and the
- * Raccoon tab does not read this snapshot at all. A partial screen beats a
- * full-page error, and an absent module must leave the rest usable
+ * was never signed in blanked every console-backed tab. A partial screen beats
+ * a full-page error, and an absent module must leave the rest usable
  * (ARCHITECTURE.md §5).
  *
  * Pure by design: it takes the resolved `settings`, the shared `cache` /
@@ -91,8 +90,7 @@ export function usageWindow(days, nowMs = Date.now()) {
  * excepted the overview, on the theory that the auth probe should stay fatal
  * because the route's catch is what puts the sign-in form on screen — but that
  * made the whole panel all-or-nothing: one missing module (the console) took
- * down three tabs, including the Raccoon tab, which reaches a DIFFERENT
- * upstream with its own credential and never reads this snapshot at all. That
+ * down every console-backed tab. That
  * is the exact shape ARCHITECTURE.md §5 forbids: a module that is absent must
  * leave the panel usable, not blank it.
  *

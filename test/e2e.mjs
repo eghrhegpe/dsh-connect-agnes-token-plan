@@ -386,7 +386,7 @@ try {
     // DEGRADED, not refused: the snapshot answers `ok:true` with the reason on
     // the quota source and `consoleConnected:false`. The whole-body `ok:false`
     // this used to pin blanked all three tabs, including the two that never
-    // read the console (the API-key half and the Raccoon upstream).
+    // read the console (the API-key half and the desktop App upstream).
     check("an unconfigured panel asks for the account",
       res.body?.ok === true && res.body?.quota?.error?.code === "not_configured",
       JSON.stringify(res.body ?? {}).slice(0, 200));

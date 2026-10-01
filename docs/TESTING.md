@@ -9,7 +9,7 @@
 ```powershell
 npm test                    # 全量离线门禁：agnes-auth / store / store-baseline / routes / panel / render /
                             # parsers / provider / config / package / docs / wiring / contract / retry /
-                            # error-fix / peer-contract / draw / doctor / raccoon / agnescode，末尾 build-gate
+                            # error-fix / peer-contract / draw / doctor / agnescode，末尾 build-gate
                             #（重建 src/ 全部源码并验证 lib/ 与 client.js 产物；无 tsdown 则 SKIP）+ e2e-gate
                             #（无 dsh CLI 则 SKIP）
 npm run test:e2e            # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
@@ -40,8 +40,7 @@ npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PL
 | `test/draw.test.mjs` | **出图模块（peer-free，如 `provider.test.mjs`）**：端点拼接（`apiBase` 各种写法归一）、模态判定（声明优先、名字兜底、`isChatModel` 方向统一）、挑选优先级、wire body 钳制、响应解析、失败分诊（429 配额 vs 限频）、`drawOnce` 对假 fetch（成功/分类失败/超时）、失败冷却门、`defineDrawTool` 用直通 `defineTool` + 假 store 端到端 |
 | `test/video.test.mjs` | **视频模块（peer-free）**：与出图同构，**异步任务制**——建任务 + 轮询状态机。端点构造（含 `/v1` 剥除）、帧数/帧率规则、`8n+1`、V2.0/2.5 双家族分派（`pickVideoModel` 认全量视频模型，自动 V2.0 优先、无 V2.0 回落 2.5；面板偏好可指 2.5）、`buildVideoBody`（V2.0，非法显式值**抛错**而非夹取）与 `buildVideoBody25`（秒数制：`seconds` 4–12 整数、`size` 白名单 + flash 收敛 720P、`aspect_ratio` 白名单/就近匹配、`image`/`keyframes` → `mode`/media、flash reference ≤5、`negative_prompt` 不转发）、建任务/查询解析（含 `metadata.url` 两层兼容、`progress:0` 保持）、失败分诊、轮询状态机（含非前进时钟的 `VIDEO_MAX_POLLS` 防呆）、`defineVideoTool` 端到端（每调用现取 Key、按模型家族分派请求体） |
 | `test/doctor.test.mjs` | `tools/doctor.mjs` 的只读诊断：干净机器、provider/draw/video 三种开关状态与各自的 model 偏好、跨 profile 读各自的私有状态文件、损坏/外来版本文件被点名而非静默丢弃 |
-| `test/raccoon.test.mjs` | 第二上游（小浣熊）：网关契约、QR 登录状态机、独立 provider 注册与隔离、免费模型倍率、store 轮换 |
-| `test/agnescode.test.mjs` | 第三上游（AgnesCode）：BFF base 钉域、os_crypt 解密与 Local State 密钥解封（AES-GCM 真轮转 + 注入 DPAPI）、采集步进的逐文件分诊全 8 档（file_missing / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform）+ tier↔i18n 双语跨层钉 + catalog/balance 的 URL 精确断言 + 钉域拒非默认端口、订阅池余额解析、逐账号 base 进描述符与签名、独立 publisher 三门、store 拒绝无 base 保存、客户端面花名册（会员徽标） |
+| `test/agnescode.test.mjs` | 桌面端上游（AgnesCode）：BFF base 钉域、os_crypt 解密与 Local State 密钥解封（AES-GCM 真轮转 + 注入 DPAPI）、采集步进的逐文件分诊全 8 档（file_missing / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform）+ tier↔i18n 双语跨层钉 + catalog/balance 的 URL 精确断言 + 钉域拒非默认端口、订阅池余额解析、逐账号 base 进描述符与签名、独立 publisher 三门、store 拒绝无 base 保存、客户端面花名册（会员徽标） |
 | `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误；推理侧的可选 `ctx.get("llm")` 注册对（`registerAdapter` + `registerConfigurableProviders`，id `agnes-token-plan`）、opt-in 关闭不注册、fiber dispose 释放注册对与全部路由 |
 | `test/error-fix.test.mjs` | `llm-error-fix` 对 429 误判的纠正（Agnes 把速率上限错命名为 `quota_exceeded_error`） |
 | `test/peer-contract.test.mjs` | 与真 peer 包（pi-ai / dsh-llm*）的契约：可达时逐值比对，不可达时 SKIP |

@@ -128,10 +128,10 @@
 ## 15. 凭据经错误消息漏进日志或面板
 
 - **现象**：潜在——诊断文件、日志或面板上出现明文密码、token 或 `sk-` Key。
-- **根因**：每次登录都写 trace 便于「浏览器能登、面板不能」的对照排查，写不好就泄密；另一头更隐蔽——provider / raccoon 注册失败时，HTTP 错误对象的 `message` 往往**内嵌了它构造时的请求头**（axios / fetch 的错误都这样），而平台 4xx 正文也可能把 `sk-` Key 原样回显。这些字符串会顺着 `providerState.error` 与 `ctx.logger.warn` 出去。
+- **根因**：每次登录都写 trace 便于「浏览器能登、面板不能」的对照排查，写不好就泄密；另一头更隐蔽——provider / 桌面端上游 注册失败时，HTTP 错误对象的 `message` 往往**内嵌了它构造时的请求头**（axios / fetch 的错误都这样），而平台 4xx 正文也可能把 `sk-` Key 原样回显。这些字符串会顺着 `providerState.error` 与 `ctx.logger.warn` 出去。
 - **修法**（两层，别只做一层）：
   - **登录 trace 靠「不写值」，不靠事后脱敏**：hop 记录只放形状事实（`step` / `status` / `code` / `retryAfterMs` / `tokenLength` / `tokenIsJwt` / `expiresIn`）、平台原话（截 200 字，本身不含凭据）与**掩码后的账号名**（`maskUsername`）；token 只记长度、不记值。落盘权限 `0o600`，仅留最近 20 个。**新增输出点时别改成「先写后脱敏」——这一层没有 sanitize 兜底，纪律就是「值不进 trace」。**
-  - **错误文本靠 `redactSecrets()`**（`src/host/util.ts`）：provider / raccoon / 路由三处的 error message 在进快照或日志前必须过它，覆盖五类形态——`Authorization:` 头、`Bearer` / `Basic`、裸 `sk-…`、带引号的 `{"password":"…"}` 键值对、以及 `password=…` 形式。`test/provider.test.mjs` §14 钉住这套替换。
+  - **错误文本靠 `redactSecrets()`**（`src/host/util.ts`）：provider / 桌面端上游 / 路由三处的 error message 在进快照或日志前必须过它，覆盖五类形态——`Authorization:` 头、`Bearer` / `Basic`、裸 `sk-…`、带引号的 `{"password":"…"}` 键值对、以及 `password=…` 形式。`test/provider.test.mjs` §14 钉住这套替换。
 
 ---
 
@@ -259,7 +259,7 @@
   | `/api/web/llm/v2/chat/completions` | POST | `401` `{"code":200001,"message":"authorization_empty_error"}` | 路由存在，已抵鉴权层 |
 
 - **修法**（探活纪律，按顺序）：① 用**这条端点真实的业务方法**探（推理就该 POST，别偷懒用 GET）；② 看**响应体形态**而不只看状态码——结构化信封（`{"code":…}`）意味着请求已进应用层，纯文本 `404 page not found` 才是没到；③ 探活请求**不带任何凭据**：既无计费可能，又刚好用 `401 authorization_empty` 证明「路由在，只是我没钥匙」。
-- **教训的代价**：这条误判曾直接导出一个错误结论——「本插件第二上游用的正是被自家文档标注 404 的那份 URL 清单」。前缀确实相同，但**端点不同**：`/models` 真 404（那是参考件 `dsh-raccoon-work` 的路径），本插件用的 `/model_catalog` 与 `/chat/completions` 都活着。**看个前缀就下结论，和看个状态码就下结论是同一种粗心**——下判断前先回到 [ROADMAP.md](./ROADMAP.md) §6.1.2 那张表核对具体端点。
+- **教训的代价**：这条误判曾直接导出一个错误结论——「本插件上游用的正是被自家文档标注 404 的那份 URL 清单」。前缀确实相同，但**端点不同**：`/models` 真 404（那是参考件 `dsh-raccoon-work` 的路径——该上游已随 Agnes 线移除），本插件当年用的 `/model_catalog` 与 `/chat/completions` 都活着。**看个前缀就下结论，和看个状态码就下结论是同一种粗心**——下判断前先核对具体端点，别只看前缀。
 - **伴随坑（Windows Git Bash）**：脚本里把 `/api/...` 这样的路径字符串当命令行参数传，会被 MSYS 路径转换吃掉——`/api/web/llm/v2` 变成 `C:/.../PortableGit/.../api/web/llm/v2`，`fetch` 直接 `invalid url`，看起来像网络问题。用 `-e` 内联或先 `export MSYS_NO_PATHCONV=1`。
 
 ---
@@ -272,7 +272,7 @@
   - **检查 9：README 必须覆盖面板的每一个 tab。** 文案不写死，从两个真源派生——`panel-page.ts` 里 `activeTab` 的联合类型给出 tab id 集合，`i18n.ts` 的 `tab.<id>` 给出中文文案；README 少了任何一个就红。于是「加一个 tab 忘了告诉用户」和「改了 tab 名而不跟」都必然红。
   - **检查 10：自述面声明的 UI 位置必须与 client 实际注册的槽位一致。** 受检「自述面」= `README.md` + `cordis.patch.yml`；槽位证据从 `src/client/*.ts` 的**非注释行**里找（只剥整行注释，不动行内 `//`，否则 URL 里的 `https://` 会被削掉半条路由）。声称了代码里没有的槽位 = 红。
   - **两处易漏的细节**：检查 10 要跳过否定句——「面板**不在**侧边栏」是在帮用户纠偏，不是位置声明；当初事故那句「打开侧边栏」不含否定词，照样红。检查 9 的正则必须钉住 `activeTab`，泛配 `useState<` 会先抓到同文件里的 `useState<SnapshotData | null>`，反而漏掉真目标。
-- **验证**（缺这步等于自洽练手）：故意破坏后必须红——① 删光 README 里的「小浣熊」→ 精确报 `raccoon（面板文案「小浣熊」）`；② 把第 32 行改回事故原文「打开侧边栏「积分面板」」→ 报「声称面板在侧边栏，但 `src/client/*.ts` 里没有 sidebar 槽位注册」。两条都实测红过，再还原复验绿。
+- **验证**（缺这步等于自洽练手）：故意破坏后必须红——① 删光 README 里的「AgnesCode」→ 精确报 `agnescode（面板文案「AgnesCode」）`；② 把「Plugins 页内联卡片」改回「侧边栏」→ 报「声称面板在侧边栏，但 `src/client/*.ts` 里没有 sidebar 槽位注册」。两条都实测红过，再还原复验绿。
 - **教训**：形式门禁越完善，越容易吸走「语义对不对」的注意力——绿得越好，越让人懒得读文档本身。**任何纯形式检查对语义漂移一律无效**，除非它的期望值是从代码派生出来的（像检查 9/10 那样：tab 名单来自 `panel-page.ts`、槽位证据来自 `apply.ts`）。
 
 ## 26. 重命名资产时只改了一半：清单指空，而所有检查都是绿的

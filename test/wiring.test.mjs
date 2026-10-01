@@ -293,10 +293,9 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     "/api/dsh-connect-agnes-token-plan/models",
     "/api/dsh-connect-agnes-token-plan/draw",
     "/api/dsh-connect-agnes-token-plan/video",
-    "/api/dsh-connect-agnes-token-plan/raccoon",
     "/api/dsh-connect-agnes-token-plan/agnescode"
   ];
-  check("all nine routes are registered on mount",
+  check("all eight routes are registered on mount",
     routes.every((path) => webServer.registered.has(path)),
     [...webServer.registered.keys()].join(", "));
   // The registered values must be callable handlers, not specs: the real
@@ -317,7 +316,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   //
   // It DEGRADES rather than refusing: `ok:true` with the reason on the quota
   // source. The whole-body `ok:false` this used to pin was the all-or-nothing
-  // shape that took the API-key tab and the Raccoon tab down with the console.
+  // shape that took the other tabs down with the console.
   await handler(request(), res);
   check("the snapshot route answers 200", res.statusCode === 200, String(res.statusCode));
   check("it reports a payload", res.payload !== null);
@@ -357,7 +356,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // in the real Host means a stale panel still polling a route nobody owns.
 {
   const { webServer, stop } = await bootPlugin();
-  check("all nine routes are present while mounted", webServer.registered.size === 9,
+  check("all eight routes are present while mounted", webServer.registered.size === 8,
     [...webServer.registered.keys()].join(", "));
   await stop();
   check("unmounting withdraws the routes", webServer.registered.size === 0,

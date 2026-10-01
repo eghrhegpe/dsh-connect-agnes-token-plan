@@ -483,7 +483,7 @@ const GOOD_SESSION = {
     const descriptor = agnescodeToDescriptor(rows[0], { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" });
     check("the descriptor's baseUrl is the PER-ACCOUNT base, not a constant",
       descriptor.baseUrl === "https://api-agnes-code.agnes-ai.cn/v1");
-    check("the descriptor pins the same OpenAI-compat family fixes as the raccoon route",
+    check("the descriptor pins the same OpenAI-compat family fixes as the Token Plan route",
       descriptor.compat?.maxTokensField === "max_tokens" && descriptor.compat?.supportsDeveloperRole === false);
     check("a text-only row offers text only", JSON.stringify(descriptor.input) === '["text"]');
     check("reasoning is false in v1 (the thinking wire channel is unverified)",

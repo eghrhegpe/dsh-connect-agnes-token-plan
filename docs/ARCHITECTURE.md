@@ -36,7 +36,7 @@
 | **Host（服务端）** | `src/host/*.ts`（32 个模块，另有 `src/host/token-store/` 子目录 6 个；经 `npm run build` 构建为 `lib/`） | 启动时加载一次 | **重新构建 + 完全退出 DSH（含托盘）再启动**，`dsh web` 不会热重载 |
 | **Client（前端）** | `src/client/*.ts`（19 个模块，构建为根 `client.js`） | 浏览器侧，随页面加载 | `npm run build:client` 重建后浏览器刷新即可 |
 
-- `index.ts`：注册只读路由 `/api/dsh-connect-agnes-token-plan/snapshot`（聚合控制台数据，401 自动重登重试一次）+ 账号 / API Key / 模型清单 / 出图开关 / 小浣熊配置路由 / AgnesCode 配置路由；模块装配与生命周期接线在 `lifecycle.ts`。
+- `index.ts`：注册只读路由 `/api/dsh-connect-agnes-token-plan/snapshot`（聚合控制台数据，401 自动重登重试一次）+ 账号 / API Key / 模型清单 / 出图开关 / 视频开关 / AgnesCode 配置路由；模块装配与生命周期接线在 `lifecycle.ts`。
 - `host-config.ts`：配置契约——`CONFIG_DEFAULTS`、`resolveSettings` / `resolveAuthOverrides`（含嵌套 `auth:` 块拒绝）、`isAdmitted` 同源闸、`hostName` 解析。
 - `codes.ts`：全部错误码与平台原因码的唯一声明处。`agnes-auth.ts` 产出、`token-store.ts` 判定是否 parked、`routes.ts` 判定是否属于「拿不到令牌」，三处都从这里取——新增一个平台原因只需改这一个文件。
 - `token-store.ts` + `token-store/`：凭据服务里的令牌与账号存取、按期重登、401 拒绝记忆。子目录按职责拆成 `account` / `acquire` / `renewal` / `grant` / `throttle` / `state` 六块（拆分蓝图见 [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md)，行为由 `store-baseline.test.mjs` 冻结）。
@@ -51,9 +51,8 @@
 - `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` 经此模块注入并发 publish 门控。
 - `llm-models.ts` / `llm-adapter.ts` / `llm-retry.ts` / `llm-error-fix.ts`：推理侧的纯逻辑映射（无 peer，离线可测）、依赖 peer 的适配器半边、429 退避策略、以及 Agnes 把速率上限错命名为 `quota_exceeded_error` 的纠正。
 - `draw.ts` / `draw-store.ts`：出图工具（`agnes_draw_image`）与它的面板开关。
-- `raccoon*.ts`：第二上游（小浣熊）——网关契约、QR 登录状态机、独立 store / publisher / provider id / 开关，与 Token Plan 完全隔离。
-- `agnescode*.ts`：第三上游（AgnesCode）——本机登录态采集（Chromium os_crypt + DPAPI，逐文件分诊）、逐账号 BFF base 钉域、独立 store / publisher / provider id / 开关，与另两条线完全隔离（ROADMAP §6.3）。
-- `client.js`：Plugins 页内的配置卡与四个 tab（积分额度 / 接入 API / 小浣熊 / AgnesCode）+ 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
+- `agnescode*.ts`：桌面端上游（AgnesCode）——本机登录态采集（Chromium os_crypt + DPAPI，逐文件分诊）、逐账号 BFF base 钉域、独立 store / publisher / provider id / 开关，与主链路完全隔离（ROADMAP §6.3）。
+- `client.js`：Plugins 页内的配置卡与三个 tab（积分额度 / 接入 API / AgnesCode）+ 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
 - 测试基建：`client-surface.js` / `panel-decision.js` / `panel-render.js` —— 把 `src/client/` 作为模块加载后物化 `panel` 测试面，供 `panel.test.mjs` / `render.test.mjs` 直接调用。不进运行时、不进 `files` 打包清单。
 
 ---
@@ -89,7 +88,7 @@ client.js: interpretSnapshot(body) → {data, error}
 
 **为什么 `overview` 仍然单独先取、却不再是唯一致命的**：单独先取的理由没变——它是认证探针（最便宜的认证调用，任何已登录账号都能发），且**串行**放在其余取数之前，是因为它 401 时会先把令牌换新，后面的批量才拿着活令牌出门（`test/routes.test.mjs` B 组钉死了「死令牌只被出示一次」）；未登录时它失败在本地（`not_configured`，不发请求），所以这个串行不花任何往返，稳态下也通常命中缓存。
 
-变的是它**不再把失败变成整个快照的失败**。它曾经是唯一致命源：失败即冒泡到路由的 catch，整个 body 走 `ok:false`，面板只剩登录表单——把 API Key tab（不读控制台）和小浣熊 tab（连的是另一个上游、有自己的凭据）一起埋掉，正是 §5 不变量 3 禁止的形状。现在它失败只意味着 `quota.consoleConnected:false`：`quota.totals` 是 `null` 而不是零值块（否则一次读取失败会被渲染成「0 次请求」——把失败伪装成测量），面板在额度 tab 内点名「控制台未连接」，另两个 tab 一个点击之外。
+变的是它**不再把失败变成整个快照的失败**。它曾经是唯一致命源：失败即冒泡到路由的 catch，整个 body 走 `ok:false`，面板只剩登录表单——把 API Key tab（不读控制台）和 AgnesCode tab（连的是另一个上游、有自己的凭据）一起埋掉，正是 §5 不变量 3 禁止的形状。现在它失败只意味着 `quota.consoleConnected:false`：`quota.totals` 是 `null` 而不是零值块（否则一次读取失败会被渲染成「0 次请求」——把失败伪装成测量），面板在额度 tab 内点名「控制台未连接」，另外两个 tab 一个点击之外。
 
 ---
 
@@ -129,6 +128,10 @@ client.js: interpretSnapshot(body) → {data, error}
   >（实测见 [ROADMAP.md](./ROADMAP.md) §6.1.1 的两次复测）。
   > 界定依据改为**厂商归属**而非域名或认证域，第二上游因此属**界内**，裁定详情见 §5.5。
   > 另外两条不变量（opt-in 默认关、凭据红线）不受本次修订影响。
+  > **2026-10-01 修订（二，边界收窄）**：小浣熊第二上游已随 Agnes 线独立而**移除**——本插件
+  > 不再承载商汤小浣熊（面板第三 tab 是 AgnesCode 桌面端上游，见 ROADMAP §6.3）；上述
+  > 「厂商归属」放宽裁定仅存为历史记录。兄弟插件（`dsh-connect-sensenova-token-plan`）保留
+  > 小浣熊线并继续演进。
 - **一个模块缺席，不许把别的模块一起埋掉**（2026-10-01 补记）：第一条不变量的推论，
   本插件自己违反过一次——控制台（地基）读不到时整个快照走 `ok:false`，面板只剩登录表单，
   把 API Key tab（根本不读控制台）和小浣熊 tab（另一个上游、另一套凭据）一起带走。
@@ -345,6 +348,9 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 消除而非靠约定维持。判据与真机取证见 [AGNES-API.md](./AGNES-API.md) §7.1 / §7.5。
 
 ### 5.5 边界裁定：第二上游（小浣熊）属于界内（2026-10-01）
+
+> ⚠️ **本节裁定已随 2026-10-01 的移除而失效**：小浣熊第二上游已整条移出本插件（见 §5.3 修订（二）），
+> 本节保留为历史裁定记录，不再作为现行边界的依据。现行上游只有 Agnes 控制台与 AgnesCode 桌面端。
 
 **裁决**：小浣熊（`xiaohuanxiong.com` 网关，`sensenova-raccoon` provider）**属于**
 §5 不变量 3 界内的能力，不是破例，也不是例外许可。随本次裁定，不变量 3 的划线依据

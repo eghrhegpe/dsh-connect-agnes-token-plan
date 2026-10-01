@@ -7,8 +7,8 @@
 > `api.agnes-ai.cn/v1`。两份现行事实源是 [AGNES-API.md](./AGNES-API.md)（接口全集）与
 > [AUTH.md](./AUTH.md)（登录协议）。
 >
-> 这份档**刻意保留**，因为三件事仍然指着它：① 第二个上游「小浣熊」与
-> `upstream/sensenova-usage-dashboard` 同属商汤体系，其接口对照仍以本文为准；
+> 这份档**刻意保留**，因为三件事仍然指着它：① `upstream/sensenova-usage-dashboard` 属商汤体系，
+> 其接口对照仍以本文为准（小浣熊上游已随 Agnes 线移除，不再引用本文）；
 > ② §0 归档的官方原文是 `docs/sensenova-api-reference/` 的索引；
 > ③ [PITFALLS.md](./PITFALLS.md) 的多条踩坑来自这段时期，引用需要落脚点。
 > 阅读时请把它当**史料**：文中提到的 `sensenova-auth.ts` / `sensenova-crypto.js` /

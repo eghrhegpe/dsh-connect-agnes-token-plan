@@ -1,9 +1,9 @@
 /**
  * The AgnesCode provider-registration switch — this plugin's OWN state file,
- * the third opt-in switch (after `provider-store.ts` and
- * `raccoon-switch-store.ts`). Same integrity discipline: a versioned payload,
- * temp file plus atomic rename, and "anything unrecognised reads as not set"
- * (PITFALLS §23, per-profile segment). Deliberately a THIRD file, not a shared
+ * a separate opt-in switch (after `provider-store.ts`). Same integrity
+ * discipline: a versioned payload, temp file plus atomic rename, and
+ * "anything unrecognised reads as not set" (PITFALLS §23, per-profile
+ * segment). Deliberately a SEPARATE file, not a shared
  * one: flipping one provider's switch must never touch another's publish
  * decision (§5.5 isolation).
  *

@@ -2,11 +2,10 @@
  * The AgnesCode provider's PUBLISH STATE MACHINE — the peer-free control plane
  * of the third upstream provider (ROADMAP §6.3).
  *
- * Deliberate BOUNDARY: this is a THIRD, independent publisher. It shares NONE
- * of the Token Plan publisher's state (`provider-publish.ts`) nor the Raccoon
- * publisher's (`raccoon-publish.ts`) — an AgnesCode switch flip, re-harvest,
- * or catalogue drift can never register, release, or churn the other two
- * providers (§5.5 isolation). It carries the same three load-bearing
+ * Deliberate BOUNDARY: this is an independent publisher. It shares NONE
+ * of the Token Plan publisher's state (`provider-publish.ts`) — an AgnesCode
+ * switch flip, re-harvest, or catalogue drift can never register, release, or
+ * churn the Token Plan provider (§5.5 isolation). It carries the same three load-bearing
  * semantics, restated:
  *   - the publish chain queues a publish behind every one in flight;
  *   - the `disposed` gate stops a late publish registering into a withdrawn

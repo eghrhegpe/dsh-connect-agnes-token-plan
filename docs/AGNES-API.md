@@ -10,8 +10,8 @@
 > ⚠️ 登录协议细节（一跳 POST、无 refresh token、密码明文过 TLS、防锁号节流）不在这里重复，见
 > [AUTH.md](./AUTH.md)。本地路由与控制台端点的对照表见 [API.md](./API.md)。
 > **SenseNova 控制台**（`platform.sensenova.cn`，OIDC+PKCE）已不是本插件的任何一条链路，
-> 其接口原文留在 [SENSENOVA-API.md](./SENSENOVA-API.md) 作历史档——小浣熊上游与
-> `upstream/` 仍属商汤体系，那份档仍被它们引用。
+> 其接口原文留在 [SENSENOVA-API.md](./SENSENOVA-API.md) 作历史档——`upstream/` 仍属商汤体系，
+> 那份档仍被它引用（小浣熊上游已随 Agnes 线移除）。
 > 出图（draw，`draw.ts`）与视频（video，`video.ts`）两个 agent 工具默认关闭，其
 > `images/generations` 与 `videos` + `agnesapi` 端点均已真机确证存在且可用
 > （见 §7.5），模型识别走 `modality.ts`（见 §7.1）。视频 **V2.0 与 2.5 两个参数体系都覆盖**，

@@ -257,15 +257,10 @@ export function startSideEffects(ctx, wiring, side) {
  * @returns {void}
  */
 export function teardown(wiring, offs) {
-  const { publisher, releaseProvider, raccoonPublisher, agnescodePublisher } = wiring;
+  const { publisher, releaseProvider, agnescodePublisher } = wiring;
   // Before anything else: a publish still in flight (the mount seed's, or a
   // poll's) must not register into a Host that is letting this plugin go.
   publisher.dispose();
-  // The Raccoon provider is a SECOND, independent registration (ROADMAP
-  // §6.1): dispose it in the same order it registered, so a late raccoon
-  // publish cannot register into the withdrawing Host either.
-  raccoonPublisher?.dispose();
-  raccoonPublisher?.release?.();
   // The AgnesCode provider is a THIRD, independent registration (ROADMAP
   // §6.3): same order, same reason.
   agnescodePublisher?.dispose();

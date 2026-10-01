@@ -2,15 +2,15 @@
  * The AgnesCode credential store — the DSH credentials-service half of the
  * third upstream provider (ROADMAP §6.3).
  *
- * Same reference-value mechanism as `raccoon-store.ts` (`RACCOON_CREDENTIAL`
- * there, `AGNESCODE_CREDENTIAL` here): the whole credential is ONE JSON
- * reference value in the owner-only `~/.dsh/.credentials.yaml`, never in this
- * plugin's directory, git, or logs; a private record KIND is NOT invented
- * (red line 2). The two stores are deliberately SEPARATE publishers of
+ * Same reference-value mechanism: the whole credential is ONE JSON
+ * reference value in the owner-only `~/.dsh/.credentials.yaml`
+ * (`AGNESCODE_CREDENTIAL`), never in this plugin's directory, git, or logs;
+ * a private record KIND is NOT invented (red line 2). The stores are
+ * deliberately SEPARATE publishers of
  * separate upstreams (§5.5 isolation) — sharing a reference name or a record
  * would couple two credential lifecycles that must not move together.
  *
- * The load-bearing difference from the Raccoon store: AgnesCode has NO
+ * The load-bearing difference from the Token Plan store: AgnesCode has NO
  * plugin-callable refresh endpoint (probed + reference-repo read, ROADMAP
  * §6.3) — the desktop App refreshes its own session file, so "renew" here
  * means RE-HARVEST the local file and `save` the result. The store therefore
@@ -153,7 +153,7 @@ export function createAgnescodeStore({ credentials = null } = {}) {
      * Whether the stored credential is within its expiry window. A credential
      * without a decodable `exp` reads as unexpired (it may still be dead
      * server-side; the request path surfaces that) — the same direction
-     * `raccoon-store` takes.
+     * the sibling upstream store takes.
      * @param {number} [leadMs] - renew this long before expiry; defaults to 5 min.
      */
     async isExpired(leadMs = 5 * 60 * 1000) {

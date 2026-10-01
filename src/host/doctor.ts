@@ -18,7 +18,6 @@ import { PROVIDER_VERSION, normalizeEnabled } from "./provider-store.ts";
 import { DRAW_STORE_VERSION, normalizeDrawEnabled, normalizeDrawModelId } from "./draw-store.ts";
 import { VIDEO_STORE_VERSION, normalizeVideoEnabled, normalizeVideoModelId } from "./video-store.ts";
 import { CATALOG_VERSION, normalizeEntries, normalizeEnabledIds } from "./catalog-store.ts";
-import { RACCOON_SWITCH_VERSION, normalizeRaccoonEnabled } from "./raccoon-switch-store.ts";
 import { AGNESCODE_SWITCH_VERSION, normalizeAgnescodeEnabled } from "./agnescode-switch-store.ts";
 
 /** A scope whose state the doctor reported on (a profile name, or "" for shared). */
@@ -35,8 +34,6 @@ export interface DoctorScope {
   videoPanel: boolean | null;
   /** The saved video-model preference; `null` = auto. */
   videoModelPanel: string | null;
-  /** The saved Raccoon provider switch; `null` = fall back to OFF (opt-in default). */
-  raccoonPanel: boolean | null;
   /** The saved AgnesCode provider switch; `null` = fall back to OFF (opt-in default). */
   agnescodePanel: boolean | null;
   /** Stored catalog entries, `[]` when nothing usable is stored. */
@@ -133,7 +130,6 @@ async function readScope(stateDir, profile) {
     drawModelPanel: null,
     videoPanel: null,
     videoModelPanel: null,
-    raccoonPanel: null,
     agnescodePanel: null,
     catalogEntries: [],
     catalogEnabledIds: [],
@@ -175,15 +171,8 @@ async function readScope(stateDir, profile) {
       scope.videoModelPanel = parsed.modelId;
     } else scope.unreadable.push("video.json");
   }
-  // The second/third upstream switches are plain {version, enabled} payloads
-  // (no model preference) — same unreadable discipline as the files above.
-  const raccoonFile = join(stateDir, "raccoon-provider.json");
-  if (await present(raccoonFile)) {
-    const raw = await readJson(raccoonFile);
-    const parsed = raw?.version === RACCOON_SWITCH_VERSION ? normalizeRaccoonEnabled(raw?.enabled) : null;
-    if (parsed !== null) scope.raccoonPanel = parsed;
-    else scope.unreadable.push("raccoon-provider.json");
-  }
+  // The remaining upstream switch is a plain {version, enabled} payload (no
+  // model preference) — same unreadable discipline as the files above.
   const agnescodeFile = join(stateDir, "agnescode-provider.json");
   if (await present(agnescodeFile)) {
     const raw = await readJson(agnescodeFile);
@@ -270,10 +259,9 @@ export function renderReport(report) {
     const video = scope.videoPanel === null ? "unset (deployment default rules)" : String(scope.videoPanel);
     const videoModelPart = scope.videoModelPanel !== null ? ` model=${scope.videoModelPanel}` : "";
     const enabledPart = scope.catalogEnabledIds.length === 0 ? "(no filter)" : String(scope.catalogEnabledIds.length);
-    const raccoon = scope.raccoonPanel === null ? "unset (off)" : String(scope.raccoonPanel);
     const agnescode = scope.agnescodePanel === null ? "unset (off)" : String(scope.agnescodePanel);
     lines.push(
-      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} raccoon=${raccoon} agnescode=${agnescode} catalog=${scope.catalogEntries.length} enabled=${enabledPart}`
+      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} catalog=${scope.catalogEntries.length} enabled=${enabledPart}`
     );
     if (scope.unreadable.length > 0) lines.push(`${label}: unreadable state: ${scope.unreadable.join(", ")}`);
   }

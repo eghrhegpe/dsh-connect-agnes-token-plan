@@ -174,8 +174,8 @@ export const S = {
   // A roster's own frame — one step INSIDE the section card. The rule above
   // still holds (rows draw no box of their own; the divider separates them),
   // but "one frame per level" is about not repeating the SAME frame, not about
-  // leaving a whole list adrift: the Raccoon tab pairs its roster with a login
-  // block that already wears a card, and an unframed list beside a framed one
-  // read as an unfinished half rather than as a deliberate hierarchy.
+  // leaving a whole list adrift: a roster beside a login block that already
+  // wears a card reads as an unfinished half rather than a deliberate
+  // hierarchy.
   modelPanel: { border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, background: "var(--dsw-alias-bg-layer-1)", padding: "12px 14px" }
 };
