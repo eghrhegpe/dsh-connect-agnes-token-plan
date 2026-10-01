@@ -5,7 +5,24 @@
 > **范围说明**：本插件 2026-10 从商汤 SenseNova 控制台迁到 **Agnes 控制台**，登录线由 OIDC 授权码 + JWE 密码封包换成**一跳账号密码 POST**（见 [AUTH.md](./AUTH.md)）。于是下面分三类：
 > - 标了「**商汤时代，代码已删除**」的条目（第 1、2、3、5、14 条）描述的是**已经不存在的文件**。保留它们是为了记住这类坑的**形状**——**不要按字面去找这些函数**。
 > - 标了「**商汤时代实测**」的条目（第 20、21 条）是在已退役的推理网关上量的数据；**现行推理契约以 [AGNES-API.md](./AGNES-API.md) §7 为准**。
-> - 其余条目（含第 4、6、11、12、13、16–19、22–28 条）对**当前代码全部有效**。
+> - 其余条目（第 4、6–13、15–19、22–37 条）对**当前代码全部有效**。
+
+---
+
+## 目录索引（按主题归类）
+
+| 主题 | 条目 |
+|---|---|
+| 登录 / 凭据 / 认证重登 | 1、2、3、4、5、6、7、14、15、29 |
+| 同源 / 请求安全 | 13、35 |
+| 构建 / 装载 / profile | 8、22、23、33 |
+| peer 依赖 | 16 |
+| 解析 / 形状 / 契约 | 11、12、20、21、24、30、31 |
+| 状态 / 开关 / 发布 | 18、19、28、34、36、37 |
+| 测试 / CI / 环境 | 17、32 |
+| 文档 / 检测 | 25、26 |
+| 仓库卫生 | 9、10 |
+| 浏览器 / UI | 27 |
 
 ---
 
@@ -374,3 +391,15 @@
 - **修法**：调用处序列化，并在 `admission-audit.ts` 的调用点写了注释说明原因。审计/节流这类"读不出来就当作没发生"的文件，是这个坑危害最大的地方——它的失败方向与"真的没发生"完全同形。
 - **验证**：`test/admission-audit.test.mjs` 断言落盘文件恰好四个字段（`version/count/lastAt/lastMethod`）且能被 `JSON.parse`——传错类型时这条会红。
 - **教训**：**参数类型是"字符串"却长得像"载荷"的 API，是静默失败的温床**。收敛原语时（§34 的教训）把"I/O 怎么做"收上来了，但"传进去的东西是什么形状"留在了每个调用方的示范里——跟 §34 同一个病：抽到一半。
+
+## 37. 「面板值 > 配置默认」手抄十一处会漂移，且藏了四类真实缺陷
+
+- **现象**：opt-in 开关的启用判定「面板存过的值胜过配置默认值」在 11 个调用点各自手抄，肉眼看都「差不多对」，但行为并不一致；其中几处带着只有在边界情形才暴露的真实 bug。
+- **根因**：这条规则需要在每个开关处都回答「有没有面板值？没有就回退配置默认吗？」，而它有两个语义分叉与一个易错写法：
+  1. **AgnesCode 没有配置默认**。其余开关（provider / draw / video）可回退到 `settings.*` 的布尔默认值；AgnesCode 的启用完全由面板决定、从不读 `settings`。一旦某处被「顺手」写成 `panelValue ?? settings.x`，补丁里哪天多出一个默认值时，AgnesCode 就会在用户毫无操作的情况下**自行注册**。
+  2. **`panelValue ?? x === true` 的运算符优先级**：`??` 的优先级低于 `===`，于是 `panelValue ?? effectiveSettings.registerProvider === true` 实际解析成 `panelValue ?? (effectiveSettings.registerProvider === true)`——结果恰好对，但读起来像「panelValue 为空时用 settings 的值」，诱导后续编辑者误以为它做的是回退比较，进而改坏。
+  3. **值与来源各读一次会翻车**：`snapshot-aggregate.ts` 一度先读 `enabled` 判定显隐、再读一遍判定来源，两次读取之间状态一翻，本该标 `panel` 的会落 `config`。来源（panel / config / off）必须和值**同一次**派生。
+  4. **`store ? store.enabled() : null` 再 `.catch()` 会 TypeError**：store 缺席时表达式是 `null`，对 `null` 调 `.catch` 直接抛——`undefined` 与 `null` 都得先判空再链。
+- **修法**：抽 `src/host/switch-precedence.ts` 作为唯一裁决处，三个函数承载全部语义：`resolveSwitchEnabled(panelValue, configDefault?)`（**不传** `configDefault` ⇒ 未设置的面板值解析为关，正是 AgnesCode 语义）、`resolveSwitchValue<T>(panelValue, configDefault)`、`readPanelValue<T>(read)`（store 缺席 / 读不到一律返回 `null`，一并消掉 `.catch` 陷阱）；三函数都连 `source`（panel / config / off）一起返回。11 个调用点改为走它，`test/switch-precedence.test.mjs`（23 条）钉住两种语义分界 + 四类缺陷 + 一条接线钉（任何 host 文件仍自己拼 `?? settings.x` 或 `=== null ?` 即红）。
+- **验证**：改动前后 `routes 190 / provider 204 / agnescode 119 / doctor 39 / switch-store 84 / admission-audit 27` 逐项计数一致；新增套件 23 条全绿。
+- **教训**：**「差不多对」的多份手抄必然在某处分叉**，而分叉点往往正是边界情形。凡是一条判定规则出现在 N 个地方，就该抽成「返回结论 + 返回结论来源」的单一函数——来源和结论一起返回，才能杜绝「同一条规则被算两遍、中间状态变了」这类漂移（与 §34 同理：抽到一层不够，要抽到「所有 N 者共用的裁决入口」）。
