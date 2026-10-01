@@ -405,6 +405,31 @@ export const VIDEO25_DEFAULT_SECONDS = 5;
 export const VIDEO25_DEFAULT_SIZE = "720P";
 
 /**
+ * The tool-call fields that ONLY the 2.5 family understands.
+ *
+ * `buildVideoBody` destructures only the V2.0 fields, so any of these handed to
+ * a V2.0 model would be SILENTLY IGNORED: a caller asking for a 10s 2K clip
+ * would receive a 5s 720P one with no signal. `defineVideoTool` uses this list
+ * to refuse the mix instead (AGNES-API.md §7.5.1b).
+ */
+export const VIDEO25_ONLY_FIELDS = Object.freeze(["seconds", "size", "aspect_ratio", "mode", "keyframes"]);
+
+/**
+ * The prefix every 2.5-family error carries: the model id the builder actually
+ * resolved, plus which parameter system that model speaks.
+ *
+ * Before this the messages said only "2.5 系列", which named a FAMILY without
+ * naming what the agent had actually addressed — the only way to learn which
+ * model was dispatched was to read the catalog. Naming it makes the error
+ * self-correcting on its own line.
+ * @param {unknown} model - the resolved model id.
+ * @returns {string} e.g. `模型 agnes-video-2.5-flash（2.5 秒数制）：`
+ */
+export function video25ErrorContext(model) {
+  return `模型 ${str(model, "") || "(未指定模型)"}（2.5 秒数制）：`;
+}
+
+/**
  * The resolution tier one 2.5 call resolves to.
  *
  * An EXPLICIT `size` must be whitelisted — and a flash variant may only be
@@ -420,10 +445,10 @@ export function resolveVideo25Size(explicit, model) {
   if (explicit !== undefined && explicit !== null) {
     const tier = String(explicit).trim().toUpperCase();
     if (!VIDEO25_SIZES.includes(tier)) {
-      throw new Error(`无效的 size ${String(explicit)}：2.5 系列支持 ${VIDEO25_SIZES.join(" / ")}${isVideo25Flash(model) ? `，且 2.5-flash 仅支持 ${VIDEO25_FLASH_ONLY_SIZE}` : ""}`);
+      throw new Error(`${video25ErrorContext(model)}无效的 size ${String(explicit)}：支持 ${VIDEO25_SIZES.join(" / ")}${isVideo25Flash(model) ? `，且该模型（2.5-flash）仅支持 ${VIDEO25_FLASH_ONLY_SIZE}` : ""}`);
     }
     if (isVideo25Flash(model) && tier !== VIDEO25_FLASH_ONLY_SIZE) {
-      throw new Error(`无效的 size ${String(explicit)}：2.5-flash 仅支持 ${VIDEO25_FLASH_ONLY_SIZE}`);
+      throw new Error(`${video25ErrorContext(model)}无效的 size ${String(explicit)}：该模型（2.5-flash）仅支持 ${VIDEO25_FLASH_ONLY_SIZE}`);
     }
     return tier;
   }
@@ -514,12 +539,12 @@ export function buildVideoBody25(options: Record<string, any> = {}) {
     : [];
   const imageUrl = typeof image === "string" && image.trim() !== "" ? image.trim() : undefined;
   if (frameUrls.length > 0 && imageUrl !== undefined) {
-    throw new Error("image 与 keyframes 不能同时使用：图生视频传单张 image，关键帧动画传 keyframes 数组");
+    throw new Error(`${video25ErrorContext(model)}image 与 keyframes 不能同时使用：图生视频传单张 image，关键帧动画传 keyframes 数组`);
   }
   const mediaUrls = [...frameUrls, ...(imageUrl === undefined ? [] : [imageUrl])];
   for (const url of mediaUrls) {
     if (!VIDEO_IMAGE_PATTERN.test(url)) {
-      throw new Error(`无效的参考图 "${url.slice(0, 64)}"：必须是平台可直接抓取的公共 HTTP(S) 图片 URL`);
+      throw new Error(`${video25ErrorContext(model)}无效的参考图 "${url.slice(0, 64)}"：必须是平台可直接抓取的公共 HTTP(S) 图片 URL`);
     }
   }
 
@@ -533,7 +558,7 @@ export function buildVideoBody25(options: Record<string, any> = {}) {
     : undefined;
   if (explicitMode !== undefined) {
     if (!VIDEO25_MODES.includes(explicitMode)) {
-      throw new Error(`无效的 mode "${explicitMode}"：2.5 系列支持 ${VIDEO25_MODES.join(" / ")}`);
+      throw new Error(`${video25ErrorContext(model)}无效的 mode "${explicitMode}"：支持 ${VIDEO25_MODES.join(" / ")}`);
     }
     resolvedMode = explicitMode;
     if (frameUrls.length >= 2) {
@@ -542,7 +567,7 @@ export function buildVideoBody25(options: Record<string, any> = {}) {
         media.last_frame = frameUrls[1];
       } else {
         if (flash && frameUrls.length > VIDEO25_FLASH_REFERENCE_LIMIT) {
-          throw new Error(`${str(model, "")} 的 reference 图片最多 ${VIDEO25_FLASH_REFERENCE_LIMIT} 张，收到 ${frameUrls.length} 张；请减少关键帧数量`);
+          throw new Error(`${video25ErrorContext(model)}reference 图片最多 ${VIDEO25_FLASH_REFERENCE_LIMIT} 张，收到 ${frameUrls.length} 张，请减少关键帧数量`);
         }
         media.images = frameUrls;
       }
@@ -557,7 +582,7 @@ export function buildVideoBody25(options: Record<string, any> = {}) {
     } else {
       resolvedMode = "reference";
       if (flash && frameUrls.length > VIDEO25_FLASH_REFERENCE_LIMIT) {
-        throw new Error(`${str(model, "")} 的 reference 图片最多 ${VIDEO25_FLASH_REFERENCE_LIMIT} 张，收到 ${frameUrls.length} 张；请减少关键帧数量`);
+        throw new Error(`${video25ErrorContext(model)}reference 图片最多 ${VIDEO25_FLASH_REFERENCE_LIMIT} 张，收到 ${frameUrls.length} 张，请减少关键帧数量`);
       }
       media.images = frameUrls;
     }
@@ -573,7 +598,7 @@ export function buildVideoBody25(options: Record<string, any> = {}) {
   if (seconds !== undefined && seconds !== null) {
     const explicit = Number(seconds);
     if (!Number.isInteger(explicit) || explicit < VIDEO25_SECONDS_MIN || explicit > VIDEO25_SECONDS_MAX) {
-      throw new Error(`无效的 seconds ${String(seconds)}：2.5 系列须为 ${VIDEO25_SECONDS_MIN}–${VIDEO25_SECONDS_MAX} 的整数秒`);
+      throw new Error(`${video25ErrorContext(model)}无效的 seconds ${String(seconds)}：须为 ${VIDEO25_SECONDS_MIN}–${VIDEO25_SECONDS_MAX} 的整数秒`);
     }
     resolvedSeconds = explicit;
   } else {
@@ -589,7 +614,7 @@ export function buildVideoBody25(options: Record<string, any> = {}) {
     const a = String(aspectRatio).trim();
     const known = VIDEO25_ASPECT_TABLE.some((row) => row.ratio === a);
     if (!known) {
-      throw new Error(`无效的 aspect_ratio "${a}"：2.5 系列支持 ${VIDEO25_ASPECT_TABLE.map((row) => row.ratio).join(" / ")}`);
+      throw new Error(`${video25ErrorContext(model)}无效的 aspect_ratio "${a}"：支持 ${VIDEO25_ASPECT_TABLE.map((row) => row.ratio).join(" / ")}`);
     }
     resolvedAspect = a;
   } else {
@@ -606,7 +631,7 @@ export function buildVideoBody25(options: Record<string, any> = {}) {
   };
   Object.assign(body, media);
   if (seed !== undefined && seed !== null) {
-    if (!Number.isInteger(seed)) throw new Error(`无效的 seed ${seed}：必须是整数`);
+    if (!Number.isInteger(seed)) throw new Error(`${video25ErrorContext(model)}无效的 seed ${seed}：必须是整数`);
     body.seed = seed;
   }
   return body;
@@ -883,10 +908,13 @@ export function defineVideoTool({
       "Two parameter families exist and the tool picks the matching one per model: " +
       "V2.0 (`agnes-video-v2.0`) takes `width` / `height` / `num_frames` (8n+1, ≤ " + VIDEO_MAX_FRAMES +
       "; 81≈3s, 121≈5s, 241≈10s at " + VIDEO_DEFAULT_FRAME_RATE + "fps) / `frame_rate`; " +
-      "2.5 (`agnes-video-2.5` / `2.5-flash`) takes the whole-second scheme instead — `seconds` (" +
+      "2.5 (`agnes-video-2.5` / `agnes-video-2.5-flash`) takes the whole-second scheme instead — `seconds` (" +
       VIDEO25_SECONDS_MIN + "–" + VIDEO25_SECONDS_MAX + "), `size` (" + VIDEO25_SIZES.join("/") + ", flash is 720P only) and `aspect_ratio` " +
-      "(21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16); passing V2.0 frame fields to a 2.5 model is a 400, and the " +
-      "tool translates `num_frames` / `frame_rate` to the nearest whole second when `seconds` is omitted. " +
+      "(21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16). The two families do not mix at the platform — sending V2.0 " +
+      "frame fields straight to a 2.5 model is a 400, so the tool translates `num_frames` / `frame_rate` to the " +
+      "nearest whole second when `seconds` is omitted, and `width` / `height` steer the aspect ratio. " +
+      "The reverse mix is refused, not dropped: 2.5-only fields (`seconds` / `size` / `aspect_ratio` / " +
+      "`mode` / `keyframes`) sent to a V2.0 model throw — set `model` to a 2.5 id. " +
       "Image-to-video: `image` (one URL); keyframe animation on 2.5: `keyframes` (≥2 URLs, or a single `image` " +
       "as the first frame).",
     parameters: {
@@ -943,6 +971,22 @@ export function defineVideoTool({
       const model = pickVideoModel(entries, params?.model, settings?.videoModelId);
       if (model === null) {
         throw new Error("catalog 中没有视频模型（`output_modalities` 字段与 `agnes-video-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含视频模型");
+      }
+      // Refuse the REVERSE mix instead of silently dropping it. `buildVideoBody`
+      // destructures only the V2.0 fields, so a 2.5 field set addressed at a V2.0
+      // model would vanish: the caller asks for a 10s 2K clip and would receive a
+      // 5s 720P one, with no signal that anything was dropped. Same
+      // throw-not-silent discipline as the V2.0 frame-count rule (§7.5.1) — the
+      // error names the one-line fix rather than just refusing.
+      if (!isVideo25Family(model)) {
+        const twentyFiveOnly = VIDEO25_ONLY_FIELDS.filter((field) => params?.[field] !== undefined && params?.[field] !== null);
+        if (twentyFiveOnly.length > 0) {
+          throw new Error(
+            `模型 ${model} 是 V2.0 帧制（width / height / num_frames / frame_rate），不识别 2.5 秒数制的 ` +
+              twentyFiveOnly.map((field) => `\`${field}\``).join(" / ") +
+              "；请显式传 model 指向 2.5 家族（agnes-video-2.5 / agnes-video-2.5-flash），或去掉这些参数、改用 num_frames / frame_rate"
+          );
+        }
       }
       // The two families are mutually exclusive at the wire level: pick the
       // matching body builder per model so a V2.0 field set never reaches a 2.5

@@ -7,8 +7,10 @@
  *   version segment has to be stripped rather than appended;
  * - V2.0 parameter validation (`num_frames` 8n+1 and ≤441, `frame_rate` 1-60,
  *   positive-integer dimensions, integer seed, public image URL);
- * - the V2.0 / 2.5 split: the 2.5 family speaks a different, mutually
- *   exclusive parameter system, so it must never be auto-picked;
+ * - the V2.0 / 2.5 split: two mutually exclusive parameter systems, auto-pick
+ *   V2.0 first and fall back to the first 2.5 model only when the catalog holds
+ *   no V2.0 one; per-model body dispatch; the reverse mix (2.5-only fields
+ *   addressed at a V2.0 model) is refused, not silently dropped;
  * - create-task and status-query response parsing (both `video_id` and the
  *   legacy `task_id`/`id`, `url` at the top level AND under `metadata`);
  * - failure classification (the 429 quota-vs-rate split);
@@ -35,6 +37,7 @@ import {
   pickVideoModel,
   buildVideoBody,
   buildVideoBody25,
+  VIDEO25_ONLY_FIELDS,
   nearestAspect25,
   secondsFromFrameTiming,
   parseVideoTask,
@@ -281,6 +284,33 @@ function errResponse(status, text) {
       model: "agnes-video-2.5-flash", prompt: "p",
       keyframes: ["https://1/x.png", "https://2/x.png", "https://3/x.png", "https://4/x.png", "https://5/x.png"]
     }).images !== undefined);
+
+  // Every 2.5 error must name the model that was actually addressed, not just a
+  // family — that is what lets the agent self-correct without reading the
+  // catalog. Asserted on the message, because a regression to "2.5 系列" would
+  // otherwise be invisible to the throw-only checks above.
+  {
+    const secondsErr = await rejects(() => buildVideoBody25({ model: "agnes-video-2.5-flash", prompt: "p", seconds: 3 }));
+    const sizeErr = await rejects(() => buildVideoBody25({ model: "agnes-video-2.5-flash", prompt: "p", size: "2K" }));
+    const aspectErr = await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", aspectRatio: "5:4" }));
+    const modeErr = await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", mode: "video" }));
+    const seedErr = await rejects(() => buildVideoBody25({ model: "agnes-video-2.5", prompt: "p", seed: 1.5 }));
+    const conflictErr = await rejects(() => buildVideoBody25({
+      model: "agnes-video-2.5", prompt: "p", image: "https://i/1.png", keyframes: ["https://i/1.png"]
+    }));
+    const contextErr = await rejects(() => buildVideoBody25({ model: "", prompt: "p", seconds: 3 }));
+    check("every 2.5 error names the actual model and its parameter system",
+      [secondsErr, sizeErr, aspectErr, modeErr, seedErr, conflictErr].every(
+        (message) => /模型 agnes-video-2\.5[^（]*（2\.5 秒数制）：/.test(message ?? ""),
+      ),
+      JSON.stringify([secondsErr, sizeErr, aspectErr, modeErr, seedErr, conflictErr]));
+    check("a missing model id is named as missing rather than dropped",
+      /模型 \(未指定模型\)（2\.5 秒数制）：/.test(contextErr ?? ""), contextErr);
+    check("the flash tier limit is stated for the flash model",
+      /仅支持 720P/.test(sizeErr ?? ""), sizeErr);
+    check("the seconds range is restated on the seconds error",
+      /4–12/.test(secondsErr ?? ""), secondsErr);
+  }
 }
 
 // --- 4. buildVideoBody: valid shapes and the throw-not-clamp rule -----------
@@ -648,6 +678,47 @@ function errResponse(status, text) {
     }
     check("an illegal V2.0 frame count still throws before any request on a V2.0 model",
       /8n\+1/.test(v2Err ?? ""), String(v2Err));
+  }
+  {
+    // The REVERSE mix: 2.5-only fields addressed at a V2.0 model. buildVideoBody
+    // destructures only the V2.0 fields, so they used to vanish silently — the
+    // agent asks for a 10s 2K clip and receives a 5s 720P one, with no signal.
+    const errSeconds = await rejects(() => makeTool().execute({ prompt: "x", seconds: 10, size: "2K" }));
+    check("2.5-only fields on a V2.0 model are refused, not silently dropped",
+      /模型 agnes-video-v2\.0 是 V2\.0 帧制/.test(errSeconds ?? "") && /`seconds`/.test(errSeconds ?? "") &&
+        /`size`/.test(errSeconds ?? ""),
+      errSeconds);
+    check("the refusal names the fix: address a 2.5 model or use frame fields",
+      /agnes-video-2\.5/.test(errSeconds ?? "") && /改用 num_frames \/ frame_rate/.test(errSeconds ?? ""), errSeconds);
+
+    const errAll = await rejects(() => makeTool().execute({
+      prompt: "x", model: "agnes-video-v2.0", seconds: 8, size: "960P", aspect_ratio: "9:16",
+      mode: "reference", keyframes: ["https://a/1.png", "https://b/2.png"]
+    }));
+    check("every 2.5-only field is named in the refusal",
+      VIDEO25_ONLY_FIELDS.every((field) => new RegExp("\\`" + field + "\\`").test(errAll ?? "")),
+      errAll);
+    check("the refusal lists exactly the 2.5-only field set",
+      JSON.stringify([...(errAll ?? "").matchAll(/\`([a-z_]+)\`/g)].map((match) => match[1]))
+        === JSON.stringify(VIDEO25_ONLY_FIELDS),
+      errAll);
+
+    // A V2.0-native call must not trip the guard: negative_prompt / image / seed
+    // are shared or V2.0-native, so the guard only reaches for 2.5-only fields.
+    let v2Body;
+    const toolV2 = makeTool({
+      fetchImpl: async (url, options) => {
+        if (url.includes("/agnesapi")) return okResponse({ status: "completed", url: "https://cdn/v.mp4" });
+        v2Body = JSON.parse(options.body);
+        return okResponse({ video_id: "v-v2", status: "queued" });
+      }
+    });
+    const v2Result = await toolV2.execute({ prompt: "x", negative_prompt: "blurry", image: "https://i/1.png", seed: 7 });
+    check("a V2.0-native call (negative_prompt / image / seed) still dispatches",
+      v2Result.url === "https://cdn/v.mp4" && v2Result.model === "agnes-video-v2.0" &&
+        v2Body?.negative_prompt === "blurry" && v2Body?.seed === 7 && v2Body?.image === "https://i/1.png" &&
+        !("keyframes" in v2Body) && !("seconds" in v2Body) && !("mode" in v2Body),
+      JSON.stringify(v2Body));
   }
   {
     // The create call must still succeed here — only the QUERY reports failure.

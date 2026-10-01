@@ -26,6 +26,8 @@
 
 - **V2.0 参数体系**：`width`/`height`/`num_frames`(8n+1)/`frame_rate`；2.5 家族进 `video25ModelIds` 单独上报、不进对话选择器。
 - **2.5 系列补齐（秒数制）**：`buildVideoBody25`（`seconds` 4–12 / `size` 720P·960P·2K / `aspect_ratio` 白名单 + `image`/`keyframes` → media、flash 收敛仅 720P 且 reference ≤5）双家族分派，互斥字段永不同时发给同一模型；`pickVideoModel` 认全量视频模型、目录无 V2.0 时回落到第一个 2.5 模型；帧数字段自动换算（`121@24fps → 5s`）、`negative_prompt` 不转发给 2.5；面板候选含 2.5、文案改为「已支持、自动换算」。
+- **双向混发防护 + 错误点名实际模型**：`buildVideoBody` 只解构 V2.0 字段，所以 2.5 专有字段（`seconds`/`size`/`aspect_ratio`/`mode`/`keyframes`）发到 V2.0 模型原先是**静默丢弃**——agent 以为拿到 10 秒 2K、实际拿到 5 秒 720P 且无任何信号。现在 `defineVideoTool` 在分派前拒掉这个组合（`VIDEO25_ONLY_FIELDS`），报错逐字段点名并给出修法；反向（V2.0 帧数字段 → 2.5 模型）仍走换算，保留「不判断家族也能出片」的退路。2.5 家族的每个校验错误经 `video25ErrorContext()` 带上**实际解析到的模型 id 与所属体系**（`模型 agnes-video-2.5-flash（2.5 秒数制）：无效的 seconds 3：须为 4–12 的整数秒`），此前只说「2.5 系列」，得回读 catalog 才知道打到的是哪个模型。
+- **工具描述与文档修正**：描述里不完整的 id `2.5-flash` 补全为 `agnes-video-2.5-flash`（避免 agent 照抄后白跑一次 400）并写明反向混发会被拒；README 与 `AGNES-API.md` 头部「只覆盖 V2.0 参数体系、2.5 不选」的过期表述改为双体系都覆盖；`API.md`「认不出的 id 退回自动选择」与实现不符（显式 `model` 原样直传、不查目录，只面板偏好 `videoModelId` 才查目录后回落），已改正并注明两条 id 的校验强度差异。
 
 ### 第三个上游：AgnesCode tab（可选，默认关）
 
