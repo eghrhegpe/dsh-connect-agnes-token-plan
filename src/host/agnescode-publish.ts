@@ -96,7 +96,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
   let disposed = false;
 
   /** Resolve the peer-dependent adapter factory once and memoize it. */
-  let adapterFactoryPromise;
+  let adapterFactoryPromise: Promise<any> | undefined;
   const resolveAdapterFactory = async () => {
     if (adapterFactoryPromise === undefined) {
       adapterFactoryPromise = Promise.resolve(effectiveLoadAdapterModule()).then((mod) => mod.createAgnescodeAdapter);
@@ -106,7 +106,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
 
   /** Release the registered pair. Releases are idempotent in the Host. */
   const release = () => {
-    const releaseFn = (fn) => {
+    const releaseFn = (fn: (() => void) | null | undefined) => {
       try {
         fn?.();
       } catch {
@@ -123,7 +123,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
    * Hand one built adapter to the llm service and record its release
    * functions onto `target` — defined ONCE, used by publish and rollback.
    */
-  const registerPair = (llm, built, target) => {
+  const registerPair = (llm: any, built: any, target: any) => {
     target.releaseAdapter = llm.registerAdapter(built.providerIds, built.adapter);
     target.releaseDirectory = typeof llm.registerConfigurableProviders === "function"
       ? llm.registerConfigurableProviders([{
@@ -153,7 +153,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
    * @param {string} bffBase - the credential's pinned per-account BFF base.
    * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
    */
-  const publishProviderOnce = async (rows, bffBase = "") => {
+  const publishProviderOnce = async (rows: readonly any[], bffBase = "") => {
     if (disposed) return { ok: false, skipped: true };
     const previousBuilt = state.built;
     const previousRows = state.rows;
@@ -255,7 +255,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
   };
 
   /** Publish, queued behind every other in-flight publish. */
-  const publish = (rows, bffBase) => {
+  const publish = (rows: readonly any[], bffBase: string) => {
     const queued = publishChain.then(
       () => publishProviderOnce(rows, bffBase),
       () => publishProviderOnce(rows, bffBase)
@@ -287,7 +287,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
  * @param {string} bffBase - the pinned per-account base.
  * @returns {string}
  */
-export function agnescodeSignature(rows, bffBase = "") {
+export function agnescodeSignature(rows: readonly any[], bffBase = "") {
   const models = (Array.isArray(rows) ? rows : [])
     .map((row) => `${str(row?.id, "")}:${row?.vision === true ? 1 : 0}`)
     .join(",");
