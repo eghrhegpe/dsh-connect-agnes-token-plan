@@ -119,6 +119,98 @@ export const FALLBACK_CONTEXT_WINDOW = 128_000;
 export const PROBED_MAX_TOKENS = 65_536;
 
 /**
+ * Official-doc vision claims, used ONLY when the catalog declares no modality
+ * field (Agnes sends none — §7.1), so the model picker can still offer image
+ * input on models the platform's own docs say accept it.
+ *
+ * Evidence is the archived official docs (`docs/AGNES-API-docs/`, read-only):
+ *  - `agnes-3.0-flash.md`: "支持文本和图像 URL 输入"
+ *  - `agnes-2.5-pro.md`: "付费推理模型，支持文本和图像输入" + "图像理解"
+ *  - `agnes-2.5-flash.md`: 核心能力含 "图像 URL 输入" / "图像理解"
+ *  - `agnes-2.0-flash`: 2.5-flash 迁移说明称"图像 URL 输入格式保持不变"，
+ *    但未在 2.0-flash 自己的文档页独立声明，**待 live-contract 探针再补**
+ *    （目录字段优先 + 未实测不写，PITFALLS 纪律）。
+ *
+ * ⚠️ 图像输入的**拼写与上限尚未真机 probe**（官方只说"图像 URL 输入"，没说
+ * `image_url` 块还是 `image` 字段、没写上限）。这张表只让 descriptor 带上
+ * `input:["text","image"]` 让 DSH 允许发图片；具体 wire 拼写由上层请求体
+ * 构造负责，未实测前不得断言（见 AGNES-API.md §7.1.1）。
+ */
+export const PROBED_VISION = Object.freeze({
+  "agnes-3.0-flash": true,
+  "agnes-2.5-pro": true,
+  "agnes-2.5-flash": true
+});
+
+/**
+ * Official-doc context windows, used ONLY when the catalog declares no
+ * `context_length` (Agnes sends none — §7.1).
+ *
+ * Evidence (`docs/AGNES-API-docs/`):
+ *  - `agnes-2.5-flash`: "上下文窗口 | 512K"
+ *  - `agnes-3.0-flash`: "上下文窗口 | 512K"
+ *  - `agnes-2.5-pro`: "上下文窗口 | 1M tokens"
+ *
+ * `agnes-2.0-flash` 未在其文档页看到独立声明，未入表（待探针）。
+ */
+export const PROBED_CONTEXT_WINDOWS = Object.freeze({
+  "agnes-2.5-flash": 512_000,
+  "agnes-3.0-flash": 512_000,
+  "agnes-2.5-pro": 1_000_000
+});
+
+/**
+ * Whether a catalog entry is a vision (image-input) model on THIS provider,
+ * together with the evidence source the panel can quote.
+ *
+ * Resolution order — catalog field first, then the name fallback, then the
+ * official-doc probe table, then not-vision:
+ *
+ * 1. source === "field": the platform's own `input_modalities` said so —
+ *    trust it (a future catalog that starts sending the field automatically
+ *    wins over the hard table).
+ * 2. source === "name": `identifyVisionModel`'s own name-pattern fallback
+ *    (`-vl` / `vision` / `qwen.*vl` / `glm-4v`) — kept as-is.
+ * 3. `identifyVisionModel` finds nothing (catalog sends no modality field AND
+ *    the name matches nothing — Agnes today) but the id is in
+ *    {@link PROBED_VISION}: the platform's own docs claim image input, so we
+ *    quote source `"docs"`.
+ * 4. Otherwise: not a vision model on this gateway.
+ *
+ * This is deliberately NOT a change to `identifyVisionModel` itself — that
+ * parser is the shared "catalog says" authority; the hard table is the
+ * plugin's own "official docs say" layer, layered on top exactly the way
+ * `PROBED_EFFORT` layers per-model thinking over the safe set.
+ * @param {object} entry - one normalized catalog entry.
+ * @returns {{id: string, vision: boolean, source: "field" | "name" | "docs" | null}}
+ */
+export function visionOf(entry: Record<string, unknown>) {
+  const info = identifyVisionModel(entry);
+  if (info.source === "field") return { id: info.id, vision: info.vision === true, source: "field" as const };
+  if (info.source === "name") return { id: info.id, vision: info.vision === true, source: "name" as const };
+  const id = str(entry?.id, "");
+  const docs = (PROBED_VISION as Record<string, boolean>)[id] === true;
+  return { id, vision: docs, source: docs ? ("docs" as const) : null };
+}
+
+/**
+ * The context window to advertise for a catalog entry.
+ *
+ * Catalog field wins; the official-doc probe table fills the gap only when the
+ * catalog declares nothing (Agnes sends no `context_length`, so the catalog
+ * call returns the 128k fallback — the "declared nothing" signal). A model
+ * absent from both keeps the conservative fallback.
+ * @param {object} entry - one normalized catalog entry.
+ * @returns {number} the window to advertise.
+ */
+export function contextWindowFor(entry: Record<string, unknown>) {
+  const fromCatalog = contextWindowOf(entry);
+  if (fromCatalog !== FALLBACK_CONTEXT_WINDOW) return fromCatalog;
+  const id = str(entry?.id, "");
+  return (PROBED_CONTEXT_WINDOWS as Record<string, number>)[id] ?? FALLBACK_CONTEXT_WINDOW;
+}
+
+/**
  * Read a positive context window off the catalog entry's known spellings.
  *
  * `context_length` is the field the platform actually emits (verified against
@@ -310,7 +402,7 @@ export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
   const { providerId = LLM_PROVIDER_ID, baseUrl } = options;
   const id = str(entry?.id, "");
   if (id === "") throw new Error("toPiDescriptor: catalog entry has no id");
-  const vision = identifyVisionModel(entry).vision === true;
+  const vision = visionOf(entry).vision === true;
   return {
     id,
     // Prefer the catalog's own display name; fall back to the id.
@@ -318,8 +410,9 @@ export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
     api: "openai-completions",
     provider: providerId,
     baseUrl,
-    // Vision is automatic: the catalog's modality field decides, the user does
-    // not configure it per model.
+    // Vision: the catalog's modality field decides first; the official-doc
+    // probe table fills the gap when the catalog declares none (Agnes today).
+    // The user does not configure it per model.
     input: vision ? ["text", "image"] : ["text"],
     // Every Agnes chat model thinks by default. The flag is set unconditionally
     // because the catalog advertises no capability field to read (it sends no
@@ -328,7 +421,7 @@ export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
     reasoning: true,
     thinkingLevelMap: thinkingLevelMapFor(entry),
     cost: { ...NO_COST },
-    contextWindow: contextWindowOf(entry),
+    contextWindow: contextWindowFor(entry),
     // `supportsDeveloperRole: false` is load-bearing — see the module header.
     // maxTokens pins the probed platform cap (decision 2): leaving it undeclared
     // meant the harness default 32768, half of what the platform accepts.
@@ -416,7 +509,7 @@ export function rosterOf(entries: any[]) {
     const row = {
       id,
       name: str(entry?.name, id),
-      vision: identifyVisionModel(entry).vision === true
+      vision: visionOf(entry).vision
     };
     if (position.has(id)) {
       out[position.get(id)] = row;
@@ -498,13 +591,14 @@ export function rosterWithAvailability(entries: any[], blockedIds: string[] = []
     const row = {
       id,
       name: str(entry.name, id),
-      vision: identifyVisionModel(entry).vision === true,
+      vision: visionOf(entry).vision,
       available: !blocked.has(id),
       quotaExhausted: blocked.has(id),
       // The window the descriptor itself will use: a declared `context_length`
-      // when the catalog has one, else the same 128k fallback pi-ai gets —
-      // so the badge never contradicts the effective behavior.
-      contextWindow: contextWindowOf(entry),
+      // when the catalog has one, else the official-doc probe table, else the
+      // same 128k fallback pi-ai gets — so the badge never contradicts the
+      // effective behavior.
+      contextWindow: contextWindowFor(entry),
       // The platform's declared output ceiling (0 = unknown). Widening the
       // projection here is deliberate: the raw entry stays Host-side, and the
       // panel quotes only these two parameter figures plus the vision verdict.
@@ -536,9 +630,8 @@ export function summarizeCatalog(entries: any[]) {
   const list = (Array.isArray(entries) ? entries : []).filter(isChatModel);
   const visionIds = list
     .filter((entry) => str(entry?.id, "") !== "")
-    .map((entry) => identifyVisionModel(entry))
-    .filter((entry) => entry.vision === true)
-    .map((entry) => entry.id);
+    .filter((entry) => visionOf(entry).vision === true)
+    .map((entry) => str(entry?.id, ""));
   return {
     modelCount: list.filter((entry) => str(entry?.id, "") !== "").length,
     visionCount: visionIds.length,

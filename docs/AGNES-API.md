@@ -254,7 +254,7 @@ README 里「两类 Key 共用输入框」的说法没错，但应补一句「�
 > 的 `driftLog` 与下文 §7.2/§7.3），seed 基线退役。后续漂移由
 > [`test:live:contract`](../test/live-contract.mjs) 把守。
 
-#### 7.1.1 官方文档 vs `/v1/models` 的输入模态冲突（待裁定）
+#### 7.1.1 官方文档 vs `/v1/models` 的输入模态冲突（已落地）
 
 **官方文档（中文站 `wiki.agnes-ai.cn`，已抓存 [AGNES-API-docs/](./AGNES-API-docs/)）明说
 以下模型支持「文本 + 图像 URL 输入」**：
@@ -270,20 +270,20 @@ README 里「两类 Key 共用输入框」的说法没错，但应补一句「�
 
 **冲突定性**：这不是「平台没有该能力」，而是「**目录接口没暴露该能力**」。当前
 面板「0 个支持图片输入」读作「目录读不到」，但官方文档**声明**了能力存在——两者
-并存且方向相反。**处理方向**：
+并存且方向相反。
 
-- **短期（不改代码）**：按 `PROBED_EFFORT` 的既有纪律，在 `llm-models.ts` 加一张
-  **硬编码 vision 清单**（数据源 = 官方文档 + 真机探针），让 `agnes-3.0-flash` /
-  `agnes-2.5-pro` / `agnes-2.5-flash` 在 descriptor 上带 `input:["text","image"]`。
-  这与 thinking 档位表的做法同源（都是「平台目录不声明、靠一手信源补」）。
-- **长期**：等 `/v1/models` 补 `input_modalities`，自动生效（`modality.ts` 的
-  declared 分支已是「字段在即采纳」）。
+**✅ 已落地（2026-10 本轮）**：按 `PROBED_EFFORT` 的既有纪律，在 `llm-models.ts`
+加了硬编码 `PROBED_VISION` 表（`agnes-3.0-flash` / `agnes-2.5-pro` /
+`agnes-2.5-flash`），并经 `visionOf(entry)` 接入 descriptor / roster /
+`summarizeCatalog` / snapshot / `provider-publish`。判定顺序：**目录字段 → 名字
+兜底 → 硬编码表 → 非 vision**——平台将来补 `input_modalities` 会自动胜出。
 
 > ⚠️ **尚未 probe 图像输入方言**：官方文档只说「图像 URL 输入」，**没写**具体
-> 拼写（`image_url` 块还是 `image` 字段）与上限。改动前先真机探针确认——不要
-> 只信文档就上（PITFALLS 关于「文档须说实话」的纪律）。
+> 拼写（`image_url` 块还是 `image` 字段）与上限。`PROBED_VISION` 只让 descriptor
+> 带上 `input:["text","image"]` 让 DSH 允许发图片；**具体 wire 拼写由上层请求体
+> 构造负责，未实测前不得断言**（PITFALLS 关于「文档须说实话」的纪律）。
 
-#### 7.1.2 上下文窗口：官方文档声明 vs `FALLBACK_CONTEXT_WINDOW`（待裁定）
+#### 7.1.2 上下文窗口：官方文档声明 vs `FALLBACK_CONTEXT_WINDOW`（已落地）
 
 **官方文档明写的上下文窗口**：
 
@@ -298,9 +298,15 @@ README 里「两类 Key 共用输入框」的说法没错，但应补一句「�
 
 **冲突定性**：与 §7.1.1 同源——**目录接口没暴露，代码用兜底**。`max_output_length`
 已经在 §7.3 经真机探针钉到 `65_536`（和官方一致），但 `context_length` **没有
-做过同款实测补丁**，所以实际差 4–8 倍。**处理方向**：按 §7.1.1 同款做法，加一张
-硬编码上下文窗口表（数据源 = 官方文档 + 真机探针），并在面板注明「平台声明 /
-兜底」。
+做过同款实测补丁**，所以实际差 4–8 倍。
+
+**✅ 已落地（2026-10 本轮）**：在 `llm-models.ts` 加了硬编码
+`PROBED_CONTEXT_WINDOWS` 表（`agnes-2.5-flash` = 512K、`agnes-3.0-flash` = 512K、
+`agnes-2.5-pro` = 1M），并经 `contextWindowFor(entry)` 接入 descriptor / roster。
+规则：**目录字段优先**——`contextWindowOf` 返回非兜底值即采用；返回
+`FALLBACK_CONTEXT_WINDOW`（表示"目录没声明"）才查硬编码表；两处都无才回
+128K。平台将来补 `context_length` 会自动胜出。`agnes-2.0-flash` 官方文档未
+独立声明窗口，未入表（待探针）。
 
 ### 7.2 思考档位（safe-set 只服务未知 id）
 

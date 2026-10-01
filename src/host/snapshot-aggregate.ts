@@ -52,10 +52,9 @@ import {
   matchCurrentPlan,
   quotaWindows,
   readSubscriptionExpiry,
-  checkShape,
-  identifyVisionModel
+  checkShape
 } from "./parsers.ts";
-import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
+import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT, visionOf } from "./llm-models.ts";
 import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
 import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video.ts";
@@ -388,7 +387,7 @@ export async function buildSnapshotBody({
   // Absent API key → no catalog → the list is simply undeclared, not "none".
   const visionModels = Array.isArray(catalog)
     ? catalog
-        .map((entry) => identifyVisionModel(entry))
+        .map((entry) => visionOf(entry))
         .filter((entry) => entry.vision)
     : undefined;
 

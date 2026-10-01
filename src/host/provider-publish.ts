@@ -18,8 +18,7 @@
  * @module dsh-connect-agnes-token-plan/provider-publish
  */
 
-import { LLM_PROVIDER_ID, LLM_DISPLAY_NAME } from "./llm-models.ts";
-import { identifyVisionModel } from "./parsers.ts";
+import { LLM_PROVIDER_ID, LLM_DISPLAY_NAME, visionOf } from "./llm-models.ts";
 import { str, redactSecrets } from "./util.ts";
 import { name as pluginName } from "./host-config.ts";
 import type { HostDeps } from "./types.ts";
@@ -407,7 +406,7 @@ export function seedPublisherFromCatalog(publisher, listCatalog, listEnabled, si
  */
 export function catalogSignature(entries, enabledIds) {
   const models = (Array.isArray(entries) ? entries : [])
-    .map((entry) => `${str(entry?.id, "")}:${identifyVisionModel(entry).vision === true ? 1 : 0}`)
+    .map((entry) => `${str(entry?.id, "")}:${visionOf(entry).vision === true ? 1 : 0}`)
     .join(",");
   return `${models}|${(Array.isArray(enabledIds) ? enabledIds : []).join(",")}`;
 }

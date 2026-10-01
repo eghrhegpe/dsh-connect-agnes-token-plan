@@ -147,7 +147,7 @@ export interface ModelData {
 export interface VisionModelData {
   id: string;
   vision: boolean;
-  source?: "field" | "name" | null;
+  source?: "field" | "name" | "docs" | null;
 }
 
 /** The `auth` block: token-state booleans the panel turns into guidance. */
