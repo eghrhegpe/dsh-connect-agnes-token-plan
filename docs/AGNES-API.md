@@ -349,10 +349,13 @@ safe-set，保证选择器不空：
 - **思考字段拼写（已实测 2026-10-01）**：三个 chat 模型统一回
   `message.reasoning_content`（`none` 档无思考字段）——pi-ai 读该拼写成立。
   逐模型 `reasoning_effort` 支持面见 §7.2 的 `PROBED_EFFORT` 表。
-- 图像输入方言：**仍未 probe**——目录无 `input_modalities` 可读，模型已按 §7.1.1
+- 图像输入方言：**探针已加，待真机运行**——目录无 `input_modalities` 可读，模型已按 §7.1.1
   的硬编码 `PROBED_VISION` 表标为 vision（`agnes-3.0-flash` / `agnes-2.5-pro` /
   `agnes-2.5-flash`），但 **wire 拼写（`image_url` 块还是 `image` 字段）与上限
-  未知**，不写死（参见 [PITFALLS.md](./PITFALLS.md) 关于「文档须说实话」的纪律，形式全绿而语义已漂是踩过的坑）。
+  未知**。`test/live-contract.mjs` §2d 已加探针：对 `agnes-3.0-flash` 用两种
+  拼写（`{type:"image_url"}` / `{type:"image"}`）各发一次，200 = 接受、400 =
+  平台原文点名它要的字段——跑完把结果写回这里与基线。真机运行
+  `npm run test:live:contract`（需 `AGNES_TOKEN_PLAN_API_KEY`）。
 
 #### 7.3.1 官方错误码表（中文站文档，抓存 [AGNES-API-docs/2、常见错误码.md](./AGNES-API-docs/2、常见错误码.md)）
 

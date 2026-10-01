@@ -190,6 +190,57 @@ for (const model of contract.models) {
   }
 }
 
+// --- 2d. the image-input wire dialect the vision models actually speak -----
+// `PROBED_VISION` (llm-models.ts) marks agnes-3.0-flash / agnes-2.5-pro /
+// agnes-2.5-flash as vision per the archived official docs, but the WIRE
+// SPELLING the platform accepts for the image itself was never probed:
+// OpenAI's canonical block is `{type:"image_url", image_url:{url}}`, but some
+// gateways expect `{type:"image", image_url:{url}}` or even a flat `image_url`
+// string. Two cheap probes on agnes-3.0-flash pin the accepted spelling —
+// 200 = accepted, 400 = refused, and the platform's own refusal text names
+// the field it wants. A 429 is INDEFINITE exactly as in §2.
+{
+  const vision = contract.models.find((m) => m.id === "agnes-3.0-flash" && m.status === "ok");
+  // A stable, publicly reachable test image. The platform must fetch it
+  // server-side; a URL that expires mid-run would look like a refusal when it
+  // is really a fetch failure — the probe records status, the human reads the
+  // platform's own refusal text when a 400 comes back.
+  const testImage = "https://picsum.photos/64/64";
+  const spellings = [
+    { label: "image_url", content: [
+      { type: "text", text: "what do you see in one word" },
+      { type: "image_url", image_url: { url: testImage } }
+    ] },
+    { label: "image", content: [
+      { type: "text", text: "what do you see in one word" },
+      { type: "image", image_url: { url: testImage } }
+    ] }
+  ];
+  if (vision) {
+    for (const spelling of spellings) {
+      const { response, text, status } = await probeOnce(vision.id, "high", {
+        messages: [{ role: "user", content: spelling.content }]
+      });
+      if (status === 429) {
+        check(`${vision.id} image-input "${spelling.label}" spelling probe INDEFINITE (rate-limited)`,
+          true, `HTTP 429 ${text.slice(0, 120)} — re-run after the window clears`);
+      } else if (status === 200) {
+        check(`${vision.id} image-input "${spelling.label}" spelling accepted`,
+          true, `HTTP ${status} ${text.slice(0, 120)}`);
+      } else {
+        // A 4xx is the platform naming its accepted dialect — the refusal text
+        // is the evidence, so the check passes if the platform told us what it
+        // wanted (a dialect probe that 400s with a clear field name is a
+        // finding, not a failure of the platform).
+        check(`${vision.id} image-input "${spelling.label}" spelling refused with a field name`,
+          /image|image_url|content|modality|multimodal|field/i.test(text),
+          `HTTP ${status} ${text.slice(0, 200)}`);
+      }
+      await sleep(PROBE_BACKOFF_MS);
+    }
+  }
+}
+
 /** One chat-completion probe, unwrapped into {response, text, status}.
  *  `extraBody` merges over the default probe body (§2c overrides max_tokens). */
 async function probeOnce(modelId, effort, extraBody = {}) {
