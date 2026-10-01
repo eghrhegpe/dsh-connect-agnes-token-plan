@@ -11,11 +11,14 @@
  * Tests import their peer through here instead, so `npm test` works on a fresh
  * clone with no manual setup. Nothing is installed and nothing is downloaded:
  * the copy inside the Host is used, which is the same one that will run the
- * plugin.
+ * plugin. Two layouts carry that copy — the unpacked desktop runtime under
+ * `~/.dsh` (or `$DSH_HOME`), and the runtime inside a globally installed `dsh`
+ * CLI (`npm root -g`), which is the only one a CI runner has.
  *
  * Usage: `const { credentialKey } = await loadPeer("dsh-credentials");`
  */
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -31,16 +34,48 @@ const ROOT = join(HERE, "..");
 const PEER_MARKER = join("@deepseek-ai", "dsh-credentials-local");
 
 /**
+ * The runtime tree that ships INSIDE a globally installed `dsh` CLI.
+ *
+ * Same source `test/e2e.mjs` uses to boot a real Host (`cliRuntimeModules`):
+ * `npm root -g` anchors `<prefix>/@deepseek-ai/dsh/node_modules`, which is both
+ * complete and version-matched. It is what makes a Linux CI runner work at all
+ * — that runner has no `~/.dsh` unpacked desktop runtime and no local link, only
+ * the CLI its workflow installs. `@deepseek-ai/dsh-base` is the same marker e2e
+ * trusts: without it the directory is not the runtime, and pointing a suite at
+ * it would only trade one ERR_MODULE_NOT_FOUND for another.
+ *
+ * Memoized (one `npm root -g` per process at most), and consulted only when no
+ * cheaper candidate carries {@link PEER_MARKER} — see `candidateRoots`.
+ * @returns {string} a `node_modules` root, or "" when there is no npm CLI tree.
+ */
+let cliRootMemo;
+function cliRuntimeRoot() {
+  if (cliRootMemo !== undefined) return cliRootMemo;
+  cliRootMemo = "";
+  const root = spawnSync("npm", ["root", "-g"], { shell: true, encoding: "utf8", timeout: 30_000 });
+  if (root.error === undefined && root.status === 0) {
+    const prefix = String(root.stdout ?? "").trim();
+    const anchor = prefix === "" ? "" : join(prefix, "@deepseek-ai", "dsh", "node_modules");
+    if (anchor !== "" && existsSync(join(anchor, "@deepseek-ai", "dsh-base"))) cliRootMemo = anchor;
+  }
+  return cliRootMemo;
+}
+
+/**
  * Where the Host keeps its unpacked runtime, most specific first.
  *
  * `$DSH_HOME` wins so a dev checkout can point elsewhere; the rest cover a
- * normal install and a checkout with an extracted asar.
+ * normal install and a checkout with an extracted asar. The globally installed
+ * CLI is the LAST resort (see {@link cliRuntimeRoot}) and is left out when a
+ * cheaper candidate already carries the marker, so a dev machine with a local
+ * link pays no subprocess — while a bare runner, which has only the CLI, still
+ * resolves.
  * @returns {string[]} existing candidate `node_modules` roots.
  */
 function candidateRoots() {
   const home = process.env.DSH_HOME;
   const localAppData = process.env.LOCALAPPDATA ?? "";
-  return [
+  const roots = [
     ...(home === undefined || home === "" ? [] : [join(home, "dsh-asar-unpacked", "dsh", "node_modules")]),
     // A dev checkout may have linked its peers in already; that wins.
     join(ROOT, "node_modules"),
@@ -52,6 +87,9 @@ function candidateRoots() {
     join(homedir(), ".dsh", "dsh-asar-unpacked", "dsh", "node_modules"),
     ...(localAppData === "" ? [] : [join(localAppData, "Programs", "DeepSeek Harness", "resources", "app.asar.unpacked", "dsh", "node_modules")])
   ].filter((candidate) => candidate !== "" && existsSync(candidate));
+  if (roots.some((root) => existsSync(join(root, PEER_MARKER)))) return roots;
+  const cli = cliRuntimeRoot();
+  return cli === "" ? roots : [...roots, cli];
 }
 
 /**

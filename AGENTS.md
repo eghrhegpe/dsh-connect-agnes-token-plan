@@ -54,7 +54,8 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 - **peer 套件红 ≠ 回归**。`store/routes/wiring.test.mjs` 依赖
   `@deepseek-ai/dsh-credentials`（随 DSH runtime 发行，不在插件目录）。
   报 `cannot resolve the peer dependency` 是环境问题，先查 `test/peer-roots.mjs`
-  的查找路径，再下结论。
+  的查找路径（`$DSH_HOME` → 仓库 `node_modules` → `~/.dsh` 解包 runtime →
+  全局 `dsh` CLI 的 runtime——最后一条是给 CI runner 用的，见 PITFALLS §32），再下结论。
 - 测试数会随并行会话变化（68/38 是某一时点快照），只看自己域的增减。
 
 ## 红线（违反任一都会炸到用户机器）
@@ -110,7 +111,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（31 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（32 条现象→根因→修法） |
 | 排查「这条配置到底生效没」 / 改了源码却没变 | `docs/PITFALLS.md` §22（bundles 装载 → patch overlay → `$DSH_HOME/state/<profile>/<name>/` 三层，desktop 是安装副本、web 是 symlink） |
 | 加/改 **state 文件**、读 `profileContext`、判断某状态该不该按 profile 分段 | `docs/PITFALLS.md` §23（catalog/provider/draw 分段；throttle 与凭据 grant **故意共享**，别统一） |
 | 提交约定、`upstream/` 红线 | `docs/CONTRIBUTING.md` |

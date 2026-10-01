@@ -20,8 +20,9 @@
  *
  * Same rule as test/e2e-gate.mjs: if tsdown is not installed, print a loud
  * SKIP and exit 0 — a machine without dev deps is not a regression. (CI's
- * offline job installs nothing, so it always SKIPs here; wiring the build into
- * CI is a listed follow-up in ROADMAP §6.2.)
+ * offline job installs devDeps and runs this gate for real, so a failed build
+ * or a missing artifact is red there; the SKIP path only covers a bare clone,
+ * as ROADMAP §6.2 records.)
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";

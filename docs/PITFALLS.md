@@ -326,3 +326,13 @@
 - **修法**：`parseVideoQuery` 直接 `Number(raw.progress)`，保留 `0`；只在真正缺失（`undefined` / 空串）时才落缺省值。
 - **验证**：`test/video.test.mjs` 同时覆盖 `progress:0` 与「缺失」两种输入，断言前者读成 0、后者落缺省。
 - **教训**：「默认正值」的辅助函数在遇到合法零值时会失真。读进度这类「允许为零」的字段，要么关掉正值假设，要么单独处理 0。
+
+## 32. CI 六连红：hard gate 死在 peer 解析，e2e 死在没构建
+
+- **现象**：从 2026-09-30 仓库首次 push 起，GitHub Actions **每次都是红的**（6/6，33–48s 结束），而同一提交在本机 `npm test` 全绿。红的样子还各不相同——offline job 在**第 2 个套件**就退出（`agnes-auth` 47/47 通过之后），e2e job 报 `50/61 check(s) FAILED`——看上去像两处真回归。
+- **根因**（两条，互不相干，都是「本机有、runner 没有」）：
+  - **offline（hard gate）**：`store/routes/wiring` 要加载**真** peer 包，而 `test/peer-roots.mjs` 的候选根只列了 `$DSH_HOME` / 仓库 `node_modules` / `~/.dsh` 解包 runtime / Windows 安装目录——**没有「全局装了一个 `dsh` CLI」这条**。runner 上四者皆无，`loadPeer` 直接抛 `cannot resolve the peer dependency @deepseek-ai/dsh-credentials`；`set -e` 让套件链断在这里，后面 20 个套件（含 build-gate）**一个都没跑**。
+  - **e2e（best effort）**：workflow 装了全局 CLI，却没**构建插件**。`lib/` 与 `client.js` 都是 gitignore，fresh checkout 里 `main: ./lib/index.js` 不存在 → Host 报 `dsh: warning: 1 entry did not activate` → 第一条断言就红，其余 50 条级联。本机绿只是因为手边有 `npm run build` 的产物。
+- **修法**：`test/peer-roots.mjs` 增加最后一位候选——`npm root -g` 锚定的 `<prefix>/@deepseek-ai/dsh/node_modules`（与 `test/e2e.mjs` 启动真 Host 用的是同一处，标记为 `@deepseek-ai/dsh-base`），且**只在更便宜的候选都没带标记时**才去探它（dev 机不为此付一次子进程）；CI 的 offline job 增加一步装全局 `dsh`，e2e job 在跑套件前 `npm install --legacy-peer-deps && npm run build`。
+- **验证**：把 `HOME`/`USERPROFILE`/`LOCALAPPDATA` 指到空目录（模拟 runner：无桌面 runtime、无本地 link）后，`findPeerRoot()` 回落到全局 CLI 的 runtime，`node test/store.test.mjs` 仍全绿；本机常态下仍走 `~/.dsh` 解包 runtime。
+- **教训**：「本机全绿」对门禁给出的信心是假的——**没在 CI 里跑过就不算门禁**。而且「环境缺件」与「真回归」在日志里长得一模一样（第一条断言红 + 大面积级联），所以 runner 上需要的外部件（CLI、runtime、构建产物）只有两种正当处理：在 workflow 里显式供给，或让套件**响亮地 SKIP**；两者都不做，那块红色就没人会看。

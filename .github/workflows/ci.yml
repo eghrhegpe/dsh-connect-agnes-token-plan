@@ -64,6 +64,16 @@ jobs:
       # peerDependencies are Host-runtime packages that no registry serves.
       - name: Install dev dependencies (tsdown, for the build gate)
         run: npm install --legacy-peer-deps --no-audit --no-fund
+      # store / routes / wiring load the REAL peer packages (`@deepseek-ai/dsh-*`),
+      # which ship inside the DSH runtime and are on no registry. A runner has no
+      # `~/.dsh` unpacked runtime, so without this step `test/peer-roots.mjs`
+      # throws at the SECOND suite and the other 20 never run — which is exactly
+      # how this job was red on every push from 2026-09-30 to 2026-10-01
+      # (docs/PITFALLS.md §32). The globally installed CLI carries the
+      # version-matched tree, and `peer-roots.mjs` falls back to it via
+      # `npm root -g`.
+      - name: Provide the DSH runtime (the peers store / routes / wiring load)
+        run: npm install -g @deepseek-ai/dsh || echo "dsh CLI not installable here; the peer suites will name the missing package"
       - name: Run the offline suites
         run: |
           set -e
@@ -107,6 +117,15 @@ jobs:
       # let the gate skip — the offline job above is the actual gate.
       - name: Provide the dsh CLI (if available)
         run: npm install -g @deepseek-ai/dsh || echo "dsh CLI not installable here; e2e will SKIP"
+      # The Host loads the plugin's BUILT entry (`main: ./lib/index.js`, plus the
+      # client `client.js`), and both are gitignored — a fresh checkout has
+      # neither. Booting without this step makes the bundle fail to activate
+      # ("dsh: warning: 1 entry did not activate") and 50 of 61 checks cascade
+      # from there: that was this job's shape on 2026-10-01 (PITFALLS §32).
+      - name: Build the artifacts the Host loads
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund
+          npm run build
       - name: Run the end-to-end suite
         run: node test/e2e.mjs
 
