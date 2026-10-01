@@ -97,20 +97,15 @@ function cycleLabel(cycle: unknown, tt: Tt): string {
 /**
  * One quota window as a compact sub-card.
  *
- * The LIMIT is the headline here, not a percentage — and that inversion is the
- * whole point of the Agnes rewrite. The SenseNova card led with "remaining %"
- * because the platform reported a live balance per pool. Agnes instead caps
- * four dimensions over sliding windows and reports consumption only inside its
- * own `subscription.usage` block; the account totals cover a DIFFERENT period,
- * so a `limit - total` would subtract two things that were never on the same
- * clock and print a number nobody can defend. The limit is a fact the platform
- * states; a "remaining" figure would be an invention.
- *
- * When the subscription DOES report a window's consumption, the bar and the
- * used caption appear below the limit, quoting the platform's own `used` —
- * that is the one case where the panel has a real fraction to draw. The
- * window's reset moment rides along as a fact, not a countdown the panel
- * counts on its own.
+ * The CONSUMPTION FRACTION is the headline, not the raw limit. When the
+ * subscription reports a window's `used` against the plan's `limit`, the big
+ * figure is the platform's own fraction as a percentage and the raw
+ * `used / limit` counts sit below it — a bare "1500 次" headline reads as
+ * available capacity and misleads exactly when the window is exhausted. The
+ * limit is still quoted verbatim in the counts line; nothing is subtracted or
+ * re-derived. A window with no stated `used` (the video window today: the cap
+ * field is `video_daily_limit` while usage counts `video_seconds`) keeps the
+ * limit as its headline, because there is no fraction to lead with.
  *
  * A window that is not an object at all (a row the Host flagged as
  * shape-drifted, or a field simply absent) renders NOTHING instead of throwing:
@@ -146,11 +141,16 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
       "div",
       { style: S.quotaTop },
       h("span", { style: S.quotaLabel }, label),
-      period === "" ? null : h("span", { style: S.quotaReset }, period)
+      // When the period IS the head label (the request group's "5 小时" /
+      // "每周"), the chip would repeat it verbatim — so it only rides along
+      // on cards whose label names something else ("生图" + "每日").
+      period === "" || period === label ? null : h("span", { style: S.quotaReset }, period)
     ),
-    // A missing/zero limit is UNKNOWN, not "0" — claiming a window allows
-    // nothing when the platform simply said nothing is a lie.
-    h("div", { style: S.quotaRemaining }, limit > 0 ? `${count(limit)}${unit === "" ? "" : ` ${unit}`}` : "—"),
+    // With a stated `used`, the percentage IS the fact the reader needs — it
+    // leads. Without one, the limit is all the card knows and keeps the lead.
+    pct !== null
+      ? h("div", { style: S.quotaRemaining }, `${pct.toFixed(1)}%`)
+      : h("div", { style: S.quotaRemaining }, limit > 0 ? `${count(limit)}${unit === "" ? "" : ` ${unit}`}` : "—"),
     pct === null
       ? null
       : h(
@@ -158,11 +158,66 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
           { style: S.bar, role: "progressbar", "aria-label": `${label} ${tt("quota.used")} ${pct.toFixed(1)}%`, "aria-valuenow": pct.toFixed(1), "aria-valuemin": 0, "aria-valuemax": 100 },
           h("div", { style: { ...tone.fill, width: `${pct}%` } })
         ),
-    pct === null
+    // The counts and the reset stamp share ONE bottom row (counts left, reset
+    // right) — two stacked rows would spend vertical space the bar already
+    // paid for, and even a narrow twin card fits this pair. The counts need a
+    // real fraction: a zero limit has none, and "已用 0 / 0" would read as a
+    // measurement of a window the platform never sized.
+    pct === null && resetLine === null
       ? null
-      : h("span", { style: S.quotaUsed }, `${tt("quota.used")} ${count(used)} / ${count(limit)} · ${pct.toFixed(1)}%`),
-    resetLine === null ? null : h("span", { style: { ...S.muted, fontSize: 11 } }, resetLine)
+      : h(
+          "div",
+          { style: S.quotaFoot },
+          pct === null
+            ? null
+            : h("span", { style: S.quotaUsed }, `${tt("quota.used")} ${count(used)} / ${count(limit)}`),
+          resetLine === null ? null : h("span", { style: { ...S.muted, fontSize: 11 } }, resetLine)
+        )
   );
+}
+
+/**
+ * The windows, partitioned into two RESPONSIBILITY groups.
+ *
+ * Agnes caps two different jobs: text generation is limited per 5 hours and
+ * per week, image/video generation per day. A flat grid labels the first two
+ * "模型请求 / 5 小时" and "每周请求 / 每周" — the noun and the period repeat
+ * each other. Grouping lets the heading carry the job ("模型请求" / "多媒体")
+ * and the card head carry only what distinguishes the siblings: the period
+ * inside the request group ("5 小时" / "每周"), the capability inside the
+ * media group ("生图" / "视频"), whose daily period rides along as the chip.
+ *
+ * Unknown keys (a dimension this bundle has never heard of) keep the raw-key
+ * label and land in an unheaded pool, so a new Host dimension still shows its
+ * numbers instead of being silently dropped by the partition.
+ */
+const WINDOW_GROUPS: Array<{ label: string; keys: string[]; headByPeriod: boolean }> = [
+  { label: "quota.group.requests", keys: ["requests5h", "requestsWeekly"], headByPeriod: true },
+  { label: "quota.group.media", keys: ["imagesDaily", "videoDaily"], headByPeriod: false }
+];
+
+/** One group's windows plus each card's distinguishing head label. */
+function windowGroups(windows: unknown[], tt: Tt): Array<{ label: string; items: Array<{ key: string; label: string; window: unknown }> }> {
+  const placed = new Set<string>();
+  const groups = WINDOW_GROUPS
+    .map((group) => {
+      const items = windows
+        .map((window) => ({ window, key: String((window as { key?: unknown })?.key ?? "") }))
+        .filter(({ key }) => group.keys.includes(key))
+        .map(({ key, window }) => {
+          placed.add(key);
+          const period = windowPeriod((window as { windowHours?: unknown })?.windowHours, tt);
+          return { key, label: group.headByPeriod && period !== "" ? period : windowLabel(key, tt), window };
+        });
+      return { label: group.label, items };
+    })
+    .filter((group) => group.items.length > 0);
+  const rest = windows
+    .map((window) => ({ window, key: String((window as { key?: unknown })?.key ?? "") }))
+    .filter(({ key }) => !placed.has(key))
+    .map(({ key, window }) => ({ key, label: windowLabel(key, tt), window }));
+  if (rest.length > 0) groups.push({ label: "", items: rest });
+  return groups;
 }
 
 /**
@@ -202,14 +257,34 @@ export function PlanCard({ quota, tt }: { quota?: QuotaData | null; tt: Tt }): u
             ? h("span", { style: S.quotaReset }, format(tt("quota.expires"), { time: clockLong(quota.expiresAt) }))
             : null
         ),
-    // The platform's own one-line summary ("1500 次模型请求 / 5 小时") — quoted
-    // verbatim rather than re-derived, so it cannot disagree with the cards.
-    plan?.usageLimitText ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 8 } }, plan.usageLimitText) : null,
+    // The plan catalogue's `usage_limit_text` ("1500 次模型请求 / 5 小时") is
+    // deliberately NOT rendered: it is static plan marketing that never moves
+    // with consumption, so it reads as available capacity exactly when the
+    // window is spent. The live per-window fractions below are the truth.
+    // Each responsibility group is ONE POOL CARD containing its window
+    // sub-cards (like the SenseNova pools): "模型请求" holds the 5-hour and
+    // weekly twins, "多媒体" holds images and video. The pool cards sit in a
+    // shared auto-fit grid, so on a wide pane the two pools fill one row left
+    // and right; on a narrow one they stack. Unknown dimensions get an
+    // unheaded pool so a new Host dimension still shows its numbers.
     windows.length > 0
       ? h(
           "div",
-          { style: S.quotas },
-          windows.map((window) => h(QuotaWindowCard, { key: String(window?.key ?? ""), label: windowLabel(window?.key, tt), window, tt }))
+          { style: S.pools },
+          windowGroups(windows, tt).map((group) =>
+            h(
+              "div",
+              { key: group.label || "_rest", style: S.pool },
+              group.label === "" ? null : h("div", { style: S.poolHead }, tt(group.label)),
+              h(
+                "div",
+                { style: S.quotas },
+                group.items.map((item) =>
+                  h(QuotaWindowCard, { key: item.key, label: item.label, window: item.window, tt })
+                )
+              )
+            )
+          )
         )
       : null,
     catalogue.length > 0

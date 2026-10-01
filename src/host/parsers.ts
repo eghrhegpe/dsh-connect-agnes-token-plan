@@ -189,7 +189,6 @@ export function parsePlans(body) {
       textWeeklyLimit: countOf(source.text_weekly_limit),
       imageDailyLimit: countOf(source.image_daily_limit),
       videoDailyLimit: countOf(source.video_daily_limit),
-      usageLimitText: str(source.usage_limit_text, ""),
       featureTexts: Array.isArray(source.feature_texts)
         ? source.feature_texts.filter((text) => typeof text === "string")
         : []
@@ -327,8 +326,10 @@ export function readSubscriptionExpiry(subscription) {
  * | `imagesDaily` | `image_daily_limit` | 24 h |
  * | `videoDaily` | `video_daily_limit` | 24 h |
  *
- * The platform's own `usage_limit_text` renders the first one as
- * "1500 次模型请求 / 5 小时", which is where the 5-hour window comes from.
+ * The platform's own `usage_limit_text` ("1500 次模型请求 / 5 小时") names the
+ * first window's shape but is NOT parsed or rendered: it is static plan
+ * marketing that never moves with consumption. The live per-window figures
+ * come from `subscription.usage` instead (see `parseSubscriptionUsage`).
  *
  * `unit` is `"requests"` / `"images"` / `"video"` and carries NO seconds claim
  * for video: the field is named `video_daily_limit` while the usage side

@@ -34,13 +34,11 @@ const rendered = (component, props) => texts(treeOf(component, props));
 /** The panel's progress-bar element, wherever it sits in the tree. */
 const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== undefined);
 
-// === A. the window card's headline is the LIMIT, and its bar is real ======
-// The inversion is the point of the Agnes rewrite. The SenseNova card led with
-// "remaining %" because the platform reported a live balance per pool; Agnes
-// instead caps four dimensions over sliding windows and reports consumption
-// only inside its own `subscription.usage` block — so the limit is the
-// headline, and a percentage appears only when the platform itself stated a
-// `used` figure for that window. 12345 of 60000 is 20.575%: any swap of
+// === A. the window card's headline is the CONSUMPTION PERCENTAGE ==========
+// When the subscription states a window's `used`, the percentage leads: a raw
+// "60,000 次" headline reads as available capacity and misleads exactly when
+// the window is spent. The raw `used / limit` counts sit below it, still quoted
+// verbatim — nothing subtracted. 12345 of 60000 is 20.575%: any swap of
 // used/limit changes the bar width, so this block is the anti-mirror for that
 // exact bug.
 {
@@ -50,14 +48,12 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     tt
   });
   const meta = texts(tree).join("\n");
-  check("the headline is the LIMIT, with its unit",
-    meta.includes("60,000 quota.unit.requests"), meta);
-  check("a percentage appears only in the used caption, never as the headline",
-    meta.indexOf("%") > meta.indexOf("quota.used"), meta);
+  check("the headline is the consumption percentage",
+    meta.includes("20.6%"), meta);
+  check("the percentage headline comes BEFORE the used counts",
+    meta.indexOf("20.6%") < meta.indexOf("quota.used"), meta);
   check("the used figure is the USED count against the limit",
     meta.includes("quota.used 12,345 / 60,000"), meta);
-  check("the used caption also quotes the percentage",
-    meta.includes("20.6%"), meta);
   check("the window's PERIOD is named", meta.includes("quota.perHours"), meta);
 
   const fill = bar(tree);
@@ -255,7 +251,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
       uuid: "u-1", planId: 3, name: "高级版", displayName: "高级版",
       billingCycle: "monthly", displayCycle: "月付",
       priceMinor: 9900, currency: "CNY",
-      usageLimitText: "30000 次模型请求 / 5 小时",
+      usageLimitText: "30000 次模型请求 / 5 小时", // even if a stale sender ships it, the card ignores it
       limits: { requests5h: 30000, requestsWindowH: 5, requestsWeekly: 300000, imagesDaily: 4000, videoDaily: 500 }
     },
     windows: [
@@ -274,13 +270,18 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the billing cycle is labelled", out.includes("quota.cycle.monthly"), out.join("\n"));
   check("the price reads as money with its period",
     out.join("\n").includes("¥99.00") && out.join("\n").includes("quota.perMonth"), out.join("\n"));
-  // The platform's own one-line summary is quoted verbatim rather than
-  // re-derived, so it can never disagree with the four window cards below it.
-  check("the platform's own limit sentence is quoted verbatim",
-    out.includes("30000 次模型请求 / 5 小时"), out.join("\n"));
-  check("all four windows are present",
-    ["quota.win.requests5h", "quota.win.requestsWeekly", "quota.win.imagesDaily", "quota.win.videoDaily"]
-      .every((key) => out.includes(key)), out.join("\n"));
+  // The plan catalogue's static `usage_limit_text` is deliberately NOT
+  // rendered: it never moves with consumption and reads as available capacity
+  // exactly when the window is spent.
+  check("the platform's static limit sentence is NOT rendered",
+    !out.includes("30000 次模型请求 / 5 小时"), out.join("\n"));
+  check("the media windows keep their capability names",
+    ["quota.win.imagesDaily", "quota.win.videoDaily"].every((key) => out.includes(key)), out.join("\n"));
+  check("the request group heads its cards by PERIOD, not a repeated noun",
+    out.includes("quota.perHours") && out.includes("quota.perWeek") && !out.includes("quota.win.requestsWeekly"),
+    out.join("\n"));
+  check("the two responsibility groups are named",
+    out.includes("quota.group.requests") && out.includes("quota.group.media"), out.join("\n"));
   check("the subscription expiry is rendered when present", out.includes("quota.expires"), out.join("\n"));
   // The card is about the READER's plan; the other tiers fold away so they
   // cannot crowd it, but they stay one click from the answer to "is upgrading
@@ -324,7 +325,8 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   });
   check("an unrecognised plan says so instead of guessing a tier",
     bare.includes("quota.planUnknown") && !bare.includes("入门版"), bare.join("\n"));
-  check("the windows still render without a plan", bare.includes("quota.win.requests5h"), bare.join("\n"));
+  check("the windows still render without a plan (headed by period)",
+    bare.includes("quota.group.requests") && bare.includes("quota.perHours"), bare.join("\n"));
 
   const nothing = rendered(render.PlanCard, { quota: null, tt });
   check("no quota block at all shows the empty note", nothing.includes("quota.none"), nothing.join("\n"));

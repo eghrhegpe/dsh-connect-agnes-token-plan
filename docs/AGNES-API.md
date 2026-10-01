@@ -95,7 +95,9 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 | `imagesDaily` | `image_daily_limit` | 固定 24 小时 | `images` |
 | `videoDaily` | `video_daily_limit` | 固定 24 小时 | `video` |
 
-- 平台自己的 `usage_limit_text` 把第一档渲染成「1500 次模型请求 / 5 小时」，5 小时窗口就是从这里来的。
+- 平台自己的 `usage_limit_text`（「1500 次模型请求 / 5 小时」）是**静态套餐文案**，
+  不随用量变化，**不解析、不渲染**——额度耗尽时它会读起来像还有量。窗口形态
+  （5 小时）由 `concurrency_window_h` 字段本身给出。
 - `video` 单位**不主张秒数**：上限字段叫 `video_daily_limit`，而用量侧计的是 `video_seconds`，
   平台从未声明这个上限是"次"还是"秒"。面板因此只印裸数字。
 - 上限为 0 或缺失的维度**被丢弃**而不是显示成「0 / 日」——没声明过的上限不能被读成"你什么都不许做"。

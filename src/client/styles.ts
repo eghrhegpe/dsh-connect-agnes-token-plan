@@ -54,15 +54,27 @@ export const S = {
   // own line, no chip frame. A pill here gave a headline number the same
   // weight as the static type label beside it.
   grantChip: { display: "inline-flex", alignItems: "center", fontSize: 13, color: "var(--dsw-alias-label-primary)", fontVariantNumeric: "tabular-nums" },
-  // The two quota windows sit side by side as twin sub-cards, stacking
+  // Each responsibility group renders as ONE POOL CARD holding its window
+  // sub-cards (the SenseNova pool shape). The pools share an auto-fit grid:
+  // two pools side by side on a wide pane, stacked when narrow.
+  pools: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 10, marginTop: 14 },
+  // The pool floats one background step darker than the section card, with a
+  // hairline border — the windows inside sit on layer-2 and read by that step.
+  pool: { minWidth: 0, padding: "12px 14px", borderRadius: 12, background: "var(--dsw-alias-bg-layer-1)", border: "1px solid var(--dsw-alias-border-l1)" },
+  poolHead: { fontSize: 13, fontWeight: 600, color: "var(--dsw-alias-label-primary)" },
+  // The twin quota windows sit side by side as twin sub-cards, stacking
   // when the card gets narrower than ~2*170px (170 leaves room for the
   // longest "used x / limit" caption beside the headline figures).
-  quotas: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))", gap: 10, marginTop: 14 },
+  quotas: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))", gap: 10, marginTop: 10 },
   // The twin quota windows float on a darker surface (layer-2) rather than
   // a third nested border: the section card owns the outer frame and the
   // pool card owns the inner one, so the sub-window reads by background
   // step alone. A border here made three equal-weight rectangles inside
   // each other and flattened the hierarchy it was meant to express.
+  // The window sub-card floats one step darker again (layer-2): the section
+  // card owns the outer frame, the pool card the middle one, and the window
+  // reads by background step alone — three nested borders would flatten the
+  // hierarchy.
   quota: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, padding: "12px 14px", borderRadius: 10, background: "var(--dsw-alias-bg-layer-2)" },
   // `flexWrap` because the reset stamp can grow to `MM-DD HH:mm`: in a narrow
   // twin column the label and the date no longer share a row, and the date is
@@ -73,8 +85,9 @@ export const S = {
   // The remaining PERCENTAGE is the headline — tabular figures keep it
   // still while polling.
   quotaRemaining: { fontSize: 18, lineHeight: "22px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
-  // used/limit is a single quiet caption under the bar (its own full row,
-  // so the figures row never wraps on a narrow twin card).
+  // used/limit and the reset stamp share one bottom row (counts left, reset
+  // right) so the card spends one caption line, not two.
+  quotaFoot: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
   quotaUsed: { fontSize: 11, lineHeight: "15px", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums" },
   bar: { height: 6, borderRadius: 3, background: "var(--dsw-alias-bg-layer-1)", overflow: "hidden" },
   barFill: { height: "100%", borderRadius: 3, background: "var(--agnes-brand, #6C5CE7)" },

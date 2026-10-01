@@ -56,8 +56,6 @@ export interface PlanData {
   displayCycle?: string;
   priceMinor?: number;
   currency?: string;
-  /** The platform's own one-line summary, e.g. "1500 次模型请求 / 5 小时". */
-  usageLimitText?: string;
   limits?: {
     requests5h?: number;
     requestsWindowH?: number;

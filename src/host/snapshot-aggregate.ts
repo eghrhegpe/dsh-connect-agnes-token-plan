@@ -127,7 +127,6 @@ export function planSummary(plan) {
     displayCycle: str(plan?.displayCycle, ""),
     priceMinor: Number(plan?.priceMinor) || 0,
     currency: str(plan?.currency, ""),
-    usageLimitText: str(plan?.usageLimitText, ""),
     limits: {
       requests5h: Number(plan?.concurrencyLimit) || 0,
       requestsWindowH: Number(plan?.concurrencyWindowH) || 0,

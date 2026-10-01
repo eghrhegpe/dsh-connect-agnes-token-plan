@@ -265,8 +265,8 @@ function fail(name, error) {
       JSON.stringify(plan));
     check("the 5-hour window comes off the payload",
       plan.concurrencyWindowH === 5, String(plan.concurrencyWindowH));
-    check("the platform's own limit sentence is kept verbatim",
-      plan.usageLimitText === "30000 次模型请求 / 5 小时", plan.usageLimitText);
+    check("the platform's own limit sentence is NOT carried (static marketing, never rendered)",
+      !("usageLimitText" in plan), Object.keys(plan).join("|"));
     // feature_texts is the ONLY place the daily caps are explained in the UI,
     // so non-strings must be filtered rather than rendered as "[object Object]".
     check("non-string feature texts are dropped",
@@ -558,7 +558,8 @@ function fail(name, error) {
     summary.limits.requests5h === 7500 && summary.limits.requestsWeekly === 75000 &&
       summary.limits.imagesDaily === 4000 && summary.limits.videoDaily === 500,
     JSON.stringify(summary.limits));
-  check("the summary keeps the platform's limit sentence", summary.usageLimitText === "7500 次模型请求 / 5 小时");
+  check("the summary drops the platform's limit sentence too",
+    !("usageLimitText" in summary), JSON.stringify(Object.keys(summary)));
   // `feature_texts` is the panel's catalogue-comparison detail and is NOT part
   // of the projection — it would be duplicated per entry on every poll.
   check("the summary drops feature_texts", !("featureTexts" in summary), JSON.stringify(Object.keys(summary)));

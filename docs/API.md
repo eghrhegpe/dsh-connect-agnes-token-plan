@@ -35,7 +35,7 @@
     // limits 是 planSummary 的投影，与 windows 同源，供「套餐对比」表格比较。
     "plan": { "uuid": "…", "planId": 3, "name": "高级版", "displayName": "高级版",
       "billingCycle": "monthly", "displayCycle": "月付", "priceMinor": 9900,
-      "currency": "CNY", "usageLimitText": "30000 次模型请求 / 5 小时",
+      "currency": "CNY",
       "limits": { "requests5h": 30000, "requestsWindowH": 5, "requestsWeekly": 300000,
         "imagesDaily": 4000, "videoDaily": 500 } },
     // 四个账号级窗口上限。unit 为 "requests" / "images" / "video"；
