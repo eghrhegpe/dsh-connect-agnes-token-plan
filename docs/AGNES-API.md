@@ -11,6 +11,9 @@
 > [AUTH.md](./AUTH.md)。本地路由与控制台端点的对照表见 [API.md](./API.md)。
 > **SenseNova 控制台**（`platform.sensenova.cn`，OIDC+PKCE）已不是本插件的任何一条链路；
 > `upstream/` 仍属商汤体系，仅作本地对照，接口原文已随迁移移除。
+> **官方文档一手信源**（中文站 `wiki.agnes-ai.cn`，抓存于 [AGNES-API-docs/](./AGNES-API-docs/)，只读）：
+> 逐字原文，用于对照 `/v1/models` 实测；**Base URL 确认是 `https://api.agnes-ai.cn/v1`**（官方文档
+> 明写，与海外站 `apihub.agnes-ai.com/v1` 不同，内容除链接外相同）。
 > 出图（draw，`draw.ts`）与视频（video，`video.ts`）两个 agent 工具默认关闭，其
 > `images/generations` 与 `videos` + `agnesapi` 端点均已真机确证存在且可用
 > （见 §7.5），模型识别走 `modality.ts`（见 §7.1）。视频 **V2.0 与 2.5 两个参数体系都覆盖**，
@@ -201,6 +204,35 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 > 探针核验（见 [../test/baselines/agnes-contract.json](../test/baselines/agnes-contract.json)
 > 的 `driftLog` 与下文 §7.2/§7.3），seed 基线退役。后续漂移由
 > [`test:live:contract`](../test/live-contract.mjs) 把守。
+
+#### 7.1.1 官方文档 vs `/v1/models` 的输入模态冲突（待裁定）
+
+**官方文档（中文站 `wiki.agnes-ai.cn`，已抓存 [AGNES-API-docs/](./AGNES-API-docs/)）明说
+以下模型支持「文本 + 图像 URL 输入」**：
+
+| 模型 id | 官方文档的模态声明 |
+|---|---|
+| `agnes-3.0-flash` | 「新一代文本模型，支持文本和图像 URL 输入」 |
+| `agnes-2.5-pro` | 「付费推理模型，支持文本和图像输入」「图像理解」 |
+| `agnes-2.5-flash` | 核心能力列表含「图像 URL 输入」「图像理解」 |
+
+但 **`/v1/models` 目录接口不带 `input_modalities` 字段**（§7.1 已确证，条目只有
+5 个字段），`identifyVisionModel` 只能读目录 → **恒 false**。
+
+**冲突定性**：这不是「平台没有该能力」，而是「**目录接口没暴露该能力**」。当前
+面板「0 个支持图片输入」读作「目录读不到」，但官方文档**声明**了能力存在——两者
+并存且方向相反。**处理方向**：
+
+- **短期（不改代码）**：按 `PROBED_EFFORT` 的既有纪律，在 `llm-models.ts` 加一张
+  **硬编码 vision 清单**（数据源 = 官方文档 + 真机探针），让 `agnes-3.0-flash` /
+  `agnes-2.5-pro` / `agnes-2.5-flash` 在 descriptor 上带 `input:["text","image"]`。
+  这与 thinking 档位表的做法同源（都是「平台目录不声明、靠一手信源补」）。
+- **长期**：等 `/v1/models` 补 `input_modalities`，自动生效（`modality.ts` 的
+  declared 分支已是「字段在即采纳」）。
+
+> ⚠️ **尚未 probe 图像输入方言**：官方文档只说「图像 URL 输入」，**没写**具体
+> 拼写（`image_url` 块还是 `image` 字段）与上限。改动前先真机探针确认——不要
+> 只信文档就上（PITFALLS 关于「文档须说实话」的纪律）。
 
 ### 7.2 思考档位（safe-set 只服务未知 id）
 
