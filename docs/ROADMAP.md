@@ -403,6 +403,8 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 文件单账号，采集形态下多账号无源）、按请求体积的可用性测试（AgnesCode 限流触发条件未实测，
 不得默认与 workbuddy 上游同款）、模型逐项勾选（无真实需求前不建面）。
 
+**存储格式漂移哨子（`format_drift`，2026-10 落地）。** 这条线吃的是从桌面 App 逆推的私有格式，App 升级随时可能改会话文件形状——此前严格模式全 miss 只会说「文件不存在」，与「没登录」同款，而更早采集的 JWT 还能用约 28 天，失效要按周计才暴露。现在：walk 发现 App 目录里有「像会话文件族」（`code-auth-session*`）却不认识形状的文件时，给独立档 `format_drift`，建议从「重登」翻成「升级本插件」；有可读 `.v1` 在旁则漂移不成立（未知兄弟可能只是 App 自留备份）。`doctor` 同持这条分类的**只读盘点**（列文件名，永不读内容、永不碰密钥），「没装 App / 装了没登录 / 登录了但格式变了」三个事实在命令行分开点名。
+
 ## 7. 优先级与时间盒
 
 | 优先级 | 项 | 侵入性 | 门禁 |
@@ -415,7 +417,7 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
 | **P2 ✅ 已落地后移除（2026-10-01）** | 第二上游 provider（小浣熊 / `sensenova-raccoon`）：曾随 0.4.3 落地、2026-10-01 续做网关契约复测**契约成立**（§6.1.2），但已随 Agnes 线独立**整条移除**（兄弟插件保留该线）——移除即本项终态，无「剩余未做」 | 高（新上游 + 新凭据生命周期） | 移除时同删 `test/raccoon.test.mjs`（离线 101 项）与全部接线/文档；`docs.test.mjs` 检查 9 改钉三 tab |
-| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第三个 tab + `test/agnescode.test.mjs`（101 项）；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）；**仍缺**：带凭据的 live 端到端探针档（比照 `live-contract`）、真 DPAPI 路径（`defaultDpapiUnprotect`）零自动覆盖（可加平台守卫的可选档）、会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9（三 tab 全覆盖）+ render 首帧三 tab 断言 |
+| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第三个 tab + `test/agnescode.test.mjs`（101 项）；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）、**格式漂移哨子 `format_drift`**（2026-10：walk 第 9 档直说「格式变了，升级插件」+ doctor 只读盘点三事实分点名，见上方哨子段）；**仍缺**：带凭据的 live 端到端探针档（比照 `live-contract`）、真 DPAPI 路径（`defaultDpapiUnprotect`）零自动覆盖（可加平台守卫的可选档）、会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9（三 tab 全覆盖）+ render 首帧三 tab 断言 |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 | 明确不做 | 伪倍率折进注册模型名（qoder ② 法：把倍率嵌进 DSH 原生选择器的模型名里，绕「选择器无旁路字段」限制）。2026-09-30 决议 | 低 | 现状即决议：`×N` 只作**面板侧标记**（模型花名册行尾 + 趋势图，同一匹配器、同一数值，均标「非官方」）。理由：① 倍率是操作者手填的对比数据、非平台计费事实，折进 DSH 全局模型名会把个人配置泄漏给所有会话；② qoder 嵌名是「DSH 无字段携带平台真实倍率」的 workaround，本插件的倍率本就没有平台出处，面板就是它唯一合理的位置；③ 模型名是 DSH 配置 / 选择器的稳定标识（id 匹配），加 `×N` 会破坏 id 语义 |
 

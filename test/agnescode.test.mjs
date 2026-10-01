@@ -5,7 +5,8 @@
  * - `agnescode.ts`: the protocol half (the pinned BFF base, the session
  *   parser, the `/v1`-less API root, the JWT exp decode, the header map, the
  *   os_crypt blob decrypt, the Local State key unwrap, the harvest walk's
- *   per-file tiers, the catalogue/balance fetchers, the 7-model fallback
+ *   per-file tiers, the format-drift sentinel (classify + the doctor-side
+ *   storage survey), the catalogue/balance fetchers, the 7-model fallback
  *   roster);
  * - `agnescode-store.ts`: the DSH-credentials reference store (save / forget /
  *   resolve, the base-without-token refusal, the secret-free state);
@@ -34,6 +35,8 @@ import {
   decryptAgnescodeSessionBlob,
   unwrapAgnescodeLocalStateKey,
   harvestAgnescodeLocalSession,
+  classifyAgnescodeSessionFiles,
+  surveyAgnescodeStorage,
   fetchAgnescodeCatalog,
   fetchAgnescodeBalance,
   AGNESCODE_FALLBACK_MODELS,
@@ -312,6 +315,38 @@ const GOOD_SESSION = {
       malformed.ok === false && malformed.attempts[0]?.tier === AGNESCODE_HARVEST_TIER.MALFORMED,
       JSON.stringify(malformed.attempts));
 
+    // Tier: the App updated and the file family moved on. This is the
+    // sentinel for the week-scale silent death: without it an orphan
+    // `code-auth-session.cn.v2` reads EXACTLY like「没登录」, while the JWT
+    // harvested before the update keeps working for days — nobody notices
+    // until the credential dies.
+    const rootDrift = mkdtempSync(join(tmpdir(), "agnescode-drift-"));
+    const dirDrift = join(rootDrift, "AgnesCode");
+    mkdirSync(dirDrift, { recursive: true });
+    writeFileSync(join(dirDrift, "code-auth-session.cn.v2"), blob);
+    writeFileSync(join(dirDrift, "Local State"), JSON.stringify({ os_crypt: { encrypted_key: "x" } }));
+    const drift = await harvestAgnescodeLocalSession({ ...io, env: { APPDATA: rootDrift } });
+    check("an orphaned session-family file reads as format_drift, not file_missing",
+      drift.ok === false && drift.attempts[0]?.tier === AGNESCODE_HARVEST_TIER.FORMAT_DRIFT
+      && String(drift.attempts[0]?.file).endsWith("code-auth-session.cn.v2")
+      && String(drift.attempts[0]?.detail).includes("update"),
+      JSON.stringify(drift.attempts));
+    check("the drift row names the file but carries no session content",
+      JSON.stringify(drift.attempts).includes(GOOD_SESSION.accessToken) === false);
+
+    // A strict match suppresses the drift claim: the v1 beside an unknown v2
+    // IS harvestable, and the sibling is noise (a backup), not a format fact.
+    const rootBoth = mkdtempSync(join(tmpdir(), "agnescode-both-"));
+    const dirBoth = join(rootBoth, "AgnesCode");
+    mkdirSync(dirBoth, { recursive: true });
+    writeFileSync(join(dirBoth, "code-auth-session.cn.v1"), blob);
+    writeFileSync(join(dirBoth, "code-auth-session.cn.v2"), blob);
+    writeFileSync(join(dirBoth, "Local State"), JSON.stringify({ os_crypt: { encrypted_key: Buffer.concat([Buffer.from("DPAPI", "latin1"), randomBytes(32)]).toString("base64") } }));
+    const both = await harvestAgnescodeLocalSession({ ...io, env: { APPDATA: rootBoth } });
+    check("a readable v1 next to an unknown v2 harvests with no drift row",
+      both.ok === true && both.attempts.every((a) => a.tier !== AGNESCODE_HARVEST_TIER.FORMAT_DRIFT),
+      JSON.stringify(both.attempts));
+
     // Order: the CN build wins over another region variant in the same dir.
     const rootTwo = mkdtempSync(join(tmpdir(), "agnescode-two-"));
     const dirTwo = join(rootTwo, "AgnesCode");
@@ -329,10 +364,63 @@ const GOOD_SESSION = {
     rmSync(rootNoToken, { recursive: true, force: true });
     rmSync(rootEvil, { recursive: true, force: true });
     rmSync(rootTwo, { recursive: true, force: true });
+    rmSync(rootDrift, { recursive: true, force: true });
+    rmSync(rootBoth, { recursive: true, force: true });
     rmSync(rootUnreadable, { recursive: true, force: true });
     rmSync(rootMalformed, { recursive: true, force: true });
   } catch (error) {
     fail("harvest walk", error);
+  }
+}
+
+// --- 2b. classify + doctor survey (the drift sentinel's offline half) -------
+{
+  section("session-file classify + storage survey (names only, never crypto)");
+  try {
+    const classified = classifyAgnescodeSessionFiles(["Local State", "code-auth-session.cn.v2", "code-auth-session.global.v1"]);
+    check("the classifier harvests the strict shape and suppresses drift when it wins",
+      classified.matched.join() === "code-auth-session.global.v1" && classified.drift.length === 0,
+      JSON.stringify(classified));
+    const driftOnly = classifyAgnescodeSessionFiles(["Local State", "code-auth-session.v2.bak"]);
+    check("with no strict match, family-shaped files read as drift",
+      driftOnly.matched.length === 0 && driftOnly.drift.join() === "code-auth-session.v2.bak",
+      JSON.stringify(driftOnly));
+    const nothing = classifyAgnescodeSessionFiles(["Local State", "Cookies"]);
+    check("an unrelated listing is neither matched nor drift",
+      nothing.matched.length === 0 && nothing.drift.length === 0);
+
+    const survey = await surveyAgnescodeStorage({
+      env: { APPDATA: "/fake" },
+      platform: "win32",
+      readDir: async (path) => {
+        if (String(path).endsWith("AgnesCode")) return ["Local State", "code-auth-session.cn.v1", "code-auth-session.cn.v2"];
+        throw new Error("ENOENT");
+      }
+    });
+    check("the survey reports the harvestable file and stays quiet next to a v1",
+      survey.surveyed === true && survey.presentDirs === 1
+      && survey.sessionFiles.join() === "code-auth-session.cn.v1"
+      && survey.driftFiles.length === 0,
+      JSON.stringify(survey));
+    const surveyDrift = await surveyAgnescodeStorage({
+      env: { APPDATA: "/fake" }, platform: "win32",
+      readDir: async () => ["code-auth-session.cn.v2", "Local State"]
+    });
+    check("the survey flags format drift when the family is only unknown shapes",
+      surveyDrift.sessionFiles.length === 0 && surveyDrift.driftFiles.join() === "code-auth-session.cn.v2",
+      JSON.stringify(surveyDrift));
+    const surveyAbsent = await surveyAgnescodeStorage({
+      env: { APPDATA: "/nope" }, platform: "win32",
+      readDir: async () => { throw new Error("ENOENT"); }
+    });
+    check("an uninstalled machine reads as presentDirs 0, not as a failed survey",
+      surveyAbsent.surveyed === true && surveyAbsent.presentDirs === 0 && surveyAbsent.sessionFiles.length === 0,
+      JSON.stringify(surveyAbsent));
+    const surveySkip = await surveyAgnescodeStorage({ env: {}, platform: "sunos", readDir: async () => [] });
+    check("the survey is honest about unknown platforms (skipped, not zero)",
+      surveySkip.surveyed === false && surveySkip.dirsChecked === 0);
+  } catch (error) {
+    fail("classify + survey", error);
   }
 }
 

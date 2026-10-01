@@ -65,13 +65,65 @@ export const AGNESCODE_APP_DATA_CANDIDATES = Object.freeze([
 ]);
 
 /**
+ * The LOOSE family pattern — anything that reads like the session file. When
+ * no strict match exists but a loose one does, the App has moved to a new file
+ * shape: that is the FORMAT_DRIFT fact, not「文件不存在」. Shared by the walk
+ * and the doctor survey so the two never disagree about what「像会话文件」means.
+ */
+export const AGNESCODE_SESSION_FAMILY_PATTERN = /^code-auth-session/i;
+
+/**
+ * The App-data candidate directories for one env + platform, in walk order.
+ * A candidate whose env base is unset drops out. Single source of truth —
+ * the harvest walk and the doctor survey must resolve the same dirs.
+ * @param {any} env - the process env.
+ * @param {string} platform - `process.platform`.
+ * @returns {string[]} candidate directory paths (empty = platform unknown).
+ */
+export function resolveAgnescodeAppDirs(env: any, platform: string) {
+  return AGNESCODE_APP_DATA_CANDIDATES
+    .filter((candidate) => candidate.platform === platform)
+    .map((candidate) => {
+      const base = str(env[candidate.dirEnv], "");
+      return base === "" ? null : `${base.replace(/[\\/]+$/, "")}/${candidate.leaf}`;
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Classify one directory listing against the session file family.
+ * `drift` is only read when `matched` is empty: a strict match wins, and an
+ * unrecognizable sibling next to a readable file is noise (an App-kept backup),
+ * not evidence of format change.
+ * @param {string[]} fileNames - names from one app-directory listing.
+ * @returns {{matched: string[], drift: string[]}} harvestable vs unreadable-shape family members.
+ */
+export function classifyAgnescodeSessionFiles(fileNames: string[]) {
+  const names = Array.isArray(fileNames) ? fileNames : [];
+  const matched = names.filter((name) => AGNESCODE_SESSION_FILE_PATTERN.test(name));
+  const drift = matched.length === 0
+    ? names.filter((name) => AGNESCODE_SESSION_FAMILY_PATTERN.test(name))
+    : [];
+  return { matched, drift };
+}
+
+/**
  * The tiers of a failed harvest, one per row of the panel's diagnosis list
  * (the workbuddy five-tier discipline, restated for this file family). The
  * tiers deliberately split "the App is not here" from "the App is here but we
  * cannot read its crypto" — they want different user advice.
+ *
+ * FORMAT_DRIFT exists for the week-scale silent failure this reverse-engineered
+ * format makes possible: when the desktop App updates its session file to a
+ * new shape, a strict-pattern miss reads as FILE_MISSING — indistinguishable
+ * from "signed out" — while the JWT harvested earlier keeps working for up to
+ * 28 days, and every「重新登录再检测」round trips back to the same row. Naming
+ * the orphaned family member turns「你没登录」into「格式变了，升级插件」at the
+ * FIRST detection click instead of at the day the token finally dies.
  */
 export const AGNESCODE_HARVEST_TIER = Object.freeze({
   FILE_MISSING: "file_missing",
+  FORMAT_DRIFT: "format_drift",
   UNREADABLE: "unreadable",
   MALFORMED: "malformed",
   NO_KEY: "no_key",
@@ -302,6 +354,55 @@ export async function defaultDpapiUnprotect(wrapped: Buffer) {
 }
 
 /**
+ * The doctor-side read-only SURVEY of the App's session storage: directory
+ * names and file names only — it never reads file bytes, never touches the
+ * os_crypt key, never decrypts. This is what makes the reverse-engineered
+ * format inspectable OFFLINE: 「没装 App」「装了但没登录」「登录了但格式变了」
+ * are three different facts, and the CLI can now tell them apart without a
+ * Host running and without clicking anything in the panel.
+ * @param {object} [options]
+ * @param {any} [options.env] - the process env (defaults to `process.env`).
+ * @param {string} [options.platform] - `process.platform` (defaults to real).
+ * @param {(path: string) => Promise<string[]>} [options.readDir] - injected lister.
+ * @returns {Promise<object>} `{platform, surveyed, dirsChecked, presentDirs, sessionFiles, driftFiles}`.
+ */
+export async function surveyAgnescodeStorage(options: any = {}) {
+  const env = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
+  const readDir = options.readDir ?? (async (path: string) => (await import("node:fs/promises")).readdir(path));
+  const appDirs = resolveAgnescodeAppDirs(env, platform);
+  const report: {
+    platform: string;
+    surveyed: boolean;
+    dirsChecked: number;
+    presentDirs: number;
+    sessionFiles: string[];
+    driftFiles: string[];
+  } = {
+    platform,
+    surveyed: appDirs.length > 0,
+    dirsChecked: appDirs.length,
+    presentDirs: 0,
+    sessionFiles: [],
+    driftFiles: []
+  };
+  if (report.surveyed === false) return report;
+  for (const appDir of appDirs) {
+    let listing;
+    try {
+      listing = await readDir(appDir);
+    } catch {
+      continue; // an absent directory is a fact of absence, not a stack trace
+    }
+    report.presentDirs += 1;
+    const { matched, drift } = classifyAgnescodeSessionFiles(listing);
+    report.sessionFiles.push(...matched);
+    report.driftFiles.push(...drift);
+  }
+  return report;
+}
+
+/**
  * Harvest the AgnesCode session from the local desktop App — the walk behind
  * the panel's「重新检测」. One diagnostic row per candidate file, in the order
  * the candidates were tried; the FIRST usable session wins and the walk stops.
@@ -344,27 +445,34 @@ export async function harvestAgnescodeLocalSession(
     return { ok: false, attempts: [{ file: null, tier: AGNESCODE_HARVEST_TIER.UNSUPPORTED_PLATFORM, detail: `no verified harvest path for ${platform} yet (Windows only; macOS reads state.vscdb — unimplemented)` }] };
   }
 
-  const appDirs = AGNESCODE_APP_DATA_CANDIDATES
-    .filter((candidate) => candidate.platform === platform)
-    .map((candidate) => {
-      const base = str(env[candidate.dirEnv], "");
-      return base === "" ? null : `${base.replace(/[\\/]+$/, "")}/${candidate.leaf}`;
-    })
-    .filter(Boolean);
+  const appDirs = resolveAgnescodeAppDirs(env, platform);
   if (appDirs.length === 0) {
     return { ok: false, attempts: [{ file: null, tier: AGNESCODE_HARVEST_TIER.UNSUPPORTED_PLATFORM, detail: `no app-data candidate for platform ${platform}` }] };
   }
 
   for (const appDir of appDirs) {
     let fileNames: string[] = [];
+    let driftNames: string[] = [];
     try {
-      fileNames = (await readDir(appDir)).filter((name: string) => AGNESCODE_SESSION_FILE_PATTERN.test(name));
+      const classified = classifyAgnescodeSessionFiles(await readDir(appDir));
+      fileNames = classified.matched;
+      driftNames = classified.drift;
     } catch {
       attempts.push({ file: appDir, tier: AGNESCODE_HARVEST_TIER.FILE_MISSING, detail: "the AgnesCode app directory is absent" });
       continue;
     }
     if (fileNames.length === 0) {
-      attempts.push({ file: appDir, tier: AGNESCODE_HARVEST_TIER.FILE_MISSING, detail: "no code-auth-session*.v1 in the app directory" });
+      if (driftNames.length > 0) {
+        // The App IS here and writing its session family — but in a shape this
+        // plugin cannot read. A format fact, not a login fact (see FORMAT_DRIFT).
+        attempts.push({
+          file: `${appDir}/${driftNames[0]}`,
+          tier: AGNESCODE_HARVEST_TIER.FORMAT_DRIFT,
+          detail: `unrecognized session-family file${driftNames.length > 1 ? `s (${driftNames.slice(0, 3).join(", ")})` : ""} — the desktop App may have changed its storage format; update this plugin, then re-detect`
+        });
+      } else {
+        attempts.push({ file: appDir, tier: AGNESCODE_HARVEST_TIER.FILE_MISSING, detail: "no code-auth-session*.v1 in the app directory" });
+      }
       continue;
     }
     // Deterministic order: the CN build first, then alphabetical.

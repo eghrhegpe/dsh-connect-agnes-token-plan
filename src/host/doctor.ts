@@ -19,6 +19,7 @@ import { DRAW_STORE_VERSION, normalizeDrawEnabled, normalizeDrawModelId } from "
 import { VIDEO_STORE_VERSION, normalizeVideoEnabled, normalizeVideoModelId } from "./video-store.ts";
 import { CATALOG_VERSION, normalizeEntries, normalizeEnabledIds } from "./catalog-store.ts";
 import { AGNESCODE_SWITCH_VERSION, normalizeAgnescodeEnabled } from "./agnescode-switch-store.ts";
+import { surveyAgnescodeStorage } from "./agnescode.ts";
 
 /** A scope whose state the doctor reported on (a profile name, or "" for shared). */
 export interface DoctorScope {
@@ -58,6 +59,13 @@ export interface DoctorReport {
   shared: DoctorScope | null;
   /** Whether a profile-scoped layout existed at all (false = pre-§23 shared-only machine). */
   profiled: boolean;
+  /**
+   * The machine-level read-only survey of the desktop AgnesCode App's session
+   * storage (file NAMES only — never bytes, never crypto). `null` only if the
+   * survey itself failed to run; an App that is not installed is a real answer,
+   * not a skipped one (`presentDirs: 0`).
+   */
+  agnescode: Awaited<ReturnType<typeof surveyAgnescodeStorage>> | null;
 }
 
 /** Read a state JSON, or `null` when absent / unreadable / not JSON. */
@@ -218,9 +226,11 @@ async function listProfiles(stateRoot: string) {
  * so a clean machine is distinguished from a machine with an all-empty one.
  * @param {object} [options]
  * @param {string} [options.dshHome] - the DSH home to read; defaults to `~/.dsh` (or `$DSH_HOME`).
+ * @param {any} [options.env] - env for the AgnesCode storage survey (defaults to `process.env`).
+ * @param {string} [options.platform] - platform for the survey (defaults to real).
  * @returns {Promise<DoctorReport>}
  */
-export async function diagnose(options: { dshHome?: string } = {}) {
+export async function diagnose(options: { dshHome?: string; env?: any; platform?: string } = {}) {
   const home = typeof options.dshHome === "string" && options.dshHome !== "" ? options.dshHome : defaultDshHome();
   const stateRoot = join(home, "state");
   const sharedDir = join(stateRoot, name);
@@ -234,18 +244,38 @@ export async function diagnose(options: { dshHome?: string } = {}) {
   };
   const sharedScope = profiles.length === 0 && (await dirExists(sharedDir)) ? await readScope(sharedDir, "") : null;
   const profileScopes = await Promise.all(profiles.map((profile) => readScope(join(stateRoot, profile, name), profile)));
+  // The desktop App survey is machine-level and read-only — a survey that
+  // cannot run must never take the rest of the doctor down with it.
+  let agnescode: DoctorReport["agnescode"] = null;
+  try {
+    agnescode = await surveyAgnescodeStorage({ env: options.env, platform: options.platform });
+  } catch {
+    agnescode = null;
+  }
   return {
     dshHome: home,
     plugin: name,
     scopes: profileScopes,
     shared: sharedScope,
-    profiled: profiles.length > 0
+    profiled: profiles.length > 0,
+    agnescode
   };
 }
 
 /** Render a report as human-readable lines (the non-`--json` doctor output). */
 export function renderReport(report: any) {
   const lines = [`dshHome: ${report.dshHome}`];
+  // The desktop App fact reads FIRST — the question it answers ("is the App
+  // even here, in a shape we can read?") precedes any per-profile switch.
+  const agnes = report.agnescode;
+  if (agnes !== null && agnes !== undefined) {
+    lines.push(agnes.surveyed === false
+      ? `agnescode storage: no App layout known for platform ${String(agnes.platform)} (survey skipped)`
+      : `agnescode storage: app dirs ${String(agnes.presentDirs)}/${String(agnes.dirsChecked)}, session files=${String(agnes.sessionFiles.length)}`
+        + (agnes.driftFiles.length > 0
+          ? ` — FORMAT DRIFT: unrecognized family files: ${agnes.driftFiles.slice(0, 3).join(", ")} (the App changed its storage format; update this plugin)`
+          : ""));
+  }
   const scopes = report.shared !== null ? [report.shared, ...report.scopes] : report.scopes;
   if (scopes.length === 0) {
     lines.push(`no state found under ${join(report.dshHome, "state", report.plugin)} (a clean machine, or one that has never toggled a switch)`);

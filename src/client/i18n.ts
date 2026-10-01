@@ -209,6 +209,7 @@ export const zh = {
   // One line per probed file, the workbuddy five-tier discipline: each tier
   // wants different advice, so they never share a sentence.
   "agnescode.tier.file_missing": "文件不存在",
+  "agnescode.tier.format_drift": "存储格式已变：桌面端在写本插件还不认识的会话文件——升级本插件后再点检测",
   "agnescode.tier.unreadable": "读不了（权限？）",
   "agnescode.tier.malformed": "内容不是预期格式",
   "agnescode.tier.no_key": "加密密钥拿不到（Local State 缺失或形状已变）",
@@ -409,6 +410,7 @@ export const en: typeof zh = {
   "agnescode.harvestOk": "Local login state read.",
   "agnescode.harvestFail": "No usable AgnesCode login state found on this machine. Probed:",
   "agnescode.tier.file_missing": "file missing",
+  "agnescode.tier.format_drift": "storage format changed: the desktop App writes a session file this plugin cannot read yet — update the plugin, then re-detect",
   "agnescode.tier.unreadable": "unreadable (permissions?)",
   "agnescode.tier.malformed": "unexpected content shape",
   "agnescode.tier.no_key": "encryption key unavailable (Local State missing or reshaped)",

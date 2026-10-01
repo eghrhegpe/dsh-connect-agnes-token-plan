@@ -9,7 +9,9 @@
  *   - `diagnose` over a real on-disk layout: the shared (pre-§23) directory,
  *     a profile-scoped directory, and a machine with neither;
  *   - the "a corrupt file is named, not silently dropped" rule;
- *   - `renderReport` lines.
+ *   - `renderReport` lines;
+ *   - the machine-level AgnesCode storage survey (drift named, healthy silent,
+ *     unknown platform honestly skipped).
  *
  * Nothing here imports a Host peer or opens a socket.
  */
@@ -194,6 +196,47 @@ function check(name, condition, detail = "") {
   const lines = renderReport(report);
   check("the human report says so plainly", lines.includes("no state found"), lines);
   await rm(home, { recursive: true, force: true });
+}
+
+// --- 5. the desktop AgnesCode storage survey (names only, never decrypts) ---
+// The sentinel's offline half:「没装 App」「装了没登录」「登录了但格式变了」
+// are three different facts, and the doctor must tell them apart WITHOUT
+// reading a single byte of session content.
+{
+  const home = await mkdtemp(join(tmpdir(), "dsh-doctor-home-"));
+  const appRootDrift = await mkdtemp(join(tmpdir(), "dsh-doctor-drift-"));
+  const appRootOk = await mkdtemp(join(tmpdir(), "dsh-doctor-okapp-"));
+  await mkdir(join(appRootDrift, "AgnesCode"), { recursive: true });
+  await writeFile(join(appRootDrift, "AgnesCode", "code-auth-session.cn.v2"), "opaque-bytes");
+  await mkdir(join(appRootOk, "AgnesCode"), { recursive: true });
+  await writeFile(join(appRootOk, "AgnesCode", "code-auth-session.cn.v1"), "opaque-bytes");
+
+  const drift = await diagnose({ dshHome: home, env: { APPDATA: appRootDrift }, platform: "win32" });
+  check("the survey names the drifted family member as drift, not as absence",
+    drift.agnescode?.presentDirs === 1 && drift.agnescode?.sessionFiles.length === 0
+    && drift.agnescode?.driftFiles.join(",") === "code-auth-session.cn.v2",
+    JSON.stringify(drift.agnescode));
+  check("the human report calls FORMAT DRIFT out by name",
+    renderReport(drift).includes("FORMAT DRIFT") && renderReport(drift).includes("code-auth-session.cn.v2"),
+    renderReport(drift));
+
+  const healthy = await diagnose({ dshHome: home, env: { APPDATA: appRootOk }, platform: "win32" });
+  check("a readable v1 reads as a session file with no drift claim",
+    healthy.agnescode?.sessionFiles.join(",") === "code-auth-session.cn.v1"
+    && healthy.agnescode?.driftFiles.length === 0,
+    JSON.stringify(healthy.agnescode));
+  check("the healthy report does not shout about drift",
+    renderReport(healthy).includes("FORMAT DRIFT") === false, renderReport(healthy));
+
+  const skipped = await diagnose({ dshHome: home, env: {}, platform: "sunos" });
+  check("an unknown platform is reported as skipped, not as zero files",
+    skipped.agnescode?.surveyed === false && skipped.agnescode?.dirsChecked === 0);
+  check("the human report says the survey was skipped",
+    renderReport(skipped).includes("no App layout known for platform sunos"), renderReport(skipped));
+
+  await rm(home, { recursive: true, force: true });
+  await rm(appRootDrift, { recursive: true, force: true });
+  await rm(appRootOk, { recursive: true, force: true });
 }
 
 console.log(JSON.stringify(results, null, 2));
