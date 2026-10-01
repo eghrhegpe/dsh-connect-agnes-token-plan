@@ -49,8 +49,13 @@ export const DRAW_COOLDOWN_MS = 30_000;
 /** Default deadline for one image request; image models are slow, chat deadlines do not apply. */
 export const DRAW_DEFAULT_TIMEOUT_MS = 120_000;
 
-/** Hard ceiling on `n`: the wire field is forwarded verbatim, a hostile/large value must not burn the pool. */
-export const DRAW_MAX_IMAGES = 4;
+/**
+ * The platform currently accepts only `n: 1` for image generation
+ * (live-verified 2026-10-01: `n 必须为 1` — any larger value is a 400).
+ * `buildDrawBody` hard-codes 1, so this constant is retained only as the
+ * documented ceiling for the tool's parameter description.
+ */
+export const DRAW_MAX_IMAGES = 1;
 
 /**
  * Build the `images/generations` endpoint from the OpenAI-compatible base.
@@ -132,16 +137,31 @@ export function pickDrawModel(entries, requested, preferred) {
  * @returns {object} the wire body.
  */
 export function buildDrawBody(options: Partial<DrawRequest> = {}) {
-  const { model, prompt, n, size, responseFormat } = options;
-  const count = Math.floor(num(n, 1));
+  const { model, prompt, size, ratio, image, returnBase64, responseFormat } = options;
   const body: Record<string, unknown> = {
     model: str(model, ""),
     prompt: str(prompt, ""),
-    n: Number.isFinite(count) ? Math.min(DRAW_MAX_IMAGES, Math.max(1, count)) : 1,
+    // The platform hard-requires n=1 (live-verified 2026-10-01: `n 必须为 1`);
+    // a larger value is a 400, so only 1 is ever forwarded.
+    n: 1,
     response_format: str(responseFormat, "url") || "url"
   };
   const dims = str(size, "").trim();
   if (dims !== "") body.size = dims;
+  // ratio, image, and return_base64 are Agnes gateway dialect fields,
+  // forwarded under extra_body (the OpenAI-compatible extension channel).
+  // `response_format` is already a top-level OpenAI standard field and is
+  // verified by live probe to work at top level (AGNES-API §7.5 point ③),
+  // so it stays top-level — do not migrate it.
+  const ar = str(ratio, "").trim();
+  const imgs = Array.isArray(image)
+    ? image.map((x) => str(x, "")).filter((x) => x !== "")
+    : [];
+  const extra: Record<string, unknown> = {};
+  if (ar !== "") extra.ratio = ar;
+  if (imgs.length > 0) extra.image = imgs;
+  if (returnBase64 === true) extra.return_base64 = true;
+  if (Object.keys(extra).length > 0) body.extra_body = extra;
   return body;
 }
 
@@ -301,8 +321,11 @@ export function defineDrawTool({
     parameters: {
       prompt: { type: "string", required: true, description: "Image generation prompt" },
       model: { type: "string", description: "Agnes image model id; defaults to the first discovered one" },
-      size: { type: "string", description: "Image size, e.g. 1024x1024" },
-      n: { type: "number", description: `Number of images, 1-${DRAW_MAX_IMAGES}, default 1` }
+      size: { type: "string", description: "Image size: '2K' (2048x2048) or '4K' (4096x4096) tier constant, or exact WIDTHxHEIGHT (32-multiple, 512-4096, max 3:1 ratio), e.g. 2720x1536" },
+      ratio: { type: "string", description: "Aspect ratio: 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2 (default 1:1); forwarded as extra_body.ratio" },
+      image: { type: "array", items: { type: "string" }, description: "Reference image URL(s) / Data URIs for img2img; forwarded as extra_body.image" },
+      return_base64: { type: "boolean", description: "Request Base64 output instead of a URL (text2img only); forwarded as extra_body.return_base64" },
+      n: { type: "number", description: "Image count; the platform currently requires exactly 1 (default 1)" }
     },
     output: {
       schema: {
@@ -346,7 +369,14 @@ export function defineDrawTool({
           "catalog 中没有出图模型（`output_modalities` 字段与 `agnes-image-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含出图模型"
         );
       }
-      const body = buildDrawBody({ model, prompt, n: params?.n, size: params?.size });
+      const body = buildDrawBody({
+        model,
+        prompt,
+        size: params?.size,
+        ratio: params?.ratio,
+        image: params?.image,
+        returnBase64: params?.return_base64
+      });
       let result;
       try {
         result = await drawOnce({

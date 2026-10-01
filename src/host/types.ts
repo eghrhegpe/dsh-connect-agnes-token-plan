@@ -84,6 +84,12 @@ export interface DrawRequest {
   n: number;
   size: string;
   responseFormat: string;
+  /** Aspect ratio (e.g. "16:9"); forwarded under `extra_body.ratio` (Agnes dialect). */
+  ratio?: string;
+  /** Reference image URLs / Data URIs for img2img; forwarded as `extra_body.image`. */
+  image?: string[];
+  /** Request Base64 output instead of a URL (text2img only); forwarded as `extra_body.return_base64`. */
+  returnBase64?: boolean;
 }
 
 /** A provider/adapter configuration object. */

@@ -168,22 +168,43 @@ async function rejects(fn) {
     pickDrawModel([], "", "") === null);
 }
 
-// --- 4. buildDrawBody clamps -----------------------------------------------
+// --- 4. buildDrawBody shapes -----------------------------------------------
 {
-  const body = buildDrawBody({ model: "Agnes-u1-fast", prompt: "a cat" });
+  const body = buildDrawBody({ model: "agnes-image-2.5-flash", prompt: "a cat" });
   check("defaults are n=1 and response_format=url",
     body.n === 1 && body.response_format === "url");
   check("no size field travels when unset", !Object.prototype.hasOwnProperty.call(body, "size"));
   check("size travels when set",
     buildDrawBody({ model: "m", prompt: "p", size: "1024x1024" }).size === "1024x1024");
-  check("n clamps high (a hostile value must not burn the pool)",
-    buildDrawBody({ model: "m", prompt: "p", n: 99 }).n === 4);
-  check("n clamps low and floors fractions",
+  // The platform hard-requires n=1 (live-verified 2026-10-01: `n 必须为 1`);
+  // any other value is a 400, so only 1 is ever forwarded.
+  check("n is always 1 (platform requires exactly 1)",
+    buildDrawBody({ model: "m", prompt: "p", n: 99 }).n === 1 &&
+    buildDrawBody({ model: "m", prompt: "p", n: 2.9 }).n === 1 &&
     buildDrawBody({ model: "m", prompt: "p", n: 0 }).n === 1 &&
-    buildDrawBody({ model: "m", prompt: "p", n: 2.9 }).n === 2);
-  check("junk n falls back to 1", buildDrawBody({ model: "m", prompt: "p", n: "many" }).n === 1);
+    buildDrawBody({ model: "m", prompt: "p", n: "many" }).n === 1);
   check("a custom response_format travels",
     buildDrawBody({ model: "m", prompt: "p", responseFormat: "b64_json" }).response_format === "b64_json");
+  check("ratio travels when set, omitted when unset (forwarded under extra_body)",
+    !Object.prototype.hasOwnProperty.call(body, "extra_body") &&
+    buildDrawBody({ model: "m", prompt: "p", ratio: "16:9" }).extra_body?.ratio === "16:9");
+  check("return_base64 travels only when true (forwarded under extra_body)",
+    !Object.prototype.hasOwnProperty.call(buildDrawBody({ model: "m", prompt: "p" }), "extra_body") &&
+    buildDrawBody({ model: "m", prompt: "p", returnBase64: true }).extra_body?.return_base64 === true);
+  check("image is forwarded as extra_body.image (never top-level)", (() => {
+    const b = buildDrawBody({ model: "m", prompt: "p", image: ["https://x/a.png", "https://x/b.png"] });
+    return Array.isArray(b.extra_body?.image) && b.extra_body.image.length === 2 &&
+      !Object.prototype.hasOwnProperty.call(b, "image");
+  })());
+  check("empty image array adds no extra_body",
+    !Object.prototype.hasOwnProperty.call(buildDrawBody({ model: "m", prompt: "p", image: [] }), "extra_body"));
+  check("ratio + image + return_base64 coexist under one extra_body object", (() => {
+    const b = buildDrawBody({ model: "m", prompt: "p", ratio: "3:4", image: ["https://x/a.png"], returnBase64: true });
+    return b.extra_body?.ratio === "3:4" &&
+      Array.isArray(b.extra_body?.image) && b.extra_body.image.length === 1 &&
+      b.extra_body?.return_base64 === true &&
+      !("return_base64" in b) && !("ratio" in b) && !("image" in b);
+  })());
 }
 
 // --- 5. parseDrawResponse ----------------------------------------------------
