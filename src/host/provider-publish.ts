@@ -20,6 +20,7 @@
 
 import { LLM_PROVIDER_ID, LLM_DISPLAY_NAME, visionOf } from "./llm-models.ts";
 import { str, redactSecrets } from "./util.ts";
+import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import { name as pluginName } from "./host-config.ts";
 import type { HostDeps } from "./types.ts";
 
@@ -226,8 +227,14 @@ export function createProviderPublisher(deps: HostDeps = {}) {
     // from a row that flipped it after mounting. The EFFECTIVE switch is
     // panel-first (`provider-store.ts`), falling back to the patch value —
     // re-read here on every publish, so a flip applies without a restart.
-    const panelValue = await effectivePanelSwitch().catch(() => null);
-    const registerWanted = panelValue ?? effectiveSettings.registerProvider === true;
+    // Previously `panelValue ?? effectiveSettings.registerProvider === true`
+    // — which parses as `panelValue ?? (x === true)` and is therefore correct,
+    // but reads as `(panelValue ?? x) === true` and invites the wrong edit.
+    // The precedence is now stated in `switch-precedence`.
+    const registerWanted = resolveSwitchEnabled(
+      await readPanelValue(effectivePanelSwitch),
+      effectiveSettings.registerProvider
+    ).enabled;
     if (!registerWanted) {
       release();
       state.registered = false;

@@ -59,6 +59,7 @@ import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
 import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video-models.ts";
 import { str } from "./util.ts";
+import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import type { CacheMap, InflightMap, Settings } from "./types.ts";
 import type { createTokenStore } from "./token-store.ts";
 import type { createApiKeyStore } from "./api-key-store.ts";
@@ -424,8 +425,15 @@ export async function buildSnapshotBody({
   // cannot disagree with each other or with what the tool dispatches.
   const effectiveVideoModelId = (await videoModelId?.().catch(() => null)) ?? str(settings.videoModelId, "");
   // The effective switch: a panel-saved value beats the patch default. Both
-  // are reported so the panel can say which side is in charge.
-  const effectivePanelSwitch = await panelSwitch().catch(() => null);
+  // are reported so the panel can say which side is in charge — resolved once
+  // here (see `switch-precedence`) so the value and its source cannot come
+  // from two different reads and disagree with each other.
+  const providerSwitch = resolveSwitchEnabled(await readPanelValue(panelSwitch), settings.registerProvider);
+  // Draw and video are resolved here too, for the same reason: each used to be
+  // read TWICE (once for `drawEnabled`, once for `drawSource`), so the two
+  // fields of one panel line could come from two different reads.
+  const drawResolution = resolveSwitchEnabled(await readPanelValue(drawSwitch), settings.drawEnabled);
+  const videoResolution = resolveSwitchEnabled(await readPanelValue(videoSwitch), settings.videoEnabled);
   // The curated allow-list is read on every poll, not only when a fresh
   // catalogue arrived: a /models save must reach the picker even on a poll
   // that serves a cached catalogue.
@@ -462,8 +470,8 @@ export async function buildSnapshotBody({
   // the key value.
   const llmStatus = {
     ...keyState,
-    registerProvider: (effectivePanelSwitch ?? settings.registerProvider) === true,
-    registerSource: effectivePanelSwitch === null ? "config" : "panel",
+    registerProvider: providerSwitch.enabled,
+    registerSource: providerSwitch.source,
     llmAvailable: providerState.llmAvailable,
     providerRegistered: providerState.registered,
     providerId: LLM_PROVIDER_ID,
@@ -484,8 +492,8 @@ export async function buildSnapshotBody({
     }),
     enabledModelIds: enabledIds,
     quotaBlockedModelIds: unavailableModelIds,
-    drawEnabled: (await drawSwitch?.().catch(() => null) ?? settings.drawEnabled) === true,
-    drawSource: await drawSwitch?.().catch(() => null) === null ? "config" : "panel",
+    drawEnabled: drawResolution.enabled,
+    drawSource: drawResolution.source,
     // A draw call's actual target model, picked by the same precedence the
     // tool itself uses (`pickDrawModel`) over the same normalized catalog —
     // so the panel's line and the tool's behavior cannot disagree. Emitted
@@ -508,8 +516,8 @@ export async function buildSnapshotBody({
           };
         })()
       : {}),
-    videoEnabled: (await videoSwitch?.().catch(() => null) ?? settings.videoEnabled) === true,
-    videoSource: await videoSwitch?.().catch(() => null) === null ? "config" : "panel",
+    videoEnabled: videoResolution.enabled,
+    videoSource: videoResolution.source,
     // Same shape as the draw block above, with ONE extra fact the panel has to
     // be able to explain: the catalog may list a 2.5 family that speaks a
     // MUTUALLY EXCLUSIVE parameter system (`mode`/`seconds`/`size`/

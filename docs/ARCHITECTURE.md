@@ -53,6 +53,7 @@
 - `admission-audit.ts`：同源闸的旁路审计——「不带 `Origin` 的写请求」记一笔（次数/时间/归一化方法名，不含任何头值），供 `doctor` 事后可见；放行结论不受它影响（见 [PITFALLS.md](./PITFALLS.md) §35）。
 - `state-store.ts`：按 profile 分段的状态文件读写基建——版本载荷、temp+rename 原子写、0600/0700、短 TTL 读缓存、§23 一次性继承缝（见 [PITFALLS.md](./PITFALLS.md) §23）。
 - `switch-store.ts`：**四个 opt-in 开关商店共用的一层**（provider / draw / video / AgnesCode）。「面板存过的值胜过配置默认值」+ 一个可选的 model 偏好，四份曾经互相复制；现在只有各自不同的事实（文件名、形状版本、偏好 wire key、报错措辞）留在 `provider-store.ts` / `draw-store.ts` / `video-store.ts` / `agnescode-switch-store.ts` 里，其余全在这一层（行为由 `test/switch-store.test.mjs` 对四者逐项冻结）。
+- `switch-precedence.ts`：「**面板存过的值 vs 补丁声明的默认，谁说了算**」的唯一裁决处——`resolveSwitchEnabled` / `resolveSwitchValue` / `readPanelValue` 三个函数承载所有 opt-in 开关的优先级判定，并连同「值来自哪（panel / config / off）」一起返回（面板要拿来源告诉操作员哪一侧在生效）。此前这条规则被手抄在 11 处、有两种长得像但语义不同的方言（AgnesCode 因根本没有配置默认，无默认那一型必须落到 `off`）；统一到这里后，任何一处再自己拼 `?? settings.x` 都会由 `test/switch-precedence.test.mjs` 钉红（见 `test/switch-precedence.test.mjs` 的接线钉）。
 - `provider-publish.ts`：直接注册的 provider 的发布状态机（peer-free）——`publishChain` 串行化、`disposed` 闸、单点 `registerPair` 与回滚路径（PITFALLS §18/§19）。从 `index.js` 抽出，使路由层保持轻量；`index.js` 驱动它，`test/wiring.test.mjs` 经此模块注入并发 publish 门控。
 - `llm-models.ts` / `llm-adapter.ts` / `llm-retry.ts` / `llm-error-fix.ts`：推理侧的纯逻辑映射（无 peer，离线可测）、依赖 peer 的适配器半边、429 退避策略、以及 peer 对限频 429 的误判纠正（`isQuotaExceededError` 命中面过宽，带额度措辞的 429 被抢判成 `QUOTA` 而不重试）。
 - `draw.ts` / `draw-store.ts`：出图工具（`agnes_draw_image`）与它的面板开关。

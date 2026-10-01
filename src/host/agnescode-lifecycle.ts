@@ -27,6 +27,7 @@ import {
 } from "./agnescode.ts";
 import { createAgnescodePublisher } from "./agnescode-publish.ts";
 import { str } from "./util.ts";
+import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 
 /** How long a failed re-harvest blocks further re-harvest attempts. */
 export const AGNESCODE_REHARVEST_BACKOFF_MS = 60_000;
@@ -142,8 +143,8 @@ export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapter
    */
   const seed = async () => {
     try {
-      const switchState = await (panelSwitch ?? (async () => null))().catch(() => null);
-      if (switchState === true) {
+      // Panel-only switch: no config default, so "unset" is off.
+      if (resolveSwitchEnabled(await readPanelValue(panelSwitch)).enabled) {
         const { credential } = await store.resolve().catch(() => ({ credential: null }));
         await publisher.publish(AGNESCODE_FALLBACK_MODELS, credential?.bffBase ?? "");
       }

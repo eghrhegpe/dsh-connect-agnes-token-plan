@@ -23,6 +23,7 @@ import { defineDrawTool } from "./draw.ts";
 import { defineVideoTool } from "./video.ts";
 import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.ts";
 import { name } from "./host-config.ts";
+import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import type { HostWiring, ToolSide, ToolWiring, SwitchStore, Settings } from "./types.ts";
 
 /**
@@ -82,11 +83,16 @@ async function mountAgentTool({
 }) {
   const { settings, configError, providerState, catalogStore, resolveApiKey, publisher } = wiring;
   if (configError !== null) return;
-  const panelEnabled = store ? await store.enabled().catch(() => null) : null;
-  if ((panelEnabled ?? settings[enabledKey]) !== true) return;
+  // Same precedence as every other switch in this plugin, from the same
+  // single source (`switch-precedence`): panel-saved beats the patch default.
+  const { enabled: toolEnabled } = resolveSwitchEnabled(
+    await readPanelValue(async () => (await store?.enabled()) ?? null),
+    settings[enabledKey] as boolean
+  );
+  if (toolEnabled !== true) return;
   // Same precedence as the switch: a panel-saved model preference beats the
   // patch's value (empty string = auto-pick from the catalog).
-  const panelModelId = store ? await store.modelId().catch(() => null) : null;
+  const panelModelId = await readPanelValue(async () => (await store?.modelId()) ?? null);
   const effectiveSettings = panelModelId !== null ? { ...settings, [modelKey]: panelModelId } : settings;
   const tools = ctx.get("tools") ?? ctx.tools ?? null;
   if (tools === null || typeof tools.register !== "function") return;

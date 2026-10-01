@@ -12,6 +12,7 @@
 
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
+import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { normalizeEnabledIds } from "../catalog-store.ts";
 import { catalogSignature } from "../provider-publish.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
@@ -67,8 +68,10 @@ export function registerModelsRoute(ctx, wiring) {
         writeJson(response, 200, {
           ok: true,
           enabledModelIds: await catalogStore.listEnabledIds().catch(() => providerState.enabledIds),
-          registerProvider:
-            ((await providerStore.enabled().catch(() => null)) ?? settings.registerProvider) === true,
+          registerProvider: resolveSwitchEnabled(
+            await readPanelValue(() => providerStore.enabled()),
+            settings.registerProvider
+          ).enabled,
           providerRegistered: providerState.registered,
           ...(providerState.error !== null ? { providerError: providerState.error } : {}),
           ...extra

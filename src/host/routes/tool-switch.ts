@@ -14,6 +14,7 @@
 
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
+import { readPanelValue, resolveSwitchEnabled, resolveSwitchValue } from "../switch-precedence.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
@@ -63,19 +64,27 @@ export function registerToolSwitchRoute(ctx, { path, label, store, enabledKey, e
       }
       const method = request.method === undefined ? "GET" : request.method;
       const answer = async (extra = {}) => {
-        const panelEnabled = await (store ? store.enabled() : null).catch(() => null);
-        const panelModel = await (store ? store.modelId() : null).catch(() => null);
+        // Read each value ONCE. The previous lines asked the store twice for
+        // the same fact (once for the value, once for the source), so a flip
+        // — or a second read that failed — between the two awaits could emit
+        // `true` sourced to "config". "Absent store" was worse than awkward:
+        // `(store ? ... : null).catch()` throws a TypeError instead of
+        // answering null, so a store that ever goes missing is a 500.
+        const panelEnabled = await readPanelValue(async () => (await store?.enabled()) ?? null);
+        const panelModel = await readPanelValue(async () => (await store?.modelId()) ?? null);
         // The effective value: a saved panel value always wins, otherwise the
         // config default. The source tells the panel which side is in charge.
+        const enabled = resolveSwitchEnabled(panelEnabled, configEnabled);
+        const model = resolveSwitchValue(panelModel, configModelId);
         writeJson(
           response,
           200,
           {
             ok: true,
-            [enabledKey]: (panelEnabled ?? configEnabled) === true,
-            [enabledSourceKey]: panelEnabled === null ? "config" : "panel",
-            [modelKey]: panelModel ?? configModelId,
-            [modelSourceKey]: panelModel === null ? "config" : "panel",
+            [enabledKey]: enabled.enabled,
+            [enabledSourceKey]: enabled.source,
+            [modelKey]: model.value,
+            [modelSourceKey]: model.source,
             ...extra
           },
           { "cache-control": "no-store" }

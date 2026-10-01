@@ -27,6 +27,7 @@
 
 import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME } from "./agnescode-models.ts";
 import { str, redactSecrets } from "./util.ts";
+import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import { name as pluginName } from "./host-config.ts";
 import type { AgnescodePublisherDeps } from "./types.ts";
 
@@ -162,8 +163,9 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     state.bffBase = str(bffBase, "");
     state.signature = agnescodeSignature(state.rows, state.bffBase);
 
-    const panelValue = await effectivePanelSwitch().catch(() => null);
-    const registerWanted = panelValue === true;
+    // No config default (AgnesCode has no `Settings` key), so an unset panel
+    // value means off — never a fallback nobody declared.
+    const registerWanted = resolveSwitchEnabled(await readPanelValue(effectivePanelSwitch)).enabled;
     if (!registerWanted) {
       release();
       state.registered = false;

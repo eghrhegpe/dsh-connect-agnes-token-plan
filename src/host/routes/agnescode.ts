@@ -24,6 +24,7 @@
 
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
+import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { redactSecrets } from "../util.ts";
 import {
   fetchAgnescodeCatalog,
@@ -75,8 +76,14 @@ export function registerAgnescodeRoute(ctx, wiring) {
       // `harvest` block carries the last walk's diagnosis rows (tier codes
       // and shape facts only — a token NEVER enters this payload).
       const agnescodeState = async () => {
-        const switchState = await (agnescodeSwitch ? agnescodeSwitch.enabled() : null).catch(() => null);
-        const effectiveEnabled = switchState === true;
+        // AgnesCode has NO config default — `Settings` carries no key for it.
+        // Omitting the second argument is what says so: an unset panel value
+        // resolves to "off", never to a default nobody declared. Writing this
+        // as `(switch ?? settings.x) === true` would make the provider
+        // register itself the day such a key is added to the patch schema.
+        const { enabled: effectiveEnabled, source: switchSource } = resolveSwitchEnabled(
+          await readPanelValue(() => agnescodeSwitch?.enabled())
+        );
         let loggedIn = false;
         let nickname = "";
         let bffBase = "";
@@ -121,7 +128,7 @@ export function registerAgnescodeRoute(ctx, wiring) {
         return {
           ok: true,
           enabled: effectiveEnabled,
-          switchSource: switchState === null ? "off" : "panel",
+          switchSource,
           loggedIn,
           nickname,
           // The per-account base is a fact the panel can show (it is WHERE
@@ -254,8 +261,7 @@ export function registerAgnescodeRoute(ctx, wiring) {
           return;
         }
         if (agnescodePublisher !== null && agnescodePublisher !== undefined && agnescodePublisher.isDisposed() === false) {
-          const switchState = agnescodeSwitch ? await agnescodeSwitch.enabled().catch(() => null) : null;
-          if (switchState === true) {
+          if (resolveSwitchEnabled(await readPanelValue(() => agnescodeSwitch?.enabled())).enabled) {
             await publishFromStore();
           }
         }

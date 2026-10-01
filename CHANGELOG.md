@@ -35,6 +35,12 @@
 - **为什么**：同源闸在请求未声明 `Origin` 时放行，这是**必须**的（浏览器的同站 GET 不发 `Origin`；跨站 POST 必发、发了就被比对拦掉），所以那条分支上过的只可能是非浏览器客户端。它本身不是漏洞，但此前完全不可见——`doctor` 给不出"有没有发生过"。
 - **不是加固**：放行逻辑**一字未动**（`routes` 190 / `wiring` 44 / `doctor` 39 零回归）。记录只含次数、时间与方法名，**不含** Host / Origin / 路径 / 头值 / 凭据（`docs/PITFALLS.md` §35）。
 
+### 可读性：11 处手抄的「面板值 > 配置默认」收敛到唯一裁决模块
+
+- **现象**：「面板存过的值胜过补丁声明的默认」这一条开关优先级规则，被手抄在 11 处调用点，且有两种长得几乎一样、语义却不同的方言——有默认（`panel ?? settings.x === true`，用于 provider / draw / video）与无默认（`panel === true`，仅 AgnesCode：它根本没有配置默认，未设置必须落到 `off`）。两者靠肉眼分不出来。
+- **风险（不仅有可读性）**：① 把无默认型误读成有默认型，会让 AgnesCode 在补丁某天多出一个默认值时自行注册起来；② `provider-publish.ts` 里 `panelValue ?? effectiveSettings.registerProvider === true` 实际按 `panelValue ?? (x === true)` 解析——结果正确但**读起来像** `(panelValue ?? x) === true`，诱导出错误编辑；③ `snapshot-aggregate.ts` 里「值」与「来源」各读一次开关，两次读取之间一翻（或第二次失败）就会输出 `true` 却标注来源为 `config`；④ 旧写法 `(store ? store.enabled() : null).catch(...)` 在 store 缺席时是对 `null` 调 `.catch`，抛 `TypeError` 而非回答 `null`，只是当前调用方都恰好传了 store 才没炸。
+- **修法**：新增 `src/host/switch-precedence.ts`，三个函数（`resolveSwitchEnabled` / `resolveSwitchValue` / `readPanelValue`）承载全部判定，值与来源一起返回；11 处调用点改为调用它（AgnesCode 三处严格按「无配置默认」解析）。`readPanelValue` 安全接受缺席的 store（旧陷阱被消除）。新增 `test/switch-precedence.test.mjs`（23 条）钉住两种语义分界与上面四类缺陷，并带「接线钉」：任何文件仍自己拼装优先级、或 AgnesCode 三处传了配置默认，即红。重构前后 `routes` 190 / `provider` 204 / `agnescode` 119 / `doctor` 39 / `switch-store` 84 / `admission-audit` 27 逐项计数一致零漂移。
+
 ## [0.6.0] — 2026-10-01
 
 **面板信息架构再收一刀**：顶栏从「页面标题栏」降格为「当前 tab 的状态与刷新出口」——撤销假的全局标题，「更新于」/令牌状态/刷新按 tab 归属；额度窗口卡片改以**百分比为主视**并按职责分池；三个 tab 补上常驻的官网入口。**AgnesCode 这条线修掉两个叠加的旧病**：GET 路由的 `lastHarvest` 落在暂时性死区，让「检测本机登录态」点了没反应；以及「开关先开、令牌后到」留下的 `not_configured` 被当作红色错误报警。推理侧把单次输出上限从兜底的 32768 提到实测平台上限 65536，契约基线 seed 一并退役、换真机全阶梯证据。

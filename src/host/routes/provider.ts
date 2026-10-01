@@ -12,6 +12,7 @@
 
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
+import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 
 /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
@@ -41,14 +42,21 @@ export function registerProviderRoute(ctx, wiring) {
       // Secret-free by construction: the effective switch, where it came from,
       // and whether a provider is registered right now.
       const answer = async (extra = {}) => {
-        const panelSwitch = await providerStore.enabled().catch(() => null);
+        // The precedence now lives in one place (switch-precedence): a
+        // panel-saved value beats the patch default, and the value and its
+        // source come back TOGETHER — a value without a source is a line the
+        // operator cannot act on.
+        const providerSwitch = resolveSwitchEnabled(
+          await readPanelValue(() => providerStore.enabled()),
+          settings.registerProvider
+        );
         writeJson(
           response,
           200,
           {
             ok: true,
-            registerProvider: (panelSwitch ?? settings.registerProvider) === true,
-            registerSource: panelSwitch === null ? "config" : "panel",
+            registerProvider: providerSwitch.enabled,
+            registerSource: providerSwitch.source,
             providerRegistered: providerState.registered,
             ...(providerState.error !== null ? { providerError: providerState.error } : {}),
             ...extra
