@@ -687,6 +687,84 @@ const GOOD_SESSION = {
   }
 }
 
+// --- 10. route surface -------------------------------------------------------
+// The GET is the FIRST thing the tab does on entry, and it used to THROW: the
+// handler's `let lastHarvest` sat after the GET branch, so `agnescodeState()`
+// read the binding inside its temporal dead zone. The Host turned the throw
+// into a bodiless 400, and the tab — which could not tell a failed read from a
+// signed-out desktop App — kept rendering「未关联」while the harvested
+// credential was already in the store. This is the guard for that: the real
+// handler, a fake ctx, no network, no peer.
+{
+  section("route surface (registerRoutes, the agnescode GET)");
+  try {
+    const { registerRoutes } = await import("../src/host/routes.ts");
+    const routes = new Map();
+    const ctx = {
+      webServer: {
+        register({ path, handler }) {
+          routes.set(path, handler);
+          return () => routes.delete(path);
+        }
+      }
+    };
+    // Every non-AgnesCode route stays untouched; a stub that answers `null`
+    // keeps their registration cheap and proves they are not on this path.
+    const unused = new Proxy({}, { get: () => async () => null });
+    registerRoutes(ctx, {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused,
+      apiKeyStore: unused,
+      catalogStore: unused,
+      providerStore: unused,
+      drawStore: unused,
+      videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      // The credential half only has to REPORT the linked account here: a
+      // credential handed to `resolve()` would send the route to the live BFF,
+      // and the network guard would (correctly) trip.
+      agnescodeStore: {
+        async state() {
+          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
+        },
+        async resolve() {
+          return { credential: null, source: null };
+        },
+        async save() {},
+        async forget() {}
+      },
+      agnescodeSwitch: { async enabled() { return true; }, async save() {} },
+      agnescodePublisher: null
+    });
+    const handler = routes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    check("the agnescode route registers", typeof handler === "function");
+
+    const response = {
+      status: 0,
+      body: "",
+      writeHead(status) { this.status = status; },
+      end(payload) { this.body = payload; }
+    };
+    await handler({ method: "GET", headers: { host: "127.0.0.1" } }, response);
+    const body = JSON.parse(response.body);
+    check("the tab's entry GET answers 200 instead of throwing in the route", response.status === 200, String(response.status));
+    check("the GET reports the stored credential as linked",
+      body.loggedIn === true && body.nickname === "测试用户" && body.enabled === true,
+      JSON.stringify({ loggedIn: body.loggedIn, nickname: body.nickname, enabled: body.enabled }));
+    check("the GET payload carries no token (the panel only ever sees shape facts)",
+      !("accessToken" in body) && !JSON.stringify(body).includes("access_token"));
+  } catch (error) {
+    fail("route surface", error);
+  }
+}
+
 // --- report ------------------------------------------------------------------
 releaseNetworkGuard();
 const passed = results.filter((result) => result.pass).length;

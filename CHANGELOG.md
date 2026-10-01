@@ -14,6 +14,14 @@
 - **顺带修掉一个看不见的失败**：AgnesCode tab 的路由读取失败时 `error` 只被 set、从不渲染，于是「Host 没回话」显示成「未关联——请先在桌面端登录」，把原因甩给了用户的桌面 App。现在失败会明说，且这一刻不再声称「未关联」（面板没有这个证据）；顶栏刷新按钮在该 tab 尚未发布 loader 时置灰，而不是静默重载另一个 tab。
 - 契约：`barPlan` 的决策由 `test/render.test.mjs` H3 驱动，接线与「失败必须渲染」由 `test/panel.test.mjs` F6 钉住；`docs.test.mjs` 检查 9 依赖 `activeTab` 的字面联合类型，源码注释已写明不要改成类型别名。
 
+### 修复：AgnesCode tab 的「检测本机登录态」点了没反应（GET 路由每次都抛错）
+
+- **现象**：桌面端已登录、点「检测本机登录态」也回「已读取本机登录态。」，但卡片仍然停在「未关联」——凭据其实早已写进 DSH 凭据服务，面板只是永远看不到它。
+- **根因（Host 侧，`routes.ts`）**：AgnesCode 路由把「上一次探测记录」`lastHarvest` 声明在**处理函数内部、GET 分支之后**。GET 分支先 `return`，于是 `agnescodeState()` 读到的是处在**暂时性死区**的 `let` 绑定，整个 handler 抛 `ReferenceError: Cannot access 'lastHarvest' before initialization`，Host 把它变成**无 body 的 400**。POST（harvest/switch）在该声明之后执行，所以按钮全好——只有 tab 进场的 GET 是坏的。面板因此永远拿不到 `loggedIn`，5 分钟轮询也修不回来。
+- **修法**：`lastHarvest` 与 `agnescodeHarvestInFlight` 上移到**路由注册作用域**（每次注册一份，跨请求共享）。这同时兑现了原注释里「GET 也带上次探测记录」「并发 harvest 合并成一次 walk」两句话——在此之前两者都只在单个请求内成立。
+- **客户端加固**：`load()` 此前 `if (!response.ok) return;` 静默返回，`state === null` 且 `error === null`，于是渲染出「未关联——请先在桌面端登录」——把 Host 的故障说成用户的桌面 App 没登录。现在非 2xx 会把状态码写进 `error`，由「失败必须渲染」那条路径明说。
+- 契约：`test/agnescode.test.mjs` 新增「route surface」段——用假 ctx 驱动真实 `registerRoutes` 并对 `/agnescode` 发 GET，钉住 200、`loggedIn` 与「payload 不带 token」。
+
 ### 推理通道：单次输出上限从 32768 提到平台上限 65536
 
 - Token Plan 推理线的每个请求此前实际携带 `max_tokens = 32768`。这不是平台限制，而是 `dsh-llm-pi-ai` 注册兜底（`DEFAULT_MAX_TOKENS = 32768`，其校验强制要求正整数）——descriptor「不声明值防截断」的旧决策因此失效：未声明≠无上限，而是被砍半，思考（默认 high 档）与回答挤在 32k 预算里，长回合先截思考。

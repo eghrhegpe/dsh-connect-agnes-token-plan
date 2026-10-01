@@ -680,8 +680,21 @@ export function registerRoutes(ctx, wiring) {
   // ── The AgnesCode route: the desktop-app upstream provider (ROADMAP §6.3) ──
   // The credential is HARVESTED from the desktop App's os_crypt session file
   // (the user logs in THERE, WeChat-side), so the login-equivalent action is
-  // 「重新检测」— a harvest-then-save walk whose failure mode is the per-file
-  // diagnosis list the tab renders.
+  // 「检测本机登录态」— a harvest-then-save walk whose failure mode is the
+  // per-file diagnosis list the tab renders.
+  //
+  // The last walk's rows and the in-flight walk live at the ROUTE scope, not
+  // per request. Two reasons, and the first one is a bug that shipped:
+  //   * per-request `let lastHarvest` sat AFTER the GET branch, so the GET ran
+  //     `agnescodeState()` while the binding was still in its temporal dead
+  //     zone and the whole route threw — the panel's poll never saw the
+  //     harvested account and kept showing「未关联」while the credential was
+  //     already stored;
+  //   * the single-flight comment below only holds across requests if the
+  //     promise outlives one, and the panel genuinely does poll while a walk
+  //     runs.
+  let lastHarvest = null;
+  let agnescodeHarvestInFlight = null;
   const offAgnescode = ctx.webServer.register({
     kind: "exact",
     path: AGNESCODE_PATH,
@@ -771,14 +784,6 @@ export function registerRoutes(ctx, wiring) {
         return;
       }
       const { action } = body.value;
-      // The last harvest walk's diagnosis rows (tier codes and shape facts
-      // only — a token NEVER enters this payload), shown by the GET and by
-      // every POST answer so the panel can explain why "重新检测" found
-      // nothing.
-      let lastHarvest = null;
-      // One harvest walk at a time: a concurrent request joins the same
-      // promise instead of spawning a second PowerShell.
-      let agnescodeHarvestInFlight = null;
       const answer = async (extra = {}) => {
         const state = await agnescodeState();
         writeJson(response, 200, { ...state, ...extra }, { "cache-control": "no-store" });

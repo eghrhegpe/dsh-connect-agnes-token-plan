@@ -113,7 +113,19 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   const load = useCallback(async () => {
     try {
       const response = await fetch(AGNESCODE_PATH, { headers: { accept: "application/json" }, cache: "no-store" });
-      if (!response.ok || !alive.current) return;
+      // A route that ANSWERS with a failure is not "no local login state".
+      // Returning here silently left `state === null` AND `error === null`, and
+      // the credential card then rendered「未关联——请先在桌面端登录」— an
+      // accusation this tab has no evidence for. A broken Host route looked
+      // exactly like a signed-out desktop App. Name the status instead.
+      if (!response.ok) {
+        if (alive.current) {
+          setError(`HTTP ${response.status}`);
+          setLoading(false);
+        }
+        return;
+      }
+      if (!alive.current) return;
       const body = (await response.json().catch(() => null)) as AgnescodeState | null;
       if (!alive.current) return;
       if (body === null || body.ok === false) {
