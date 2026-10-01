@@ -321,7 +321,7 @@ export function defineDrawTool({
     parameters: {
       prompt: { type: "string", required: true, description: "Image generation prompt" },
       model: { type: "string", description: "Agnes image model id; defaults to the first discovered one" },
-      size: { type: "string", description: "Image size, exact WIDTHxHEIGHT (multiple of 32). Agnes dialect — not yet live-probed on the images/generations endpoint; tier constants like '2K'/'4K' are not confirmed and should not be used." },
+      size: { type: "string", description: "Image size: '2K' (2048x2048) or '4K' (4096x4096) tier constant, or exact WIDTHxHEIGHT (32-multiple, 512-4096, max 3:1 ratio), e.g. 2720x1536 — live-verified on the Agnes endpoint (probe ⑤)" },
       ratio: { type: "string", description: "Aspect ratio: 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2 (default 1:1); forwarded as extra_body.ratio" },
       image: { type: "array", items: { type: "string" }, description: "Reference image URL(s) / Data URIs for img2img; forwarded as extra_body.image" },
       return_base64: { type: "boolean", description: "Request Base64 output instead of a URL (text2img only); forwarded as extra_body.return_base64" },
