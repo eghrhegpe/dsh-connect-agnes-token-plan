@@ -128,8 +128,9 @@ export const PROBED_MAX_TOKENS = 65_536;
  *  - `agnes-2.5-pro.md`: "付费推理模型，支持文本和图像输入" + "图像理解"
  *  - `agnes-2.5-flash.md`: 核心能力含 "图像 URL 输入" / "图像理解"
  *  - `agnes-2.0-flash`: 2.5-flash 迁移说明称"图像 URL 输入格式保持不变"，
- *    但未在 2.0-flash 自己的文档页独立声明，**待 live-contract 探针再补**
- *    （目录字段优先 + 未实测不写，PITFALLS 纪律）。
+ *    但 2.0-flash 自己的文档页**没有独立声明**，硬编码等于猜——不写
+ *    （目录字段优先 + 未实测不写，PITFALLS 纪律；若平台补文档页声明或
+ *    真机探针确认再加）。
  *
  * ⚠️ 图像输入的**拼写与上限尚未真机 probe**（官方只说"图像 URL 输入"，没说
  * `image_url` 块还是 `image` 字段、没写上限）。这张表只让 descriptor 带上
@@ -151,7 +152,8 @@ export const PROBED_VISION = Object.freeze({
  *  - `agnes-3.0-flash`: "上下文窗口 | 512K"
  *  - `agnes-2.5-pro`: "上下文窗口 | 1M tokens"
  *
- * `agnes-2.0-flash` 未在其文档页看到独立声明，未入表（待探针）。
+ * `agnes-2.0-flash` 文档页无独立声明，未入表——不硬编码（平台补文档页声明
+ * 或真机探针确认再加）。
  */
 export const PROBED_CONTEXT_WINDOWS = Object.freeze({
   "agnes-2.5-flash": 512_000,

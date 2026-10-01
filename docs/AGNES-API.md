@@ -305,8 +305,8 @@ README 里「两类 Key 共用输入框」的说法没错，但应补一句「�
 `agnes-2.5-pro` = 1M），并经 `contextWindowFor(entry)` 接入 descriptor / roster。
 规则：**目录字段优先**——`contextWindowOf` 返回非兜底值即采用；返回
 `FALLBACK_CONTEXT_WINDOW`（表示"目录没声明"）才查硬编码表；两处都无才回
-128K。平台将来补 `context_length` 会自动胜出。`agnes-2.0-flash` 官方文档未
-独立声明窗口，未入表（待探针）。
+128K。平台将来补 `context_length` 会自动胜出。`agnes-2.0-flash` 官方文档页
+无独立声明，未入表——不硬编码（平台补文档页声明或真机探针确认再加）。
 
 ### 7.2 思考档位（safe-set 只服务未知 id）
 
