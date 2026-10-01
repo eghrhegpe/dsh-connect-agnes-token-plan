@@ -38,6 +38,10 @@ import { createApiKeyStore } from "./api-key-store.ts";
 import { createRaccoonStore } from "./raccoon-store.ts";
 import { createFileRaccoonStore } from "./raccoon-switch-store.ts";
 import { createRaccoonPublisher } from "./raccoon-publish.ts";
+import { createAgnescodeStore } from "./agnescode-store.ts";
+import { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
+import { createAgnescodePublisher } from "./agnescode-publish.ts";
+import { harvestAgnescodeLocalSession, decodeAgnescodeJwtExpMs } from "./agnescode.ts";
 import { createProviderPublisher } from "./provider-publish.ts";
 import { registerRoutes } from "./routes.ts";
 import { startSideEffects, teardown } from "./lifecycle.ts";
@@ -253,6 +257,68 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     }
   })();
 
+  // ── Third upstream provider: AgnesCode (爱思编程) — ROADMAP §6.3 ──
+  // The plugin's FIRST "local-login-state harvest" line (workbuddy precedent
+  // family): the credential is read from the desktop App's os_crypt session
+  // file, not obtained by any login this plugin performs. A fully independent
+  // credential + registration pair — it NEVER touches the Token Plan or
+  // Raccoon publishers' state — and the switch is opt-in default OFF: a Host
+  // that never opens the AgnesCode tab registers no AgnesCode provider.
+  const agnescodeStore = createAgnescodeStore({
+    credentials: () => ctx.get("credentials") ?? null
+  });
+  const agnescodeSwitch = createFileAgnescodeStore({ profile });
+  const agnescodePublisher = createAgnescodePublisher({
+    panelSwitch: () => agnescodeSwitch.enabled().catch(() => null),
+    resolveToken: async () => {
+      const { credential } = await agnescodeStore.resolve();
+      if (credential === null) return "";
+      // There is NO refresh endpoint (ROADMAP §6.3): the desktop App owns the
+      // session file, so an expiring credential is re-harvested from it — and
+      // if the App is gone, the stored JWT rides until it dies, then the panel
+      // says to re-harvest.
+      if (await agnescodeStore.isExpired().catch(() => false)) {
+        const walk = await harvestAgnescodeLocalSession().catch(() => null);
+        if (walk?.ok === true) {
+          await agnescodeStore.save({
+            ...walk.session,
+            ...(decodeAgnescodeJwtExpMs(walk.session.accessToken) !== undefined
+              ? { expiresAtMs: decodeAgnescodeJwtExpMs(walk.session.accessToken) }
+              : {})
+          }).catch(() => {});
+        }
+      }
+      const { credential: live } = await agnescodeStore.resolve();
+      return live?.accessToken ?? "";
+    },
+    getLlm: (service) => getService(service),
+    loadAdapterModule: deps.loadAgnescodeAdapterModule ?? (() => import("./agnescode-llm-adapter.ts")),
+    emit: (event) => {
+      try {
+        ctx.emit?.(event);
+      } catch {
+        // A Host that refuses the event still has the registration; readers
+        // refresh on their own cadence.
+      }
+    },
+    logger: ctx.logger
+  });
+  // Mount seed: the same shape as the Raccoon seed, but the publish needs the
+  // per-account BFF base, which only the stored credential knows — so the
+  // seed resolves it (empty when there is none; the publisher's gate then
+  // releases, which is the honest off state).
+  void (async () => {
+    try {
+      const switchState = await agnescodeSwitch.enabled().catch(() => null);
+      if (switchState === true && agnescodePublisher.state.rows.length > 0) {
+        const { credential } = await agnescodeStore.resolve().catch(() => ({ credential: null }));
+        await agnescodePublisher.publish(agnescodePublisher.state.rows, credential?.bffBase ?? "");
+      }
+    } catch {
+      // No seed: the first switch/harvest publishes.
+    }
+  })();
+
   // The credentials service is how the console token and account are held and
   // renewed. It is optional: a Host without one still gets a working panel,
   // with the account kept in memory for that process's lifetime rather than on
@@ -311,7 +377,13 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     // touches the Token Plan publisher above.
     raccoonStore,
     raccoonSwitch,
-    raccoonPublisher
+    raccoonPublisher,
+    // AgnesCode (third upstream provider, ROADMAP §6.3): same isolation, but
+    // its credential is HARVESTED from the desktop App's session file (the
+    // route owns the harvest-then-save walk) rather than logged-in here.
+    agnescodeStore,
+    agnescodeSwitch,
+    agnescodePublisher
   };
 
   // The six route handlers (trust fence, method allowances, body ceilings,

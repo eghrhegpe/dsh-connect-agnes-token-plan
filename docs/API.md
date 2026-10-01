@@ -194,6 +194,10 @@
 
 第二个上游（小浣熊网关）的开关与状态。它与 Token Plan **同属商汤旗下，但认证域互不相通**：凭据、store、publisher 全部隔离，改动它对本插件主链路的影响应恒为零。契约与复测表见 [ROADMAP.md](./ROADMAP.md) §6.1.2。
 
+### `GET|POST /api/dsh-connect-agnes-token-plan/agnescode`
+
+第三个上游（AgnesCode 桌面端登录态）的开关与状态，隔离纪律与 `/raccoon` 同款。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, balance, models, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是会话文件里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久），不是 Token Plan 的窗口语义；`models` 行带 `memberOnly` 标记（门槛是账号状态，标记而不隐藏）。`POST` 动作三种：`{action:"switch", enabled}`、`{action:"harvest"}`（重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**——tier 代码 + 形状事实，令牌永不进响应）、`{action:"logout"}`（解除关联并释放注册）。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
+
 ---
 
 ## 2. Agnes 控制台接口（插件反向调用）

@@ -29,6 +29,8 @@ export interface HostDeps {
   loadAdapterModule?: any;
   /** Lazy-load the Raccoon LLM adapter module (ROADMAP §6.1 second provider). */
   loadRaccoonAdapterModule?: any;
+  /** Lazy-load the AgnesCode LLM adapter module (ROADMAP §6.3 third provider). */
+  loadAgnescodeAdapterModule?: any;
   /** Resolve the registered LLM instance. */
   getLlm?: any;
   /** Resolve the API key from the credentials service. */
@@ -142,6 +144,34 @@ export interface RaccoonAdapterOptions {
   /** Resolve the live Raccoon JWT per request (refreshes inside the expiry window first). */
   resolveToken?: () => Promise<string>;
   /** Service resolver for the image hooks (`attachments`, `fs`). */
+  get?: (service: string) => any;
+}
+
+/** Dependency bag for the AgnesCode provider publisher (`agnescode-publish.ts`). */
+export interface AgnescodePublisherDeps {
+  /** Panel-saved switch value; `null` = state file untouched (provider stays OFF). */
+  panelSwitch?: () => Promise<boolean | null>;
+  /** Resolve the live AgnesCode JWT per request (empty when not harvested). */
+  resolveToken?: () => Promise<string>;
+  /** Optional-service resolver for the `llm` registration service. */
+  getLlm?: (service: string) => any;
+  /** Lazy-load the AgnesCode adapter factory module (peer `dsh-llm-pi-ai`). */
+  loadAdapterModule?: () => Promise<{ createAgnescodeAdapter: (...args: any[]) => any }>;
+  /** Cordis event emitter for `llm/adapters-updated`. */
+  emit?: (event: string) => void;
+  /** Cordis logger (loose: the peer ships no declarations here). */
+  logger?: { warn: (message: string) => void };
+}
+
+/** Options for the AgnesCode adapter factory (`agnescode-llm-adapter.ts`). */
+export interface AgnescodeAdapterOptions {
+  /** The roster rows to offer (`agnescodeRoster` result). */
+  rows?: any[];
+  /** The credential's pinned per-account BFF base (`bffPublicBaseUrl`). */
+  bffBase?: string;
+  /** Resolve the live AgnesCode JWT per request (re-harvested when expired). */
+  resolveToken?: () => Promise<string>;
+  /** Service resolver (reserved for the image hooks). */
   get?: (service: string) => any;
 }
 

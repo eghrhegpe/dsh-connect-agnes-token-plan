@@ -16,6 +16,7 @@ import { S } from "./styles.ts";
 import { PlanCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
 import { DrawSwitch, VideoSwitch } from "./provider-controls.ts";
 import { RaccoonTab } from "./raccoon-tab.ts";
+import { AgnescodeTab } from "./agnescode-tab.ts";
 
 export function PanelPage({ onClose, tt, localeSubscribe }: {
   onClose?: () => void;
@@ -46,17 +47,17 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // editor stays closed — it holds a secret field, and it is a prerequisite
   // the three cards above point at rather than the thing being configured.
   const [openSections, setOpenSections] = useState({ quota: true, usage: true, account: false, provider: true, draw: true, video: true, llm: false });
-  // Three fixed perspectives: "quota" is the daily reading (plan, windows,
+  // Four fixed perspectives: "quota" is the daily reading (plan, windows,
   // account totals), "api" is the Token Plan wiring (key, provider push,
-  // draw, video), and "raccoon" is the SECOND upstream provider (ROADMAP
-  // §6.1) — an independent credential + switch that shares no pool semantics
-  // with the first two.
+  // draw, video), "raccoon" is the SECOND upstream provider (ROADMAP
+  // §6.1), and "agnescode" the THIRD (ROADMAP §6.3) — each an independent
+  // credential + switch sharing no pool semantics with the others.
   //
   // The tab bar renders from the FIRST FRAME, whatever the snapshot says. It
   // used to appear only once a body had landed, which meant a console nobody
   // had signed in to replaced the whole page with a form — including the two
   // tabs that never read the console.
-  const [activeTab, setActiveTab] = useState<"quota" | "api" | "raccoon">("quota");
+  const [activeTab, setActiveTab] = useState<"quota" | "api" | "raccoon" | "agnescode">("quota");
 
   // The Host half registers the dictionaries, but a runtime language switch
   // only reaches this page through the locale face's subscribe: without it a
@@ -241,7 +242,8 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     { style: S.tabBar, role: "tablist" },
     h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: { ...S.tab, ...(activeTab === "quota" ? S.tabActive : {}) }, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
     h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api")),
-    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "raccoon", style: { ...S.tab, ...(activeTab === "raccoon" ? S.tabActive : {}) }, onClick: () => setActiveTab("raccoon") }, tt("tab.raccoon"))
+    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "raccoon", style: { ...S.tab, ...(activeTab === "raccoon" ? S.tabActive : {}) }, onClick: () => setActiveTab("raccoon") }, tt("tab.raccoon")),
+    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "agnescode", style: { ...S.tab, ...(activeTab === "agnescode" ? S.tabActive : {}) }, onClick: () => setActiveTab("agnescode") }, tt("tab.agnescode"))
   );
 
   // What the quota tab shows when no snapshot landed at all — a transport
@@ -383,7 +385,21 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                   h(RaccoonTab, { tt })
                 )
               )
-            : h(
+            : activeTab === "agnescode"
+              // The AgnesCode provider (ROADMAP §6.3) is a THIRD upstream —
+              // same independence, but its credential is harvested from the
+              // desktop App's session file (the /agnescode route), so its
+              // card leads with the link state and the harvest diagnosis.
+              ? h(
+                  "div",
+                  { style: { marginTop: 22 } },
+                  h(
+                    SectionCard,
+                    { title: tt("agnescode.title"), open: true, onToggle: () => {}, tt },
+                    h(AgnescodeTab, { tt })
+                  )
+                )
+              : h(
                 "div",
                 null,
                 h(

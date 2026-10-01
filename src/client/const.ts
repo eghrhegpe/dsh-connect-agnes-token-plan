@@ -30,6 +30,9 @@ export const VIDEO_PATH = "/api/dsh-connect-agnes-token-plan/video";
 /** The Raccoon provider route (second upstream provider, ROADMAP §6.1). */
 export const RACCOON_PATH = "/api/dsh-connect-agnes-token-plan/raccoon";
 
+/** The AgnesCode provider route (third upstream provider, ROADMAP §6.3). */
+export const AGNESCODE_PATH = "/api/dsh-connect-agnes-token-plan/agnescode";
+
 /**
  * The official sign-up / Token Plan console entry. The panel points new
  * users here to register and obtain their free quota (account + API key).

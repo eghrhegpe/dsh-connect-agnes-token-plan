@@ -209,7 +209,45 @@ export const zh = {
   "raccoon.registered": "已注册 raccoon 提供方：{count} 个模型。",
   "raccoon.unregistered": "未注册——勾选上方开关即可开启。",
   "raccoon.awaitingLogin": "已启用——登录后即可注册模型。",
-  "raccoon.error": "小浣熊操作失败：{error}"
+  "raccoon.error": "小浣熊操作失败：{error}",
+
+  "tab.agnescode": "AgnesCode",
+  "agnescode.title": "AgnesCode（爱思编程）",
+  "agnescode.desc": "读取本机 AgnesCode 桌面端的登录态（微信登录在桌面 App 内完成，本插件不碰你的密码），模型经 DSH 提供方注册后可对话。凭据独立，与积分额度 / 小浣熊互不影响。",
+  "agnescode.switch": "启用 AgnesCode 提供方（向 DSH 注册模型）",
+  "agnescode.switchError": "切换失败：{error}",
+  "agnescode.harvest": "检测本机登录态",
+  "agnescode.harvesting": "正在读取本机登录态…",
+  "agnescode.logout": "解除关联",
+  "agnescode.loggedIn": "已关联：{nick}",
+  "agnescode.bffBase": "接口地址 {base}",
+  "agnescode.notLogged": "未关联——请先在 AgnesCode 桌面端登录（微信扫码），再点「检测本机登录态」。",
+  "agnescode.balance": "积分余额 {balance}",
+  // The pool is a SUBSCRIPTION pool (time-limited vs permanent), not a usage
+  // overview — the breakdown is the platform's own split, rendered as given.
+  "agnescode.balanceDetail": "时效 {timeSensitive} · 永久 {permanent}",
+  "agnescode.models": "模型（{count}）",
+  // Gating is account state, not model truth — the badge states the limit
+  // instead of the Host silently dropping the model.
+  "agnescode.memberOnly": "会员",
+  "agnescode.registered": "已注册 agnescode 提供方：{count} 个模型。",
+  "agnescode.unregistered": "未注册——勾选上方开关即可开启。",
+  "agnescode.awaitingHarvest": "已启用——检测到本机登录态后即可注册模型。",
+  "agnescode.expiresAt": "凭据有效期至 {time}",
+  "agnescode.error": "AgnesCode 操作失败：{error}",
+  "agnescode.harvestOk": "已读取本机登录态。",
+  "agnescode.harvestFail": "未能在本机找到可用的 AgnesCode 登录态。探测记录：",
+  // One line per probed file, the workbuddy five-tier discipline: each tier
+  // wants different advice, so they never share a sentence.
+  "agnescode.tier.file_missing": "文件不存在",
+  "agnescode.tier.unreadable": "读不了（权限？）",
+  "agnescode.tier.malformed": "内容不是预期格式",
+  "agnescode.tier.no_key": "加密密钥拿不到（Local State 缺失或形状已变）",
+  "agnescode.tier.decrypt_failed": "解密失败（App 的加密方式可能已变更）",
+  "agnescode.tier.no_token": "会话里没有令牌（App 未登录？）",
+  "agnescode.tier.untrusted_base": "会话的接口地址不在 Agnes 域内（已拒绝）",
+  "agnescode.tier.unsupported_platform": "当前平台没有已知的桌面 App 数据目录",
+  "agnescode.tier.ok": "成功"
 } satisfies Record<string, string>;
 
 /** English dictionary, mirroring every zh key. */
@@ -405,7 +443,39 @@ export const en: typeof zh = {
   "raccoon.registered": "Raccoon registered with DSH: {count} model(s).",
   "raccoon.unregistered": "Not registered — tick the switch above.",
   "raccoon.awaitingLogin": "Enabled — log in to register the models.",
-  "raccoon.error": "Raccoon operation failed: {error}"
+  "raccoon.error": "Raccoon operation failed: {error}",
+
+  "tab.agnescode": "AgnesCode",
+  "agnescode.title": "AgnesCode",
+  "agnescode.desc": "Uses the locally signed-in AgnesCode desktop App (the WeChat login happens inside the App — this plugin never touches your password). Models register with DSH as a provider. Credentials stay independent of the quota and Raccoon tabs.",
+  "agnescode.switch": "Enable the AgnesCode provider (register models with DSH)",
+  "agnescode.switchError": "Switch failed: {error}",
+  "agnescode.harvest": "Detect local login state",
+  "agnescode.harvesting": "Reading the local login state…",
+  "agnescode.logout": "Unlink",
+  "agnescode.loggedIn": "Linked: {nick}",
+  "agnescode.bffBase": "API base {base}",
+  "agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
+  "agnescode.balance": "Credit balance {balance}",
+  "agnescode.balanceDetail": "Time-limited {timeSensitive} · permanent {permanent}",
+  "agnescode.models": "Models ({count})",
+  "agnescode.memberOnly": "member",
+  "agnescode.registered": "AgnesCode registered with DSH: {count} model(s).",
+  "agnescode.unregistered": "Not registered — tick the switch above.",
+  "agnescode.awaitingHarvest": "Enabled — runs once a local login state is detected.",
+  "agnescode.expiresAt": "Credential valid until {time}",
+  "agnescode.error": "AgnesCode operation failed: {error}",
+  "agnescode.harvestOk": "Local login state read.",
+  "agnescode.harvestFail": "No usable AgnesCode login state found on this machine. Probed:",
+  "agnescode.tier.file_missing": "file missing",
+  "agnescode.tier.unreadable": "unreadable (permissions?)",
+  "agnescode.tier.malformed": "unexpected content shape",
+  "agnescode.tier.no_key": "encryption key unavailable (Local State missing or reshaped)",
+  "agnescode.tier.decrypt_failed": "decryption failed (the App's crypto may have changed)",
+  "agnescode.tier.no_token": "session carries no token (App not signed in?)",
+  "agnescode.tier.untrusted_base": "session's API base is outside the Agnes domains (refused)",
+  "agnescode.tier.unsupported_platform": "no known desktop App data directory for this platform",
+  "agnescode.tier.ok": "ok"
 };
 
 export type { Tt };

@@ -5,14 +5,15 @@
 
 ## 项目一句话
 
-DSH 插件：参考上游应用 `upstream/sensenova-usage-dashboard`，从 Agnes 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / 小浣熊）。
+DSH 插件：参考上游应用 `upstream/sensenova-usage-dashboard`，从 Agnes 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（四个 tab：积分额度 / 接入 API / 小浣熊 / AgnesCode）。
 Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/user/login`，无 OIDC / 无 refresh token，令牌死了就重登一次）；Client（React bundle）轮询本地路由。
 
-**三条事实**（写代码前先认清你在动哪一条）：
+**四条事实**（写代码前先认清你在动哪一条）：
 
 1. 「积分额度」tab 是地基，走 Host 登录 + 自动重登，只读 Agnes 控制台（`platform-backend.agnes-ai.cn`）。
 2. 「接入 API」tab 与出图工具会把本插件**升级为推理通道**——注册 provider `agnes-token-plan`、给 agent 挂 `agnes_draw_image`。它们都是 **opt-in 默认关**，任何失败必须降级为「面板照常用、该模块缺席」。
 3. **「小浣熊」tab 是第二个上游**：接的是 `xiaohuanxiong.com` 网关的**独立 provider** `sensenova-raccoon`。它与 Token Plan **同属商汤旗下**，但**认证域互不相通**（桌面 App 登录态打不通 Token Plan，实测见 `docs/ROADMAP.md` §6.1.1）——所以它在 §5 不变量 3 的**界内**（裁定见 `docs/ARCHITECTURE.md` §5.5），而凭据仍必须各走一套。改这条线时它对主注册的影响应恒为零：两边 publisher、store、凭据引用全部隔离。
+4. **「AgnesCode」tab 是第三个上游**：接的是 AgnesCode 桌面端的登录态——本插件第一条**本机登录态采集**线（workbuddy 族先例）：微信登录发生在桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（DPAPI + AES-GCM，注入式可离线测），provider `sensenova-agnescode`，接口地址**按账号跟随**会话文件且钉死在 Agnes 域名族内。它没有刷新端点（JWT 约 28 天），续期 = 重开桌面 App 后「检测本机登录态」。隔离纪律与事实 3 同款（见 `docs/ROADMAP.md` §6.3）。
 
 **定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计决策研究档案见 docs/IMPROVEMENTS.md。
 
@@ -106,6 +107,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 |---|---|
 | 排查登录失败 / 改一跳登录、失败分类、重登、节流 | `docs/AUTH.md` → `docs/AGNES-API.md` §1–§2 |
 | 动第二个上游（小浣熊 / `sensenova-raccoon`） | `docs/ROADMAP.md` §6.1.2（网关契约复测表）→ `src/host/raccoon*.ts` |
+| 动第三个上游（AgnesCode / `sensenova-agnescode`） | `docs/ROADMAP.md` §6.3（契约探针 + 隔离裁定）→ `src/host/agnescode*.ts` |
 | 给用户看的文案（README / `cordis.patch.yml`）改了 | `test/docs.test.mjs` 检查 9/10（tab 全覆盖 + 槽位一致），两者都进 npm 包 |
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |

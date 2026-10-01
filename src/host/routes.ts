@@ -26,6 +26,13 @@ import {
   RACCOON_QR_STATUS,
   RACCOON_FALLBACK_MODELS
 } from "./raccoon.ts";
+import {
+  fetchAgnescodeCatalog,
+  fetchAgnescodeBalance,
+  harvestAgnescodeLocalSession,
+  decodeAgnescodeJwtExpMs,
+  AGNESCODE_FALLBACK_MODELS
+} from "./agnescode.ts";
 
 /** The one read-only route the Client panel polls. */
 const SNAPSHOT_PATH = `/api/${name}/snapshot`;
@@ -45,6 +52,10 @@ const VIDEO_PATH = `/api/${name}/video`;
 const RACCOON_PATH = `/api/${name}/raccoon`;
 /** Ceiling on a Raccoon action body: the login POST only needs the scan code. */
 const MAX_RACCOON_BODY_BYTES = 2048;
+/** The AgnesCode provider route (ROADMAP §6.3 "third upstream provider"). */
+const AGNESCODE_PATH = `/api/${name}/agnescode`;
+/** Ceiling on an AgnesCode action body: every action posts a bare `{action}`. */
+const MAX_AGNESCODE_BODY_BYTES = 2048;
 /** The QR login's overall deadline; a scan that takes longer is voided. */
 const RACCOON_LOGIN_DEADLINE_MS = 5 * 60 * 1000;
 /** One QR poll cadence, so a login wait loops at the gateway's own rate. */
@@ -318,7 +329,7 @@ function registerToolSwitchRoute(ctx, { path, label, store, enabledKey, enabledS
  *   order — `teardown` runs them last.
  */
 export function registerRoutes(ctx, wiring) {
-  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, drawStore, videoStore, publisher, providerState, publishProvider, visionPublish, logger, raccoonStore, raccoonSwitch, raccoonPublisher } = wiring;
+  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, drawStore, videoStore, publisher, providerState, publishProvider, visionPublish, logger, raccoonStore, raccoonSwitch, raccoonPublisher, agnescodeStore, agnescodeSwitch, agnescodePublisher } = wiring;
 
   const offRoute = ctx.webServer.register({
     kind: "exact",
@@ -914,5 +925,206 @@ export function registerRoutes(ctx, wiring) {
     }
   });
 
-  return [offRoute, offAccount, offApiKey, offProvider, offModels, offDraw, offVideo, offRaccoon];
+  // ── The AgnesCode route: the third upstream provider (ROADMAP §6.3) ──
+  // Same shape as the Raccoon route, with ONE structural difference: there is
+  // no in-panel login walk. The credential is HARVESTED from the desktop
+  // App's os_crypt session file (the user logs in THERE, WeChat-side), so the
+  // login-equivalent action is「重新检测」— a harvest-then-save walk whose
+  // failure mode is the per-file diagnosis list the tab renders.
+  const offAgnescode = ctx.webServer.register({
+    kind: "exact",
+    path: AGNESCODE_PATH,
+    handler: async (request, response) => {
+      if (!isAdmitted(request, settings.allowedHosts)) {
+        refuseOrigin(response);
+        return;
+      }
+      // The GET's secret-free state, reused by every POST branch. The
+      // `harvest` block carries the last walk's diagnosis rows (tier codes
+      // and shape facts only — a token NEVER enters this payload).
+      let lastHarvest: { ok: boolean; attempts: object[] } | null = null;
+      const agnescodeState = async () => {
+        const switchState = await (agnescodeSwitch ? agnescodeSwitch.enabled() : null).catch(() => null);
+        const effectiveEnabled = switchState === true;
+        let loggedIn = false;
+        let nickname = "";
+        let bffBase = "";
+        let expiresAtMs = null;
+        let balance = null;
+        let error = null;
+        try {
+          if (agnescodeStore !== null && agnescodeStore !== undefined) {
+            const state = await agnescodeStore.state().catch(() => null);
+            loggedIn = state?.hasCredential === true;
+            nickname = state?.nickname ?? "";
+            bffBase = state?.bffBase ?? "";
+            expiresAtMs = state?.expiresAtMs ?? null;
+            if (loggedIn) {
+              const { credential } = await agnescodeStore.resolve().catch(() => ({ credential: null }));
+              if (credential?.accessToken) {
+                balance = await fetchAgnescodeBalance(credential).catch(() => null);
+              }
+            }
+          }
+        } catch (why) {
+          error = redactSecrets(why instanceof Error ? why.message : String(why));
+        }
+        // The roster the adapter offers: the live catalogue when a credential
+        // exists, else the static fallback so the panel still shows the
+        // known models.
+        let models = null;
+        try {
+          if (agnescodeStore !== null && agnescodeStore !== undefined) {
+            const { credential } = await agnescodeStore.resolve().catch(() => ({ credential: null }));
+            if (credential?.accessToken) {
+              models = await fetchAgnescodeCatalog(credential).catch(() => null);
+            }
+          }
+        } catch {
+          models = null;
+        }
+        const roster = models !== null && Array.isArray(models) && models.length > 0
+          ? models
+          : AGNESCODE_FALLBACK_MODELS;
+        const publisherState = agnescodePublisher?.state ?? null;
+        return {
+          ok: true,
+          enabled: effectiveEnabled,
+          switchSource: switchState === null ? "off" : "panel",
+          loggedIn,
+          nickname,
+          // The per-account base is a fact the panel can show (it is WHERE
+          // the account's requests go) — secret-free, from the session file.
+          bffBase,
+          expiresAtMs,
+          balance,
+          models: roster,
+          providerRegistered: publisherState?.registered === true,
+          ...(publisherState?.error !== null && publisherState?.error !== undefined ? { providerError: publisherState.error } : {}),
+          ...(lastHarvest !== null ? { harvest: lastHarvest } : {}),
+          ...(error !== null ? { error } : {})
+        };
+      };
+
+      const method = request.method === undefined ? "GET" : request.method;
+      if (method === "GET") {
+        writeJson(response, 200, await agnescodeState(), { "cache-control": "no-store" });
+        return;
+      }
+      if (method !== "POST") {
+        refuseMethod(response);
+        return;
+      }
+      const body = await readJsonBody(request, MAX_AGNESCODE_BODY_BYTES);
+      if (!body.ok) {
+        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
+        return;
+      }
+      const { action } = body.value;
+      const answer = async (extra = {}) => {
+        const state = await agnescodeState();
+        writeJson(response, 200, { ...state, ...extra }, { "cache-control": "no-store" });
+      };
+
+      /** Drive the registration from the CURRENT stored credential: the live
+       *  catalogue wins over the fallback, the base comes from the credential
+       *  (empty when there is none — the publisher's gate then releases). */
+      const publishFromStore = async () => {
+        if (agnescodePublisher === null || agnescodePublisher === undefined) return;
+        let rows = AGNESCODE_FALLBACK_MODELS;
+        let bffBase = "";
+        try {
+          const { credential } = agnescodeStore ? await agnescodeStore.resolve().catch(() => ({ credential: null })) : { credential: null };
+          if (credential?.accessToken) {
+            const live = await fetchAgnescodeCatalog(credential).catch(() => null);
+            if (live !== null && live.length > 0) rows = live;
+            bffBase = credential.bffBase ?? "";
+          }
+        } catch {
+          // Fallback roster is already the safe default.
+        }
+        await agnescodePublisher.publish(rows, bffBase);
+      };
+
+      // ── switch: register / deregister the AgnesCode provider with DSH ──
+      if (action === "switch") {
+        if (typeof body.value.enabled !== "boolean") {
+          writeJson(response, 400, { ok: false, error: "expected { action: \"switch\", enabled: boolean }" }, { "cache-control": "no-store" });
+          return;
+        }
+        if (agnescodeSwitch === null || agnescodeSwitch === undefined) {
+          await answer({ ok: false, error: "the agnescode switch is unavailable" });
+          return;
+        }
+        try {
+          await agnescodeSwitch.save(body.value.enabled);
+          await publishFromStore();
+        } catch (error) {
+          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+        await answer();
+        return;
+      }
+
+      // ── harvest: re-read the desktop App's session file and store it ──
+      if (action === "harvest") {
+        if (agnescodeStore === null || agnescodeStore === undefined) {
+          await answer({ ok: false, error: "the agnescode credential store is unavailable" });
+          return;
+        }
+        try {
+          const walk = await harvestAgnescodeLocalSession();
+          lastHarvest = { ok: walk.ok, attempts: walk.attempts };
+          if (walk.ok !== true) {
+            await answer({ ok: false, status: "not_found", harvest: walk });
+            return;
+          }
+          await agnescodeStore.save({
+            accessToken: walk.session.accessToken,
+            bffBase: walk.session.bffBase,
+            ...(walk.session.userId !== "" ? { userId: walk.session.userId } : {}),
+            ...(walk.session.nickname !== "" ? { nickname: walk.session.nickname } : {}),
+            ...(decodeAgnescodeJwtExpMs(walk.session.accessToken) !== undefined
+              ? { expiresAtMs: decodeAgnescodeJwtExpMs(walk.session.accessToken) }
+              : {})
+          });
+        } catch (error) {
+          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
+          return;
+        }
+        if (agnescodePublisher !== null && agnescodePublisher !== undefined && agnescodePublisher.isDisposed() === false) {
+          const switchState = agnescodeSwitch ? await agnescodeSwitch.enabled().catch(() => null) : null;
+          if (switchState === true) {
+            await publishFromStore();
+          }
+        }
+        await answer({ ok: true, status: "harvested" });
+        return;
+      }
+
+      // ── logout: forget the stored credential and release the provider ──
+      if (action === "logout") {
+        if (agnescodeStore === null || agnescodeStore === undefined) {
+          await answer({ ok: false, error: "the agnescode credential store is unavailable" });
+          return;
+        }
+        try {
+          await agnescodeStore.forget();
+          if (agnescodePublisher !== null && agnescodePublisher !== undefined) {
+            await agnescodePublisher.publish(AGNESCODE_FALLBACK_MODELS, "");
+          }
+        } catch (error) {
+          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+        await answer({ ok: true, status: "logged_out" });
+        return;
+      }
+
+      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"logout\" }" }, { "cache-control": "no-store" });
+    }
+  });
+
+  return [offRoute, offAccount, offApiKey, offProvider, offModels, offDraw, offVideo, offRaccoon, offAgnescode];
 }

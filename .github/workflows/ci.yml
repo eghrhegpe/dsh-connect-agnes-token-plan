@@ -87,6 +87,7 @@ jobs:
           node test/video.test.mjs
           node test/doctor.test.mjs
           node test/raccoon.test.mjs
+          node test/agnescode.test.mjs
           # The build gate is not a *.test.mjs, so it stays outside the
           # three-way roster pin; it is listed here because CI is exactly
           # where the build must be proven (artifacts are gitignored, so a
