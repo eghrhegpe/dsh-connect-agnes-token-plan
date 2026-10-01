@@ -2,17 +2,44 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
-## [0.4.4] — 2026-10-01
+## [0.5.0] — 2026-10-01
 
-### 视频工具支持 2.5 系列：秒数制参数，agent 可直接出片
+**独立仓库首次发布**：新包名 `dsh-connect-agnes-token-plan` 首次上 npm。全面更名并切换登录线（Agnes 一跳登录），额度模型改为账号级四窗口，新增视频生成 agent 工具与第三上游 AgnesCode。
 
-此前 `agnes_video_generate` 只覆盖 V2.0 参数体系（`width`/`height`/`num_frames`/`frame_rate`），2.5 系列（`agnes-video-2.5` / `agnes-video-2.5-flash`，秒数制 `seconds`/`size`/`aspect_ratio`）被有意排除、面板只报「选不到」。本版把 2.5 半边补齐（参考实现取自上游 `dsh-agnes` 的 2.5 参数契约）：
+> **版本号说明**：0.4.4 从未发布到 npm（原 0.4.4 章节内容并入本节）；旧包名 `dsh-connect-sensenova-token-plan` 由兄弟插件独立维护，已发至 0.4.5。
 
-- **双家族请求体分派**（`src/host/video.ts`）：新增 `buildVideoBody25`（`mode`/`seconds` 4–12 / `size` 720P·960P·2K / `aspect_ratio` 白名单 + `image`/`keyframes` → media、flash 收敛仅 720P 且 reference ≤5），`defineVideoTool` 按 `isVideo25Family(model)` 选构造器——两套互斥字段永不同时发给同一模型。
-- **`pickVideoModel` 认全量视频模型**：显式请求 / 面板偏好可指 2.5；自动选择仍 V2.0 优先，**目录没有 V2.0 时回落到第一个 2.5 模型**（此前这类目录只能报错）。
-- **帧数字段自动换算**：agent 对 2.5 模型照传 `num_frames`/`frame_rate` 时换算为最接近的整秒（`121@24fps → 5s`），也可显式传 `seconds`；`negative_prompt` 是 V2.0 字段，不转发给 2.5（多一个未知顶层字段即 400）。
-- **面板候选含 2.5**：`videoCandidateIds` 从「仅 V2.0」改为**全部视频模型**，`video25ModelIds` 仍单独点名秒数制家族，文案从「未纳入、会被拒绝」改为「已支持、自动换算」。
-- **测试**：`test/video.test.mjs` 新增 2.5 请求体 / 选型回落 / 工具端到端分派用例；`test/routes.test.mjs` M2 组与 `test/render.test.mjs` G10 组按新候选语义更新。
+### 全面更名 + 登录线切换（迁移主线）
+
+- **包名 / provider / 工具 / Key 引用全切 Agnes**：`dsh-connect-agnes-token-plan`、provider `agnes-token-plan`、agent 工具 `agnes_draw_image`、Key 引用 `AGNES_TOKEN_PLAN_API_KEY`、控制台 `platform-backend.agnes-ai.cn` / 推理 `api.agnes-ai.cn`。
+- **登录改为一跳邮箱+密码**：`POST {consoleBase}/api/user/login`——Agnes 无 OIDC / 无 refresh token，令牌失效即**重登一次**（重登是唯一的续期路径）；密码明文 JSON 仅走 TLS、不落盘，`AGNES_PASSWORD` 是唯一持久来源。
+- **登录节流按平台声明窗口照单全收**：`Retry-After` 头与消息里的时间文案（中英文）都解析为等待窗口，绝不自行截短；平台未声明才回退本地指数退避。
+- 随迁移退役的 OIDC 模块与测试已删除（`sensenova-auth.ts` / `sensenova-crypto.ts` / `test/auth.test.mjs`）。
+
+### 额度模型：账号级四窗口（不再计算「剩余」）
+
+- Agnes 不发布 per-pool 余额，只在滑动窗口上封顶四个维度（5h 请求 / 周请求 / 日图 / 日视频），控制台只给上限与**累计**用量——`limit − total` 无人能负责，所以面板头条从「剩余」换成「限额」，累计用量单独一行（宁少一个数，也不发明一个）。
+- 控制台未连接时不再整页只剩登录表单；额度正常显示时不再误挂「需要重新登录」。
+
+### 视频生成 agent 工具（可选，默认关）
+
+与出图对称新增 `agnes_video_generate`：面板开关 + 「建任务→轮询→取 url」状态机（`VIDEO_MAX_POLLS` 防呆、无 30s 冷却门）。
+
+- **V2.0 参数体系**：`width`/`height`/`num_frames`(8n+1)/`frame_rate`；2.5 家族进 `video25ModelIds` 单独上报、不进对话选择器。
+- **2.5 系列补齐（秒数制）**：`buildVideoBody25`（`seconds` 4–12 / `size` 720P·960P·2K / `aspect_ratio` 白名单 + `image`/`keyframes` → media、flash 收敛仅 720P 且 reference ≤5）双家族分派，互斥字段永不同时发给同一模型；`pickVideoModel` 认全量视频模型、目录无 V2.0 时回落到第一个 2.5 模型；帧数字段自动换算（`121@24fps → 5s`）、`negative_prompt` 不转发给 2.5；面板候选含 2.5、文案改为「已支持、自动换算」。
+
+### 第三个上游：AgnesCode tab（可选，默认关）
+
+- **本机登录态采集**（workbuddy 族先例）：微信登录发生在 AgnesCode 桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（DPAPI + AES-256-GCM，注入式可离线测），探测失败按五档逐文件分诊（`file_missing` / `no_key` / `decrypt_failed` / `no_token` / `untrusted_base`）。
+- 独立 provider `sensenova-agnescode`：接口 base **按账号跟随**会话文件且钉死在 Agnes 域名族；无刷新端点（JWT 约 28 天），续期 = 重开桌面 App 后「检测本机登录态」。
+- 独立凭据引用 `AGNESCODE_CREDENTIAL`（引用值而非私有 kind）、独立 switch-store / publisher，与主注册零耦合；`reasoning:false`（thinking 线路未证实）、memberOnly 标记不隐藏（红线 7 精神）。
+- 契约探针（ROADMAP §6.3）：CN BFF OpenAI 兼容、28 天 JWT、独立积分池、本机会话文件解密链已验证。
+
+### 出图与其它修复
+
+- 出图 `n` 硬限为 1、补全 `ratio`/`image`/`return_base64`（live probe 确认 size 2K/4K 常量与 extra_body 全接受）；出图模型识别补齐名称兜底（结构化模态判定 + 名称双链统一）；出图描述与成功 hint 修复。
+- 浏览器不再把保存的控制台账号自动填进模型搜索框；sk-（免费版）与 cpk-（Token Plan）密钥前缀提示区分。
+- 渐进式 checkJs 类型校验（激活既有 JSDoc 防静默漂移）。
+- e2e 扩至 59 项实跑；全量离线门禁 + build-gate + e2e 绿。
 
 ## [0.4.3] — 2026-10-01
 

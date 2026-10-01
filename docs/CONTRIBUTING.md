@@ -125,7 +125,7 @@ description:
 > **已发布 ⇒ tag 不可移**（2026-10-01 实测，别踩）：`v0.4.3` 已同时存在于 npm 与 GitHub Release，
 > 因此**不能**按 RELEASING §4 的告警去「删除并强制移动 tag」来补齐后来的提交——那会让 npm 上的
 > 0.4.3 与 tag 内容不符。`v0.4.3` 之后落地的改动（e2e 进程树修复、`.gitignore`、
-> 以及自述面文档追平）**只能随下一个版本（0.4.4）到达用户**。
+> 以及自述面文档追平）**只能随下一个版本（0.5.0）到达用户**。
 >
 > 实测证据：`npm view dsh-connect-agnes-token-plan readme --registry=https://registry.npmjs.org`
 > 抓下来的 README 仍含 3 处「侧边栏」、0 处「小浣熊」——**修好的 README 在发新版前对用户不存在**。
