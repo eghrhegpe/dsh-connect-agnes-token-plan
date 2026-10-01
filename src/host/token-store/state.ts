@@ -55,6 +55,15 @@ export function createStoreContext({
   now = Date.now,
   onTrace,
   credentialKey
+}: {
+  credentials: any;
+  auth?: any;
+  env?: Record<string, unknown>;
+  skewMs?: number;
+  throttleStore?: { read: () => Promise<any>; write: (t: any) => Promise<unknown>; clear: () => Promise<unknown> };
+  now?: () => number;
+  onTrace?: (hops: any, error: any) => void;
+  credentialKey: (scope: string, id: string) => string;
 }) {
   const key = credentialKey(RECORD_SCOPE, RECORD_ID);
   const THROTTLE_KEY = credentialKey(RECORD_SCOPE, THROTTLE_ID);
@@ -80,8 +89,8 @@ export function createStoreContext({
   const memory = {
     records: new Map(),
     account: new Map(),
-    async readRecord(k) { return this.records.get(k); },
-    async modifyRecord(k, mutate) {
+    async readRecord(k: string) { return this.records.get(k); },
+    async modifyRecord(k: string, mutate: (value: any) => any) {
       const next = await mutate(this.records.get(k));
       if (next === undefined) return this.records.get(k);
       this.records.set(k, next);
@@ -89,13 +98,13 @@ export function createStoreContext({
     },
     // Keyed, because the throttle is a second record: clearing one throttle
     // must not take a stored grant with it.
-    async deleteRecord(k) { this.records.delete(k); },
-    async resolve(ref) {
+    async deleteRecord(k: string) { this.records.delete(k); },
+    async resolve(ref: string) {
       const value = this.account.get(ref);
       return typeof value === "string" && value !== "" ? { value, source: "memory" } : undefined;
     },
-    async set(ref, value) { this.account.set(ref, value); },
-    async unset(ref) { this.account.delete(ref); }
+    async set(ref: string, value: string) { this.account.set(ref, value); },
+    async unset(ref: string) { this.account.delete(ref); }
   };
   /**
    * Resolve the credentials service on EVERY use, not once at mount: the
