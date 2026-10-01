@@ -89,7 +89,7 @@
 
 - **现象**：上游 Python 工具含 `accounts.json`（明文账号密码）和 `.workbuddy/`。
 - **根因**：直接塞进插件仓库会污染历史、泄露凭据。
-- **修法**：上游以**被忽略的 `upstream/`** 形式容纳（[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)，保留其独立 `.git` 与 remote——本地副本若丢 `.git`，`git clone` 该地址恢复），`.gitignore` 加 `/upstream/`，绝不 `git add upstream/`，也不碰它的 `accounts.json`。
+- **修法**：上游以**被忽略的 `upstream/`** 形式容纳（[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)，保留其独立 `.git` 与 remote——本地副本若丢 `.git`，`git clone` 该地址恢复），`.gitignore` 加 `/upstream/`，绝不 `git add upstream/`，也不碰它的 `accounts.json`。**此后该容器被沿用为通用参照件区**（AgnesCode 线参照件与本机探测快照都在里面，清单见 [REFERENCES.md](./REFERENCES.md)）；同一个坑在 2026-10-01 以「仓库根下 110M 的 `probe-asar/` 既未跟踪也未忽略」的形式复发过一次——**探针产物一律落进 `upstream/`（或已被忽略的 `tmp/`），绝不留在仓库根的未跟踪区**。
 
 ---
 

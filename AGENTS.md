@@ -5,7 +5,7 @@
 
 ## 项目一句话
 
-DSH 插件：参考上游应用 `upstream/sensenova-usage-dashboard`，从 Agnes 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / AgnesCode）。
+DSH 插件：从 Agnes 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / AgnesCode）。算法参考历史上的游 `sensenova-usage-dashboard`（本地副本现已不在本机，恢复方式见 `docs/ARCHITECTURE.md` §1）；参照件容器 `upstream/` 的清单、版本与纪律见 `docs/REFERENCES.md`——**探测/参照产物一律落进 `upstream/`，绝不留在仓库根的未跟踪区**。
 Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/user/login`，无 OIDC / 无 refresh token，令牌死了就重登一次）；Client（React bundle）轮询本地路由。
 
 **三条事实**（写代码前先认清你在动哪一条）：
@@ -112,6 +112,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
 | 改测试前 | `docs/TESTING.md` |
 | 改任何代码前扫一眼 | `docs/PITFALLS.md`（33 条现象→根因→修法） |
+| 查某条事实「当初从哪来」 / 要落盘新参照件 | `docs/REFERENCES.md`（`upstream/` 容器清单：来源 / 版本 / 许可 / 承重在哪） |
 | 排查「这条配置到底生效没」 / 改了源码却没变 | `docs/PITFALLS.md` §22（bundles 装载 → patch overlay → `$DSH_HOME/state/<profile>/<name>/` 三层，desktop 是安装副本、web 是 symlink） |
 | 加/改 **state 文件**、读 `profileContext`、判断某状态该不该按 profile 分段 | `docs/PITFALLS.md` §23（catalog/provider/draw 分段；throttle 与凭据 grant **故意共享**，别统一） |
 | 提交约定、`upstream/` 红线 | `docs/CONTRIBUTING.md` |

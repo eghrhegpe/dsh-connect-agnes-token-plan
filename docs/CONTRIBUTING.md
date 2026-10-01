@@ -34,7 +34,7 @@ Host 半边源码位于 `src/host/`（**36 个模块，清单以该目录为准*
 ## 4. 红线：什么绝不进版本库
 
 - **凭据**：`.env`、`.env.*`、`*.env` 已被忽略；账号与 access token 只经 DSH 凭据服务，不写文件、不写日志（Agnes 不发 refresh token，所以也没有这一项）。
-- **`upstream/`**：已被 `.gitignore` 忽略。它是独立 git 仓库（[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)；本地副本按独立 `.git` 容纳，丢失时用 `git clone` 该地址恢复，见 [ARCHITECTURE.md](./ARCHITECTURE.md) §1），容纳进本仓库只为本地对照，**不要 `git add upstream/`**，也不要把它的 `accounts.json` 等带进来。
+- **`upstream/`**：已被 `.gitignore` 忽略。它是**参照件容器**——里面并排若干独立 git 仓库（各自 `cd` 进去就是一个完整仓库，可独立提交/推送）与本机快照（如桌面端 `app.asar` 解包、探测脚本）。容纳进本仓库只为本地对照，**不要 `git add upstream/`**，也不要把参照件里的明文凭据文件（如历史上游的 `accounts.json`）带进来。清单与纪律见 [REFERENCES.md](./REFERENCES.md)，容器姿势的来由见 [ARCHITECTURE.md](./ARCHITECTURE.md) §1。
 - **运行时产物**：`*.log`、`logs/`、`tmp/`、`node_modules/`、`dist/`、`build/` 已忽略。
 - **DSH 内部抽取物**：本仓库曾误把 `_asar_extract/`（Host 打包产物）提交进历史，应将其从跟踪中移除（见下方 §6），且不再 add。
 

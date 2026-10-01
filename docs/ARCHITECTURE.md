@@ -6,11 +6,13 @@
 
 ---
 
-## 1. 双仓库关系：`dsh-connect-agnes-token-plan` 与 `upstream/`
+## 1. 与参照件容器 `upstream/` 的关系
 
-本仓库根目录下有一个 **被 `.gitignore` 忽略的 `upstream/`** 目录，它是从 `~/.dsh/fork/sensenova-usage-dashboard` 移入的**上游仓库**（独立 git 仓库，线上：[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)；本地副本当前不带 `.git`，恢复方式见下方引用块）。
+本仓库根目录下有一个 **被 `.gitignore` 忽略的 `upstream/`** 目录。它是**参照件容器**，不是「本插件的上游应用」：里面并排放着若干**独立 git 仓库**（各占一个用仓库原名命名的子目录，浅克隆、自带 `.git` 与 remote）与**本机快照**（如桌面端 `app.asar` 解包）。承重件的来源、版本与「承重在哪」登记在 [REFERENCES.md](./REFERENCES.md)。
 
-| 维度 | `dsh-connect-agnes-token-plan`（本仓库） | `upstream/`（被忽略，独立仓库） |
+历史上游是商汤时代的 Python 桌面工具 [shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)——它曾以 `upstream/sensenova-usage-dashboard` 的形式从 `~/.dsh/fork/` 移入此处，其算法（登录 OIDC 流、密码 JWE 封包、用量接口解析）已吸收进本插件的 Node 实现；**该本地副本现已不在本机**（`upstream/` 与 `~/.dsh/fork/` 均已无），需要时按本节末尾的命令 `git clone` 恢复。下表保留它与本插件的差异对照，作为「为什么最终不沿用那套形态」的记录。
+
+| 维度 | `dsh-connect-agnes-token-plan`（本仓库） | `sensenova-usage-dashboard`（历史上的游 Python 工具，现不在本机） |
 |---|---|---|
 | 形态 | DSH 插件（Host 半边 + Client 半边） | 独立 Python 桌面应用（pywebview 原生窗口） |
 | 语言 | Host 半边与 Client 半边均为 **TypeScript 源码**（`src/host/*.ts` + `src/client/*.ts`），经 `npm run build`（tsdown）构建为 `lib/`（Host 单条 ESM bundle + 动态切分 chunk）与根 `client.js`（Client IIFE 产物）；`lib/` 与 `client.js` 均为 `.gitignore` 忽略的纯构建产物，删后可从 `src/` 重建 | Python（`dashboard.py` + `auth_login.py`） |
@@ -20,9 +22,9 @@
 | 与控制台交互 | `/api/usage/overview` / `/api/usage/series` / `/api/cn/user/subscription` / `GET /v1/models` | 商汤时代的 `pool-usage` 等接口 |
 | 是否进本仓库历史 | 是（本仓库主开发目标） | **否**（gitignored，保持独立 git 历史与 remote） |
 
-**为什么要这样放：** 上游 Python 工具是这套商汤控制台集成的「原始实现 / 参考源」，里面沉淀了接口字段、打包（`build_mac.sh` / PyInstaller `.spec`）、登录封包等可复用知识。把它以**被忽略的 `upstream/`** 形式容纳进本仓库，既能随时对照、复用其接口与打包经验，又不会污染本插件仓库的提交历史，也不会把明文凭据文件（`accounts.json`）带进版本库。插件在**构建期与运行期都不依赖 `upstream/`**——两者只是概念上的上下游，没有代码耦合。
+**为什么要这样放：** 上游 Python 工具是这套商汤控制台集成的「原始实现 / 参考源」，里面沉淀了接口字段、打包（`build_mac.sh` / PyInstaller `.spec`）、登录封包等可复用知识。把它以**被忽略的 `upstream/`** 形式容纳进本仓库，既能随时对照、复用其接口与打包经验，又不会污染本插件仓库的提交历史，也不会把明文凭据文件（`accounts.json`）带进版本库。插件在**构建期与运行期都不依赖 `upstream/`**——两者只是概念上的上下游，没有代码耦合。这条「容器」姿势此后被沿用成通用做法：AgnesCode 线的参照件与本机探测快照（含桌面端 `app.asar` 解包）同样落在 `upstream/` 下，一律不入库（见 [REFERENCES.md](./REFERENCES.md)）。
 
-> 若需向上游提交改动，进入 `upstream/` 目录本身就是一个完整 git 仓库，直接 `git` 操作即可，与外层仓库互不影响。**注意：本地副本当前实测不带 `.git`**——若要在其中独立 `git` 操作，先恢复为独立仓库：
+> 容器内每个 git 仓库各自完整，直接 `cd` 进去 `git` 操作即可，与外层仓库互不影响。**历史上游副本当前不在本机**，需要时按下面这条恢复（恢复后仍落在 `upstream/` 下、仍被忽略）：
 > `git clone https://github.com/shaobingtongzhi/sensenova-usage-dashboard upstream/sensenova-usage-dashboard`
 
 ---

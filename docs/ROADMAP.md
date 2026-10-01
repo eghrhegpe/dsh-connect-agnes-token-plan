@@ -359,8 +359,10 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 
 > **背景**：用户问及 `https://agnes-ai.cn/agnescode`（AgnesCode，独立编程助手产品，微信登录、
 > 与 Token Plan 认证域互不相通）。GitHub 参考件 `vibe-coding-labs/AgnesCode2Api`（协议翻译
-> 代理：AgnesCode → Anthropic/OpenAI）已完成一轮逆向——**只引用知识，不进 `upstream/`**
-> （[CONTRIBUTING.md](./CONTRIBUTING.md) 红线）。本节探针按 §6.1.2 同款纪律执行，另有
+> 代理：AgnesCode → Anthropic/OpenAI）已完成一轮逆向——**只引用知识，不复制代码**；
+> 2026-10-01 起 AgnesCode 线的参照件与本机快照统一**落盘到 `upstream/` 容器**（该容器整体被
+> `.gitignore` 忽略、不入库，清单见 [REFERENCES.md](./REFERENCES.md)），故此处原有的
+> 「不进 `upstream/`」表述作废——那次判断的落点已改：# 不能丢的是「入库」，不是「落盘」。本节探针按 §6.1.2 同款纪律执行，另有
 > **一条最小推理请求为真实计费**（16 max_tokens，实测 65 token，本机账号当时有 1200 枚时效积分）。
 
 **形态判定：不需要「反代」。** 参考件存在的原因是 Claude Code 只说 Anthropic 协议，需要

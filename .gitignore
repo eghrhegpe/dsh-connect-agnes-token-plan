@@ -30,8 +30,10 @@ Thumbs.db
 .vscode/
 *.swp
 
-# 上游仓库容器：里面每个上游各占一个「用各自仓库原名」的子目录
-# （如 upstream/sensenova-usage-dashboard/），各自带独立 .git 与 remote。
+# 参照件容器：每个参照件各占一个「用各自仓库原名」的子目录（如 upstream/AgnesCode2Api/），
+# 各自带独立 .git 与 remote；本机快照（无 .git，如桌面端 asar 解包 upstream/AgnesCode-desktop-1.0.68/）
+# 与探测脚本也一律落在这里，**绝不留在仓库根的未跟踪区**——2026-10-01 复盘：根下 110M 的
+# probe-asar/ 既未跟踪也未忽略，一次 `git add -A` 就会把它卷进历史。
 # 仅本地容纳、绝不进本仓库历史；保持各嵌套 .git 完好即可独立提交/推送。
-# 以后要塞别的上游，直接在 upstream/ 下并排加同名目录即可，无需改此规则。
+# 以后要塞别的参照件，直接在 upstream/ 下并排加子目录即可，无需改此规则。清单见 docs/REFERENCES.md。
 /upstream/

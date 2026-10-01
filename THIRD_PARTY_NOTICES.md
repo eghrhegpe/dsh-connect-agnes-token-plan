@@ -4,7 +4,9 @@
 
 - **文档范式**：参照本地 `~/.dsh/fork/dsh-connect-qoder` 的 README——「这是一个 DSH 插件、如何被加载、bundle 结构」的完整讲述方式（见 `docs/DSH-PLUGIN.md`）；
 - **架构对齐**：provider settings 设计对齐 DSH connect 家族（`dsh-connect-trae` / `dsh-connect-workbuddy` / `llm-qoder`，`imageModelIds` 等见 `docs/ARCHITECTURE.md` §5.1）；
-- **接口参考实现**：`upstream/`——[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)（Python 桌面工具），是 `.gitignore` 忽略、不随本仓库提交的本地容纳目录；本插件构建期与运行期均不依赖它、不进包，仅本地对照（见 `docs/ARCHITECTURE.md` §1）。其算法细节（登录 OIDC 流、密码 JWE 封包、用量接口解析）已吸收进本插件的 Node 实现。
+- **接口参考实现（历史上的游）**：[shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)（Python 桌面工具）——商汤时代的原始实现，其算法细节（登录 OIDC 流、密码 JWE 封包、用量接口解析）已吸收进本插件的 Node 实现。
+- **AgnesCode 线的参照件**：`vibe-coding-labs/AgnesCode2Api`（Go 协议翻译代理）、`vibe-coding-labs/AgnesCodeReverseEngineering`（逆向协议文档 + Python 脚本，Apache-2.0）、`AgnesAI-Labs/AgnesCode`（官方 release / 反馈中心，不含源码）、`ViviQuan/agnescode`（终端 agent，MIT）、`minchieh-fay/agnescodex`、`AgnesAI-Labs/skills`（官方模型 Skills），外加本机安装的 AgnesCode 桌面端 `app.asar` 解包快照（闭源第三方，仅作本机对照证据）。
+- 以上参照件全部落在 `.gitignore` 忽略、**不随本仓库提交**的本地容器 `upstream/` 里（清单与各自许可见 [REFERENCES.md](./docs/REFERENCES.md)，容器姿势见 `docs/ARCHITECTURE.md` §1）；本插件构建期与运行期均不依赖它们、不进包，仅本地对照。**对它们只吸收事实、不复制代码**，故不构成许可证约束下的再分发。
 
 以上均为**设计 / 文档 / 接口层面的参照，无代码复制**，不构成许可证约束下的再分发。
 
