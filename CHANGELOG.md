@@ -132,6 +132,11 @@ deepseek-flash 的 low、kimi-k3 的 low。
 - **顺带暴露的副作用**：未登录的 Host 现在也会去取**公开套餐目录**（它是控制台静默时唯一还剩的额度内容），`test/wiring.test.mjs` 此前从未 stub 过它，已补。
 - **测试**：`routes` +8、`wiring` +2、`e2e` +2、`render` +2（含「第一帧就带三个 tab」的回归）；`docs/API.md` / `ARCHITECTURE.md` §3 §5 同步。客户端两个 tab 的行为未变，只是重新可达。
 
+**上线实测又挖出一个缺口（同日补）**：重启 web 后快照确实变成 `ok:true` / `consoleConnected:false` / `totals:null`，但 `quota.error.code` 是 **`login_rejected`**——而 `GUIDANCE_BY_CODE` 只覆盖了 5 个码。根因是这次降级的连带效应：`AUTH_FAILURE_CODES` 里 13 个码现在**都能**以 `quota.error.code` 抵达面板（以前它们只会变成整份 `ok:false`，面板只读顶层 `code`），表却没跟着长。后果是面板退化成泛泛的「控制台未连接」，丢掉「账号需要重新输入」这个唯一有用的信息。
+
+- `GUIDANCE_BY_CODE` 补齐到 `AUTH_FAILURE_CODES ∪ NO_LOGIN_CODES` 全覆盖：令牌侧（`auth_error` / `jwt_expired` / `no_refresh_token` / `refresh_rejected` + 四个已死的 OIDC 期码）统一给「令牌失效，重登一次」；账号侧 `not_configured` / `missing_credentials` 给「还没配账号」；四种凭据拒绝**复用表单自己的文案**（`auth.badCredentials` / `auth.locked` / `auth.rateLimited` / `auth.verification`）——它们的下一步动作各不相同（重输 / 等解锁 / 等限频 / 完成人工验证），塌成一句「登录失败」会对其中三种给出错误建议。
+- **补上反向检查**（`test/panel.test.mjs`）：此前只断言「表里的 key 都是真码」，现在同时断言「能抵达面板的码都有文案」。缺的正是这一半，而且是被线上抓到的，不是被测试抓到的。
+
 ### 运维诊断 doctor（PITFALLS §22 的欠账）
 
 回答「这台机器的 provider / 出图开关到底开没开」——此前唯一答案在一个 JSON 状态文件里，不在任何配置文件、任何路由、任何 CLI。

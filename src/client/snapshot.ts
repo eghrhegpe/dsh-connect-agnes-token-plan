@@ -75,19 +75,56 @@ export function errorOfStatus(status: number): SnapshotFailure | string {
 }
 
 /**
- * The panel's guidance line for a wire code, keyed by `body.code`.
+ * The panel's guidance line for a wire code, keyed by `body.code` — or, since
+ * the console probe stopped being fatal, by `quota.error.code`.
  *
  * This is the ONE deliberate copy of the Host's taxonomy: the browser
  * cannot import `codes.ts` (the Client module table resolves package
  * names only). The copy is therefore pinned, not trusted —
- * `test/panel.test.mjs` asserts every key here exists in `CODE`, so a code
- * renamed on either side fails the suite instead of silently reading as
- * "no guidance".
+ * `test/panel.test.mjs` asserts both directions: every key here exists in
+ * `CODE`, and every code that can REACH the panel is here. The second
+ * direction is the one that was missing, and it was found live: a stored
+ * account whose sign-in the platform refused answers
+ * `quota.error.code === "login_rejected"`, which had no line at all, so the
+ * panel fell back to a generic "console not connected" and dropped the one
+ * thing the reader needed — that the password has to be re-entered.
+ *
+ * The coverage obligation is `AUTH_FAILURE_CODES ∪ NO_LOGIN_CODES`: every
+ * auth failure, because the console probe now degrades instead of rejecting
+ * the body, plus the two codes no login can fix.
  */
 export const GUIDANCE_BY_CODE: Readonly<Record<string, string>> = Object.freeze({
+  // --- the token side ------------------------------------------------------
+  // One story for all of them: the stored credential did not produce a usable
+  // token, Agnes issues no refresh token to renew with, so the Host signs in
+  // again once from the saved account and then stops. The reader's move is the
+  // same in every case — sign in again.
   auth_error: "panel.jwtExpired",
   jwt_expired: "panel.jwtExpired",
+  no_refresh_token: "panel.jwtExpired",
+  refresh_rejected: "panel.jwtExpired",
+  // Kept mapped although Agnes no longer produces them (they are SenseNova
+  // OIDC-era codes): a missing line costs the reader the explanation, while an
+  // extra line costs one string nobody will ever see.
+  jwks: "panel.jwtExpired",
+  login_flow: "panel.jwtExpired",
+  token_rejected: "panel.jwtExpired",
+  refresh_failed: "panel.jwtExpired",
+  // --- the account side ----------------------------------------------------
+  // Nothing has been entered yet, so the form is the whole answer.
   not_configured: "panel.jwtMissing",
+  missing_credentials: "panel.jwtMissing",
+  // The stored account was REFUSED, and each of these is a different next
+  // action: re-type it, wait out a lock, wait out a rate limit, or finish a
+  // step only a human can do. They reuse the form's own refusal lines rather
+  // than collapsing into one "sign-in failed" string that would be wrong for
+  // three of the four.
+  login_rejected: "auth.badCredentials",
+  login_failed: "auth.badCredentials",
+  account_locked: "auth.locked",
+  rate_limited: "auth.rateLimited",
+  verification_required: "auth.verification",
+  // --- neither -------------------------------------------------------------
   config_error: "panel.configError",
   // The console did not answer. `FORM_EXCLUDED_CODES` already keeps the
   // login form away from this code, so the guidance line is the whole

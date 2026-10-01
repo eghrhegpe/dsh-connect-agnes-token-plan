@@ -194,6 +194,22 @@ const healthy = {
   check("the panel's tables were read from the shipped client", handled.length >= 6,
     handled.join(", "));
   check("every code the panel branches on is declared in codes.js", unknown.length === 0, unknown.join(", "));
+  // The REVERSE direction — the half that was missing, and the gap it hid was
+  // found live rather than here. Every auth failure can now reach the panel as
+  // `quota.error.code`, because the console probe degrades instead of rejecting
+  // the whole body; before that change they all arrived as a whole-body
+  // `ok:false`, where only the top-level `code` mattered and this table was
+  // consulted for a much smaller set. A stored account whose sign-in the
+  // platform refused answers `login_rejected` — which had no line, so the panel
+  // fell back to a generic "console not connected" and lost the one thing the
+  // reader needed (re-enter the password).
+  //
+  // The obligation is `AUTH_FAILURE_CODES ∪ NO_LOGIN_CODES`: a code that can be
+  // reported to the reader must have something to say to them.
+  const reachable = [...new Set([...AUTH_FAILURE_CODES, ...NO_LOGIN_CODES])];
+  const unguided = reachable.filter((code) => !(code in tables.GUIDANCE_BY_CODE));
+  check("every code that can reach the panel as quota.error has guidance",
+    unguided.length === 0, unguided.join(", "));
   check("the panel can tell a console failure from an auth failure",
     handled.includes(CODE.CONSOLE_ERROR) && handled.includes(CODE.AUTH_ERROR),
     handled.join(", "));

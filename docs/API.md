@@ -57,6 +57,9 @@
     // 平台挂了也是 false，两者该给的下一步不同。
     "consoleConnected": true,
     // 第一个失败的来源（含 overview）的名字、wire code 与原因。
+    // code 可能是 AUTH_FAILURE_CODES 里的任何一个（账号未配、账号被拒、
+    // 令牌失效……）——面板对**每一个**都有对应文案，见 snapshot.ts 的
+    // GUIDANCE_BY_CODE；反向覆盖由 test/panel.test.mjs 钉死。
     "error": null
   },
   // 近 N 天的分桶用量。null = 该来源没取到（面板显示「暂未读到」）。
