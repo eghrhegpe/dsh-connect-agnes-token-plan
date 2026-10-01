@@ -10,6 +10,17 @@
  * @module dsh-connect-agnes-token-plan/types
  */
 
+import type { createTokenStore } from "./token-store.ts";
+import type { createApiKeyStore } from "./api-key-store.ts";
+import type { createFileCatalogStore } from "./catalog-store.ts";
+import type { createFileProviderStore } from "./provider-store.ts";
+import type { createFileDrawStore } from "./draw-store.ts";
+import type { createFileVideoStore } from "./video-store.ts";
+import type { createProviderPublisher } from "./provider-publish.ts";
+import type { createAgnescodeStore } from "./agnescode-store.ts";
+import type { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
+import type { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
+
 /** A failure code this plugin can produce or carry (a `CODE` wire value). */
 export type CodeValue = string;
 
@@ -147,4 +158,140 @@ export interface PluginError extends Error {
   retryAfterMs?: number;
   detail?: unknown;
   trace?: unknown[];
+}
+
+// ---------------------------------------------------------------------------
+// Wiring / options shapes. Annotating a parameter with one of these clears the
+// "injected dependency bag" family of implicit-any errors in one place rather
+// than one binding at a time; each field mirrors a real runtime shape (the
+// wiring object `apply()` builds, the tool mount bag, the settings row), so the
+// type is derived rather than guessed.
+// ---------------------------------------------------------------------------
+
+/** Operator login-flow overrides, exactly the keys `host-config.ts` writes. */
+export interface AuthOverrides {
+  consoleOrigin: string;
+  loginPath?: string;
+  requestTimeoutMs?: number;
+  fallbackExpiresInSeconds?: number;
+}
+
+/**
+ * The plugin's resolved settings row (`resolveSettings`).
+ *
+ * Structural on purpose: consumers read only the fields they need, and the row
+ * is built from the operator's patch config, so this is the contract the Host
+ * half consumes rather than a description of how the row is produced.
+ */
+export interface Settings {
+  consoleBase: string;
+  apiBase: string;
+  usageDays: number;
+  cacheSeconds: number;
+  pollSeconds: number;
+  consoleTimeoutMs: number;
+  tokenSkewSeconds: number;
+  allowedHosts: Set<string>;
+  trendMultipliers: Record<string, number>;
+  registerProvider: boolean;
+  drawEnabled: boolean;
+  drawModelId: string;
+  drawTimeoutMs: number;
+  videoEnabled: boolean;
+  videoModelId: string;
+  videoTimeoutMs: number;
+  videoWidth: number;
+  videoHeight: number;
+  videoNumFrames: number;
+  videoFrameRate: number;
+  writeImageModelIds: boolean;
+  imageModelIds: string[];
+  visionModels: unknown[];
+  auth: AuthOverrides;
+}
+
+/** One console-response cache entry (`{body, at}`). */
+export interface CacheEntry {
+  body: unknown;
+  at: number;
+}
+
+/** The console-response cache shared across polls. */
+export type CacheMap = Map<string, CacheEntry>;
+
+/** The single-flight map: one in-flight console call per URL. */
+export type InflightMap = Map<string, Promise<unknown>>;
+
+/**
+ * A panel-saved switch store (`draw-store` / `video-store` / `provider-store`):
+ * the panel's live value always beats the config default, and an untouched
+ * state file reports `null` so the caller falls back to it.
+ */
+export interface SwitchStore {
+  enabled(): Promise<boolean | null>;
+  modelId(): Promise<string | null>;
+  forget(): Promise<void>;
+}
+
+/**
+ * The fetch these modules perform. `RequestInit` matches every call site (the
+ * JSON header / bearer / body objects they build); the return is loose because
+ * tests stub a minimal `{ok, json, text}` response.
+ */
+export type FetchFn = (url: string, options?: RequestInit) => Promise<any>;
+
+/**
+ * The bag `mountAgentTool` hands `defineDrawTool` / `defineVideoTool`.
+ *
+ * Pure wiring: every side effect (key resolution, the live catalog, the fetch,
+ * disposal) is injected rather than read from module state. Loose on the peer
+ * edges (`defineTool`, `fetchImpl`) because the matching `@deepseek-ai/*`
+ * packages ship no declarations here.
+ */
+export interface ToolWiring {
+  /** The peer's tool factory (`dsh-tools`). */
+  defineTool: (...args: any[]) => any;
+  /** Resolve the live `sk-` key (empty when not configured). */
+  resolveApiKey: () => Promise<string | undefined>;
+  /** Read the discovery set at call time (the catalog, not the picker). */
+  getEntries: () => Promise<unknown[]>;
+  settings: Settings;
+  fetchImpl: FetchFn;
+  /** `true` after unmount, so a late call fails instead of leaking. */
+  isDisposed?: () => boolean;
+}
+
+/** The mount-time test seams `apply`'s `deps` inject (`startSideEffects`). */
+export interface ToolSide {
+  loadToolsModule?: () => any;
+  drawFetch: FetchFn;
+  videoFetch: FetchFn;
+}
+
+/**
+ * The wiring bag `apply()` assembles once at mount and hands to the routes and
+ * the side effects. Store / publisher members are derived from their factory
+ * return types so a renamed method cannot silently drift from the type.
+ */
+export interface HostWiring {
+  settings: Settings;
+  configError: string | null;
+  cache: CacheMap;
+  inflight: InflightMap;
+  tokenStore: ReturnType<typeof createTokenStore>;
+  apiKeyStore: ReturnType<typeof createApiKeyStore>;
+  catalogStore: ReturnType<typeof createFileCatalogStore>;
+  providerStore: ReturnType<typeof createFileProviderStore>;
+  drawStore: ReturnType<typeof createFileDrawStore>;
+  videoStore: ReturnType<typeof createFileVideoStore>;
+  publisher: ReturnType<typeof createProviderPublisher>;
+  providerState: ReturnType<typeof createProviderPublisher>["state"];
+  publishProvider: (entries: any[], enabledIds: string[], unavailableModelIds?: any[]) => unknown;
+  releaseProvider: () => unknown;
+  resolveApiKey: () => Promise<string | undefined>;
+  visionPublish: { current: ((visionEntries: unknown[], ids: string[]) => Promise<void>) | null };
+  logger?: { warn?: (message: string) => void; error?: (message: string) => void; info?: (message: string) => void };
+  agnescodeStore: ReturnType<typeof createAgnescodeStore>;
+  agnescodeSwitch: ReturnType<typeof createFileAgnescodeStore>;
+  agnescodePublisher: ReturnType<typeof wireAgnescodePublisher>["publisher"];
 }

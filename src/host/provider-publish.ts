@@ -211,7 +211,7 @@ export function createProviderPublisher(deps: HostDeps = {}) {
    *   drop from the picker's offer.
    * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
    */
-  const publishProviderOnce = async (entries, enabledIds, unavailableModelIds = []) => {
+  const publishProviderOnce = async (entries: any[], enabledIds: string[], unavailableModelIds: any[] = []) => {
     // A publish that arrives after the plugin was disposed registers a
     // provider into a Host that has already withdrawn this plugin: no owner,
     // no release, and nothing on screen saying where it came from.
@@ -339,7 +339,7 @@ export function createProviderPublisher(deps: HostDeps = {}) {
    * @param {string[]} [unavailableModelIds] - quota-exhausted model ids.
    * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
    */
-  const publish = (entries, enabledIds, unavailableModelIds = []) => {
+  const publish = (entries: any[], enabledIds: string[], unavailableModelIds: any[] = []) => {
     const queued = publishChain.then(
       () => publishProviderOnce(entries, enabledIds, unavailableModelIds),
       () => publishProviderOnce(entries, enabledIds, unavailableModelIds)

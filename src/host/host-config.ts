@@ -10,6 +10,7 @@
  */
 
 import { str, obj, num } from "./util.ts";
+import type { Settings, AuthOverrides } from "./types.ts";
 
 /**
  * The one slug every addressable surface of this plugin derives from.
@@ -207,9 +208,9 @@ export function clampInt(raw: unknown, def: number, min: number, max: number = I
  * explains itself. So problems are returned as `configError` and surfaced
  * through the snapshot route.
  * @param {object} config - the row's raw patch config.
- * @returns {{settings: object, configError: string|null}}
+ * @returns {{settings: Settings, configError: string|null}}
  */
-export function resolveSettings(config: Record<string, unknown>) {
+export function resolveSettings(config: Record<string, unknown>): { settings: Settings; configError: string | null } {
   const source = obj(config);
   const consoleBase = str(source.consoleBase, CONFIG_DEFAULTS.consoleBase).replace(/\/+$/, "");
   const apiBase = str(source.apiBase, CONFIG_DEFAULTS.apiBase).replace(/\/+$/, "");
@@ -295,7 +296,25 @@ export function resolveSettings(config: Record<string, unknown>) {
         consoleTimeoutMs: CONFIG_DEFAULTS.consoleTimeoutMs,
         allowedHosts: new Set(CONFIG_DEFAULTS.admittedHosts),
         tokenSkewSeconds: CONFIG_DEFAULTS.tokenSkewSeconds,
-        auth: { consoleOrigin: consoleBase }
+        auth: { consoleOrigin: consoleBase },
+        // The fallback carries the SAME settings as the success branch, minus
+        // the malformed field: a settings consumer that reads `drawEnabled` or
+        // `imageModelIds` must not find it absent just because a typo elsewhere
+        // pushed the whole row onto the default branch.
+        registerProvider: CONFIG_DEFAULTS.registerProvider,
+        drawEnabled: CONFIG_DEFAULTS.drawEnabled,
+        drawModelId: CONFIG_DEFAULTS.drawModelId,
+        drawTimeoutMs: CONFIG_DEFAULTS.drawTimeoutMs,
+        videoEnabled: CONFIG_DEFAULTS.videoEnabled,
+        videoModelId: CONFIG_DEFAULTS.videoModelId,
+        videoTimeoutMs: CONFIG_DEFAULTS.videoTimeoutMs,
+        videoWidth: CONFIG_DEFAULTS.videoWidth,
+        videoHeight: CONFIG_DEFAULTS.videoHeight,
+        videoNumFrames: CONFIG_DEFAULTS.videoNumFrames,
+        videoFrameRate: CONFIG_DEFAULTS.videoFrameRate,
+        writeImageModelIds: CONFIG_DEFAULTS.writeImageModelIds,
+        imageModelIds: CONFIG_DEFAULTS.imageModelIds,
+        visionModels: CONFIG_DEFAULTS.visionModels
       },
       configError: error instanceof Error ? error.message : String(error)
     };
@@ -338,7 +357,7 @@ export function resolveAuthOverrides(source: Record<string, unknown>, consoleBas
         "level; a nested block is ignored and the panel would keep using the real platform."
     );
   }
-  const overrides: Record<string, unknown> = { consoleOrigin: consoleBase };
+  const overrides: AuthOverrides = { consoleOrigin: consoleBase };
   const loginPath = str(source.loginPath, "");
   if (loginPath !== "") overrides.loginPath = loginPath;
   // How long a token is assumed to live when it is not a readable JWT. The

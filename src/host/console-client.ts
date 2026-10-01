@@ -17,6 +17,8 @@
 
 import { CODE } from "./codes.ts";
 import { str, obj } from "./util.ts";
+import type { CacheMap, InflightMap, Settings } from "./types.ts";
+import type { createTokenStore } from "./token-store.ts";
 
 /** Longest TTL any caller uses; entries older than this are swept. */
 const MAX_CACHE_AGE_MS = 3600_000;
@@ -28,7 +30,7 @@ const ENVELOPE_OK = 200;
 export const PLANS_PATH = "/api/cn/user/subscription/plans";
 
 /** Drop entries older than the longest TTL so the map stays bounded. */
-function sweepCache(cache) {
+function sweepCache(cache: CacheMap) {
   const nowMs = Date.now();
   for (const [key, entry] of cache) {
     if (nowMs - entry.at > MAX_CACHE_AGE_MS) cache.delete(key);
@@ -45,7 +47,7 @@ function sweepCache(cache) {
  * @param {unknown} code - the envelope's `code` field.
  * @returns {boolean} true when the caller should renew and retry once.
  */
-export function isAuthRefusal(code) {
+export function isAuthRefusal(code: unknown) {
   return Number(code) === 401 || Number(code) === 403;
 }
 
@@ -59,7 +61,7 @@ export function isAuthRefusal(code) {
  * @param {string} label - the endpoint, for context when `message` is empty.
  * @returns {import("./types.ts").PluginError} the error to throw.
  */
-function refusalError(body, label) {
+function refusalError(body: unknown, label: string) {
   const source = obj(body);
   const code = Number(source.code);
   const message = str(source.message, "");
@@ -83,7 +85,7 @@ function refusalError(body, label) {
  * @returns {unknown} the envelope's `data`, or the body itself when unwrapped.
  * @throws {import("./types.ts").PluginError} when the envelope states a non-200 code.
  */
-export function unwrapEnvelope(body, label) {
+export function unwrapEnvelope(body: unknown, label: string) {
   const source = obj(body);
   const code = source.code;
   if (code === undefined || code === null) return body;
@@ -113,7 +115,15 @@ export function unwrapEnvelope(body, label) {
  * @param tokenStore - the credentials-backed token store.
  * @returns {Promise<unknown>} the unwrapped console `data`.
  */
-export async function fetchConsole(settings, path, params, cacheMs, cache, inflight, tokenStore) {
+export async function fetchConsole(
+  settings: Settings,
+  path: string,
+  params: Record<string, string> | undefined,
+  cacheMs: number,
+  cache: CacheMap,
+  inflight: InflightMap,
+  tokenStore: ReturnType<typeof createTokenStore>
+) {
   const query = params && Object.keys(params).length > 0
     ? `?${new URLSearchParams(params).toString()}`
     : "";
@@ -129,7 +139,7 @@ export async function fetchConsole(settings, path, params, cacheMs, cache, infli
 
   const run = async () => {
     /** One attempt: `{data}` on success, `{authRefused: true}` when renewing helps. */
-    const attempt = async (token) => {
+    const attempt = async (token: string) => {
       const response = await fetch(url, {
         headers: { authorization: `Bearer ${token}`, accept: "application/json" },
         signal: AbortSignal.timeout(settings.consoleTimeoutMs)
@@ -189,7 +199,7 @@ export async function fetchConsole(settings, path, params, cacheMs, cache, infli
  * @param inflight - the in-flight map to share requests through.
  * @returns {Promise<unknown>} the unwrapped `data` array, or `null` on failure.
  */
-export async function fetchPlans(settings, cacheMs, cache, inflight) {
+export async function fetchPlans(settings: Settings, cacheMs: number, cache: CacheMap, inflight: InflightMap) {
   const url = `${settings.consoleBase}${PLANS_PATH}`;
   const cached = cache.get(url);
   if (cached !== undefined && Date.now() - cached.at < cacheMs) return cached.body;
@@ -231,7 +241,7 @@ export async function fetchPlans(settings, cacheMs, cache, inflight) {
  * @param inflight - the in-flight map to share requests through.
  * @param apiKey - the Agnes API key.
  */
-export async function fetchModelCatalog(settings, cacheMs, cache, inflight, apiKey) {
+export async function fetchModelCatalog(settings: Settings, cacheMs: number, cache: CacheMap, inflight: InflightMap, apiKey: string) {
   const url = `${settings.apiBase}/models`;
   const cached = cache.get(url);
   if (cached !== undefined && Date.now() - cached.at < cacheMs) return cached.body;
@@ -258,11 +268,11 @@ export async function fetchModelCatalog(settings, cacheMs, cache, inflight, apiK
     // platform adding `input_modalities` needs no parser change here.
     const models = Array.isArray(body?.data)
       ? body.data
-          .map((entry) => {
+          .map((entry: unknown) => {
             const source = obj(entry);
             return { id: str(source.id, ""), ...source };
           })
-          .filter((entry) => entry.id !== "")
+          .filter((entry: { id: string }) => entry.id !== "")
       : [];
     cache.set(url, { body: models, at: Date.now() });
     sweepCache(cache);

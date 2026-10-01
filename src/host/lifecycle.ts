@@ -23,6 +23,18 @@ import { defineDrawTool } from "./draw.ts";
 import { defineVideoTool } from "./video.ts";
 import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.ts";
 import { name } from "./host-config.ts";
+import type { HostWiring, ToolSide, ToolWiring, SwitchStore, Settings } from "./types.ts";
+
+/**
+ * The host root context this module reads: the Cordis service bag. Loose on
+ * `get` because the matching `@deepseek-ai/*` packages ship no declarations in
+ * this repo (see types.ts); the members this module actually touches are named.
+ */
+interface HostCtx {
+  get(service: string): any;
+  tools?: { register(definition: unknown): unknown } | null;
+  effect?(callback: () => () => void, label?: string): void;
+}
 
 /**
  * Mount one opt-in agent tool, through the shared degradation ladder.
@@ -49,7 +61,25 @@ import { name } from "./host-config.ts";
  * @param {Function} options.factory - `defineDrawTool` / `defineVideoTool`.
  * @returns {Promise<void>}
  */
-async function mountAgentTool({ ctx, wiring, side, store, enabledKey, modelKey, fetchImpl, factory }) {
+async function mountAgentTool({
+  ctx,
+  wiring,
+  side,
+  store,
+  enabledKey,
+  modelKey,
+  fetchImpl,
+  factory
+}: {
+  ctx: HostCtx;
+  wiring: HostWiring;
+  side: ToolSide;
+  store?: SwitchStore | null;
+  enabledKey: keyof Settings;
+  modelKey: keyof Settings;
+  fetchImpl: ToolWiring["fetchImpl"];
+  factory: (options: ToolWiring) => unknown;
+}) {
   const { settings, configError, providerState, catalogStore, resolveApiKey, publisher } = wiring;
   if (configError !== null) return;
   const panelEnabled = store ? await store.enabled().catch(() => null) : null;
@@ -62,7 +92,7 @@ async function mountAgentTool({ ctx, wiring, side, store, enabledKey, modelKey, 
   if (tools === null || typeof tools.register !== "function") return;
   let defineTool;
   try {
-    const mod = await Promise.resolve(side.loadToolsModule());
+    const mod = await Promise.resolve(side.loadToolsModule?.());
     defineTool = mod?.defineTool ?? mod?.default?.defineTool ?? null;
   } catch {
     // No tools peer on this Host: the tool stays absent, nothing logs.
@@ -107,7 +137,7 @@ async function mountAgentTool({ ctx, wiring, side, store, enabledKey, modelKey, 
  * @param {object} side - test seams from `apply`'s `deps`.
  * @returns {Promise<void>}
  */
-export async function registerDrawTool(ctx, wiring, side) {
+export async function registerDrawTool(ctx: HostCtx, wiring: HostWiring, side: ToolSide) {
   await mountAgentTool({
     ctx,
     wiring,
@@ -132,7 +162,7 @@ export async function registerDrawTool(ctx, wiring, side) {
  * @param {object} side - test seams from `apply`'s `deps`.
  * @returns {Promise<void>}
  */
-export async function registerVideoTool(ctx, wiring, side) {
+export async function registerVideoTool(ctx: HostCtx, wiring: HostWiring, side: ToolSide) {
   await mountAgentTool({
     ctx,
     wiring,
@@ -162,7 +192,7 @@ export async function registerVideoTool(ctx, wiring, side) {
  *   (`loadToolsModule`, `drawFetch`).
  * @returns {void} — seed and draw are fire-and-forget.
  */
-export function startSideEffects(ctx, wiring, side) {
+export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSide) {
   const { publisher, catalogStore, settings, visionPublish } = wiring;
 
   // Seed the registration from the persisted catalog so a restarted Host
@@ -209,7 +239,7 @@ export function startSideEffects(ctx, wiring, side) {
         try {
           const view = settingsService.describe?.({ redactSecrets: true });
           const rows = Array.isArray(view) ? view : view?.entries ?? [];
-          return rows.find((candidate) => candidate?.ns === name) ?? null;
+          return rows.find((candidate: { ns?: unknown }) => candidate?.ns === name) ?? null;
         } catch {
           return null;
         }
@@ -256,7 +286,7 @@ export function startSideEffects(ctx, wiring, side) {
  * @param {Function[]} offs - the unregister callbacks from {@link registerRoutes}.
  * @returns {void}
  */
-export function teardown(wiring, offs) {
+export function teardown(wiring: HostWiring, offs: Array<() => void>) {
   const { publisher, releaseProvider, agnescodePublisher } = wiring;
   // Before anything else: a publish still in flight (the mount seed's, or a
   // poll's) must not register into a Host that is letting this plugin go.

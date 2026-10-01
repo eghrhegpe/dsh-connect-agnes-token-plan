@@ -197,7 +197,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     logger: ctx.logger
   });
   const providerState = publisher.state;
-  const publishProvider = (entries: any, enabledIds: string[], unavailableModelIds = []) =>
+  const publishProvider = (entries: any[], enabledIds: string[], unavailableModelIds: any[] = []) =>
     publisher.publish(entries, enabledIds, unavailableModelIds);
   const releaseProvider = () => publisher.release();
 
