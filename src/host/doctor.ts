@@ -61,7 +61,7 @@ export interface DoctorReport {
 }
 
 /** Read a state JSON, or `null` when absent / unreadable / not JSON. */
-async function readJson(file) {
+async function readJson(file: string) {
   try {
     return JSON.parse(await readFile(file, "utf8"));
   } catch {
@@ -70,7 +70,7 @@ async function readJson(file) {
 }
 
 /** Parse one stored provider switch, or `null` when absent / corrupt / foreign version. */
-export function parseProviderPayload(raw) {
+export function parseProviderPayload(raw: Record<string, unknown> | null) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const source = /** @type {Record<string, unknown>} */ (raw);
   if (source.version !== PROVIDER_VERSION) return null;
@@ -78,7 +78,7 @@ export function parseProviderPayload(raw) {
 }
 
 /** Parse one stored draw switch + model preference, or `null` on a bad payload. */
-export function parseDrawPayload(raw) {
+export function parseDrawPayload(raw: Record<string, unknown> | null) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const source = /** @type {Record<string, unknown>} */ (raw);
   if (source.version !== DRAW_STORE_VERSION) return null;
@@ -94,7 +94,7 @@ export function parseDrawPayload(raw) {
  * "no preference" for a file that plainly has one — silently, which is the
  * failure mode this whole module exists to end.
  */
-export function parseVideoPayload(raw) {
+export function parseVideoPayload(raw: Record<string, unknown> | null) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const source = /** @type {Record<string, unknown>} */ (raw);
   if (source.version !== VIDEO_STORE_VERSION) return null;
@@ -102,7 +102,7 @@ export function parseVideoPayload(raw) {
 }
 
 /** Parse one stored catalog record, or `null` when absent / corrupt / foreign version. */
-export function parseCatalogPayload(raw) {
+export function parseCatalogPayload(raw: Record<string, unknown> | null) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const source = /** @type {Record<string, unknown>} */ (raw);
   if (typeof source.version !== "number" || source.version !== CATALOG_VERSION) return null;
@@ -121,7 +121,7 @@ export function parseCatalogPayload(raw) {
  * @param {string|null} profile - the profile this scope belongs to ("" = shared).
  * @returns {Promise<DoctorScope>} the populated scope.
  */
-async function readScope(stateDir, profile) {
+async function readScope(stateDir: string, profile: string | null) {
   const scope: DoctorScope = {
     profile: profile === "" ? null : profile,
     stateDir,
@@ -140,7 +140,7 @@ async function readScope(stateDir, profile) {
   // payload": only the latter is named in `unreadable`, so a machine that has
   // never toggled a switch reports nothing, while a corrupt or foreign file
   // is called out by name (the §22 question: "is this file even ours?").
-  const present = async (file) => {
+  const present = async (file: string) => {
     try {
       await stat(file);
       return true;
@@ -193,7 +193,7 @@ async function readScope(stateDir, profile) {
 }
 
 /** List the profile-segment names under a `$DSH_HOME/state` directory. */
-async function listProfiles(stateRoot) {
+async function listProfiles(stateRoot: string) {
   try {
     const entries = await readdir(stateRoot);
     const profiles: string[] = [];
@@ -225,7 +225,7 @@ export async function diagnose(options: { dshHome?: string } = {}) {
   const stateRoot = join(home, "state");
   const sharedDir = join(stateRoot, name);
   const profiles = await listProfiles(stateRoot);
-  const dirExists = async (dir) => {
+  const dirExists = async (dir: string) => {
     try {
       return (await stat(dir)).isDirectory();
     } catch {
@@ -244,7 +244,7 @@ export async function diagnose(options: { dshHome?: string } = {}) {
 }
 
 /** Render a report as human-readable lines (the non-`--json` doctor output). */
-export function renderReport(report) {
+export function renderReport(report: any) {
   const lines = [`dshHome: ${report.dshHome}`];
   const scopes = report.shared !== null ? [report.shared, ...report.scopes] : report.scopes;
   if (scopes.length === 0) {
