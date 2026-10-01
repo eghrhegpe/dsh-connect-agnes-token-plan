@@ -130,7 +130,7 @@ export const PROBED_MAX_TOKENS = 65_536;
  * @param {object} entry - one normalized catalog entry.
  * @returns {number} the declared window, or the fallback.
  */
-export function contextWindowOf(entry) {
+export function contextWindowOf(entry: Record<string, unknown>) {
   for (const key of ["context_length", "context_window", "contextWindow", "max_context_tokens"]) {
     const value = Math.floor(num(entry?.[key], 0));
     if (value > 0) return value;
@@ -151,7 +151,7 @@ export function contextWindowOf(entry) {
  * @param {object} entry - one normalized catalog entry.
  * @returns {number} the declared ceiling, or 0 when the entry states none.
  */
-export function maxOutputLengthOf(entry) {
+export function maxOutputLengthOf(entry: Record<string, unknown>) {
   for (const key of ["max_output_length", "maxOutputLength", "max_output_tokens"]) {
     const value = Math.floor(num(entry?.[key], 0));
     if (value > 0) return value;
@@ -243,9 +243,9 @@ const PROBED_EFFORT = Object.freeze({
   "agnes-3.0-flash": { low: true, medium: true, high: true, xhigh: true, max: true }
 });
 
-export function thinkingLevelMapFor(entry) {
+export function thinkingLevelMapFor(entry: Record<string, unknown>) {
   const id = str(entry?.id, "");
-  const probed = PROBED_EFFORT[id];
+  const probed = (PROBED_EFFORT as Record<string, { low: boolean; medium: boolean; high: boolean; xhigh: boolean; max: boolean }>)[id];
   if (!probed) {
     // Agnes: the provider row advertises low/medium/high, so a model with no
     // per-model probe is offered the safe OpenAI-compatible set
@@ -283,10 +283,10 @@ const THINKING_LADDER = ["off", "minimal", "low", "medium", "high", "xhigh", "ma
  * @param {object} entry - one normalized catalog entry.
  * @returns {string[]} level ids in escalation order, e.g. ["off","low",...].
  */
-export function supportedThinkingLevels(entry) {
+export function supportedThinkingLevels(entry: Record<string, unknown>) {
   const map = thinkingLevelMapFor(entry);
   return THINKING_LADDER.filter((level) => {
-    const mapped = map[level];
+    const mapped = (map as Record<string, string | null>)[level];
     if (mapped === null) return false;
     if (level === "xhigh" || level === "max") return mapped !== undefined;
     return true;
@@ -348,7 +348,7 @@ export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
  * @param {string[]} [enabledIds] - the allow-list; empty/absent disables it.
  * @returns {object[]} the entries still offered, in catalog order.
  */
-export function filterByEnabled(entries, enabledIds) {
+export function filterByEnabled(entries: any[], enabledIds: string[] | undefined) {
   const list = Array.isArray(enabledIds) ? enabledIds : [];
   if (list.length === 0) return Array.isArray(entries) ? entries : [];
   const allow = new Set(list);
@@ -381,7 +381,7 @@ export const HIDE_ALL_MODELS = "__hide_all__";
  * @param {string} id - the model id to ask about.
  * @returns {boolean}
  */
-export function isModelEnabled(enabledIds, id) {
+export function isModelEnabled(enabledIds: string[] | undefined, id: unknown) {
   const list = Array.isArray(enabledIds) ? enabledIds : [];
   if (list.length === 0) return true;
   return list.includes(str(id, ""));
@@ -403,7 +403,7 @@ export function isModelEnabled(enabledIds, id) {
  * @param {object[]} entries - the normalized catalog entries.
  * @returns {{id: string, name: string, vision: boolean}[]}
  */
-export function rosterOf(entries) {
+export function rosterOf(entries: any[]) {
   const position = new Map();
   const out: Array<{ id: string; name: string; vision: boolean }> = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
@@ -487,7 +487,7 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
  * @param {string[]} [blockedIds] - model ids to report as unavailable.
  * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number, maxOutputLength: number, thinkingLevels: string[]}[]}
  */
-export function rosterWithAvailability(entries, blockedIds: string[] = []) {
+export function rosterWithAvailability(entries: any[], blockedIds: string[] = []) {
   const blocked = new Set(Array.isArray(blockedIds) ? blockedIds : []);
   const position = new Map();
   const out: Array<{ id: string; name: string; vision: boolean; available: boolean; quotaExhausted: boolean; contextWindow: number; maxOutputLength: number; thinkingLevels: string[] }> = [];
@@ -532,7 +532,7 @@ export function rosterWithAvailability(entries, blockedIds: string[] = []) {
  * @param {object[]} entries - the normalized catalog entries.
  * @returns {{modelCount: number, visionCount: number, visionIds: string[]}}
  */
-export function summarizeCatalog(entries) {
+export function summarizeCatalog(entries: any[]) {
   const list = (Array.isArray(entries) ? entries : []).filter(isChatModel);
   const visionIds = list
     .filter((entry) => str(entry?.id, "") !== "")
