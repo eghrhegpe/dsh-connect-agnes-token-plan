@@ -127,23 +127,17 @@ client.js: interpretSnapshot(body) → {data, error}
   （§5.2 的降级模式是范本）——不许再造「桌面端必需启动项」。
 - **凭据红线不动**（[AGENTS.md](../AGENTS.md) 红线 1/2）：新增凭据一律只进
   DSH 凭据服务（含未来若引入多 Key 池），永不入库、永不进日志。
-- **只吸收与商汤（SenseTime）产品线强相关的能力**，不做跨 provider 通用聚合——
-  §5.3 里 `dsh-provider-quota` / `dsh-musage` 的定位边界就是本插件的边界。
-  > **2026-10-01 修订（边界放宽）**：原表述是「只吸收与商汤 **Key/账号线**强相关的能力」，
-  > 按 Key 域名 / 认证域划线。该划法会把同一厂商的姐妹产品线误划到界外——Token Plan
-  > 控制台与小浣熊（`xiaohuanxiong.com`）同属商汤旗下产品，却走互不相通的两个认证域
-  >（实测见 [ROADMAP.md](./ROADMAP.md) §6.1.1 的两次复测）。
-  > 界定依据改为**厂商归属**而非域名或认证域，第二上游因此属**界内**，裁定详情见 §5.5。
-  > 另外两条不变量（opt-in 默认关、凭据红线）不受本次修订影响。
-  > **2026-10-01 修订（二，边界收窄）**：小浣熊第二上游已随 Agnes 线独立而**移除**——本插件
-  > 不再承载商汤小浣熊（面板第三 tab 是 AgnesCode 桌面端上游，见 ROADMAP §6.3）；上述
-  > 「厂商归属」放宽裁定仅存为历史记录。兄弟插件（`dsh-connect-sensenova-token-plan`）保留
-  > 小浣熊线并继续演进。
+- **只吸收与 Agnes 产品线直接相关的能力**（现行上游：Token Plan 控制台 + AgnesCode
+  桌面端），不做跨 provider 通用聚合——§5.3 里 `dsh-provider-quota` / `dsh-musage`
+  的定位边界就是本插件的边界。这条界线的划法改过三次（Key/账号线 → 厂商归属 →
+  Agnes 线，两次复测依据见 [ROADMAP.md](./ROADMAP.md) §6.1.1），裁定沿革登记在
+  [ADR.md](./ADR.md)（ADR-001 ～ ADR-003），已失效裁定的原文在
+  [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md)。
 - **一个模块缺席，不许把别的模块一起埋掉**（2026-10-01 补记）：第一条不变量的推论，
   本插件自己违反过一次——控制台（地基）读不到时整个快照走 `ok:false`，面板只剩登录表单，
   把 API Key tab（根本不读控制台）和小浣熊 tab（另一个上游、另一套凭据）一起带走。
   现已改为 `quota.consoleConnected:false` 的软降级 + 客户端 tab 栏无条件渲染，
-  数据流见 §3；诚实性要求同时成立：读不到的用量是 `null`，不是零值块。
+  数据流见 §3；诚实性要求同时成立：读不到的用量是 `null`，不是零值块（登记见 [ADR.md](./ADR.md) ADR-004）。
 
 变更前的三层分工，改作吸收路线图：
 
@@ -363,12 +357,13 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 （`agnes-image-*` / `agnes-video-*`）。两个判定改为共用这一个函数，矛盾由构造
 消除而非靠约定维持。判据与真机取证见 [AGNES-API.md](./AGNES-API.md) §7.1 / §7.5。
 
-### 5.5 边界裁定：第二上游（小浣熊）属于界内（2026-10-01）
+### 5.5 边界裁定沿革（已外置到账本）
 
-> ⚠️ **本节裁定已随 2026-10-01 的移除而失效**：小浣熊第二上游已整条移出本插件（见 §5.3 修订（二）），
-> 现行上游只有 Agnes 控制台与 AgnesCode 桌面端。原文已移至
-> [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md)，此处不再保留全文，
-> 避免新读者误读为现行边界依据。
+现行边界就是上面 §5 的不变量正文；历次划界的裁定、举证与取代链登记在
+[ADR.md](./ADR.md)（ADR-001 ～ ADR-003），失效裁定的完整原文在
+[ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md)。本节不再承载
+裁定正文——「修订（日期）」式内联补丁由 `docs.test.mjs` 检查 12 禁止，避免沉积
+再次把现行文档变成地层。
 
 ---
 

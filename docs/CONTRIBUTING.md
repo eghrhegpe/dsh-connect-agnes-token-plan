@@ -49,6 +49,8 @@ Host 半边源码位于 `src/host/`（**模块清单以该目录为准**，不�
 - 结构或双仓库关系变化 → `ARCHITECTURE.md` / `DSH-PLUGIN.md`
 - 测试套件或流程变化 → `TESTING.md`
 - 新踩坑或修法 → `PITFALLS.md`
+- 拍新裁定 / 改既有裁定 → 先在 [ADR.md](./ADR.md) 记一笔（日期 / 状态 / 取代链），再改现行正文；**现行正文不留「修订（日期）」式内联补丁**——`docs.test.mjs` 检查 12 为这条把关。
+- 吸收准入门槛（[ADR.md](./ADR.md) ADR-005）→ 新能力动工前，先在 ROADMAP / ARCHITECTURE 写明它进哪个现有文件 / 分册；现有结构装不下，先出拆分蓝图（先例 [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md)）并冻结行为基线，再实现。
 
 根 `README.md` 保持为索引与快速上手，细节下沉到 `docs/`。
 

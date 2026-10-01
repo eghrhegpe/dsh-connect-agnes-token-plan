@@ -307,7 +307,7 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 > 属合规 / 授权分叉，须先定方向——**不默认吸收**」。当时搁置的原因是**边界划法**而不是
 > 不认同这件事本身：按认证域划线会把同一厂商的姐妹产品线一并判成界外。
 > [ARCHITECTURE.md](./ARCHITECTURE.md) §5 不变量 3 的划线依据已改为「厂商归属」，裁定
-> **界内**，举证与边界详述见该文 §5.5。
+> **界内**——举证与裁定沿革见 [ADR.md](./ADR.md) ADR-002（该适用范围后由 ADR-003 收窄为 Agnes 线）。
 > 本节的两次复测结论**不变**——它判死的是第二**登录路径**（桌面 App 登录态复用），
 > 与第二上游是不是界内是两件事，别混为一谈。
 
@@ -390,7 +390,7 @@ deep-link（`issue-authorization-code` 用 JWT 换一次性 code → BFF `exchan
 
 **先例归属**：这将是本插件第一条「**本机登录态采集**」线（qoder / trae / workbuddy 族先例，
 §5.3 核实表）；Token Plan 仍是「自有登录」（`dsh-codearts-auth` 先例）。两种形态并存时隔离
-纪律照 [ARCHITECTURE.md](./ARCHITECTURE.md) §5.5 同款执行：独立 publisher / store / 凭据引用，
+纪律与主提供方同款（[ARCHITECTURE.md](./ARCHITECTURE.md) §5.2）执行：独立 publisher / store / 凭据引用，
 对主注册影响恒为零；opt-in 默认关、失败降级为面板缺席。
 
 **对小浣熊 tab 的 UI 裁定：不取代。** raccoon tab 的四段式（开关 / 登录 / 积分 / 花名册）
