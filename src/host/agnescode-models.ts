@@ -55,7 +55,7 @@ export function agnescodeRequestHeaders() {
  * @param {object[]|null} [catalog] - the `fetchAgnescodeCatalog` result.
  * @returns {object[]} the AgnesCode model rows.
  */
-export function agnescodeRoster(catalog) {
+export function agnescodeRoster(catalog: unknown) {
   const rows = Array.isArray(catalog) && catalog.length > 0 ? catalog : AGNESCODE_FALLBACK_MODELS;
   const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier: number; contextWindow: number; maxOutputLength: number }> = [];
   for (const row of rows) {

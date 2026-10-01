@@ -441,7 +441,7 @@ export function registerRoutes(ctx, wiring) {
       } catch (error) {
         // A rejected password is the common case, and it is the user's to
         // correct: report the reason and leave the panel usable.
-        const failure = error as { code?: unknown; trace?: unknown; detail?: unknown; retryAfterMs?: number };
+        const failure = error as { code?: unknown; trace?: object[]; detail?: unknown; retryAfterMs?: number };
         const traceFile = await writeLoginTrace(failure?.trace, str(failure?.code, CODE.AUTH_ERROR));
         writeJson(response, 200, {
           ...(await tokenStore.state().catch(() => null)),

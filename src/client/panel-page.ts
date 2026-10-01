@@ -198,7 +198,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   }, []);
 
   const toggleSection = useCallback((key: string) => {
-    setOpenSections((current) => ({ ...current, [key]: !current[key] }));
+    setOpenSections((current) => ({ ...current, [key]: !current[key as keyof typeof current] }));
   }, []);
 
   // One effect owns the whole polling cycle: an immediate load on mount,

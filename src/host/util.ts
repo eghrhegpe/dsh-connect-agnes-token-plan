@@ -46,7 +46,7 @@ export function str(value: any, fallback?: any): string {
  * @param {string} text - any string that might carry a credential.
  * @returns {string} the text with credential patterns replaced by `[REDACTED]`.
  */
-export function redactSecrets(text) {
+export function redactSecrets(text: string) {
   const raw = typeof text === "string" ? text : "";
   return (
     raw
@@ -84,7 +84,7 @@ export function verbatim(value: any, fallback?: any): string {
 }
 
 /** Read a finite number, else `null`. */
-export function numOrNull(value) {
+export function numOrNull(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }

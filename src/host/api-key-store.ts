@@ -62,7 +62,7 @@ export function createApiKeyStore({
      * @param {string} apiKey - the key.
      * @returns {Promise<void>}
      */
-    async save(apiKey) {
+    async save(apiKey: string) {
       const value = verbatim(apiKey, "");
       if (typeof value !== "string" || value.trim() === "") {
         throw new Error("an API key is required");
