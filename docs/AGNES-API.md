@@ -514,6 +514,20 @@ peer 误判的**官方依据**：
 此前只说「2.5 系列」——点名了家族，却没点名 agent 实际打到的是哪个模型，得回读 catalog
 才知道。
 
+**Flash 专属限制**（官方文档 [Agnes Video 2.5 Flash.md](./AGNES-API-docs/Agnes Video 2.5 Flash.md)
+「与 Agnes Video 2.5 的差异」表，校验失败即 400、不建任务不收费）：
+
+| 校验项 | Flash 规则 | 校验失败响应 |
+|---|---|---|
+| `size` | 仅支持字符串 `"720P"` | HTTP 400：`size must be 720P` |
+| `reference` 图片数量 | `images` 最多 5 张 | HTTP 400：`images length must not exceed 5` |
+| `reference` 音频数量 | `audios` 最多 3 段 | HTTP 400：`audios length must not exceed 3` |
+| `reference` 视频输入 | **不支持**有效的 `videos` 内容 | HTTP 400：`videos is not supported` |
+
+**查询任务**：官方推荐 `GET {host}/agnesapi?video_id=…&model_name=agnes-video-2.5-flash`；
+仅 `mode:"text"` 的任务可省略 `model_name`，`keyframe` / `reference` 模式**必须**带
+`model_name`。建议每 `1–2` 秒查询一次。
+
 #### 7.5.2 视频任务的状态机与响应
 
 建任务响应读 `video_id` / `task_id` / `id`（三个都可能出现，优先 `video_id`，
