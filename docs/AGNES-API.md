@@ -341,6 +341,13 @@ peer 误判的**官方依据**：
    **Agnes 402 = Token Plan 配额不足，不应重试**。`llm-error-fix.ts` 只把「限频
    信号 + 无硬额度措辞」的 429 纠正回 `RATE_LIMIT`，保留真 402 原样——与官方
    语义一致。
+   **但官方 FAQ（[AGNES-API-docs/1、API 接入、定价与订阅.md](./AGNES-API-docs/1、API 接入、定价与订阅.md)）
+   明说 429 也可能是「超过订阅配额」**——`llm-error-fix.ts` 的 `looksLikeRateLimit`
+   以 `/\b429\b/` 作首判据，只要 message 没带 `quota exceeded` / `balance exhausted`
+   等硬额度措辞就纠正回 RATE_LIMIT；若平台对订阅配额用尽也回 429 且 message 只写
+   「rate limit exceeded」，就会被**误判成限频**去退避重试。**改进方向**：加
+   「订阅配额耗尽」判据（如 message 含 `subscription quota` / `Token Plan quota`），
+   命中则保留 QUOTA——这是 `llm-error-fix.ts` 的下一个演进点，非当前 bug。
 
 > 其余错误码（400/401/403/404/408/409/413/415/422/431/499/500/502/503/504/
 > 520/522/524）均为 HTTP 标准语义，官方文档未给出 Agnes 专有 type 名，

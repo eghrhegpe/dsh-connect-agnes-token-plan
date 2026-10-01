@@ -59,7 +59,7 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 
 在「API Key」卡里粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可）：Host 即以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新，还能在「语言模型」卡勾选具体要推送哪些模型。Key 只进 DSH 凭据（引用名 `AGNES_TOKEN_PLAN_API_KEY`）、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
 
-> **免费版与付费 Token Plan 共用同一个 API Key 输入框**：`sk-`（免费版）与 `cpk-`（Token Plan）两类 Key 都走同一份 `/v1/models` 目录，本插件对前缀不做限制；面板「积分额度」tab 读的是**订阅账号**的四窗口上限，免费版 Key 是否消耗该窗口额度由 Agnes 计费口径决定，插件不代判。两者都能在此粘贴。
+> **免费版与付费 Token Plan 共用同一个 API Key 输入框**：`sk-`（免费版）与 `cpk-`（Token Plan）两类 Key 都走同一份 `/v1/models` 目录，本插件对前缀不做限制。**计费双轨**——`sk-` 走 API 按 token / 张 / 秒计费（`agnes-2.5-flash` / `agnes-3.0-flash` / 图片模型当前优惠价 `$0`，`agnes-2.5-pro` 按刊例价），`cpk-` 走 Token Plan 订阅配额（四窗口）。面板「积分额度」tab 只读**订阅配额**，不读 API 按量余额；两类 Key 使用**独立限制池**，换 Key 即换池。两者都能在此粘贴。
 
 ## 出图工具（可选，默认关）
 
