@@ -70,7 +70,7 @@ import type { HostDeps } from "./types.ts";
  * @param {string} id - the record's name.
  * @returns {string} the record key.
  */
-export const credentialKey = (scope, id) => `${scope}/${id}`;
+export const credentialKey = (scope: string, id: string) => `${scope}/${id}`;
 
 /**
  * A cheap signature of the model set a provider registration would offer.
@@ -160,7 +160,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   const videoStore = createFileVideoStore({ profile });
 
   /** Read an optional service without throwing on a Host that lacks it. */
-  const getService = (service) => {
+  const getService = (service: string) => {
     try {
       return ctx.get?.(service) ?? null;
     } catch {
@@ -184,7 +184,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     settings,
     panelSwitch: () => providerStore.enabled().catch(() => null),
     loadAdapterModule,
-    getLlm: (service) => getService(service),
+    getLlm: (service: string) => getService(service),
     resolveApiKey,
     emit: (event) => {
       try {
@@ -197,7 +197,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     logger: ctx.logger
   });
   const providerState = publisher.state;
-  const publishProvider = (entries, enabledIds, unavailableModelIds = []) =>
+  const publishProvider = (entries: any, enabledIds: string[], unavailableModelIds = []) =>
     publisher.publish(entries, enabledIds, unavailableModelIds);
   const releaseProvider = () => publisher.release();
 
@@ -259,7 +259,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     // file behind: a "browser works but the panel does not" report is only
     // debuggable by diffing a working attempt against a failing one. The
     // failure half is named by its code; a success has none, so it says so.
-    onTrace: (hops, error) => {
+    onTrace: (hops: object[] | undefined, error: { code?: unknown } | null) => {
       void writeLoginTrace(hops, error === null ? "ok" : str(error?.code, CODE.AUTH_ERROR));
     }
   });
