@@ -47,11 +47,14 @@ function existsExact(path) {
   return true;
 }
 
+/** 官方文档一手信源目录（逐字抓取，只读）——不参与断链/去重检查。 */
+const OFFICIAL_DOCS_DIR = "AGNES-API-docs";
+
 function collectMd(dir) {
   const out = [];
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
-    if (name === "upstream" || name === ".git" || name === "node_modules") continue;
+    if (name === "upstream" || name === ".git" || name === "node_modules" || name === OFFICIAL_DOCS_DIR) continue;
     if (statSync(p).isDirectory()) out.push(...collectMd(p));
     else if (extname(p) === ".md") out.push(p);
   }

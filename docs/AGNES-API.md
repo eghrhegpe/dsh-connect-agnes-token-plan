@@ -234,6 +234,25 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 > 拼写（`image_url` 块还是 `image` 字段）与上限。改动前先真机探针确认——不要
 > 只信文档就上（PITFALLS 关于「文档须说实话」的纪律）。
 
+#### 7.1.2 上下文窗口：官方文档声明 vs `FALLBACK_CONTEXT_WINDOW`（待裁定）
+
+**官方文档明写的上下文窗口**：
+
+| 模型 id | 官方上下文窗口 | 官方最大输出 |
+|---|---|---|
+| `agnes-3.0-flash` | `512K` | `65,536 Token` |
+| `agnes-2.5-pro` | `1M` | `65,536 Token` |
+| `agnes-2.5-flash` | `512K` | `65.5K` |
+
+**代码现状**：`/v1/models` 不带 `context_length` → `contextWindowOf` 返回
+`FALLBACK_CONTEXT_WINDOW = 128_000`。**面板与 descriptor 都显示 128K**。
+
+**冲突定性**：与 §7.1.1 同源——**目录接口没暴露，代码用兜底**。`max_output_length`
+已经在 §7.3 经真机探针钉到 `65_536`（和官方一致），但 `context_length` **没有
+做过同款实测补丁**，所以实际差 4–8 倍。**处理方向**：按 §7.1.1 同款做法，加一张
+硬编码上下文窗口表（数据源 = 官方文档 + 真机探针），并在面板注明「平台声明 /
+兜底」。
+
 ### 7.2 思考档位（safe-set 只服务未知 id）
 
 `thinkingLevelMapFor` 对**未知模型 id**（不在 `PROBED_EFFORT` 表）给出 Agnes
@@ -277,6 +296,34 @@ safe-set，保证选择器不空：
   逐模型 `reasoning_effort` 支持面见 §7.2 的 `PROBED_EFFORT` 表。
 - 图像输入方言：**仍未 probe**（目录无 `input_modalities` 可读，无模型被标
   vision），不写死（参见 [PITFALLS.md](./PITFALLS.md) 关于「文档须说实话」的纪律，形式全绿而语义已漂是踩过的坑）。
+
+#### 7.3.1 官方错误码表（中文站文档，抓存 [AGNES-API-docs/2、常见错误码.md](./AGNES-API-docs/2、常见错误码.md)）
+
+**官方文档的 429 与 402 语义截然不同**——这条区分是 `llm-error-fix.ts` 纠正
+peer 误判的**官方依据**：
+
+| HTTP | 官方含义 | 常见原因（摘） | 官方解决方案（摘） |
+|---|---|---|---|
+| **402** | 账户余额或可用配额不足 | Token Plan 配额不足、订阅状态异常、充值未生效 | 检查 Token Plan 状态、**充值或升级套餐**、降低请求成本后重试 |
+| **429** | 请求速率过高，超出当前账户的 **RPM 限制** | 超出 RPM 限制、免费用户限 RPM 20、并发过多、自动重试频率过高 | **等待 1 分钟后重试**、降低请求频率、控制并发、升级 Token Plan |
+
+**两个关键结论**：
+
+1. **Agnes 没有 `quota_exceeded_error` 这个错误码名**——那是 SenseNova 时代的
+   API 错命名，Agnes 官方文档从未出现过。之前 README/源码里「Agnes 把速率上限
+   错命名为 `quota_exceeded_error`」的说法**无依据**，已删除。真正根因是 peer 的
+   `isQuotaExceededError` 正则命中面过宽（`dsh-llm/lib/types/error.js:76-82`），
+   把 Agnes 限频 429 body 里带 `quota exceeded` / `out of rate budget` 的措辞抢判
+   成 `QUOTA`——**这是 peer 分类器的问题，不是 Agnes 的行为**。
+2. **Agnes 429 = RPM 限频，应退避重试**（官方明说「等待 1 分钟后重试」）；
+   **Agnes 402 = Token Plan 配额不足，不应重试**。`llm-error-fix.ts` 只把「限频
+   信号 + 无硬额度措辞」的 429 纠正回 `RATE_LIMIT`，保留真 402 原样——与官方
+   语义一致。
+
+> 其余错误码（400/401/403/404/408/409/413/415/422/431/499/500/502/503/504/
+> 520/522/524）均为 HTTP 标准语义，官方文档未给出 Agnes 专有 type 名，
+> 与 `llm-error-fix.ts` 的结构化 type 回捞（`extractStructuredType`）不冲突——
+> 若平台真回了 `"type":"rate_limit_error"` 之类，本层也能接住。
 
 ### 7.4 live-contract 护栏（漂移检测）
 
