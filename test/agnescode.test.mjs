@@ -490,7 +490,14 @@ const GOOD_SESSION = {
       descriptor.baseUrl === "https://api-agnes-code.agnes-ai.cn/v1");
     check("the descriptor pins the same OpenAI-compat family fixes as the Token Plan route",
       descriptor.compat?.maxTokensField === "max_tokens" && descriptor.compat?.supportsDeveloperRole === false);
-    check("a text-only row offers text only", JSON.stringify(descriptor.input) === '["text"]');
+    check("a text-only row (non-agnes id, no official-doc vision claim) offers text only",
+      JSON.stringify(agnescodeToDescriptor(rows.find((r) => r.id === "deepseek-v4-flash") ?? rows[0], { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }).input) === '["text"]');
+    // The Agnes family rows borrow `PROBED_VISION`'s official-doc evidence even
+    // though the catalogue itself declares no modality field — same models as
+    // the Token Plan gateway, where agnes-3.0-flash accepted the standard
+    // OpenAI image_url block live (AGNES-API.md §7.3).
+    check("an agnes-family row (agnes-3.0-flash) offers image input from the official-doc table",
+      JSON.stringify(descriptor.input) === '["text","image"]', JSON.stringify(descriptor.input));
     check("reasoning is false in v1 (the thinking wire channel is unverified)",
       descriptor.reasoning === false);
     check("the descriptor headers carry the catalogue gates",

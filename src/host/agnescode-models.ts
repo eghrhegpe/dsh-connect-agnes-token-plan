@@ -25,6 +25,7 @@
 
 import { str, num } from "./util.ts";
 import { AGNESCODE_FALLBACK_MODELS } from "./agnescode.ts";
+import { PROBED_VISION } from "./llm-models.ts";
 
 /**
  * The provider id this plugin registers under for AgnesCode.
@@ -56,6 +57,31 @@ export function agnescodeRequestHeaders() {
 }
 
 /**
+ * Whether an AgnesCode roster row accepts image input.
+ *
+ * AgnesCode's own BFF `/models` rows declare no modality field — only
+ * `model_type: "text"` and `supported_endpoint_types` — so the catalogue alone
+ * would answer "no vision" for EVERY row (that is why `fetchAgnescodeCatalog`
+ * pins `vision: false`). But AgnesCode serves the SAME Agnes model family the
+ * Token Plan gateway does (`agnes-3.0-flash` / `agnes-2.5-flash` /
+ * `agnes-2.5-pro` all appear in both rosters), whose official docs declare
+ * image input — `PROBED_VISION` (llm-models.ts) is that evidence, and the
+ * Token Plan side already probed `agnes-3.0-flash` accepting the standard
+ * OpenAI `image_url` block live. Non-agnes ids (`deepseek-*` / `glm-*` /
+ * `kimi-*`) have no such claim and stay text-only.
+ *
+ * Resolution order: the row's own `vision` (if the catalogue ever declares
+ * one) wins, then `PROBED_VISION` for the Agnes family, then false.
+ * @param {object} row - one AgnesCode roster row (must carry `id`).
+ * @returns {boolean} whether the row accepts image input.
+ */
+export function agnescodeVisionOf(row: any) {
+  if (row?.vision === true) return true;
+  const id = str(row?.id, "");
+  return (PROBED_VISION as Record<string, boolean>)[id] === true;
+}
+
+/**
  * The AgnesCode model rows the panel shows and the adapter offers.
  *
  * A live catalogue row always beats the static fallback roster. The row keeps
@@ -73,7 +99,9 @@ export function agnescodeRoster(catalog: unknown) {
     out.push({
       id,
       name: str(row?.name, id),
-      vision: row?.vision === true,
+      // See `agnescodeVisionOf`: the catalogue declares no modality field, so
+      // the Agnes family rows borrow `PROBED_VISION`'s official-doc evidence.
+      vision: agnescodeVisionOf(row),
       memberOnly: row?.memberOnly === true,
       // No multiplier concept on this provider: billing is the credit pool
       // (credits-balance), not per-model rates — `undefined` means the roster
@@ -97,7 +125,7 @@ export function agnescodeToDescriptor(row: any, options: { bffBase?: string } = 
   if (id === "") throw new Error("agnescodeToDescriptor: row has no id");
   const bffBase = str(options.bffBase, "");
   if (bffBase === "") throw new Error("agnescodeToDescriptor: a pinned bffBase is required");
-  const vision = row?.vision === true;
+  const vision = agnescodeVisionOf(row);
   return {
     id,
     name: str(row?.name, id),
