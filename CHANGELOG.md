@@ -137,6 +137,21 @@ deepseek-flash 的 low、kimi-k3 的 low。
 - `GUIDANCE_BY_CODE` 补齐到 `AUTH_FAILURE_CODES ∪ NO_LOGIN_CODES` 全覆盖：令牌侧（`auth_error` / `jwt_expired` / `no_refresh_token` / `refresh_rejected` + 四个已死的 OIDC 期码）统一给「令牌失效，重登一次」；账号侧 `not_configured` / `missing_credentials` 给「还没配账号」；四种凭据拒绝**复用表单自己的文案**（`auth.badCredentials` / `auth.locked` / `auth.rateLimited` / `auth.verification`）——它们的下一步动作各不相同（重输 / 等解锁 / 等限频 / 完成人工验证），塌成一句「登录失败」会对其中三种给出错误建议。
 - **补上反向检查**（`test/panel.test.mjs`）：此前只断言「表里的 key 都是真码」，现在同时断言「能抵达面板的码都有文案」。缺的正是这一半，而且是被线上抓到的，不是被测试抓到的。
 
+### 修复：浏览器把保存的商汤账号填进模型搜索框
+
+上报现象：密码管理器把 SenseNova 控制台的账号自动填进插件的输入框，**连「接入 API」tab 的模型搜索框也被塞了账号**，看着像浏览器按关键词猜中了什么。
+
+**不是关键词，是我们主动声明的，而且同 origin 上还有第二个一模一样的表单**：
+
+- 两个插件（`dsh-connect-sensenova-token-plan` 与 `dsh-connect-agnes-token-plan`）同时装在 `profiles/web` 的 bundles 里，注册进同一个 slot、由同一个 `http://127.0.0.1:3080` 提供——浏览器按 origin 存密码，分不清谁是谁。
+- 两个插件的表单语义逐行相同（`<form>` + `autocomplete="username"` + `type="password"` + `current-password`），正是 Chromium 文档里的标准登录表单形状。
+- API Key 那个 `<form>` 只有密码字段、**没有用户名字段**。Chromium 自己的文档要求这种拆分布局必须在密码表单里放一个含用户名的字段（可 CSS 隐藏），否则它会自己去找——它挑中了同页唯一既无 `autocomplete` 又无 `name` 的文本输入框，也就是模型搜索框。
+
+修法：给模型搜索框加 `autoComplete="off"` 与 `name="model-search"`。**账号表单的 `username`/`current-password` 语义刻意保留**（浏览器记住 Agnes 账号是想要的能力），本次只堵「去表单外找用户名」这条路径。
+
+- `render.test.mjs` 新增 I2 组：渲染全部 7 个可能含输入框的组件，断言每个可填文本输入框要么 `autoComplete="off"`、要么声明凭据角色，并把「唯一声明凭据角色的是账号表单」钉死。该检查实测会红再复绿。
+- 机制与证据写进 `docs/PITFALLS.md` §27（同 origin 多插件会把这一点放大成「凭据互相串门」）。
+
 ### 运维诊断 doctor（PITFALLS §22 的欠账）
 
 回答「这台机器的 provider / 出图开关到底开没开」——此前唯一答案在一个 JSON 状态文件里，不在任何配置文件、任何路由、任何 CLI。

@@ -728,6 +728,67 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     viewOfCode("some_new_code").needsSetup === true);
 }
 
+// === I2. no fillable text input is left for the browser to guess at =======
+// A browser-autofill bug, traced to its cause. Both plugins in this profile
+// render a `<form>` holding `type="password"` on the SAME origin
+// (127.0.0.1:3080), and the API-key form has a password field with NO username
+// field inside it. Chromium's own guidance ("Password Form Styles that
+// Chromium Understands", point 2) says that when username and password are
+// split across forms, the password form must carry a username field —
+// otherwise it goes looking for one. It picked the model search box: the only
+// text input on the page with no `autocomplete` and no `name`. A saved console
+// ACCOUNT was then typed into it.
+//
+// So the invariant, checked over every component's REAL rendered tree: each
+// fillable input either opts out (`autoComplete: "off"`) or declares a
+// credential role on purpose. Checkboxes, radios and buttons are not fillable
+// and are skipped.
+{
+  const tt = (key) => key;
+  /** Every `<input>` in a rendered tree, as its props. */
+  const inputsOf = (tree) => findAll(tree, () => true)
+    .filter((el) => el.type === "input")
+    .map((el) => el.props);
+  // No `type` at all means `type="text"`.
+  const TEXTUAL = new Set(["text", "search", "email", "url", "tel", "password"]);
+  const fillable = (props) => props.type === undefined || TEXTUAL.has(props.type);
+
+  const llm = { models: [{ id: "m1" }], enabledModelIds: [], hasApiKey: true, drawCandidateIds: ["img-1"] };
+  const trees = {
+    AccountForm: render.AccountForm({ auth: { hasAccount: true }, onDone: () => {}, tt }),
+    ApiKeyForm: render.ApiKeyForm({ llm, onDone: () => {}, tt }),
+    ProviderForm: render.ProviderForm({ llm, onDone: () => {}, tt }),
+    ModelPicker: render.ModelPicker({ llm, onDone: () => {}, tt }),
+    DrawSwitch: render.DrawSwitch({ llm, onDone: () => {}, tt }),
+    RaccoonTab: render.RaccoonTab({ tt }),
+    PanelPage: render.PanelPage({ onClose: () => {}, tt, localeSubscribe: undefined })
+  };
+
+  const unlabelled = [];
+  const credentials = [];
+  for (const [component, tree] of Object.entries(trees)) {
+    for (const props of inputsOf(tree)) {
+      if (!fillable(props)) continue;
+      const label = `${component}: type=${String(props.type ?? "text")}`;
+      if (props.autoComplete === undefined) unlabelled.push(label);
+      else if (props.autoComplete !== "off") credentials.push(`${label} → ${String(props.autoComplete)}`);
+    }
+  }
+  check("every fillable text input opts out of autofill or declares a credential role",
+    unlabelled.length === 0, unlabelled.join(", "));
+  // The ONE deliberate exception, pinned so it cannot drift silently: the
+  // account form IS a credential pair and the browser is MEANT to remember it.
+  // Anything else that starts declaring a credential role shows up here.
+  check("the account form is the only place declaring a credential pair",
+    credentials.join(" | ") === "AccountForm: type=text → username | AccountForm: type=password → current-password",
+    credentials.join(" | "));
+  // The search box is the field this check exists for; name it explicitly so a
+  // future reader can see which input the bug report was about.
+  const searchBox = inputsOf(trees.ModelPicker).find((props) => props.type === "search");
+  check("the model search box opts out of autofill",
+    searchBox?.autoComplete === "off", JSON.stringify(searchBox ?? {}));
+}
+
 // === G9. the draw switch section is rendered and says which state it is in
 // DrawSwitch IS mountable: `client-surface.js` installs a stand-in React whose
 // `useState` returns the initial value and whose `useCallback` returns the

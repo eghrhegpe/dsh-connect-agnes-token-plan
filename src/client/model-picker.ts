@@ -224,6 +224,24 @@ export function ModelPicker({ llm, onDone, tt }: {
               value: query,
               placeholder: tt("llm.rosterSearchPlaceholder"),
               "aria-label": tt("llm.rosterSearchPlaceholder"),
+              // Without this the browser's password manager typed a saved
+              // console ACCOUNT into this box. It is not a keyword being
+              // detected — it is a gap: the API-key form on the same tab holds
+              // a `type="password"` field with NO username field inside it, and
+              // Chromium's own guidance ("Password Form Styles that Chromium
+              // Understands", point 2) says that when username and password are
+              // split across forms, the password form must carry a username
+              // field — otherwise it goes looking for one. This box was the
+              // only text input on the page with no `autocomplete` and no
+              // `name`, so it got picked.
+              //
+              // `off` is the direct instruction, and it is honoured here: the
+              // well-known "Chrome ignores autocomplete=off" problem is about
+              // PASSWORD fields and address autofill, not a plain search input.
+              // `render.test.mjs` group I2 walks every rendered component and
+              // fails if any other text input is left unlabelled this way.
+              autoComplete: "off",
+              name: "model-search",
               disabled: busy,
               onChange: (event: { target: { value: string } }) => setQuery(event.target.value)
             }),
