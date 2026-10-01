@@ -266,13 +266,22 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   `throttle-store.js` / `catalog-store.js` / `provider-store.js` 三处**手写**
   同一段"temp 文件 + `rename` 原子 + 0600 + `$DSH_HOME/state/<plugin>`"。
 
-  > 核验修订（2026-09-29）：三处手写逐行坐实（`throttle-store.js:93,144-145`、
+  > 核验修订（2026-09-29，**统一前快照**）：三处手写逐行坐实（`throttle-store.js:93,144-145`、
   > `catalog-store.js:120,129-130`、`provider-store.js:107,117-118,131-132`）。
   > 但"弱隔离"的程度**因 store 而异**：`catalog-store` 已在 `:112-118` 用
   > `pid+时间戳` 唯一临时名显式处理"两个 Host 进程共享目录"（注释明说，原稿
-  > 对其"裸奔"的表述过重），只剩读改写无锁；**固定 tmp 名、真有两进程互踩风险
-  > 的是 `provider-store`**。`dsh-atomic-write` 的 `withFileLock` 收益仍成立，
-  > 但对 catalog 是"锦上添花"、对 provider-store 才是"补洞"。
+  > 对其"裸奔"的表述过重），只剩读改写无锁；彼时**固定 tmp 名、真有两进程互踩风险
+  > 的是 `provider-store`**。
+  >
+  > **统一后修订（现状）**：§4.1 第一步落地后，三处原子写全数收敛到 `state-store.ts`
+  > 的 `temporaryOf`（`pid+时间戳` 唯一名）+ `writeStateFile`（`0600` + `rename`）。
+  > **固定 tmp 名这个并发坑已被第一步消除**——throttle 与 provider 的旧固定/手写名
+  > 一并被收敛，不再专属 `provider-store`。故"对 provider-store 补洞"已过时：
+  > provider-store 现与 catalog 同款策略，且为整文件替换单布尔、无 read-modify-write，
+  > `withFileLock` 对它收益≈零。第二步 `withFileLock` 若要做，**真正能补的是
+  > `catalog-store`**——其 `replace`/`setEnabledIds` 读改写保留 curated 允许清单（RMW），
+  > 双进程并发时末写者胜会丢一次名单编辑；provider/throttle 整文件替换，锁无增量收益。
+  > 代价不变：新 peer 依赖，按原稿"待 peer 依赖评估"。
 - **`dsh-atomic-write` 的语义**（`README`）：`writeFileAtomic(text, {mode:0o600})`
   （随机后缀 sibling + `rename`，拒绝跟随 symlink）+ `withFileLock`（跨进程写锁，
   解决本插件"两个 Host 进程同时写同一状态文件"的多进程问题——这正是
@@ -291,8 +300,9 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 - **落地状态（2026-09-29）**：第一步已完成——新增 `state-store.js`（peer-free，
   导出 `stateDir/ensureStateDir/temporaryOf/writeStateFile/readStateJson`），
   三个 store 的目录解析与原子读写全部改走原语（`throttleDir/catalogDir/
-  providerDir` 委托 `stateDir`）。`catalog`/`provider` 原有 pid+时间戳唯一临时名
-  策略并入原语，`throttle` 的固定 tmp 名一并消除（顺带收敛它的双进程互踩面）；
+  providerDir` 委托 `stateDir`）。`catalog` 原有的 `pid+时间戳` 唯一临时名策略作为
+  原语基准，`throttle`/`provider` 各自的固定/手写临时名一并收敛为同款（消除二者的
+  双进程互踩面）；
   provider 目录权限收紧到 0o700、写失败抛错语义保留。`store.test.mjs` 全部
   黑盒断言无行为变化（131 checks 全绿）。第二步（`dsh-atomic-write` peer 接入，
   拿 `withFileLock` 跨进程写锁）未做，待 peer 依赖评估。
@@ -406,9 +416,12 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
   护栏，且**零运行时风险**（纯测试，peer 不可达 SKIP）。与既有的 `peer-roots.mjs`
   / 「live 档不进 `npm test`」纪律同形。**下一步最该做**的是同为 P0 的 §4.3 `autoRecoverArmed`
   布尔（`store`+`panel` 两套门禁，改动面小）。
-- **最有杠杆的维护债**仍是 §4.1 状态文件统一：一份重复实现抽掉三份，还顺带
-  补上 `dsh-atomic-write` 的跨进程写锁（对 `provider-store` 补洞、对
-  `catalog-store` 加固），是"少写代码 + 更安全"的双赢。
+- **最有杠杆的维护债**仍是 §4.1 状态文件统一：一份重复实现抽掉三份已落地（第一步），
+  跨进程写锁（第二步 `dsh-atomic-write` 的 `withFileLock`）仍待 peer 依赖评估。
+  需校正优先级：统一前"对 `provider-store` 补洞"的措辞已过时——provider-store 的
+  固定 tmp 名坑已被第一步消除，且它为整文件替换、无 RMW，锁收益≈零；真正能补的是
+  `catalog-store` 的读改写（保留 curated 允许清单），但即便如此增量收益也有限，
+  不应急于为它引入新 peer 依赖。
 - **`index.js` 重构（§2.3）排 P2 不 P0**：它有价值（收编接线味）但改 2 套测试
   注入缝，风险高于纯测试项；且 `buildSnapshotBody` 抽走聚合后，`index.js`
   已不是"不可读"，是"仍最大"——收益递减。等 §4.1/§4.4a 先清完维护债再做，

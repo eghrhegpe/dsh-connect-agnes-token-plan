@@ -24,6 +24,7 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [IMPROVEMENTS.md](./IMPROVEMENTS.md) | 深化改进研究（定位对齐 / `index.js` 收编 / peer 契约护栏 / 状态·契约·UX·client 四块债），实证引用兄弟插件与本机 peer 源码，附分步落地顺序与门禁 | 定改进优先级、排重构顺序、查每项的投入风险比 |
 | [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md) | `token-store.js` 拆分蓝图（登录/续期/节流/迁移四块 + 显式 state 容器）：状态归属表、迁移块退役条件、7 步落地计划（每步门禁=行为基线零漂移）、红线核对表 | 动刀 token-store 之前先读这份 |
 | [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md) | **已失效裁定存档**：§5.5 小浣熊边界裁定原文（2026-10-01 随小浣熊线移出本插件而失效），保留供未来边界争议回溯 | 查历史边界决策、不复用为现行依据 |
+| [DSH-UNIFIED-INTERFACE-AUDIT.md](./DSH-UNIFIED-INTERFACE-AUDIT.md) | **观察存档**：DSH runtime 出图/出视频统一接口审计（事实链 + 结论：当前无第一方大统一 image/video 注册面，故 §5.4 接法 B 是当下唯一可行落地点，接法 A 因依赖外部社区包而否决） | 查「为何不退回通用接口 / 为何自己造工具」的 runtime 取证、不复用为执行依据 |
 
 ## 文档边界（不在此目录写的内容）
 
