@@ -103,8 +103,15 @@ const INERT_AUTH = {
  * @returns {{adapter: object, providerIds: string[]}} the adapter and the ids
  *   it owns.
  */
-export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveApiKey, get, unavailableModelIds = [] }) {
-  const models = buildDescriptors(entries, { providerId: LLM_PROVIDER_ID, baseUrl, enabledIds, unavailableModelIds });
+export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveApiKey, get, unavailableModelIds = [] }: {
+  entries: any;
+  enabledIds?: string[];
+  baseUrl?: string;
+  resolveApiKey: any;
+  get?: (service: string) => any;
+  unavailableModelIds?: string[];
+}) {
+  const models = buildDescriptors(entries, { providerId: LLM_PROVIDER_ID, ...(baseUrl === undefined ? {} : { baseUrl }), enabledIds, unavailableModelIds });
 
   const provider = {
     ...createProvider({
@@ -173,10 +180,10 @@ export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveA
     // carries an image and `resolveAttachments()` yields undefined. Both hooks
     // are wired the same way the official `llm-pi-ai` plugin wires them.
     resolveAttachments: () => get?.("attachments"),
-    resolveImageAccess: (attachments, ref) =>
+    resolveImageAccess: (attachments: any, ref: any) =>
       resolveImageAttachmentAccess(
         attachments,
-        (hostPath) =>
+        (hostPath: string) =>
           /** @type {FsService | undefined} */ (get?.("fs"))?.processPathFromHostPath?.(hostPath),
         ref
       )
@@ -192,18 +199,18 @@ export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveA
       // `stream(...)` 与 `prepareCall(...).stream` 都返回一个 async iterable；
       // 二者据此包裹重判流。其它成员（含 image/resolveApiKey 等）原样放行。
       if (prop === "stream") {
-        return (options) => reclassifyStream(target.stream(options));
+        return (options: any) => reclassifyStream(target.stream(options));
       }
       if (typeof value === "function" && prop === "prepareCall") {
-        return (...args) => {
+        return (...args: any[]) => {
           const prepared = value.apply(target, args);
           if (prepared && typeof prepared.then === "function") {
-            return prepared.then((p) => p && typeof p.stream === "function"
-              ? { ...p, stream: (o) => reclassifyStream(p.stream(o)) }
+            return prepared.then((p: any) => p && typeof p.stream === "function"
+              ? { ...p, stream: (o: any) => reclassifyStream(p.stream(o)) }
               : p);
           }
           return prepared && typeof prepared.stream === "function"
-            ? { ...prepared, stream: (o) => reclassifyStream(prepared.stream(o)) }
+            ? { ...prepared, stream: (o: any) => reclassifyStream(prepared.stream(o)) }
             : prepared;
         };
       }
