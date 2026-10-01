@@ -17,6 +17,7 @@
   | - | -: |
   | 免费用户（`default`） | 10 |
   | 企业用户（`enterprise`） | 20 |
+  | Token Plan 用户(`TokenPlan`) | 未写明 |
 
   请您根据新的限额合理调整 API 请求频率，避免触发限流。
 
