@@ -99,9 +99,17 @@
     // 优先级（调用参数 > 配置的 drawModelId > 目录首个出图模型）从同一份
     // 目录算出，面板展示与工具行为不会分叉。目录缺席（无 Key）时整个字段缺席
     "drawModel": "agnes-image-2.5-flash",
-    // 目录里 output_modalities 含 image 的条目：自动选择藏掉同侪时，候选让它可见
+    // 目录里判定为出图模型的条目：自动选择藏掉同侪时，候选让它可见
     "drawCandidateCount": 1,
-    "drawCandidateIds": ["agnes-image-2.5-flash"]
+    "drawCandidateIds": ["agnes-image-2.5-flash"],
+    // 视频工具（0.4.3）：与 draw 同构，但候选集**只含 V2.0 家族**
+    "videoEnabled": false, "videoSource": "config",
+    "videoModel": "agnes-video-v2.0",
+    "videoCandidateCount": 1,
+    "videoCandidateIds": ["agnes-video-v2.0"],
+    // 被排除的 2.5 家族单独上报：参数体系与 V2.0 互斥（见 AGNES-API.md §7.5.1），
+    // 面板据此说明「目录里看得见的模型为什么这里选不到」，而不是让它们凭空消失
+    "video25ModelIds": ["agnes-video-2.5", "agnes-video-2.5-flash"]
   },
   "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
 }
@@ -134,7 +142,7 @@
 
 两种用途，靠 body 区分：
 
-- 保存 Key：`{ "apiKey": "sk-..." }` —— 以 `AGNES_TOKEN_PLAN_API_KEY` 引用写入 DSH 凭据服务（与手写 `llm-pi-ai` 行读取的是同一个引用名）；进程环境变量仍是兜底来源。下次轮询用新 Key 拉取模型目录并（开关开启时）重建已注册的 provider。
+- 保存 Key：`{ "apiKey": "<sk- 免费版或 cpk- Token Plan 密钥>" }` —— 以 `AGNES_TOKEN_PLAN_API_KEY` 引用写入 DSH 凭据服务（与手写 `llm-pi-ai` 行读取的是同一个引用名）；进程环境变量仍是兜底来源。下次轮询用新 Key 拉取模型目录并（开关开启时）重建已注册的 provider。
 - 清除 Key：`{ "forget": true }` —— 仅删面板保存的引用并清空私有 catalog 缓存；环境变量 `AGNES_TOKEN_PLAN_API_KEY` **不**受影响，已注册 provider 的模型列表被清空。
 
 响应同样只含去密状态；非法 body 返回 400，跨域 POST 返回 403。任何响应都不会回显 Key 明文。
@@ -168,6 +176,18 @@
 `{ "enabled": true|false }` —— 把出图开关写入插件私有状态文件（`$DSH_HOME/state/<profile>/<plugin>/draw.json`，按 profile 分段、见 [PITFALLS.md](./PITFALLS.md) §23），与 `/provider` 走的是同一套「存私有状态」机制，但**不触发任何即时发布**——agent 工具的实际注册/缺席发生在下一个 Host 启动（或重新安装）时，由 `lifecycle.js` 的 `startSideEffects` 重读生效值。优先级：面板保存的值 > `cordis.patch.yml` 的 `drawEnabled`。非布尔 `enabled` 返回 400；跨域返回 403。
 
 `{ "drawModelId": "agnes-image-2.5-flash" }`（或 `null` = 自动选择）—— 把出图模型偏好写入同一个 `draw.json`。生效时机与开关相同：`startSideEffects` 在下一次挂载时用它覆盖 `cordis.patch.yml` 的 `drawModelId`（优先级：面板 > 配置；面板清除后回落配置，配置也为空则自动取目录第一个出图模型）。非空字符串之外的非 null 值返回 400；跨域返回 403。`{ "forget": true }` 同时清除开关与模型偏好的面板保存值。
+
+### `GET /api/dsh-connect-agnes-token-plan/video`
+
+视频工具开关的去密状态：`videoEnabled`（**生效值**）、`videoSource`（`panel` / `config`）。与 `/draw` 是**同一个处理器**（`registerToolSwitchRoute`），只是各自持有自己的 store 与键名。
+
+### `POST /api/dsh-connect-agnes-token-plan/video`
+
+`{ "enabled": true|false }` / `{ "videoModelId": "agnes-video-v2.0" | null }` / `{ "forget": true }` —— 语义、优先级、400 与 403 边界与 `/draw` 逐条相同，状态落在 `$DSH_HOME/state/<profile>/<plugin>/video.json`。
+
+> ⚠️ **键名是承重的**：两条路由共用一份处理器实现，把它们的状态分开的**只有键名**（`drawModelId` / `videoModelId`）与各自闭包捕获的 store。`routes.test.mjs` 组 S 专门钉了这条隔离（S6/S6b 交叉投递、S7 各自回读），因为一次复制粘贴把键名写错，会让两个工具**静默地**共用一个模型。
+
+`videoModelId` 只应填 V2.0 家族的 id；把 2.5 家族的 id 存进去**不会被拒绝**（处理器只校验**形状**——非空字符串或 `null`），但 `pickVideoModel` 只在自己的 V2.0 候选集里认这个偏好，认不出就退回目录里第一个 V2.0 模型（**不会**把 2.5 的 id 发出去换来一个 400）。是否存在于目录里是**调用时**的事实，不是保存时能断言的。
 
 ### `GET|POST /api/dsh-connect-agnes-token-plan/raccoon`
 

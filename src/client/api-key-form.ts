@@ -1,5 +1,5 @@
 /**
- * The inference API-key editor (`sk-…`) with the llm section assembled around
+ * The inference API-key editor (free `sk-…` or Token Plan `cpk-…`) with the llm section assembled around
  * it. Same security shape as `AccountForm`: show/hide, save/forget, busy and
  * outcome notes, and the value leaves component state the moment it is saved.
  * It is hook-based, so like AccountForm the render suite does not mount it;

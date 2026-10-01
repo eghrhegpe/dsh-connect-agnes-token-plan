@@ -56,7 +56,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 | `loginTimeoutMs` | `0` → `15000` | 单次登录尝试的超时。登录要带密码、可能被限流，所以与 `consoleTimeoutMs` **不是同一个数**。`requestTimeoutMs` 是它的旧名，只在只设旧名时仍然生效 |
 | `fallbackExpiresInSeconds` | `0` → `604800` | access token 不是可读 JWT 时假定的寿命（7 天）。**方向是刻意的**：估短了每轮轮询都要花一次真实登录，而 Agnes 有失败次数锁定 |
 | `writeImageModelIds` | `false` | 视觉第二步（§5.1）：**opt-in**，是否把识别出的可看图模型清单写进本插件自己的 DSH settings row（`imageModelIds` / `visionModels` 两个字段），供后续 LLM connect 插件读取。默认关，纯读信息层 |
-| `registerProvider` | `false` | 第三步（§5.2）：**opt-in**，是否由本插件直接向 DSH 注册 OpenAI 兼容 LLM provider（id `agnes-token-plan`，直连 `apiBase`）。开启后在面板「接入 API」保存 `sk-` Key 即可，catalog 轮询自动建/刷新模型列表，vision 模型自动带图片输入；catalog 与允许清单只存插件私有状态文件。默认关——注册模型源是 Host 级变更 |
+| `registerProvider` | `false` | 第三步（§5.2）：**opt-in**，是否由本插件直接向 DSH 注册 OpenAI 兼容 LLM provider（id `agnes-token-plan`，直连 `apiBase`）。开启后在面板「接入 API」保存 API Key 即可（免费版 `sk-` 或 Token Plan `cpk-` 皆可），catalog 轮询自动建/刷新模型列表，vision 模型自动带图片输入；catalog 与允许清单只存插件私有状态文件。默认关——注册模型源是 Host 级变更 |
 | `drawEnabled` | `false` | 出图吸收（§5.4 接法 B）：**opt-in**，是否给 agent 注册 `agnes_draw_image` 工具（POST `{apiBase}/images/generations`，用面板保存的 `AGNES_TOKEN_PLAN_API_KEY`）。出图模型由 catalog 的 `output_modalities` 结构化识别（不用名字正则），Key 每次调用现取；失败后 30s 冷却。默认关——agent 工具是 Host 级变更；无 tools 服务的 Host 上该工具静默缺席。面板「接入 API」区有真开关（`POST /api/<name>/draw`），勾选保存后在插件私有状态文件里记录，立即生效、无需重启 Host |
 | `drawModelId` | `""` | 首选出图模型 id；留空 = catalog 里第一把出图模型（如 `Agnes-u1-fast`）。工具调用显式传 `model` 时以调用为准 |
 | `drawTimeoutMs` | `120000` | 单次出图请求超时（出图模型很慢，别用对话级超时）；下限 5000 |
@@ -106,6 +106,6 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 | `quota.error` 指名某个 source | 那一个额度源降级了（series / subscription / plans），其余照常 | 看 `message` 里平台自己的话；`usage/overview` **不会**出现在这里——它是致命源，失败会直接进登录表单 |
 | 快照接口没有 `auth` 字段 | 跑的还是旧代码 | 完全退出 DSH（含托盘）再启动（见 §4） |
 | 面板提示需要重新登录 | 令牌被拒且环境里已无密码 | 面板表单填一次账号密码即可 |
-| 面板「可看图」一行缺失，但 `/v1/models` 有模型 | 没有 API key，模型目录没拉（`catalogAvailable: false`），视觉清单随之不显示 | 在面板「API Key」卡粘贴 `sk-` Key 保存（写入 DSH 凭据服务引用），或在用户级 env 变量层配 `AGNES_TOKEN_PLAN_API_KEY`；下一轮 poll 自动亮起来，无需重启 |
+| 面板「可看图」一行缺失，但 `/v1/models` 有模型 | 没有 API key，模型目录没拉（`catalogAvailable: false`），视觉清单随之不显示 | 在面板「API Key」卡粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可；写入 DSH 凭据服务引用），或在用户级 env 变量层配 `AGNES_TOKEN_PLAN_API_KEY`；下一轮 poll 自动亮起来，无需重启 |
 | 「可看图」清单为空但 catalog 有模型 | 平台当前没有一个模型声明 `input_modalities` 含 `image`（或平台该字段缺失） | 对照 `catalogModels` 里各模型的 `input_modalities` 实际值；Agnes 每个条目都带此字段，空清单应是真的没有可看图模型 |
 | `quota.planUnknown` | 订阅 payload 没有可匹配的套餐身份（uuid / 名称） | 套餐对比卡照常显示（公开目录）；当前套餐上限需要 `/api/cn/user/subscription` 返回可识别的套餐名或 uuid，见 [AGNES-API.md](./AGNES-API.md) §5 |

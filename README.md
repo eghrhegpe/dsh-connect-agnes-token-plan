@@ -55,7 +55,9 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 
 「接入 API」tab 的三张卡按"你为什么来这"排序，而不是按依赖排序：**语言模型**（注册 provider + 勾选推送哪些模型）、**出图工具**——两张都在最前且默认展开；**API Key** 收在最后（默认收起），它是前两张卡的前置条件，由它们指回来。
 
-在「API Key」卡里粘贴 `sk-` Key 保存：Host 即以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入，还能在「语言模型」卡勾选具体要推送哪些模型。Key 只进 DSH 凭据（引用名 `AGNES_TOKEN_PLAN_API_KEY`）、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
+在「API Key」卡里粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可）：Host 即以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新、可看图模型自动带图片输入，还能在「语言模型」卡勾选具体要推送哪些模型。Key 只进 DSH 凭据（引用名 `AGNES_TOKEN_PLAN_API_KEY`）、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
+
+> **免费版与付费 Token Plan 共用同一个 API Key 输入框**：免费版发的 `sk-` 密钥只能调免费全模态模型；付费 Token Plan 发的 `cpk-` 密钥消耗四窗口额度（即「积分额度」tab 读到的上限）。两者都能在此粘贴，本插件不做前缀限制。
 
 ## 出图工具（可选，默认关）
 

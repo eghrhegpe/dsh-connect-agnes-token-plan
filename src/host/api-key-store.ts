@@ -1,5 +1,5 @@
 /**
- * The Agnes inference API key (`sk-…`) store — the credential behind the
+ * The Agnes inference API key (`sk-…` free tier, or `cpk-…` Token Plan) store — the credential behind the
  * directly-registered LLM provider and the `/v1/models` catalog.
  *
  * It is the SAME reference-value mechanism the console account uses

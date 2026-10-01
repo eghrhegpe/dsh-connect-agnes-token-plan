@@ -5,15 +5,17 @@
 | 链路 | 源站 | 凭据 | 覆盖 |
 |---|---|---|---|
 | **额度展示**（「积分额度」tab） | `consoleBase` = `https://platform-backend.agnes-ai.cn` | 账号密码换来的控制台 access token | §1–§6 |
-| **推理通道**（「接入 API」tab） | `apiBase` = `https://api.agnes-ai.cn/v1` | `AGNES_TOKEN_PLAN_API_KEY`（`sk-` Key） | §7 |
+| **推理通道**（「接入 API」tab） | `apiBase` = `https://api.agnes-ai.cn/v1` | `AGNES_TOKEN_PLAN_API_KEY`（免费版 `sk-` Key 或 Token Plan `cpk-` 密钥均可） | §7 |
 
 > ⚠️ 登录协议细节（一跳 POST、无 refresh token、密码明文过 TLS、防锁号节流）不在这里重复，见
 > [AUTH.md](./AUTH.md)。本地路由与控制台端点的对照表见 [API.md](./API.md)。
 > **SenseNova 控制台**（`platform.sensenova.cn`，OIDC+PKCE）已不是本插件的任何一条链路，
 > 其接口原文留在 [SENSENOVA-API.md](./SENSENOVA-API.md) 作历史档——小浣熊上游与
 > `upstream/` 仍属商汤体系，那份档仍被它们引用。
-> 出图（draw，`draw.ts`）默认关闭，其 `images/generations` 端点已真机确证存在且可用
-> （见 §7.5），模型识别走 `modality.ts`（见 §7.1）。
+> 出图（draw，`draw.ts`）与视频（video，`video.ts`）两个 agent 工具默认关闭，其
+> `images/generations` 与 `videos` + `agnesapi` 端点均已真机确证存在且可用
+> （见 §7.5），模型识别走 `modality.ts`（见 §7.1）。视频**只覆盖 V2.0 参数体系**，
+> 2.5 家族的互斥规则见 §7.5.1。
 
 ## 0. 已经确证的事实（源码常量，无需真机即可断言）
 
@@ -140,7 +142,7 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 
 ### 7.1 模型目录 `GET /v1/models`
 
-需 `Bearer <API Key>`（本机推理 key，非控制台 access token）。返回 `data[]`；
+需 `Bearer <API Key>`（本机推理 key，非控制台 access token；免费版 `sk-` Key 与 Token Plan `cpk-` 密钥都可作为此处的 key）。返回 `data[]`；
 `console-client.ts` 整条原样保留（不剥信封、不改字段）。
 
 **真机确证（2026-10-01）：Agnes 的条目只带 5 个字段，没有任何模态 / 能力元数据。**
@@ -240,12 +242,17 @@ safe-set，保证选择器不空：
 
 | 用途 | 端点 | 形状 |
 |---|---|---|
-| 出图 | `POST /v1/images/generations` | **同步**：一次请求直接拿到结果 |
-| 视频建任务 | `POST /v1/video/generations`（单数 `video`） | 返回任务标识，**异步** |
-| 视频查任务 | `GET /v1/videos/generations`（复数 `videos`） | 查询任务状态；空查询回 `{"code":"task_not_exist"}` |
+| 出图 | `POST {apiBase}/images/generations` | **同步**：一次请求直接拿到结果 |
+| 视频建任务 | `POST {apiBase}/videos` | 返回任务标识，**异步** |
+| 视频查任务 | `GET {host}/agnesapi?video_id=…&model_name=…` | 查询任务状态；空查询回 `{"code":"task_not_exist"}` |
 
-注意建任务与查任务的路径**单复数不对称**（`video` / `videos`），
-`POST /v1/videos/generations` 会回 `Invalid URL`。`POST /v1/videos` 也接受建任务。
+**查任务的路径不在 `/v1` 下**——它在站点根上多一级 `agnesapi`。`video.ts` 的
+`buildVideoQueryEndpoint` 专门剥掉版本段（`hostRootOf`）就是为了这个：把 `/v1`
+拼上去会 404。建任务侧，`POST /v1/video/generations`（单数）与
+`POST /v1/videos` 都通，但 `POST /v1/videos/generations`（复数 + `generations`）
+回 `Invalid URL`；本插件固定走 OpenAI Videos 兼容的 `{apiBase}/videos`。
+两条端点与上游 `dsh-agnes` 的实现逐字一致（其 `AGNES_VIDEO_API_URL` /
+`AGNES_VIDEO_QUERY_URL` 两个常量）。
 
 出图真机响应（`agnes-image-2.5-flash`，`response_format: "url"`）：
 
@@ -258,6 +265,54 @@ safe-set，保证选择器不空：
 `parseDrawResponse` 只读 `data[0].url` / `b64_json` / `revised_prompt`，顶层多出的
 `task_id` 被忽略——即当前解析器与真实形状**已经对齐**，出图链路无需改动。
 
-> ⏳ **未实测**：视频建任务的**成功响应形状**（字段名、任务 id 位置、状态枚举）尚未
-> 取证——需要真跑一次生成（消耗 1/500 日额度）。在取证之前，视频工具不实现；
-> 额度侧是支持的（§4 的 `videoDaily` 窗口，用量计 `video_seconds`）。
+#### 7.5.1 视频 V2.0 请求体与校验规则
+
+`buildVideoBody` 的输出字段与**校验**（非法显式值一律**抛错**，不夹取）：
+
+| 字段 | 类型 / 范围 | 缺省 | 非法时的行为 |
+|---|---|---|---|
+| `model` | 字符串 | `agnes-video-v2.0` | 直传 |
+| `prompt` | 字符串 | — | 直传 |
+| `width` | 正整数 | `1152` | 抛错 |
+| `height` | 正整数 | `768` | 抛错 |
+| `num_frames` | ≤ 441 **且** `8n+1` | `121` | 抛错（并给出最接近的较大合法值） |
+| `frame_rate` | 1–60 | `24` | 抛错 |
+| `seed` | 整数 | 不发送 | 抛错 |
+| `negative_prompt` | 非空字符串 | 不发送 | 空串视为未提供 |
+| `image` | 公共 `http(s)://` URL | 不发送 | 抛错（平台无法抓取相对路径） |
+
+`8n+1` 的常用取值是 `81 / 121 / 161 / 241 / 441`；`121 @ 24fps ≈ 5 秒`。
+
+> **为什么抛错而不夹取**：`buildDrawBody` 对 `n` 是**夹取**的，视频这里刻意相反。
+> 夹取帧数会**静默改变视频时长**——而一次生成要几分钟才回结果，用户拿到 3 秒而不是
+> 5 秒时已经无从追溯。宁可当场报错。
+
+**V2.0 与 2.5 的参数体系互斥**：名字含 `2.5` 的模型
+（`agnes-video-2.5` / `agnes-video-2.5-flash`）走 `mode` / `seconds` / `size` /
+`aspect_ratio`（OpenAI Videos 兼容的秒数制），把 V2.0 的
+`width` / `height` / `num_frames` / `frame_rate` 发给它会被 **400** 拒绝，反之亦然。
+所以 `pickVideoModel` **只在 V2.0 家族里选**，2.5 家族进
+`video25ModelIds` 单独上报给面板（面板据此说明「为什么目录里看得见的模型这里选不到」），
+而不是发一个注定失败的请求。
+
+#### 7.5.2 视频任务的状态机与响应
+
+建任务响应读 `video_id` / `task_id` / `id`（三个都可能出现，优先 `video_id`，
+查询用它）。查询响应 `parseVideoQuery` 读：
+
+```json
+{"video_id":"…","task_id":"…","status":"in_progress","progress":0,
+ "seconds":"5","size":"1152x768","url":"…","metadata":{"url":"…","error":null}}
+```
+
+- `status` 终态只有 `completed` 与 `failed`（`VIDEO_TERMINAL_STATUSES`）；
+  `queued` / `in_progress` 都继续轮询。
+- `url` 两层兼容：顶层 `url` 优先，回落到 `metadata.url`。
+- `progress: 0` **必须保持 0**：`num()` 坚持正值，会把合法的 0% 读成「缺失」，
+  所以这里直接读数字。
+- 轮询间隔 5 秒，整体超时默认 600 秒；另有 `VIDEO_MAX_POLLS = 1000` 的防呆上限，
+  防的是**时钟不前进时 `remaining <= 0` 永不可达**而空转（写这个模块自己的单测时
+  第一次撞到的失败模式）。
+- 视频工具**没有 30 秒冷却门**（`draw.ts` 有）。这是决策不是遗漏：一次视频尝试
+  耗时分钟级、且与出图共用同一个视频限频池，协议自身的延迟已远宽于 30 秒。
+

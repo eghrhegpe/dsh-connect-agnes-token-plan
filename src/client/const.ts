@@ -12,7 +12,7 @@ export const SNAPSHOT_PATH = "/api/dsh-connect-agnes-token-plan/snapshot";
 /** The account route: lets the panel configure itself, no `.env` editing. */
 export const ACCOUNT_PATH = "/api/dsh-connect-agnes-token-plan/account";
 
-/** The inference API-key route: saves the `sk-` key the provider uses. */
+/** The inference API-key route: saves the provider's API key (free `sk-…` or Token Plan `cpk-…`). */
 export const API_KEY_PATH = "/api/dsh-connect-agnes-token-plan/api-key";
 
 /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
@@ -23,6 +23,9 @@ export const MODELS_PATH = "/api/dsh-connect-agnes-token-plan/models";
 
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
 export const DRAW_PATH = "/api/dsh-connect-agnes-token-plan/draw";
+
+/** The video-tool switch route (mirrors `DRAW_PATH`; V2.0 family only). */
+export const VIDEO_PATH = "/api/dsh-connect-agnes-token-plan/video";
 
 /** The Raccoon provider route (second upstream provider, ROADMAP §6.1). */
 export const RACCOON_PATH = "/api/dsh-connect-agnes-token-plan/raccoon";

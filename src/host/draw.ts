@@ -331,7 +331,7 @@ export function defineDrawTool({
       }
       const apiKey = await resolveApiKey();
       if (typeof apiKey !== "string" || apiKey.trim() === "") {
-        throw new Error("AGNES_TOKEN_PLAN_API_KEY 未配置：在面板「模型接入」粘贴 sk- Key，或设置该环境变量");
+        throw new Error("AGNES_TOKEN_PLAN_API_KEY 未配置：在面板「模型接入」粘贴 API Key（免费版 sk- 或 Token Plan cpk-），或设置该环境变量");
       }
       let picked;
       try {
