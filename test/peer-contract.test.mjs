@@ -31,6 +31,14 @@
  *      peer 范围、llm-error-fix 退化为 no-op 兼容层并更新本契约）；② 类型名本身
  *      **不**误命中（钉住正确机制，防未来正则改动把 `_` 也当边界而误伤）；③ rate 类型
  *      名不误命中。
+ *   E. **退出证**（退化闹钟）：直接执行 peer 未导出的 `classifyPiAiError` 源码体，
+ *      问「若拆掉本插件的纠正层，peer 会不会自己判对」。当前答案为否 → 补丁承重；
+ *      答案为是那天本段转红并在 stdout 打出 `EXIT-PROBE: patch-redundant`。那只是
+ *      **退化**为 no-op 兼容层，不是删除——peer 范围 `>=0.1.5 <0.3` 仍跨 bug 版，
+ *      本机装了修好的 peer 不等于用户的 Host 修好（§3.3「不删补丁是刻意的」）。
+ *      真正的删除闹钟是离线的 `test/error-fix.test.mjs` §5：peer 下界收紧到修后
+ *      版本、老 Host 不再被支持时，它才要求整层删除。没有这两条，这层打在不可改
+ *      peer 上的补丁就是永久债（docs/IMPROVEMENTS.md §3.3④）。
  *
  * peer 引用按其实际导出选取：`@deepseek-ai/dsh-llm/lib/types/error.js` 导出
  * `isQuotaExceededError` 与 `QUOTA_EXCEEDED_CODE`（= 'QUOTA'）；组合消息优先用 pi-ai
@@ -40,7 +48,7 @@
  */
 import { findPeerRoot, installNetworkGuard } from "./peer-roots.mjs";
 import { pathToFileURL } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   extractStructuredType,
@@ -206,6 +214,115 @@ for (const message of misjudgedMessages) {
     );
   } else {
     console.log("SKIP (D): dsh-credentials 库入口不在标准路径——由 test/store.test.mjs 18 段检查兜底。");
+  }
+}
+
+// --- E. 退出证：peer 自己会不会判对（llm-error-fix 的删除闹钟）------------
+// 抽取 peer 未导出的 `classifyPiAiError` 源码体并注入它的两个依赖后执行，
+// 而不是在测试里重抄一份分支顺序——重抄的副本一旦与 peer 漂移，这个"到期日"
+// 就会给出错误答案（要么永不响，要么误响）。执行的是 peer 自己的代码，peer
+// 调序/收紧正则时本段的答案自动跟着变，无需维护副本。
+{
+  const classifierPath = join(root, "@deepseek-ai", "dsh-llm-pi-ai", "lib", "index.js");
+
+  /** 按花括号配平取出 `function <name>(...)` 的函数体；找不到返回 null。 */
+  function extractFunctionBody(source, name) {
+    const at = source.indexOf(`function ${name}(`);
+    if (at < 0) return null;
+    const open = source.indexOf("{", at);
+    if (open < 0) return null;
+    let depth = 0;
+    for (let i = open; i < source.length; i += 1) {
+      if (source[i] === "{") depth += 1;
+      else if (source[i] === "}") {
+        depth -= 1;
+        if (depth === 0) return source.slice(open + 1, i);
+      }
+    }
+    return null;
+  }
+
+  let classify = null;
+  let extractError = "";
+  if (!existsSync(classifierPath)) {
+    extractError = `peer 分类器文件不在预期路径：${classifierPath}`;
+  } else {
+    try {
+      const body = extractFunctionBody(readFileSync(classifierPath, "utf8"), "classifyPiAiError");
+      if (body === null) throw new Error("未能在 peer 源码里定位 classifyPiAiError");
+      // 注入 peer 自己的两个依赖，其余全是字面正则，不需要外部符号。
+      classify = new Function("message", "isQuotaExceededError", "QUOTA_EXCEEDED_CODE", body);
+      classify("warmup", isQuotaExceededError, QUOTA_EXCEEDED_CODE);
+    } catch (error) {
+      classify = null;
+      extractError = String(error?.message ?? error);
+    }
+  }
+
+  check(
+    "退出证探针可用：能定位并执行 peer 的 classifyPiAiError",
+    classify !== null,
+    extractError === ""
+      ? ""
+      : `${extractError}。peer 结构已变 → 人工复核 llm-error-fix.ts 是否仍必要（这是本补丁唯一的到期日，不可用 SKIP 糊过去）`
+  );
+
+  if (classify !== null) {
+    const peerCode = (message) => classify(message, isQuotaExceededError, QUOTA_EXCEEDED_CODE);
+
+    // 控制组：探的是**配额检测器本身是否还活着**，不是"硬配额体最终被判成什么"。
+    // 后者会误伤一次合法的上游语义修正——若 peer 按 Agnes 官方语义把 429 一律判
+    // 限频（配额改由 402 表达），硬配额体（也是 429 体）自然变 RATE_LIMIT，那是
+    // 修好了而不是回归；用分支结果当控制会把真正的到期日压住。检测器失效才是
+    // 需要压住的情形：那时 canary 会因"什么都匹不上"而落到 RATE_LIMIT，敲响的
+    // 是假闹钟。所以这里直接喂一段不含 429 的纯额度文本给 isQuotaExceededError。
+    const quotaDetectorAlive = isQuotaExceededError("monthly quota exceeded, no credits left");
+    check(
+      "退出证控制：peer 的配额检测器仍活着（防到期日因检测失效而假响）",
+      quotaDetectorAlive === true,
+      // 只在失败时带文案：这条的 detail 是"该怎么办"，通过时打印它会让人以
+      // 为检测器已经死了（套件仍绿，但读日志的人被误导）。
+      quotaDetectorAlive === true
+        ? ""
+        : "isQuotaExceededError('monthly quota exceeded, no credits left') 为 false —— 检测器失效，canary 落到的 RATE_LIMIT 不代表上游已修好"
+    );
+
+    const stillWrong = misjudgedMessages.filter((m) => peerCode(m) !== CODE.RATE_LIMIT);
+    const patchRedundant = stillWrong.length === 0 && quotaDetectorAlive === true;
+
+    // 一行可 grep 的结论，无论红绿都打出来：日志里能回溯"到期日何时敲响"。
+    // 三态而非两态——"canary 全对但检测器死了"既不是承重也不是可删，把它说成
+    // "仍误判 0/2" 是自相矛盾的噪声，会让人照着一行错的话去删补丁。
+    console.log(
+      patchRedundant
+        ? "EXIT-PROBE: patch-redundant —— peer 已能自己判对，本层对当前 peer 空转（按 §3.3 退化为 no-op 兼容层，勿删）"
+        : stillWrong.length === 0
+          ? "EXIT-PROBE: inconclusive —— canary 已全判对，但 peer 配额检测器已失效：这是回归不是修复，勿删（人工复核 peer 的 isQuotaExceededError）"
+          : `EXIT-PROBE: patch-needed —— peer 仍误判 ${stillWrong.length}/${misjudgedMessages.length} 条 canary`
+    );
+
+    // 转红 = **退化**闹钟，不是删除闹钟。本层是"老 Host + bug 版 peer"的兜底
+    // （docs/IMPROVEMENTS.md §3.3 明写"不删补丁是刻意的"）：peer 范围
+    // `>=0.1.5 <0.3` 仍跨 bug 版，本机装了修好的 peer 不代表用户的 Host 修好了。
+    // 所以此刻该做的是确认它对新 peer 已成为 no-op，再走 §3.3③ 收紧下界；
+    // **真正的删除闹钟是离线的那条**（test/error-fix.test.mjs §5）：下界提到
+    // 修后版本、老 Host 不再被支持时，它才要求整层删除。
+    check(
+      "补丁仍承重：peer 尚未自己判对 canary（转假 = 退化为 no-op 兼容层，非删除）",
+      !patchRedundant,
+      patchRedundant
+        ? [
+            "peer 的 classifyPiAiError 已能把这些体判为 RATE_LIMIT，本纠正层对新 peer 成为空转。",
+            "此刻的动作（不是删除 —— 老 Host 仍需它）：",
+            "  1. 确认 reclassifyFinish 对新 peer 是 no-op（failure.code 已是 RATE_LIMIT，引用相等）",
+            "  2. 走 §3.3③ 把 @deepseek-ai/dsh-llm / dsh-llm-pi-ai 的下界收紧到修后版本，README 注明所需 Host",
+            "  3. 下界收紧之后才删：src/host/llm-error-fix.ts + 挂钩点两处（llm-adapter.ts、agnescode-llm-adapter.ts）",
+            "     —— 删除闹钟由 test/error-fix.test.mjs §5 在下界变化时敲响"
+          ].join("\n")
+        : stillWrong
+            .map((m) => `peer 判为 ${String(peerCode(m))}：${m.slice(0, 80)}`)
+            .join("\n")
+    );
   }
 }
 

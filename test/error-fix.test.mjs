@@ -187,6 +187,59 @@ function fail(name, error) {
     seen[0]?.reason?.failure?.code === CODE.RATE_LIMIT, JSON.stringify(seen[0]?.reason?.failure));
 }
 
+// --- 5. 退出证的离线半边：删除面 + 删除条件 ------------------------------
+// 这层是对**不可改的 peer** 打的补丁，所以它是有到期日的债。到期日分两级，
+// 缺任何一级它都会变成永久债（docs/IMPROVEMENTS.md §3.3④）：
+//
+//   - 退化闹钟（peer 门控）：`test/peer-contract.test.mjs` §E 执行 peer 自己的
+//     `classifyPiAiError`，问"peer 会不会自己判对"。它只在真实 peer 可达时跑，
+//     且**不是删除信号**——peer 范围仍跨 bug 版，本机修好不等于用户的修好。
+//   - 删除闹钟（本段，永远跑）：真正的删除条件是 **peer 下界收紧到修后版本**，
+//     那时老 Host 不再被支持，这层兜底才失去存在理由。下界一动这里就红。
+//
+// 这里钉的是第二级的两件事：删除面（挂钩点名单）与删除条件（下界）。
+{
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  // (a) 删除面：挂钩点必须始终是这两处，好让删除清单不会漏第三个。
+  const hostDir = join(import.meta.dirname, "..", "src", "host");
+  const hooked = readdirSync(hostDir)
+    .filter((f) => f.endsWith(".ts") && f !== "llm-error-fix.ts")
+    .filter((f) => /from "\.\/llm-error-fix\.ts"/.test(readFileSync(join(hostDir, f), "utf8")))
+    .sort();
+  check(
+    "纠正层的挂钩点恰为 llm-adapter 与 agnescode-llm-adapter 两处",
+    hooked.length === 2 &&
+      hooked[0] === "agnescode-llm-adapter.ts" &&
+      hooked[1] === "llm-adapter.ts",
+    `实到 [${hooked.join(", ")}]。若新增了挂钩点，同步更新 test/peer-contract.test.mjs §E 的删除清单`
+  );
+
+  // (b) 删除条件：只要下界仍是 0.1.5，本层就仍是"老 Host + bug 版 peer"的承重
+  // 兜底，不得删。下界一旦抬高（§3.3③ 收紧到修后版本），这里转红 → 整层删除。
+  const pkg = JSON.parse(
+    readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")
+  );
+  const PEER_LLMS = ["@deepseek-ai/dsh-llm", "@deepseek-ai/dsh-llm-pi-ai"];
+  const ranges = PEER_LLMS.map((name) => pkg.peerDependencies?.[name] ?? "");
+  const floors = ranges.map((r) => /^>=([0-9]+\.[0-9]+\.[0-9]+)/.exec(r)?.[1] ?? null);
+  check(
+    "peer 下界仍为 0.1.5 —— 本层仍是老 Host 的承重兜底，不得删（下界抬高 = 删除闹钟）",
+    floors.every((f) => f === "0.1.5"),
+    floors.every((f) => f === "0.1.5")
+      ? ""
+      : [
+          `实到下界 ${PEER_LLMS.map((n, i) => `${n}=${ranges[i]}`).join(" / ")}。`,
+          "下界已抬高：老 Host 不再被支持，本层失去存在理由 —— 现在可以整层删除：",
+          "  1. src/host/llm-error-fix.ts",
+          "  2. 挂钩点两处：src/host/llm-adapter.ts 与 src/host/agnescode-llm-adapter.ts",
+          "  3. 本套件与 test/peer-contract.test.mjs 的 A/B/C/E 段（随之作废）",
+          "  4. docs/IMPROVEMENTS.md §3.3、§5 表格与 docs/AGNES-API.md §7.3.1 改为「上游已修复」"
+        ].join("\n")
+  );
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failedChecks = results.filter((r) => !r.pass);
 if (failedChecks.length > 0) {

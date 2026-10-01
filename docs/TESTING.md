@@ -43,8 +43,8 @@ npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PL
 | `test/switch-store.test.mjs` | **四个 opt-in 开关商店的同一份行为清单**（provider / draw / video / AgnesCode）：未触碰即未设置、save/forget 往返与形状版本、损坏与外来版本读未设置、**模型偏好与开关互不牵连**（forget 开关不清偏好）、§23 一次性继承（含「继承后重开 Host 仍读得到」）、两 profile 互不覆盖。四者**逐项跑同一组断言**，所以「三份修了、第四份没修」会红而不是静默 |
 | `test/agnescode.test.mjs` | 桌面端上游（AgnesCode）：BFF base 钉域、os_crypt 解密与 Local State 密钥解封（AES-GCM 真轮转 + 注入 DPAPI）、采集步进的逐文件分诊全 9 档（file_missing / format_drift / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform）+ 格式漂移分类与 doctor 盘点的离线档 + tier↔i18n 双语跨层钉 + catalog/balance 的 URL 精确断言 + 钉域拒非默认端口、订阅池余额解析、逐账号 base 进描述符与签名、独立 publisher 三门、store 拒绝无 base 保存、客户端面花名册（会员徽标） |
 | `test/wiring.test.mjs` | **真实 Cordis 容器**里的装配：`inject` 解析、服务注册、路由挂载与卸载、配置错误；推理侧的可选 `ctx.get("llm")` 注册对（`registerAdapter` + `registerConfigurableProviders`，id `agnes-token-plan`）、opt-in 关闭不注册、fiber dispose 释放注册对与全部路由 |
-| `test/error-fix.test.mjs` | `llm-error-fix` 对 429 误判的纠正（peer 的 `isQuotaExceededError` 把带额度措辞的限频 429 抢判成 `QUOTA`，本层在出流前纠正回 `RATE_LIMIT`） |
-| `test/peer-contract.test.mjs` | 与真 peer 包（pi-ai / dsh-llm*）的契约：可达时逐值比对，不可达时 SKIP |
+| `test/error-fix.test.mjs` | `llm-error-fix` 对 429 误判的纠正（peer 的 `isQuotaExceededError` 把带额度措辞的限频 429 抢判成 `QUOTA`，本层在出流前纠正回 `RATE_LIMIT`）；末段钉这层补丁的**离线删除闹钟**（peer 下界 + 删除面） |
+| `test/peer-contract.test.mjs` | 与真 peer 包（pi-ai / dsh-llm*）的契约：可达时逐值比对，不可达时 SKIP；§E 退出证执行 peer 未导出的 `classifyPiAiError` 判定"补丁是否已退化"（打印 `EXIT-PROBE:` 行） |
 | `test/live-contract.mjs` | （仅 `test:live:contract`）重放 `test/baselines/agnes-contract.json` 对 Agnes 推理端点：`/v1/models` 目录核对 + 少量 `reasoning_effort` 探针（限流友好，每格 1 请求不重试）；红 = 平台方言漂移，**不是回归**，修法走 `AGNES-API.md` §7 注释层。**它必须是裸 `.mjs`**（不带 `.test.` 后缀），否则会被扫进默认门禁 |
 
 不碰真实账号的保证：网络层打桩，`routes.test.mjs` 用真实响应形状但全 stub，`e2e.mjs` 指向本机假平台。

@@ -243,11 +243,14 @@ budget` 等），`isQuotaExceededError` 命中该措辞 → `classifyPiAiError` 
 | **① 契约护栏（已落地，2026-09-29）** | `test/peer-contract.test.mjs`：**当真实 peer 可达时**（`peer-roots.mjs` 本地解析），钉死"peer 判 QUOTA + 含限频信号 → 本插件 `reclassifyFinish` 纠正回 RATE_LIMIT"这一**端到端行为契约**，并另设两道漂移护栏——`extractStructuredType` 必须仍能从 peer 拼好的 message 回捞结构化 type（peer 改拼接格式即红）、peer 根因未修（`isQuotaExceededError` 仍命中类型名）有显式现状钉；peer 缺席（干净检出/CI）则 SKIP。 | 低（纯测试，不碰运行时） | 已完成 | 已进 `npm test` 链 + CI offline job（三方名册钉子，见 §7 门禁） |
 | ② 上游修 peer（长期） | 向 `deepseek-harness`（peer 在 `packages/llm/llm`）提 PR：`isQuotaExceededError` 排除 `quota_exceeded_error` 类型名误匹配（要求 `quota` 与 `exceeded` 间非 `_` 连接，或命中时再查限频信号）。 | 高（依赖上游版本节奏，插件不可控） | 中 | 中（上游是公共仓 `github.com/deepseek-ai/deepseek-harness`，可提；但 peer 范围 `>=0.1.5 <0.3` 意味着旧 Host 仍可能跑 bug 版） |
 | ③ 收紧 peer 版本（护栏） | `package.json` peer 范围 `dsh-llm/dsh-llm-pi-ai` 现为 `>=0.1.5 <0.3`。若上游修了，可收紧到 `>=0.2.x`（修后版本）并在 README 注明"需 Host ≥0.2.x 才吃满 429 修复"。 | 中（老 Host 不升级则 429 修复不可用） | 小 | 中（需上游先出修版） |
+| **④ 退出证（已落地，2026-10-02）** | 给这层"打在不可改 peer 上的补丁"定出**两级到期日**，否则它必然变永久债：`test/peer-contract.test.mjs` §E 抽取并执行 peer 未导出的 `classifyPiAiError` 源码体（注入其两个依赖，不重抄分支顺序），问"peer 会不会自己判对"→ 转真时打印 `EXIT-PROBE: patch-redundant` 并转红，那是**退化**信号（确认 no-op、走 ③ 收紧下界），非删除信号；真正的删除闹钟是离线的 `test/error-fix.test.mjs` §5——它钉住 peer 下界（`>=0.1.5`），下界一抬高（老 Host 不再被支持）就转红并给出整层删除清单。同段还钉住删除面：挂钩点恰为 `llm-adapter` / `agnescode-llm-adapter` 两处。 | 极低（纯测试） | 中（到期日可见，且**不会误删**） | 已进 `npm test` 链（§5 永远跑；§E 随 peer 门控 SKIP） |
 
 **推荐组合**：① 已落地（`test/peer-contract.test.mjs`，把"静默漏纠"变"可见红"）；
 上游修复落地后叠 ③（把 peer 范围收紧到修后版本，`llm-error-fix.js` 自然退化为
 no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是刻意的：它是
-"老 Host + bug 版 peer"的兜底，删了反而破坏向后兼容。
+"老 Host + bug 版 peer"的兜底，删了反而破坏向后兼容。④ 就是把这个"刻意"变成
+**可执行的判定**：它区分了"本机 peer 修好了"（只退化）与"老 Host 不再被支持"
+（才删除），避免有人在自己机器上看到 peer 修好就顺手删掉兜底。
 
 **投入**：① 已完成（一个新测试文件 + 进 `npm test` 链 + CI offline job；peer 不可达
 时 SKIP，无需在 CI 另加 best-effort 档——它就是离线门禁的一部分）。**门禁**：离线
@@ -417,6 +420,7 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 | **P1** | §4.4a 字典/决策外置成 JSON（`client.js` 瘦 ~400 行） | — | — | — | **判停**：Loader 不支持 client 相对 import（`require` 只认 seed，见 §4.4 前提核验） |
 | **P2** | §2.3 抽 `routes.js` + `lifecycle.js`（`index.js` 瘦到 251 行，**已落地**） | 中 | 中（接线味收编） | 中（effect cleanup 坑已修） | `routes` + `draw` + `wiring` + `e2e`（16 套件已绿） |
 | **P2** | §1.3 定位对齐（README/文档 + 面板显示推理线健康，**已落地**） | 极低 | 中（消自我矛盾） | 极低 | `docs` + `panel`（已绿） |
+| **P0** | §3.3 ④ 退出证（两级到期日：peer 门控的退化闹钟 + 离线的删除闹钟，**已落地**） | 极低（纯测试） | 中（补丁不再是无期的债，且不会误删兜底） | 极低 | `error-fix`（永远跑）+ `peer-contract`（peer 门控） |
 | **P3** | §3.3 ② 上游修 peer + ③ 收紧 peer 范围（生态配合） | — | 高（根除 429 误判） | 中（依赖上游） | 等上游 |
 | **P3** | §4.4b 纯逻辑抽 `client-logic.js` | — | — | — | **判停**（同 §4.4a：Loader 硬约束） |
 
