@@ -220,7 +220,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
   与源码放进**同一个 commit**；只提交源码不提交产物 = build-gate 红。devDeps 安装需
   `--legacy-peer-deps`（peer 包不在 registry；本仓刻意无 lockfile）。
 - **【当晚已被取代】「Host 半边不动」**：随后按 workbuddy 规范完成全仓归一——Host 源码迁
-  `src/host/*.ts`（27 个模块），tsdown 多入口构建 `lib/`（ESM bundle + 切分 chunk）；`lib/` 与根
+  `src/host/*.ts`（Host 模块），tsdown 多入口构建 `lib/`（ESM bundle + 切分 chunk）；`lib/` 与根
   `client.js` 一并 `.gitignore`，**产物彻底不入库**（上文「产物与源码同 commit」纪律随之作废），
   测试面与门禁已适配；17 套件 + build-gate + e2e + tsc 全绿，「删 lib 可重建」验收通过。
   checkJs 的 JSDoc 投入随 .ts 化自然并入类型标注。

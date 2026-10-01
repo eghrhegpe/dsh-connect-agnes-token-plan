@@ -13,6 +13,7 @@
 //   peer 边界（13）：静态 `@deepseek-ai/*` import 只许 llm adapter 层——「内核 peer-free
 //                    才能缺席降级」这条自述承诺的静态面（与 9-11 同族：验的是文档说的
 //                    架构纪律在代码里真的成立，不是格式）
+//   活文档计数护栏（14）：现行文档不得写死会随代码漂移的模块数/规模/行数（历史·账本·研究档豁免）
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve, relative, sep, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -561,6 +562,51 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
     }
   }
   if (offenders === 0) note(`peer 边界：${scanned} 个内核文件零静态 peer import（adapter 壳 2 个豁免）`);
+}
+
+// 14) 活文档硬编码计数护栏：现行文档不得断言会随代码漂移的模块数/规模/行数
+// 同源病（PITFALLS §25）：形式全绿、语义已漂。本检查钉的是「活文档里写死代码
+// 形状数字」——加一个模块 / 做一次重构，文档就失真，逼出一次纯文档提交。
+// 历史·账本·研究档整 file 豁免（它们本就是定格快照，写死数字是如实记录）；
+// 其中 ARCHITECTURE §5.4（上游对照）与 ROADMAP（历史重构记录）刻意保留「行数」
+// 叙述，故只对这两篇豁免 N 行 子检查，模块数/规模子检查仍生效。
+{
+  const COUNT_EXEMPT = new Set([
+    "ADR.md", "ARCHIVE-BOUNDARY-DECISIONS.md", "CHANGELOG.md",
+    "PITFALLS.md", "IMPROVEMENTS.md", "TOKEN-STORE-SPLIT.md",
+  ]);
+  // 这两篇活文档保留「上游/历史行数」叙述，只对它们豁免 N 行 子检查
+  const LINE_COUNT_OK = new Set(["ARCHITECTURE.md", "ROADMAP.md"]);
+  const moduleRe = /\d+\s*个(?:Host |Client |前端|服务端)?模块/g;
+  const wanRe = /\d+(?:\.\d+)?\s*万行/g;
+  // 行数声明：排除「第 N 行」这类引用定位（如「见第 3 行」），只钉裸「N 行」
+  const lineRe = /(?<!第)\d{1,}\s*行/g;
+  let scanned = 0;
+  let hits = 0;
+  for (const f of mdFiles) {
+    if (COUNT_EXEMPT.has(basename(f))) continue;
+    // tmp/ 是临时草稿区（不按活文档标准审查）
+    if (relative(ROOT, f).split(sep)[0] === "tmp") continue;
+    scanned++;
+    const lines = readFileSync(f, "utf8").split(/\r?\n/);
+    const allowLine = !LINE_COUNT_OK.has(basename(f));
+    lines.forEach((line, i) => {
+      let m;
+      if ((m = line.match(moduleRe))) {
+        hits++;
+        bad(`${f}:${i + 1} 写死模块数「${m[0].trim()}」——模块数随代码漂移，改由目录为准（参见 ARCHITECTURE.md Client 行）`);
+      }
+      if ((m = line.match(wanRe))) {
+        hits++;
+        bad(`${f}:${i + 1} 写死规模「${m[0].trim()}」——源规模随重构漂移，历史档才适合记定格数字`);
+      }
+      if (allowLine && (m = line.match(lineRe))) {
+        hits++;
+        bad(`${f}:${i + 1} 写死行数「${m[0].trim()}」——行数随代码漂移，活文档不在此钉死（历史/上游对照档豁免）`);
+      }
+    });
+  }
+  if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档零写死模块数/规模/行数（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
 }
 
 if (fails.length) {
