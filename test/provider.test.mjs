@@ -115,8 +115,8 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
     check("supportsDeveloperRole is forced false (the 403 fix)",
       descriptor.compat.supportsDeveloperRole === false);
     check("max_tokens is the wire field name", descriptor.compat.maxTokensField === "max_tokens");
-    check("no maxTokens VALUE is declared (declaring one truncates replies)",
-      !Object.prototype.hasOwnProperty.call(descriptor, "maxTokens") &&
+    check("maxTokens VALUE is the probed platform cap 65536 (2026-10-01 probe: 65536→200, 131072→400 \"max_tokens 不能超过 65536\"; undeclared meant the harness default 32768)",
+      descriptor.maxTokens === 65_536 &&
       !Object.prototype.hasOwnProperty.call(descriptor.compat, "maxTokens"));
   } catch (error) {
     fail("toPiDescriptor maps a text model", error);

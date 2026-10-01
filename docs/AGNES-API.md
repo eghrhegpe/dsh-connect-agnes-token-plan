@@ -225,7 +225,15 @@ safe-set，保证选择器不空：
 ### 7.3 请求 / 响应（已知约束）
 
 - `model`：固定目录 id；`messages[].role` 无 `developer`（`supportsDeveloperRole:false`，否则请求 403）。
-- `max_tokens`：只钉字段名，不钉值（避免截断长回复）；目录 `max_output_length` 仅展示。
+- `max_tokens`：值钉**实测平台上限 `65_536`**（`PROBED_MAX_TOKENS`，真机探针
+  2026-10-01：32768/65536 与缺省不发均 200，131072 → 400 平台原文
+  「max_tokens 不能超过 65536」）。早期「只钉字段名不钉值」防截断的决策已被
+  harness 兜底推翻：`dsh-llm-pi-ai` 对未声明值的模型强制填 `DEFAULT_MAX_TOKENS
+  = 32768`（其注册校验要求正整数），等于上限砍半、思考与回答挤在 32k 里——
+  声明 65536 是平台接受的缺省最大值，只会抬高截断点。每轮实际上限仍是
+  `min(65536, contextWindow − prompt − 4096)`（pi-ai 的
+  `clampMaxTokensToContext` 安全余量 4096）；目录无 `max_output_length` 可读，
+  面板该段仍按「未声明不画」处理。
 - `reasoning: true` + `thinkingLevelMap`：DSH 思考强度选择器照常工作。
 - 思考字段拼写、逐模型 `reasoning_effort` 支持面、图像输入方言：**待 Agnes 真机
   probe**，未实测前不写死（参见 [PITFALLS.md](./PITFALLS.md) 关于「文档须说实话」的纪律，形式全绿而语义已漂是踩过的坑）。

@@ -226,8 +226,10 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
   经 `llm-models.ts`（**无 peer 依赖**，离线可测）映射成 pi-ai descriptor：
   vision 判定复用 §5.1 同一份 `identifyVisionModel`，vision 模型自动带
   `input:["text","image"]`。两个承重字段：`compat.supportsDeveloperRole:
-  false`（不设会自动探测成 true，该端点持续 403）；**不声明 maxTokens
-  值**（声明了会变成输出上限、截断长回复，只钉字段名 `max_tokens`）。
+  false`（不设会自动探测成 true，该端点持续 403）；**`maxTokens` 钉实测平台
+  上限 65536**（真机探针 2026-10-01：65536→200、131072→400「max_tokens 不能
+  超过 65536」；旧「不声明」决策被 harness 兜底推翻——`dsh-llm-pi-ai` 对未
+  声明值强制填 32768，未声明≠无上限而是减半上限，见 AGNES-API.md §7.3）。
 - **catalog/勾选清单是插件私有状态，不进 dsh 配置**：
   `catalog-store.ts` 写 `$DSH_HOME/state/<profile>/<name>/catalog.json`（按 profile 分段，见 [PITFALLS.md](./PITFALLS.md) §23）
   （version 载荷、temp+rename 原子写、0600/0700、损坏即忽略），

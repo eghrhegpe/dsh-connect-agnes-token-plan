@@ -107,9 +107,10 @@ for (const model of contract.models) {
     const entry = entryFor(model);
     const descriptor = toPiDescriptor(entry, { baseUrl });
     check(`${model.id} descriptor.id is the catalog id`, descriptor.id === model.id, descriptor.id);
-    check(`${model.id} descriptor pins max_tokens field (no value)`,
-      descriptor.compat?.maxTokensField === "max_tokens" && descriptor.compat?.supportsDeveloperRole === false,
-      JSON.stringify(descriptor.compat));
+    check(`${model.id} descriptor pins max_tokens field with the probed cap 65536`,
+      descriptor.compat?.maxTokensField === "max_tokens" && descriptor.compat?.supportsDeveloperRole === false &&
+      descriptor.maxTokens === 65_536,
+      JSON.stringify({ compat: descriptor.compat, maxTokens: descriptor.maxTokens }));
     check(`${model.id} descriptor declares reasoning + thinkingLevelMap`,
       descriptor.reasoning === true && typeof descriptor.thinkingLevelMap === "object",
       JSON.stringify({ reasoning: descriptor.reasoning }));

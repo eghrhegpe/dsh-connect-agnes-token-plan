@@ -2,6 +2,14 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [未发布]
+
+### 推理通道：单次输出上限从 32768 提到平台上限 65536
+
+- Token Plan 推理线的每个请求此前实际携带 `max_tokens = 32768`。这不是平台限制，而是 `dsh-llm-pi-ai` 注册兜底（`DEFAULT_MAX_TOKENS = 32768`，其校验强制要求正整数）——descriptor「不声明值防截断」的旧决策因此失效：未声明≠无上限，而是被砍半，思考（默认 high 档）与回答挤在 32k 预算里，长回合先截思考。
+- descriptor 现声明实测平台上限 `maxTokens: 65_536`（`PROBED_MAX_TOKENS`）。真机探针（2026-10-01，`api.agnes-ai.cn/v1`）：32768 / 65536 / 缺省不发均 200（65536 在 agnes-2.5-flash 与 agnes-2.0-flash 复测通过），131072 → 400 平台原文「max_tokens 不能超过 65536」。每轮实际上限为 `min(65536, contextWindow − prompt − 4096)`。
+- 契约钉点同步：`test/provider.test.mjs` / `test/contract.test.mjs` 翻正为钉 65536；`docs/AGNES-API.md` §7.3、`docs/ARCHITECTURE.md` §5.2 同步。
+
 ## [0.5.0] — 2026-10-01
 
 **独立仓库首次发布**：新包名 `dsh-connect-agnes-token-plan` 首次上 npm。全面更名并切换登录线（Agnes 一跳登录），额度模型改为账号级四窗口，新增视频生成 agent 工具与第三上游 AgnesCode。

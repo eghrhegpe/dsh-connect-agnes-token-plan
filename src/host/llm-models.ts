@@ -16,9 +16,17 @@
  *    not look like a known non-standard provider. Agnes's direct endpoint
  *    does not speak the developer role, so an unset flag makes every request
  *    403 forever. Setting it false is the fix the qoder route proved necessary.
- * 2. No `maxTokens` VALUE is declared. A declared value becomes the output
- *    ceiling and pi-ai sends it as `max_tokens`, truncating long replies with
- *    `finish: max-tokens`. Only the field NAME (`max_tokens`) is pinned.
+ * 2. `maxTokens` IS declared, pinned to the probed platform cap
+ *    (`PROBED_MAX_TOKENS`, 65536 — the constant carries the probe evidence).
+ *    The original decision here was "no value": a declared value becomes the
+ *    output ceiling and pi-ai sends it as `max_tokens`, truncating long
+ *    replies with `finish: max-tokens`. But "no value" never meant "no
+ *    ceiling" — the harness registration (`dsh-llm-pi-ai` `resolveEntry`)
+ *    requires a positive integer and fills undeclared models with its own
+ *    `DEFAULT_MAX_TOKENS = 32768`, HALF the platform's ceiling, with the
+ *    thinking phase sharing that same budget. Declaring the cap can only lift
+ *    the truncation point, never lower it. The compat pin stays the field
+ *    NAME (`max_tokens`) only.
  * 3. `reasoning: true` + a `thinkingLevelMap`. Agnes chat models think by
  *    default (verified 2026-09-29: default reasoning_effort high, thinking
  *    text returned as `reasoning` on flash-lite and `reasoning_content` on
@@ -89,6 +97,27 @@ export const NO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheW
 export const FALLBACK_CONTEXT_WINDOW = 128_000;
 
 /**
+ * The per-request output ceiling the Agnes gateway enforces, probed live.
+ *
+ * Evidence (2026-10-01, `api.agnes-ai.cn/v1/chat/completions`, `reasoning_effort:
+ * "high"`): `max_tokens: 32768` and `max_tokens: 65536` answered 200 on
+ * agnes-2.5-flash (65536 re-confirmed on agnes-2.0-flash), omitting the field
+ * entirely also answered 200, and `max_tokens: 131072` answered 400 with the
+ * platform's own refusal text `max_tokens 不能超过 65536` — the cap is stated
+ * by the platform, not inferred. The catalog carries no `max_output_length`
+ * field to read (AGNES-API.md §7.1), so this probed constant stands in for
+ * the missing declaration.
+ *
+ * Declaring it is NOT the truncation risk the original "no value" decision
+ * feared: the harness fills undeclared models with `DEFAULT_MAX_TOKENS =
+ * 32768`, so the only real choice was "half the cap" vs "the cap" (module
+ * header, decision 2). If the platform ever starts declaring per-model
+ * `max_output_length`, adopt it ONLY after a live-contract probe re-run —
+ * catalog values are leads, not contracts (PITFALLS §20).
+ */
+export const PROBED_MAX_TOKENS = 65_536;
+
+/**
  * Read a positive context window off the catalog entry's known spellings.
  *
  * `context_length` is the field the platform actually emits (verified against
@@ -111,10 +140,12 @@ export function contextWindowOf(entry) {
 /**
  * Read the platform's declared per-request output ceiling, 0 when unknown.
  *
- * This is a DISPLAY fact only. The descriptors deliberately declare no
- * `maxTokens` value (module header, decision 2), so this figure never becomes
- * a request parameter — it says what the platform can emit at most, so the
- * user learns why a long reply can still stop with `finish_reason: length`.
+ * This is a DISPLAY fact only. The descriptor pins the PROBED platform cap
+ * (`PROBED_MAX_TOKENS`, module header decision 2) as its request parameter;
+ * this roster figure still reads the catalog, which on Agnes declares nothing
+ * (0 = the panel draws no segment — never guess). It says what the platform
+ * can emit at most per the catalog's own claim, so the user learns why a long
+ * reply can still stop with `finish_reason: length`.
  * Same spelling-first policy as {@link contextWindowOf}.
  * @param {object} entry - one normalized catalog entry.
  * @returns {number} the declared ceiling, or 0 when the entry states none.
@@ -308,8 +339,9 @@ export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
     cost: { ...NO_COST },
     contextWindow: contextWindowOf(entry),
     // `supportsDeveloperRole: false` is load-bearing — see the module header.
-    // There is deliberately no `maxTokens` VALUE here: declaring one truncates
-    // replies; only the wire field name is pinned.
+    // maxTokens pins the probed platform cap (decision 2): leaving it undeclared
+    // meant the harness default 32768, half of what the platform accepts.
+    maxTokens: PROBED_MAX_TOKENS,
     compat: { maxTokensField: "max_tokens", supportsDeveloperRole: false }
   };
 }
