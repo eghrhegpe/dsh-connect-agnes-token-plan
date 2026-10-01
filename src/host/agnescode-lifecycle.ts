@@ -61,7 +61,18 @@ export const AGNESCODE_REHARVEST_BACKOFF_MS = 60_000;
  * @returns {{publisher: object, seed: () => Promise<void>}} the publisher and
  *   its mount-seed function.
  */
-export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapterModule, emit, logger }) {
+export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapterModule, emit, logger }: {
+  store: {
+    resolve: () => Promise<{ credential: { accessToken: string; bffBase?: string } | null }>;
+    isExpired: () => Promise<boolean>;
+    save: (credential: Record<string, unknown>) => Promise<unknown>;
+  };
+  panelSwitch?: () => Promise<boolean | null>;
+  getLlm: (service: string) => object | null;
+  loadAdapterModule?: () => Promise<{ createAgnescodeAdapter: (...args: any[]) => any }>;
+  emit?: (event: string) => void;
+  logger?: any;
+}) {
   // Single-flight + backoff state shared across all resolveToken calls for
   // this wiring instance (the equivalent of the closure variables the old
   // inline version held in apply()'s scope).
@@ -91,8 +102,8 @@ export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapter
             await store.save({
               ...walk.session,
               ...(expMs !== undefined ? { expiresAtMs: expMs } : {})
-            }).catch((why) => {
-              logger?.warn?.(`agnescode: re-harvest succeeded but the store refused it: ${str(why?.message ?? why, "unknown")}`);
+            }).catch((why: unknown) => {
+              logger?.warn?.(`agnescode: re-harvest succeeded but the store refused it: ${str((why as { message?: unknown })?.message ?? why, "unknown")}`);
             });
             const pub = holder.current;
             if (pub && walk.session.bffBase !== pub.state.bffBase) {

@@ -28,7 +28,26 @@ import { CODE } from "../codes.ts";
  * @param {object} blocks - the four block functions, injected by the caller.
  * @returns {Promise<string>} the access token now in effect.
  */
-export async function acquire(wiring, state, blocks) {
+export async function acquire(
+  wiring: { now: () => number },
+  state: {
+    throttle: { code: string; parked: boolean; until: number | null; attempt: number } | null;
+    cached: { accessToken: string; refreshToken?: string; expiresAt: number | null } | null | undefined;
+    consecutiveRefusals: number;
+  },
+  blocks: {
+    readThrottle: () => Promise<{ code: string; parked: boolean; until: number | null; attempt: number } | null>;
+    clearThrottle: () => Promise<void>;
+    readStored: () => Promise<{ accessToken: string; refreshToken?: string; expiresAt: number | null } | undefined>;
+    isFresh: (grant: unknown) => boolean;
+    renewWithRefresh: (stored: { accessToken: string; refreshToken?: string }) => Promise<any>;
+    readAccount: () => Promise<unknown>;
+    loginFromAccount: (explicit?: any) => Promise<any>;
+    writeThrottle: (error: unknown, attempt?: number) => Promise<{ code: string; parked: boolean; until: number | null; attempt: number }>;
+    throttleError: (held: unknown, error?: unknown) => unknown;
+    purgeGrant: (token?: string) => Promise<void>;
+  }
+) {
   const { now } = wiring;
   const {
     readThrottle, clearThrottle,
@@ -43,7 +62,7 @@ export async function acquire(wiring, state, blocks) {
   // turns one mistake into a lockout. Fail fast and say why instead.
   const held = state.throttle ?? await readThrottle();
   state.throttle = held;
-  if (held !== null && (held.parked || held.until > now())) {
+  if (held !== null && (held.parked || (held.until !== null && held.until > now()))) {
     throw throttleError(held);
   }
   if (held !== null) {
@@ -58,13 +77,13 @@ export async function acquire(wiring, state, blocks) {
   const stored = (await readStored()) ?? state.cached ?? undefined;
   if (isFresh(stored)) {
     state.cached = stored;
-    return stored.accessToken;
+    return stored!.accessToken;
   }
   // Prefer renewal: it needs no password, and the password may have been
   // removed from the environment long after the first login.
-  if (stored?.refreshToken !== undefined && stored.refreshToken !== "") {
+  if (stored?.refreshToken !== undefined && stored?.refreshToken !== "") {
     try {
-      const renewed = await renewWithRefresh(stored);
+      const renewed = await renewWithRefresh(stored!);
       return renewed.accessToken;
     } catch (error) {
       // A rejected refresh token (or a grant that never had one) is

@@ -156,7 +156,7 @@ export function createStoreContext({
      * to a cap. `parked` marks a credential-shaped refusal, which has no
      * deadline at all: waiting cannot make a wrong password right.
      */
-    throttle: null as unknown,
+    throttle: null as { code: string; parked: boolean; until: number | null; attempt: number } | null,
     /**
      * How many refusals in a row this store has seen.
      *
