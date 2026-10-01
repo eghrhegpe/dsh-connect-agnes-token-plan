@@ -111,6 +111,7 @@ export const zh = {
   "llm.empty": "请输入 API Key",
   "llm.footnote": "Key 只保存在 DSH 凭据中，不会写入插件目录或日志；请求时按次读取。",
   "llm.keyRegisterHint": "还没有 API Key？前往官网免费获取 →",
+  "llm.keyConsoleHint": "前往官网管理额度 →",
   "llm.ephemeral": "注意：当前 Host 没有凭据服务，Key 只保存在内存中，重启后失效。",
   "llm.keyPresent": "已配置（来源：{source}）",
   "llm.noKey": "尚未配置——在上方粘贴 API Key 并保存。",
@@ -201,17 +202,19 @@ export const zh = {
   "agnescode.loggedIn": "已关联：{nick}",
   "agnescode.bffBase": "接口地址 {base}",
   "agnescode.notLogged": "未关联——请先在 AgnesCode 桌面端登录（微信扫码），再点「检测本机登录态」。",
-  "agnescode.balance": "积分余额 {balance}",
-  // The pool is a SUBSCRIPTION pool (time-limited vs permanent), not a usage
-  // overview — the breakdown is the platform's own split, rendered as given.
-  "agnescode.balanceDetail": "时效 {timeSensitive} · 永久 {permanent}",
+  "agnescode.downloadCta": "下载 AgnesCode 桌面客户端，领取限时积分 →",
+  // ONE line for the whole pool story (小浣 shape): total, then the
+  // platform's own split. The JWT expiry is NOT here — the credential card
+  // above already says it, and a repeated date reads as two deadlines.
+  "agnescode.balanceLine": "积分余额 {balance}（时效 {timeSensitive} · 永久 {permanent}）",
   "agnescode.models": "模型（{count}）",
   // Gating is account state, not model truth — the badge states the limit
   // instead of the Host silently dropping the model.
   "agnescode.memberOnly": "会员",
-  "agnescode.registered": "已注册 agnescode 提供方：{count} 个模型。",
+  "agnescode.registeredPill": "已注册",
   "agnescode.unregistered": "未注册——勾选上方开关即可开启。",
   "agnescode.awaitingHarvest": "已启用——检测到本机登录态后即可注册模型。",
+  "agnescode.errNotConfigured": "凭据未就绪——点「检测本机登录态」重新采集后再试。",
   "agnescode.expiresAt": "凭据有效期至 {time}",
   "agnescode.error": "AgnesCode 操作失败：{error}",
   "agnescode.harvestOk": "已读取本机登录态。",
@@ -330,6 +333,7 @@ export const en: typeof zh = {
   "llm.empty": "Enter an API key",
   "llm.footnote": "The key is kept only in the DSH credentials, never in this plugin's folder or logs; it is read per request.",
   "llm.keyRegisterHint": "No API key yet? Get a free one on the official site →",
+  "llm.keyConsoleHint": "Manage your quota on the official site →",
   "llm.ephemeral": "Note: this Host has no credentials service, so the key lives in memory only and is lost on restart.",
   "llm.keyPresent": "Configured (source: {source})",
   "llm.noKey": "Not configured — paste an API key above and save.",
@@ -418,13 +422,14 @@ export const en: typeof zh = {
   "agnescode.loggedIn": "Linked: {nick}",
   "agnescode.bffBase": "API base {base}",
   "agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
-  "agnescode.balance": "Credit balance {balance}",
-  "agnescode.balanceDetail": "Time-limited {timeSensitive} · permanent {permanent}",
+  "agnescode.downloadCta": "Download the AgnesCode desktop client and claim your limited-time credits →",
+  "agnescode.balanceLine": "Credit balance {balance} (time-limited {timeSensitive} · permanent {permanent})",
   "agnescode.models": "Models ({count})",
   "agnescode.memberOnly": "member",
-  "agnescode.registered": "AgnesCode registered with DSH: {count} model(s).",
+  "agnescode.registeredPill": "Registered",
   "agnescode.unregistered": "Not registered — tick the switch above.",
   "agnescode.awaitingHarvest": "Enabled — runs once a local login state is detected.",
+  "agnescode.errNotConfigured": "Credential not ready — run the detection again, then retry.",
   "agnescode.expiresAt": "Credential valid until {time}",
   "agnescode.error": "AgnesCode operation failed: {error}",
   "agnescode.harvestOk": "Local login state read.",

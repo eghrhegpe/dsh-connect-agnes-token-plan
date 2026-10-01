@@ -880,6 +880,30 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     searchBox?.autoComplete === "off", JSON.stringify(searchBox ?? {}));
 }
 
+// === G8b. the official-site link is ALWAYS in the API-key card ============
+// Without a key it is where you get one ("免费获取"); with one it is where
+// you manage the quota that key spends ("管理额度"). Redundant with the quota
+// tab on purpose — finding the console must not require remembering a URL.
+{
+  const tt = (key) => key;
+  const anchorText = (llm) => {
+    const tree = treeOf(render.ApiKeyForm, { llm, onDone: () => {}, tt });
+    const anchor = findElement(tree, (props) => props.href !== undefined);
+    return { href: String(anchor?.props.href ?? ""), text: texts(anchor).join("") };
+  };
+  const withKey = anchorText({ models: [], hasApiKey: true });
+  const withoutKey = anchorText({ models: [], hasApiKey: false });
+  check("a configured key still shows the official-site link (console hint)",
+    withKey.text === "llm.keyConsoleHint", withKey.text);
+  check("no key shows the register hint",
+    withoutKey.text === "llm.keyRegisterHint", withoutKey.text);
+  check("both hints point at the official site in a new tab",
+    withKey.href === "https://platform.agnes-ai.cn" && withoutKey.href === withKey.href
+      && texts(treeOf(render.ApiKeyForm, { llm: { models: [], hasApiKey: true }, onDone: () => {}, tt }))
+        .length > 0,
+    `${withKey.href}`);
+}
+
 // === G9. the draw switch section is rendered and says which state it is in
 // DrawSwitch IS mountable: `client-surface.js` installs a stand-in React whose
 // `useState` returns the initial value and whose `useCallback` returns the

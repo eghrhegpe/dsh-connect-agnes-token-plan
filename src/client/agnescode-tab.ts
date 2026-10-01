@@ -24,7 +24,7 @@
  * {@link AgnescodeRoster}, which the suite CAN mount and pin, and this tab's
  * route is covered by `test/agnescode.test.mjs`.
  */
-import { AGNESCODE_PATH } from "./const.ts";
+import { AGNESCODE_PATH, AGNESCODE_SITE_URL } from "./const.ts";
 import { clockLong, count, format, tokenSize } from "./format.ts";
 import { postJson, postJsonOrThrow } from "./http.ts";import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
@@ -239,18 +239,27 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       h("input", { type: "checkbox", checked: enabled, disabled: harvestBusy, onChange: () => void toggle(!enabled) }),
       h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, tt("agnescode.switch"))
     ),
-    // Registration status: the switch says "wants", this line says "is".
-    // A failed registration
-    // stays visible even while the switch is OFF.
+    // Registration status: the switch says "wants", the roster header pill
+    // says "is" (小浣 shape). Only the NON-registered states stay as text
+    // lines here — a successful registration needs no sentence of its own
+    // competing with the roster it describes.
+    //
+    // `not_configured` is the publish gate's word for "switch ON, no token
+    // yet" — the EXPECTED state between ticking the switch and running the
+    // harvest. Rendered raw it looked like a failure that appeared and then
+    // vanished ("开关一下启用又消失"), so: before linking it is suppressed —
+    // the awaiting-harvest line below already says exactly that; after
+    // linking it becomes one quiet instruction, not a red alert.
     state !== null
-      ? state.providerRegistered === true
-        ? h("div", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" }, role: "status" },
-            format(tt("agnescode.registered"), { count: count(models.length) }))
-        : state.providerError !== undefined && state.providerError !== ""
+      ? state.providerError === "not_configured" && loggedIn
+        ? h("div", { style: { ...S.muted, fontSize: 12 }, role: "status" }, tt("agnescode.errNotConfigured"))
+        : state.providerError !== undefined && state.providerError !== "" && state.providerError !== "not_configured"
           ? h("div", { style: S.formError, role: "alert" }, state.providerError)
           : enabled && !loggedIn
             ? h("div", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.awaitingHarvest"))
-            : h("div", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.unregistered"))
+            : state.providerRegistered === true
+              ? null
+              : h("div", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.unregistered"))
       : null,
     // The credential half: the linked account (or the harvest affordance).
     // Withheld while a failed read leaves us knowing NOTHING: `state` is null,
@@ -266,22 +275,30 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
             ? h(
                 "div",
                 null,
-                h("div", { style: { fontSize: 13 }, role: "status" },
-                  format(tt("agnescode.loggedIn"), { nick: String(state?.nickname ?? "") })),
-                // The per-account base and the JWT expiry are shape facts the
-                // user may need ("is my token the dead one?") — both come from
-                // the route secret-free.
+                // The 小浣 shape: state left, actions right, ONE row — the
+                // account line, the base URL and the JWT expiry are three
+                // stacked rows today and the buttons drift below them, so a
+                // linked card spends four lines to say "you are in".
+                h(
+                  "div",
+                  { style: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" } },
+                  h("div", { style: { fontSize: 13 }, role: "status" },
+                    format(tt("agnescode.loggedIn"), { nick: String(state?.nickname ?? "") })),
+                  h("span", { style: S.spacer }),
+                  h("button", { type: "button", style: S.button, onClick: () => void harvest(), disabled: harvestBusy },
+                    harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")),
+                  h("button", { type: "button", style: S.button, onClick: () => void logout() }, tt("agnescode.logout"))
+                ),
+                // Shape facts the user may need ("is my token the dead one?") —
+                // both from the route secret-free, quiet lines under the row.
                 state?.bffBase !== undefined && state?.bffBase !== ""
-                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4, wordBreak: "break-all" } },
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 6, wordBreak: "break-all" } },
                       format(tt("agnescode.bffBase"), { base: state.bffBase }))
                   : null,
                 typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
-                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } },
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 2 } },
                       format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) }))
-                  : null,
-                h("button", { type: "button", style: { ...S.button, marginTop: 8 }, onClick: () => void harvest(), disabled: harvestBusy },
-                  harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")),
-                h("button", { type: "button", style: { ...S.button, marginTop: 8, marginLeft: 8 }, onClick: () => void logout() }, tt("agnescode.logout"))
+                  : null
               )
             : h(
                 "div",
@@ -317,7 +334,9 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       ? h("div", { style: { ...S.formNote, fontSize: 12, marginTop: 8 }, role: "status" }, note)
       : null,
     // The credit pool and the roster the adapter offers. The pool is a
-    // subscription pool: total, then the platform's own split. A pool the
+    // subscription pool: total, then the platform's own split, then the JWT
+    // expiry — ONE quiet line, the way the 小浣 card does it (the old two
+    // stacked lines read as two separate facts about two things). A pool the
     // route could not read (`balance === null`) draws NOTHING — a rendered
     // zero would present an unread figure as a measurement.
     loggedIn
@@ -325,27 +344,33 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
           "div",
           { style: { marginTop: 12 } },
           balance !== null
-            ? h(
-                "div",
-                { style: { ...S.muted, fontSize: 12, marginBottom: 2 } },
-                format(tt("agnescode.balance"), { balance: count(balance.totalBalance ?? 0) })
-              )
-            : null,
-          balance !== null
-            ? h(
-                "div",
-                { style: { ...S.muted, fontSize: 12, marginBottom: 8 } },
-                format(tt("agnescode.balanceDetail"), {
+            ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 } },
+                format(tt("agnescode.balanceLine"), {
+                  balance: count(balance.totalBalance ?? 0),
                   timeSensitive: count(balance.timeSensitiveBalance ?? 0),
                   permanent: count(balance.permanentBalance ?? 0)
-                })
-              )
+                }))
             : null,
           models.length > 0
-            ? h(AgnescodeRoster, { models, tt })
+            ? h(AgnescodeRoster, { models, registered: state?.providerRegistered === true, tt })
             : null
         )
-      : null
+      : null,
+    // The PERMANENT footer: whatever the link state, the desktop App is the
+    // thing this whole tab rides on — it needs renewing by reopening (the
+    // JWT has no refresh), and the platform hands new users limited-time
+    // credits for installing. One quiet line at the bottom, same public-URL
+    // discipline as the API tab's official-site link.
+    h(
+      "a",
+      {
+        href: AGNESCODE_SITE_URL,
+        target: "_blank",
+        rel: "noreferrer",
+        style: { display: "inline-block", marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)", fontSize: 12, color: "var(--dsw-alias-label-secondary)", textDecoration: "underline", cursor: "pointer" }
+      },
+      tt("agnescode.downloadCta")
+    )
   );
 }
 
@@ -366,12 +391,22 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
  * @param {import("./runtime.ts").Tt} props.tt - the dictionary.
  * @returns {unknown} the roster list element.
  */
-export function AgnescodeRoster({ models, tt }: { models: AgnescodeModel[]; tt: Tt }): unknown {
+export function AgnescodeRoster({ models, registered, tt }: { models: AgnescodeModel[]; registered?: boolean; tt: Tt }): unknown {
   const rows = Array.isArray(models) ? models : [];
   return h(
     "div",
     { style: S.modelPanel },
-    h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 6 } }, format(tt("agnescode.models"), { count: count(rows.length) })),
+    // The 小浣 header: title left, registration pill right — the state of the
+    // roster rides ON the roster instead of being a sentence somewhere above.
+    h(
+      "div",
+      { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 } },
+      h("div", { style: { ...S.muted, fontSize: 12, fontWeight: 600 } }, format(tt("agnescode.models"), { count: count(rows.length) })),
+      h("span", { style: S.spacer }),
+      registered === true
+        ? h("span", { role: "status", style: { ...S.modelBadge, color: "var(--dsw-alias-state-success-primary, var(--dsw-alias-label-secondary))" } }, tt("agnescode.registeredPill"))
+        : null
+    ),
     h(
       "ul",
       { style: S.modelList, role: "list" },

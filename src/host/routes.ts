@@ -43,6 +43,8 @@ const VIDEO_PATH = `/api/${name}/video`;
 const AGNESCODE_PATH = `/api/${name}/agnescode`;
 /** Ceiling on an AgnesCode action body: every action posts a bare `{action}`. */
 const MAX_AGNESCODE_BODY_BYTES = 2048;
+/** The GET self-heal publishes at most once per this window (see the GET branch). */
+const AGNESCODE_SELF_HEAL_COOLDOWN_MS = 60_000;
 /** Ceiling on a submitted account, so a hostile page cannot stream a body. */
 const MAX_ACCOUNT_BODY_BYTES = 4096;
 /** Ceiling on the curated allow-list: a catalogue this large is a posting accident. */
@@ -695,6 +697,10 @@ export function registerRoutes(ctx, wiring) {
   //     runs.
   let lastHarvest = null;
   let agnescodeHarvestInFlight = null;
+  // The GET self-heal's cooldown stamp (see the GET branch): one repair
+  // publish per window, so a persistently failing publish cannot rebuild the
+  // adapter on every panel poll.
+  let agnescodeSelfHealAt = 0;
   const offAgnescode = ctx.webServer.register({
     kind: "exact",
     path: AGNESCODE_PATH,
@@ -769,26 +775,6 @@ export function registerRoutes(ctx, wiring) {
         };
       };
 
-      const method = request.method === undefined ? "GET" : request.method;
-      if (method === "GET") {
-        writeJson(response, 200, await agnescodeState(), { "cache-control": "no-store" });
-        return;
-      }
-      if (method !== "POST") {
-        refuseMethod(response);
-        return;
-      }
-      const body = await readJsonBody(request, MAX_AGNESCODE_BODY_BYTES);
-      if (!body.ok) {
-        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
-        return;
-      }
-      const { action } = body.value;
-      const answer = async (extra = {}) => {
-        const state = await agnescodeState();
-        writeJson(response, 200, { ...state, ...extra }, { "cache-control": "no-store" });
-      };
-
       /** Drive the registration from the CURRENT stored credential: the live
        *  catalogue wins over the fallback, the base comes from the credential
        *  (empty when there is none — the publisher's gate then releases). */
@@ -807,6 +793,44 @@ export function registerRoutes(ctx, wiring) {
           // Fallback roster is already the safe default.
         }
         await agnescodePublisher.publish(rows, bffBase);
+      };
+
+      const method = request.method === undefined ? "GET" : request.method;
+      if (method === "GET") {
+        let state = await agnescodeState();
+        // Self-heal: `not_configured` alongside a stored credential is a STALE
+        // publish (the switch was toggled before the harvest, and nothing
+        // after that failure re-ran the publish — GET used to only read). One
+        // queued publish per cooldown lets any poll repair it, so the reader
+        // never has to click anything to converge; a publish that fails again
+        // stops holding this exact condition only if it reports differently,
+        // so the cooldown keeps a persistently failing publish from rebuilding
+        // the adapter every 60 s.
+        if (
+          state.enabled === true && state.loggedIn === true
+          && state.providerError === "not_configured"
+          && Date.now() - agnescodeSelfHealAt > AGNESCODE_SELF_HEAL_COOLDOWN_MS
+        ) {
+          agnescodeSelfHealAt = Date.now();
+          await publishFromStore();
+          state = await agnescodeState();
+        }
+        writeJson(response, 200, state, { "cache-control": "no-store" });
+        return;
+      }
+      if (method !== "POST") {
+        refuseMethod(response);
+        return;
+      }
+      const body = await readJsonBody(request, MAX_AGNESCODE_BODY_BYTES);
+      if (!body.ok) {
+        writeJson(response, 400, { ok: false, error: body.error }, { "cache-control": "no-store" });
+        return;
+      }
+      const { action } = body.value;
+      const answer = async (extra = {}) => {
+        const state = await agnescodeState();
+        writeJson(response, 200, { ...state, ...extra }, { "cache-control": "no-store" });
       };
 
       // ── switch: register / deregister the AgnesCode provider with DSH ──

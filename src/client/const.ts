@@ -37,3 +37,10 @@ export const AGNESCODE_PATH = "/api/dsh-connect-agnes-token-plan/agnescode";
  * sends it in a credentialed request.
  */
 export const AGNES_SIGNUP_URL = "https://platform.agnes-ai.cn";
+
+/**
+ * The AgnesCode（爱思编程）product page — where the desktop App comes from.
+ * Same discipline as {@link AGNES_SIGNUP_URL}: plain public URL, opened in a
+ * new tab only, never a credentialed request target.
+ */
+export const AGNESCODE_SITE_URL = "https://agnes-ai.cn/agnescode";

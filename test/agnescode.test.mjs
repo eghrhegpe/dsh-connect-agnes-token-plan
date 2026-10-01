@@ -765,6 +765,92 @@ const GOOD_SESSION = {
   }
 }
 
+// --- 10b. GET self-heal: a stale not_configured repairs itself ---------------
+// The switch toggled BEFORE the harvest leaves the publisher's error at
+// `not_configured`; nothing else re-runs the publish, so the panel showed
+// 「凭据未就绪」next to「已关联」until the reader clicked something. The GET
+// now repairs that exact combination (enabled + linked + not_configured) with
+// one queued publish per cooldown — and only that combination, so real
+// failures never loop.
+{
+  section("route surface (the GET self-heals a stale not_configured)");
+  try {
+    const { registerRoutes } = await import("../src/host/routes.ts");
+    const routes = new Map();
+    const ctx = {
+      webServer: {
+        register({ path, handler }) {
+          routes.set(path, handler);
+          return () => routes.delete(path);
+        }
+      }
+    };
+    const unused = new Proxy({}, { get: () => async () => null });
+    // The publisher starts in the stale state and RECOVERS on the first
+    // publish — the panel's next poll must see the repaired state.
+    const publisherState = { registered: false, error: "not_configured" };
+    let publishes = 0;
+    registerRoutes(ctx, {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused,
+      apiKeyStore: unused,
+      catalogStore: unused,
+      providerStore: unused,
+      drawStore: unused,
+      videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      agnescodeStore: {
+        async state() {
+          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
+        },
+        async resolve() {
+          // A credential with a token: publishFromStore will try the live
+          // catalogue behind it — the network guard turns that into null and
+          // the route falls back to the static roster, which is the point.
+          return { credential: { accessToken: "x".repeat(40), bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }, source: "credentials" };
+        },
+        async save() {},
+        async forget() {}
+      },
+      agnescodeSwitch: { async enabled() { return true; }, async save() {} },
+      agnescodePublisher: {
+        get state() { return publisherState; },
+        isDisposed() { return false; },
+        async publish() {
+          publishes += 1;
+          publisherState.registered = true;
+          publisherState.error = null;
+        }
+      }
+    });
+    const handler = routes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    const response = {
+      status: 0,
+      body: "",
+      writeHead(status) { this.status = status; },
+      end(payload) { this.body = payload; }
+    };
+    await handler({ method: "GET", headers: { host: "127.0.0.1" } }, response);
+    const body = JSON.parse(response.body);
+    check("the stale not_configured is repaired within the same GET",
+      body.providerRegistered === true && body.providerError === undefined,
+      JSON.stringify({ registered: body.providerRegistered, error: body.providerError }));
+    check("the repair publish ran exactly once", publishes === 1, String(publishes));
+    await handler({ method: "GET", headers: { host: "127.0.0.1" } }, response);
+    check("a healthy GET does not publish again (cooldown holds)",
+      publishes === 1, String(publishes));
+  } catch (error) {
+    fail("route surface (self-heal)", error);
+  }
+}
+
 // --- report ------------------------------------------------------------------
 releaseNetworkGuard();
 const passed = results.filter((result) => result.pass).length;
