@@ -84,6 +84,7 @@ jobs:
           node test/error-fix.test.mjs
           node test/peer-contract.test.mjs
           node test/draw.test.mjs
+          node test/video.test.mjs
           node test/doctor.test.mjs
           node test/raccoon.test.mjs
           # The build gate is not a *.test.mjs, so it stays outside the

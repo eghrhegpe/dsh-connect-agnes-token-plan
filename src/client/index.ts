@@ -62,7 +62,7 @@ import {
   UsageChart,
   UsageTotals
 } from "./cards.ts";
-import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch } from "./provider-controls.ts";
+import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch, VideoSwitch } from "./provider-controls.ts";
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage } from "./panel-page.ts";
@@ -119,6 +119,7 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       ProviderRegStatus,
       ProviderSwitch,
       DrawSwitch,
+      VideoSwitch,
       ModelRoster,
       ModelPicker,
       PanelPage,

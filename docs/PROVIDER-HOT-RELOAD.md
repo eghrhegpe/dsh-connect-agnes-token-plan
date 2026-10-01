@@ -80,3 +80,21 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 
 **已知边界**：两个 Host 进程共享同一状态目录时，后写者胜（与 provider / throttle / catalog 文件语义一致）。`POST /draw` 只改开关值，不直接操作 tools registry——这是有意的：tools registry 没有 `unregister` 语义（见 `lifecycle.js` 注释），强行卸载要等 Host 生命周期自然结束。
 
+## 8. 0.4.3 增量：视频工具开关（videoEnabled）
+
+视频吸收（与 §5.4 接法 B 对称）的 agent 工具 `agnes_video_generate` 走**同一套**机制——同一个 store 形状、同一个路由处理器（`registerToolSwitchRoute`，draw 与 video 共用一份）、同一个「面板保存值 > 配置默认值」生效规则。
+
+| 文件 | 改动 |
+|---|---|
+| `video-store.ts`（新增） | 视频开关状态文件 `$DSH_HOME/state/<profile>/<plugin>/video.json`，与 `draw-store.ts` 逐字镜像 |
+| `video.ts`（新增） | 视频纯逻辑层：`agnes_video_generate` 工具定义、建任务/轮询状态机、V2.0 请求体构造与校验 |
+| `index.ts` | wiring 里增补 `videoStore` |
+| `lifecycle.ts` | `registerVideoTool` 与 `registerDrawTool` 是同一私有 `mountAgentTool` 的两层薄包装（共享降级阶梯，二者不可能降级不同） |
+| `routes.ts` | 新增 `POST /api/<name>/video`，与 `/draw` 共用 `registerToolSwitchRoute` |
+| `snapshot-aggregate.ts` | 快照 `llm.videoEnabled` / `videoSource` / `videoModel` / `videoCandidateIds` / `video25ModelIds` 回显 |
+| `client.js` | 「接入 API」区新增「视频工具」卡片，含 `VideoSwitch` 控件（`ToolSwitch` 与 `DrawSwitch` 共用同一私有体） |
+
+**隔离是唯一的额外约束**：draw 与 video 共用一份路由处理器，把它们的状态分开的**只有键名**（`drawModelId` / `videoModelId`）与各自闭包捕获的 store。少写错一处键名，两个工具就会**静默共用一个模型**——所以 `routes.test.mjs` 组 S 专门钉了交叉投递与各自回读（`AGNES-API.md` §7.5 也复述了这条）。
+
+**视频没有 30s 冷却门**（draw 有）：这是决策不是遗漏。一次视频尝试耗时分钟级、与出图共用同一视频限频池，协议自身延迟已远宽于 30 秒。
+

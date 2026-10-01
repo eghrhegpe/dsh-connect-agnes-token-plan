@@ -101,8 +101,11 @@
         # the Host exposes a tools service, the agent gains an
         # `agnes_draw_image` tool that POSTs to
         # `{apiBase}/images/generations` with the panel-saved
-        # `AGNES_TOKEN_PLAN_API_KEY`. Draw models are identified from the
-        # catalog's own `output_modalities` (never a name regex), the key is
+        # `AGNES_TOKEN_PLAN_API_KEY`. Draw models are identified by the
+        # catalog's own `output_modalities` when the platform declares it and
+        # by an `image` segment in the model id when it does not - the Agnes
+        # gateway declares NO modality field at all (docs/AGNES-API.md §7.1),
+        # so the name fallback is the path that actually fires here. The key is
         # resolved per call, and a failed draw starts a 30s cooldown. Off by
         # default - an agent tool is a Host-wide change; a Host without the
         # tools service simply never sees it.
@@ -113,4 +116,32 @@
         #      (e.g. Agnes-u1-fast).
         # drawTimeoutMs: 120000
         #   -> deadline for one image request (image models are slow).
+        # ------------------------------------------------------------------
+        # ------------------------------------------------------------------
+        # Video absorption (docs/AGNES-API.md §7.5): the same ladder as draw,
+        # with one protocol difference that decides the shape - video is an
+        # ASYNCHRONOUS TASK, so the tool creates a task and polls it. Off by
+        # default, like the draw tool.
+        # videoEnabled: false
+        #   -> the opt-in switch (strict boolean).
+        # videoModelId: ""
+        #   -> preferred video model id; empty = first V2.0-family model in the
+        #      catalog. The 2.5 family (`agnes-video-2.5`, `-2.5-flash`) is
+        #      NOT selectable: it takes `mode`/`seconds`/`size`/`aspect_ratio`
+        #      instead of `width`/`height`/`num_frames`/`frame_rate`, and
+        #      mixing the two schemas is a 400. The panel names the excluded
+        #      models so their absence is explained rather than mysterious.
+        # videoTimeoutMs: 600000
+        #   -> deadline for the WHOLE task (create + poll). Minutes, not
+        #      seconds; floor 30000.
+        # videoWidth: 1152
+        # videoHeight: 768
+        #   -> the V2.0 frame size. Passed straight through.
+        # videoNumFrames: 121
+        #   -> frame count; must be <= 441 AND satisfy 8n+1 (81 / 121 / 161 /
+        #      241 / 441). 121 @ 24fps is about 5 seconds. An illegal explicit
+        #      value is REFUSED, not clamped: silently shortening a clip the
+        #      caller asked for is worse than an error they can read.
+        # videoFrameRate: 24
+        #   -> frames per second, 1-60.
         # ------------------------------------------------------------------

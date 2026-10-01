@@ -41,6 +41,8 @@ export interface HostDeps {
   loadToolsModule?: any;
   /** Host webserver fetch used by the draw route. */
   drawFetch?: (...args: any[]) => Promise<any>;
+  /** Host webserver fetch used by the video route (mirrors `drawFetch`). */
+  videoFetch?: (...args: any[]) => Promise<any>;
   /** Login-trace sink used by the auth half. */
   onTrace?: (...args: any[]) => void;
   /** The resolved credential record. */

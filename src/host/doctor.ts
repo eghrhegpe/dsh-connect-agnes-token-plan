@@ -16,6 +16,7 @@ import { name } from "./host-config.ts";
 import { isProfileSegment, dshHome as defaultDshHome } from "./state-store.ts";
 import { PROVIDER_VERSION, normalizeEnabled } from "./provider-store.ts";
 import { DRAW_STORE_VERSION, normalizeDrawEnabled, normalizeDrawModelId } from "./draw-store.ts";
+import { VIDEO_STORE_VERSION, normalizeVideoEnabled, normalizeVideoModelId } from "./video-store.ts";
 import { CATALOG_VERSION, normalizeEntries, normalizeEnabledIds } from "./catalog-store.ts";
 
 /** A scope whose state the doctor reported on (a profile name, or "" for shared). */
@@ -28,6 +29,10 @@ export interface DoctorScope {
   drawPanel: boolean | null;
   /** The saved draw-model preference; `null` = auto. */
   drawModelPanel: string | null;
+  /** The saved video-tool switch; `null` = fall back to the deployment default. */
+  videoPanel: boolean | null;
+  /** The saved video-model preference; `null` = auto. */
+  videoModelPanel: string | null;
   /** Stored catalog entries, `[]` when nothing usable is stored. */
   catalogEntries: object[];
   /** The stored model allow-list; `[]` means "no filter". */
@@ -77,6 +82,22 @@ export function parseDrawPayload(raw) {
   return { enabled: normalizeDrawEnabled(source.enabled), modelId: normalizeDrawModelId(source.drawModelId) };
 }
 
+/**
+ * Parse one stored video switch + model preference, or `null` on a bad payload.
+ *
+ * A separate parser rather than a shared one with a key parameter: the two
+ * stores carry the same SHAPE but different wire keys (`drawModelId` vs
+ * `videoModelId`), and a shared parser that read the wrong key would answer
+ * "no preference" for a file that plainly has one — silently, which is the
+ * failure mode this whole module exists to end.
+ */
+export function parseVideoPayload(raw) {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const source = /** @type {Record<string, unknown>} */ (raw);
+  if (source.version !== VIDEO_STORE_VERSION) return null;
+  return { enabled: normalizeVideoEnabled(source.enabled), modelId: normalizeVideoModelId(source.videoModelId) };
+}
+
 /** Parse one stored catalog record, or `null` when absent / corrupt / foreign version. */
 export function parseCatalogPayload(raw) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -104,6 +125,8 @@ async function readScope(stateDir, profile) {
     providerPanel: null,
     drawPanel: null,
     drawModelPanel: null,
+    videoPanel: null,
+    videoModelPanel: null,
     catalogEntries: [],
     catalogEnabledIds: [],
     catalogFetchedAt: 0,
@@ -135,6 +158,14 @@ async function readScope(stateDir, profile) {
       scope.drawPanel = parsed.enabled;
       scope.drawModelPanel = parsed.modelId;
     } else scope.unreadable.push("draw.json");
+  }
+  const videoFile = join(stateDir, "video.json");
+  if (await present(videoFile)) {
+    const parsed = parseVideoPayload(await readJson(videoFile));
+    if (parsed !== null) {
+      scope.videoPanel = parsed.enabled;
+      scope.videoModelPanel = parsed.modelId;
+    } else scope.unreadable.push("video.json");
   }
   const catalogFile = join(stateDir, "catalog.json");
   if (await present(catalogFile)) {
@@ -212,9 +243,11 @@ export function renderReport(report) {
     const provider = scope.providerPanel === null ? "unset (deployment default rules)" : String(scope.providerPanel);
     const draw = scope.drawPanel === null ? "unset (deployment default rules)" : String(scope.drawPanel);
     const modelPart = scope.drawModelPanel !== null ? ` model=${scope.drawModelPanel}` : "";
+    const video = scope.videoPanel === null ? "unset (deployment default rules)" : String(scope.videoPanel);
+    const videoModelPart = scope.videoModelPanel !== null ? ` model=${scope.videoModelPanel}` : "";
     const enabledPart = scope.catalogEnabledIds.length === 0 ? "(no filter)" : String(scope.catalogEnabledIds.length);
     lines.push(
-      `${label}: provider=${provider} draw=${draw}${modelPart} catalog=${scope.catalogEntries.length} enabled=${enabledPart}`
+      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} catalog=${scope.catalogEntries.length} enabled=${enabledPart}`
     );
     if (scope.unreadable.length > 0) lines.push(`${label}: unreadable state: ${scope.unreadable.join(", ")}`);
   }

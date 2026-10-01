@@ -204,6 +204,15 @@ Token Plan 与小浣熊同为商汤旗下产品线，`sensenova` 这个名头名
 - 全部源码收敛到 `src/`（`src/host/*.ts` 27 个 Host 模块 + `src/client/*.ts` Client 半边）；`lib/` 与根 `client.js` 降为纯构建产物并加入 `.gitignore`——删掉后 `npm run build` 一条命令从源码完整重建。
 - 对外行为无变化：`main`/`exports` 指向不变（`./lib/index.js`、`./client: ./client.js`），`files` 白名单同步，`npm publish` 经 `prepack` 自动构建；`exports` 收敛为 `.` 与 `./client` 两个子路径。
 
+### 模态判定地基（modality.ts）：出图 / 视频模型识别统一为单一出处
+
+出图工具认不出模型的根因是「模态判定」两路分家、又都没拿到字段：Agnes 网关的 `/v1/models` 条目只带 `id/object/created/owned_by/supported_endpoint_types`，**没有任何模态字段**（真机确证 2026-10-01）。同一缺失让两个判定朝相反方向失手——`isImageGenModel` 严格方向（缺字段 = 不是出图模型）导致 `agnes_draw_image` 选不出候选，面板报「暂无出图模型」；`isChatModel` 宽松方向（缺字段 = 对话）把 4 个 image/video 模型全挂进对话选择器，一选就 400「是 image 模型，请使用 /v1/images/generations」。
+
+- **新增 `src/host/modality.ts` 作为模态判定的唯一出处**，三级解析：`output_modalities` 字段优先（平台补字段即自动生效）→ `agnes-image-*` / `agnes-video-*` 名称段兜底（只匹配完整段，不重蹈 `dsh-draw-router` 的 `/u1-fast/i` 子串漏判）→ 默认 `text`。`isImageGenModel` 与 `isChatModel` 改为共用这一个函数，矛盾由构造消除而非靠约定维持。
+- **真实目录验证**：出图候选 0 → 2（自动选中 `agnes-image-2.1-flash`）；对话名单 7 → 3。出图端点本身无需改动——真机实测 `POST /v1/images/generations` 返回 `data[0].url`，与 `parseDrawResponse` 已对齐。
+- **文档更正**：`AGNES-API.md` §7.1 原先把 SenseNova 字段名误列为 Agnes 字段；新增 §7.5 记录图片同步 / 视频异步端点形状（`POST /v1/video/generations` 建任务、`GET /v1/videos/generations` 查任务）。`ARCHITECTURE.md` §5.4 记录「结构化判定」前提在 Agnes 上的反转。
+- **测试**：`test/draw.test.mjs` 58 → 67，`test/provider.test.mjs` 201 → 205。
+
 ### 出图工具面板开关（drawEnabled）
 
 与 provider 开关同机制的「面板开关 + 立即生效」，出图吸收（§5.4 接法 B）不再需要改配置重启：
@@ -213,6 +222,19 @@ Token Plan 与小浣熊同为商汤旗下产品线，`sensenova` 这个名头名
 - **快照 `llm.drawEnabled` / `llm.drawSource`**：`snapshot-aggregate.js` 在 llm 块里回显出图开关的生效值与来源，面板无需单独调 `/draw` 就能读到当前状态。
 - **`lifecycle.js` 的 `registerDrawTool` 改读生效值**：不再直接读 `settings.drawEnabled`，而是「面板保存值 ?? 配置默认值」。工具的实际挂载/缺席发生在**下一个 Host 启动**时（agent tools 没有 unregister 语义），开关值本身是立即生效的。
 - **测试**：`test/provider.test.mjs` 新增 draw-store 纯逻辑组（归一、读写、版本拒绝、损坏忽略、forget）；`test/routes.test.mjs` 新增 R 组（8 项，覆盖 GET/POST/forget/跨域围栏/跨 remount 持久化/配置回退）；`test/wiring.test.mjs` 路由计数从 5 更新为 6。
+
+### 视频工具面板开关（videoEnabled）：V2.0 单体系，异步任务制
+
+与出图对称，新增可选的视频生成 agent 工具（默认关），接入全链路与出图共用同一套纪律：
+
+- **面板新增「视频工具」卡片**（`client.js` 的 `VideoSwitch` 控件）：与 `DrawSwitch` 共用同一私有 `ToolSwitch` 体，保证两个工具的降级阶梯与状态不可能分叉。勾选保存写入 `$DSH_HOME/state/<plugin>/video.json`，优先级：面板保存值 > `cordis.patch.yml` 的 `videoEnabled`。
+- **新增 `POST /api/<name>/video` 路由**（`routes.js`）：与 `/draw` 共用同一处理器 `registerToolSwitchRoute`，区别只在闭包捕获的 store 与请求体键名（`drawModelId` / `videoModelId`）——键名承重，写错会让两工具静默共用一个模型；`test/routes.test.mjs` 组 S 专门钉隔离。
+- **Host 半边 `src/host/video.ts`（V2.0 单体系，不无脑移植上游）**：走 `POST {apiBase}/videos` 建任务 → 轮询 `{host}/agnesapi` → 取 `url` 的完整状态机；`VIDEO_MAX_POLLS = 1000` 防时钟不前进时空转；**刻意不设 30s 冷却门**（协议往返延迟已远宽于冷却窗口，且一次视频尝试分钟级、共用视频限频池）。`buildVideoBody` 对非法显式值**抛错而非夹取**（夹取帧数会静默改变视频时长，分钟级生成后才发现）。
+- **只覆盖 V2.0 参数体系**（`width`/`height`/`num_frames`(须 8n+1)/`frame_rate`/`seed`/`negative_prompt`/`image`），与 2.5 系列（`mode`/`seconds`/`size`/`aspect_ratio`）互斥；`pickVideoModel` 只在 V2.0 家族选，2.5 进 `video25ModelIds` 单独上报面板说明，不进对话选择器。
+- **快照新增视频键**：`llm.videoEnabled` / `videoSource` / `videoModel` / `videoCandidateCount` / `videoCandidateIds` / `video25ModelIds`；`progress: 0` 走 `parseVideoQuery` 直接 `Number()` 读取（不能用坚持正值的 `num()`，否则合法 0% 被读成缺失）。
+- **配套配置**：`cordis.patch.yml` 新增 `videoEnabled` / `videoModelId` / `videoTimeoutMs`(≥30000) / `videoWidth`(1152) / `videoHeight`(768) / `videoNumFrames`(121) / `videoFrameRate`(24) 七项；`src/host/types.ts` 的 `HostDeps` 补 `videoFetch`。
+- **文档**：`AGNES-API.md` §7.5 整段重写为 V2.0 请求体字段与校验规则；`API.md` 补快照视频键与 `/video` 路由；`SETUP.md` 补 7 个视频配置字段；`PROVIDER-HOT-RELOAD.md` 新增 §8；`ARCHITECTURE.md` §5.4 补「视频吸收」；`README.md` 补视频工具段；`PITFALLS.md` 新增 §29（两站凭据不互通）/ §30（视频异步任务制）/ §31（`progress:0` 不能用 `num()`）。
+- **测试**：`test/video.test.mjs`（89 项，peer-free）覆盖 V2.0 请求体校验、V2.0+2.5 混合目录的候选过滤与自动选型、开关隔离；`test/routes.test.mjs` 组 S（10 项）覆盖视频开关读写、跨工具键名隔离、各自 store 隔离；`test/render.test.mjs` 组 G10 覆盖 `VideoSwitch` 渲染；`test/doctor.test.mjs` 覆盖 `video.json` 解析与隔离；`test/wiring.test.mjs` 路由计数 7 → 8。
 
 ### 面板视觉打磨
 

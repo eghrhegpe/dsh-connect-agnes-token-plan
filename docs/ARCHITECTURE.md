@@ -304,6 +304,26 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 - 快照契约**零改动**（13 键不动，`API.md` 不变）：工具要么在要么不在，
   agent 直接可见；面板不新增展示。
 
+**视频吸收（接法 B 对称，2026-10-01，`video.ts` + `index.ts` 接线）**：与出图共用同一套
+「存私有状态 + 面板开关 + 挂载时读生效值」机制，差异只在协议——
+
+- 工具名 `agnes_video_generate`，配置开关 `videoEnabled`（默认关）+ `videoModelId` +
+  `videoTimeoutMs` / `videoWidth` / `videoHeight` / `videoNumFrames` / `videoFrameRate`；
+  与 `agnes_draw_image` 同一挂载阶梯（`lifecycle.ts` 的 `mountAgentTool` 私有包装），
+  **同一套降级**（无 tools 服务 / peer 加载失败 / 注册被拒 → 工具缺席、面板照常）。
+- 图片**同步**返回、视频是**异步任务**：`video.ts` 的执行体是 `createVideoTask` →
+  `pollVideoResult` 状态机，而不是 `draw.ts` 的一次 `drawOnce`。端点构造与查询响应解析
+  见 [AGNES-API.md](./AGNES-API.md) §7.5。
+- **只覆盖 V2.0 参数体系**（`width`/`height`/`num_frames`/`frame_rate`）。名字含 `2.5`
+  的家族（`agnes-video-2.5` / `agnes-video-2.5-flash`）走 `mode`/`seconds`/`size`/
+  `aspect_ratio`，与 V2.0 **互斥**，混发会被 400 拒绝——所以 `pickVideoModel` 只在 V2.0
+  家族里选，2.5 家族进 `video25ModelIds` 单独上报给面板说明「为什么选不到」。`test/video.test.mjs`
+  9 段直接覆盖这条分派。
+- 视频**没有 30s 冷却门**：一次视频尝试耗时分钟级、且与出图共用同一视频限频池，
+  协议自身延迟已远宽于 30 秒；冷却门在此是死代码（决策见 AGNES-API.md §7.5.1）。
+- 快照契约新增视频键（仍是 `llm` 块内的子键，顶层键数不变）：`videoEnabled` / `videoSource`
+  / `videoModel` / `videoCandidateIds` / `video25ModelIds`。
+
 **前提反转（2026-10-01 真机）**：上表「本插件」一列原先写的是「结构化判定
 （`output_modalities`）」。这个前提**只在 SenseNova 目录上成立**。Agnes 网关
 （new-api 血统）的 `/v1/models` 条目只带 `id` / `object` / `created` / `owned_by` /

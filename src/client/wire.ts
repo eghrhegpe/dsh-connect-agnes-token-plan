@@ -178,6 +178,21 @@ export interface LlmData {
   drawCandidateCount?: number;
   drawCandidateIds?: string[];
   drawPreferredModel?: string;
+  /**
+   * The video tool (V2.0 single-family). `videoCandidateIds` lists ONLY the
+   * models this tool can drive — the 2.5 series is excluded on purpose,
+   * because its body schema (`mode`/`seconds`/`size`) is disjoint from V2.0's
+   * (`width`/`height`/`num_frames`/`frame_rate`) and mixing them is a 400.
+   * `video25ModelIds` carries the excluded ones so the card can say so
+   * instead of leaving the reader wondering where they went.
+   */
+  videoEnabled?: boolean;
+  videoSource?: string;
+  videoModel?: string;
+  videoCandidateCount?: number;
+  videoCandidateIds?: string[];
+  video25ModelIds?: string[];
+  videoPreferredModel?: string;
 }
 
 /** One shape-drift report line, keyed by upstream contract. */

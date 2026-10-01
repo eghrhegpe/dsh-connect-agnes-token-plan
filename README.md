@@ -19,7 +19,7 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 - **账号累计用量**：控制台口径的累计请求 / 文本 Token / 生图 / 视频秒数 / 活跃天数，以及近 N 天的分桶柱图
 - **套餐对比**：平台**公开**的套餐目录（六档：入门版 / 专业版 / 高级版 × 月付 / 年付），无需登录即可读，用来回答"升级能买到什么"
 - **模型清单**：当前 Key 实际能调哪些模型，其中哪些能看图（按平台 `input_modalities` 判定，不靠名字猜）
-- **可选接入**：把 Agnes 模型接进 DSH 对话，思考强度可选；并可注册出图工具
+- **可选接入**：把 Agnes 模型接进 DSH 对话，思考强度可选；并可注册出图 / 视频工具
 - **第二个上游（默认关）**：面板「小浣熊」tab 微信扫码接入 `xiaohuanxiong.com`，独立凭据、独立 provider，与 Token Plan 互不干涉
 
 面板**不代你操作账务**：不改套餐、不代扣额度、不碰 Key 明文；数据来自 Agnes 控制台自己的 API，与网页控制台口径一致。真正会「动」的三部分——注册 provider、挂出图工具、接第二个上游——全部 opt-in 且**默认关闭**，不打开时插件退化为纯信息展示。
@@ -61,7 +61,11 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 
 ## 出图工具（可选，默认关）
 
-面板「出图工具」卡（在「语言模型」下方，默认展开）打开开关后，Host 给 agent 注册工具 `agnes_draw_image`（首选模型由 `drawModelId` 指定），鉴权走同一把 `AGNES_TOKEN_PLAN_API_KEY`。出图模型由 catalog 的 `output_modalities` 结构化判定，不靠名字正则。注意：工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义），开关值本身立即生效。
+面板「出图工具」卡（在「语言模型」下方，默认展开）打开开关后，Host 给 agent 注册工具 `agnes_draw_image`（首选模型由 `drawModelId` 指定），鉴权走同一把 `AGNES_TOKEN_PLAN_API_KEY`。出图模型优先按 catalog 的 `output_modalities` 结构化判定，该字段缺失时退回模型名里的 `image` 段（Agnes 网关不返回这个字段，名字兜底才是实际命中的路径）。注意：工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义），开关值本身立即生效。
+
+## 视频工具（可选，默认关）
+
+面板「视频工具」卡（在「出图工具」下方，默认展开）打开开关后，Host 给 agent 注册工具 `agnes_video_generate`（首选模型由 `videoModelId` 指定），鉴权同样走 `AGNES_TOKEN_PLAN_API_KEY`。与出图**不同**的是协议：图片一次请求同步返回，视频是**异步任务制**——建任务后轮询到完成。**只覆盖 V2.0 参数体系**（`width`/`height`/`num_frames`/`frame_rate`）；目录里若有 2.5 家族模型（`agnes-video-2.5` / `agnes-video-2.5-flash`，参数体系是 `mode`/`seconds`/`size`），它们的参数与 V2.0 互斥，本工具不选它们，面板会点名说明。协议细节与校验规则见 [docs/AGNES-API.md](docs/AGNES-API.md) §7.5。
 
 ## 第二个上游：小浣熊（可选，默认关）
 
@@ -72,7 +76,7 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 provider / 出图开关的生效值存在插件私有状态文件里（`$DSH_HOME/state/<name>/`），不在任何配置或路由上——查"到底开没开"用 doctor，它只读状态文件、不碰凭据，Host 没起也能跑：
 
 ```powershell
-npm run doctor          # 人读：每个 profile 的 provider / draw 开关与模型清单
+npm run doctor          # 人读：每个 profile 的 provider / draw / video 开关与模型清单
 npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本）
 ```
 
@@ -84,7 +88,7 @@ npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本�
 - [docs/API.md](docs/API.md) — 路由与控制台端点
 - [docs/AGNES-API.md](docs/AGNES-API.md) — Agnes 接口全集（控制台额度侧 + 推理侧）
 - [docs/TESTING.md](docs/TESTING.md) — 测试体系
-- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑（28 条）
+- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑（31 条）
 - [CHANGELOG.md](CHANGELOG.md) — 版本变化
 
 AI 协作会话请先读 [AGENTS.md](AGENTS.md)。

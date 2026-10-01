@@ -32,6 +32,7 @@ import { createFileThrottleStore } from "./throttle-store.ts";
 import { createFileCatalogStore } from "./catalog-store.ts";
 import { createFileProviderStore } from "./provider-store.ts";
 import { createFileDrawStore } from "./draw-store.ts";
+import { createFileVideoStore } from "./video-store.ts";
 import { profileSegment } from "./state-store.ts";
 import { createApiKeyStore } from "./api-key-store.ts";
 import { createRaccoonStore } from "./raccoon-store.ts";
@@ -153,6 +154,10 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   // switch). A value saved from the panel overrides the patch's
   // `drawEnabled`; an untouched state file falls back to it.
   const drawStore = createFileDrawStore({ profile });
+  // The panel's live VIDEO-tool switch: its own state file, and deliberately
+  // NOT shared with the draw switch — the two tools are independent opt-ins,
+  // so wanting one without the other stays possible.
+  const videoStore = createFileVideoStore({ profile });
 
   /** Read an optional service without throwing on a Host that lacks it. */
   const getService = (service) => {
@@ -293,6 +298,7 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
     catalogStore,
     providerStore,
     drawStore,
+    videoStore,
     publisher,
     providerState,
     publishProvider,
@@ -311,11 +317,12 @@ function apply(ctx: any, config: any = {}, deps: HostDeps = {}) {
   // The six route handlers (trust fence, method allowances, body ceilings,
   // trace writes, publish-after-save) — see routes.ts.
   const offs = registerRoutes(ctx, wiring);
-  // Mount-time side effects (persisted-catalog seed, draw tool, vision
+  // Mount-time side effects (persisted-catalog seed, draw/video tools, vision
   // step two) — see lifecycle.ts. Fire-and-forget inside; never awaited.
   startSideEffects(ctx, wiring, {
     loadToolsModule: deps.loadToolsModule ?? (() => import("@deepseek-ai/dsh-tools")),
-    drawFetch: deps.drawFetch ?? ((url, options) => fetch(url, options))
+    drawFetch: deps.drawFetch ?? ((url, options) => fetch(url, options)),
+    videoFetch: deps.videoFetch ?? ((url, options) => fetch(url, options))
   });
 
   ctx.effect(() => {

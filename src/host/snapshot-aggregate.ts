@@ -58,6 +58,7 @@ import {
 import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
 import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
+import { pickVideoModel, videoGenModelIds, videoV2ModelIds, isVideo25Family } from "./video.ts";
 import { str } from "./util.ts";
 
 /** The authenticated console paths this poll reads. */
@@ -200,6 +201,13 @@ export function matchMultiplier(modelId, multipliers) {
  *   provider switch (`provider-store.enabled()`); null when untouched.
  * @param {() => Promise<boolean|null>} context.drawSwitch - the panel-saved
  *   draw-tool switch (`draw-store.enabled()`), same shape and precedence.
+ * @param {() => Promise<string|null>} context.drawModelId - the panel-saved
+ *   draw-model preference (`draw-store.modelId()`); null when untouched.
+ * @param {() => Promise<boolean|null>} context.videoSwitch - the panel-saved
+ *   video-tool switch (`video-store.enabled()`). A SEPARATE opt-in from the
+ *   draw switch: the two modalities are independent.
+ * @param {() => Promise<string|null>} context.videoModelId - the panel-saved
+ *   video-model preference (`video-store.modelId()`); null when untouched.
  * @returns {Promise<object>} the snapshot body.
  */
 export async function buildSnapshotBody({
@@ -212,7 +220,9 @@ export async function buildSnapshotBody({
   catalogStore,
   panelSwitch,
   drawSwitch,
-  drawModelId
+  drawModelId,
+  videoSwitch,
+  videoModelId
 }) {
   const providerState = publisher.state;
   const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
@@ -372,6 +382,9 @@ export async function buildSnapshotBody({
   // mount: panel-saved beats the patch default; "" = auto-pick. Resolved once
   // here so the llm block's three draw fields cannot disagree.
   const effectiveDrawModelId = (await drawModelId?.().catch(() => null)) ?? str(settings.drawModelId, "");
+  // Same precedence for video, resolved once so the llm block's video fields
+  // cannot disagree with each other or with what the tool dispatches.
+  const effectiveVideoModelId = (await videoModelId?.().catch(() => null)) ?? str(settings.videoModelId, "");
   // The effective switch: a panel-saved value beats the patch default. Both
   // are reported so the panel can say which side is in charge.
   const effectivePanelSwitch = await panelSwitch().catch(() => null);
@@ -454,6 +467,27 @@ export async function buildSnapshotBody({
             // Presence of a preference (panel or config) is what the panel
             // renders as "pinned"; its absence is "auto-picked".
             ...(effectiveDrawModelId !== "" ? { drawPreferredModel: effectiveDrawModelId } : {})
+          };
+        })()
+      : {}),
+    videoEnabled: (await videoSwitch?.().catch(() => null) ?? settings.videoEnabled) === true,
+    videoSource: await videoSwitch?.().catch(() => null) === null ? "config" : "panel",
+    // Same shape as the draw block above, with ONE difference that the panel
+    // has to be able to explain: this version implements only the V2.0
+    // parameter system, while the catalog may also list a 2.5 family that
+    // speaks a mutually exclusive one. So `videoCandidateIds` holds the
+    // addressable (V2.0) models only, and `video25ModelIds` carries the rest —
+    // a silent drop would make the panel look like it had lost models.
+    ...(Array.isArray(catalog)
+      ? (() => {
+          const candidates = videoV2ModelIds(catalog);
+          const allVideo = videoGenModelIds(catalog);
+          return {
+            videoModel: pickVideoModel(catalog, "", effectiveVideoModelId) ?? undefined,
+            videoCandidateCount: candidates.length,
+            videoCandidateIds: candidates,
+            video25ModelIds: allVideo.filter((id) => isVideo25Family(id)),
+            ...(effectiveVideoModelId !== "" ? { videoPreferredModel: effectiveVideoModelId } : {})
           };
         })()
       : {}),

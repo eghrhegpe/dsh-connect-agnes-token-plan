@@ -753,13 +753,14 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const TEXTUAL = new Set(["text", "search", "email", "url", "tel", "password"]);
   const fillable = (props) => props.type === undefined || TEXTUAL.has(props.type);
 
-  const llm = { models: [{ id: "m1" }], enabledModelIds: [], hasApiKey: true, drawCandidateIds: ["img-1"] };
+  const llm = { models: [{ id: "m1" }], enabledModelIds: [], hasApiKey: true, drawCandidateIds: ["img-1"], videoCandidateIds: ["vid-1"] };
   const trees = {
     AccountForm: render.AccountForm({ auth: { hasAccount: true }, onDone: () => {}, tt }),
     ApiKeyForm: render.ApiKeyForm({ llm, onDone: () => {}, tt }),
     ProviderForm: render.ProviderForm({ llm, onDone: () => {}, tt }),
     ModelPicker: render.ModelPicker({ llm, onDone: () => {}, tt }),
     DrawSwitch: render.DrawSwitch({ llm, onDone: () => {}, tt }),
+    VideoSwitch: render.VideoSwitch({ llm, onDone: () => {}, tt }),
     RaccoonTab: render.RaccoonTab({ tt }),
     PanelPage: render.PanelPage({ onClose: () => {}, tt, localeSubscribe: undefined })
   };
@@ -924,6 +925,129 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     check("a free model reads as free, not as a rate of zero",
       texts(treeOf(render.RaccoonRoster, { models: [{ id: "f", name: "F", multiplier: 0 }], tt })).join("").includes("raccoon.free"),
       texts(treeOf(render.RaccoonRoster, { models: [{ id: "f", name: "F", multiplier: 0 }], tt })).join(" | "));
+  }
+}
+
+// === G10. the video card: the draw card's twin, on its own catalogue ======
+// `VideoSwitch` renders through the SAME `ToolSwitch` body as `DrawSwitch`, so
+// most of what G9 pins is shared by construction. What this section adds is
+// everything that is NOT shared: the fields it reads (`video*`, never `draw*`),
+// the radio group name, and the one line the draw card has no counterpart for
+// — the 2.5-series exclusion note.
+{
+  check("the video switch component is exported by the client surface",
+    typeof render.VideoSwitch === "function", String(typeof render.VideoSwitch));
+
+  // Both candidate lists are present on the SAME `llm` object on purpose: the
+  // card must render its own and never the sibling's, which is the client-side
+  // half of the isolation check `routes.test.mjs` group S makes on the Host.
+  const videoLlm = {
+    videoEnabled: true,
+    hasApiKey: true,
+    videoModel: "agnes-video-v2.0",
+    videoCandidateIds: ["agnes-video-v2.0", "agnes-video-v2.0-flash"],
+    video25ModelIds: ["agnes-video-2.5", "agnes-video-2.5-flash"],
+    videoPreferredModel: "agnes-video-v2.0",
+    drawEnabled: true,
+    drawModel: "Agnes-image-2.1-flash",
+    drawCandidateIds: ["Agnes-image-2.1-flash", "Agnes-image-2.5-flash"]
+  };
+  const videoTree = treeOf(render.VideoSwitch, { llm: videoLlm, tt });
+  const videoText = texts(videoTree).join("");
+
+  const rows = findAll(videoTree, (props) => props.style?.borderBottom !== undefined);
+  check("the video picker draws the auto row plus every candidate",
+    rows.length === 3, `rows=${rows.length}`);
+  check("the video section says it is on and names the list it introduces",
+    texts(videoTree).includes("video.onList"), texts(videoTree).join("\n"));
+  check("the video auto row offers the auto option",
+    videoText.includes("video.autoOption"), videoText);
+  check("the pinned video candidate is the one marked effective",
+    videoText.includes("video.badge · video.effective"), videoText);
+  check("the video auto row names the model the auto-pick addresses",
+    videoText.includes("video.badge · agnes-video-v2.0"), videoText);
+  check("the video section's dictionary keys exist in zh",
+    typeof surface.dictionaries.zh["video.switch"] === "string" &&
+      typeof surface.dictionaries.zh["video.off"] === "string" &&
+      typeof surface.dictionaries.zh["video.note25"] === "string",
+    JSON.stringify(Object.keys(surface.dictionaries.zh).filter((key) => key.startsWith("video."))));
+
+  // The catalogue split: the rows are the V2.0 ids, and the image models on the
+  // same object must not leak in.
+  check("the video rows list the video candidates, never the draw ones",
+    videoText.includes("agnes-video-v2.0-flash") && !videoText.includes("Agnes-image-2.1-flash"),
+    videoText);
+  check("the video card never borrows a draw.* label",
+    !videoText.includes("draw."), videoText);
+
+  // The radio group name is a contract, not a detail: two radios on one page
+  // sharing a `name` are ONE group, so the video rows would clear the draw
+  // selection (and vice versa). Both cards can be open at once.
+  const radios = findAll(videoTree, (props) => props.type === "radio");
+  check("the video radios form their own group",
+    radios.length === 3 && radios.every((radio) => radio.props.name === "video-model"),
+    radios.map((radio) => radio.props.name).join(","));
+
+  // The 2.5 exclusion note: it must appear when the catalogue holds excluded
+  // models, and must NOT appear as an empty line when it holds none.
+  check("the video card names the excluded 2.5 models when there are any",
+    videoText.includes("video.note25"), videoText);
+  {
+    const noExcluded = treeOf(render.VideoSwitch, {
+      llm: { ...videoLlm, video25ModelIds: [] }, tt
+    });
+    check("no excluded 2.5 models means no note line",
+      !texts(noExcluded).join("").includes("video.note25"), texts(noExcluded).join(" | "));
+    // Absent field and empty array are the same answer — a snapshot that omits
+    // the key (older Host, or a catalogue with no 2.5 entry) must not crash.
+    const absent = treeOf(render.VideoSwitch, {
+      llm: { videoEnabled: true, hasApiKey: true, videoCandidateIds: ["agnes-video-v2.0"] }, tt
+    });
+    check("an absent video25ModelIds field degrades to no note",
+      !texts(absent).join("").includes("video.note25"), texts(absent).join(" | "));
+  }
+
+  // The row SHAPE contract from G9 applies to this component too — it is the
+  // same `modelRow`/`modelRowHead` pair, and a shared body is exactly where a
+  // row-shape regression would go unnoticed.
+  {
+    const columnRows = findAll(videoTree, (props) => props.style?.flexDirection === "column"
+      && props.style?.borderBottom !== undefined);
+    check("the video rows are the roster's column shape",
+      columnRows.length === 3, `column rows=${columnRows.length}`);
+    const bare = columnRows.filter((row) => {
+      const kids = (Array.isArray(row.children) ? row.children.flat(Infinity) : [row.children ?? []])
+        .filter((child) => child && typeof child === "object");
+      return kids.some((child) => child.props?.style === S.modelName || child.props?.style === S.modelBadge);
+    });
+    check("no video row leaves its name or badge outside modelRowHead",
+      bare.length === 0, `${bare.length} row(s) stack their name/badge`);
+    check("every video row wraps its head in modelRowHead",
+      findAll(videoTree, (props) => props.style === S.modelRowHead).length === 3,
+      `heads=${findAll(videoTree, (props) => props.style === S.modelRowHead).length}`);
+  }
+
+  // No key saved: the rows go away, but the switch and the reason stay.
+  {
+    const noKey = treeOf(render.VideoSwitch, {
+      llm: { videoEnabled: true, hasApiKey: false, videoCandidateIds: ["agnes-video-v2.0"] }, tt
+    });
+    check("an unsaved key replaces the video list with the reason",
+      findAll(noKey, (props) => props.style?.borderBottom !== undefined).length === 0 &&
+        texts(noKey).includes("video.needsKey"), texts(noKey).join(" | "));
+    check("the video switch stays on screen without a key",
+      findAll(noKey, (props) => props.type === "checkbox").length === 1, texts(noKey).join(" | "));
+  }
+
+  // A key whose catalogue holds no V2.0 model: the list is empty AND the card
+  // says why, rather than leaving an "on" switch over blank space.
+  {
+    const noCandidates = treeOf(render.VideoSwitch, {
+      llm: { videoEnabled: true, hasApiKey: true, videoCandidateIds: [], video25ModelIds: ["agnes-video-2.5"] }, tt
+    });
+    const text = texts(noCandidates).join(" | ");
+    check("an empty video catalogue is named, not left blank",
+      text.includes("video.noCandidates") && text.includes("video.note25"), text);
   }
 }
 

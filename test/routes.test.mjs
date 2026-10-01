@@ -39,6 +39,7 @@ const API_KEY_PATH = "/api/dsh-connect-agnes-token-plan/api-key";
 const PROVIDER_PATH = "/api/dsh-connect-agnes-token-plan/provider";
 const MODELS_PATH = "/api/dsh-connect-agnes-token-plan/models";
 const DRAW_PATH = "/api/dsh-connect-agnes-token-plan/draw";
+const VIDEO_PATH = "/api/dsh-connect-agnes-token-plan/video";
 const RECORD_KEY = credentialKey("dsh-connect-agnes-token-plan", "agnes-console");
 
 // Agnes answers every backend route in one `{code, message, data}` envelope,
@@ -836,9 +837,71 @@ async function withNetwork(stub, body) {
       JSON.stringify({ drawModel: llm.drawModel, candidates: llm.drawCandidateIds }));
     check("auto-pick carries no operator preference",
       !("drawPreferredModel" in llm), JSON.stringify(llm.drawPreferredModel));
+    // The video block rides the same poll and the same catalog. This fixture
+    // holds no video model at all, so the block must report an EMPTY candidate
+    // set and no `videoModel` — the shape that tells the panel "this plan has
+    // no video model", as opposed to a stale or borrowed id.
+    check("the llm block carries the video switch state",
+      llm.videoEnabled === false && llm.videoSource === "config",
+      JSON.stringify({ videoEnabled: llm.videoEnabled, videoSource: llm.videoSource }));
+    check("a catalog with no video model reports an empty video candidate set",
+      llm.videoModel === undefined && llm.videoCandidateCount === 0 &&
+        JSON.stringify(llm.videoCandidateIds) === JSON.stringify([]) &&
+        JSON.stringify(llm.video25ModelIds) === JSON.stringify([]),
+      JSON.stringify({ model: llm.videoModel, count: llm.videoCandidateCount, ids: llm.videoCandidateIds }));
     check("the llm block never carries the key",
       !JSON.stringify(llm).includes("sk-test-key-for-routing-only"));
   }).catch((error) => fail("M: vision publish without settings service", error));
+}
+
+// === M2. the snapshot splits the video catalog into V2.0 and 2.5 ===========
+// The one decision the video block encodes: `agnes_video_generate` drives the
+// V2.0 parameter family only, because the 2.5 family's body schema
+// (`mode`/`seconds`/`size`) is disjoint and mixing them is a 400. So the
+// candidate list must hold the V2.0 ids and NOT the 2.5 ones, while
+// `video25ModelIds` reports the excluded set so the card can name it. A
+// wiring mistake here (passing the unfiltered list) would produce a picker
+// whose every option fails at call time.
+{
+  const credentials = makeCredentials(null);
+  credentials.refs.set("AGNES_TOKEN_PLAN_API_KEY", "sk-test-key-for-routing-only");
+  const net = await loginNetwork();
+  const stub = async (url, init) => {
+    const target = String(url);
+    if (target.includes("/v1/models") || target.includes("/models")) {
+      return new Response(JSON.stringify({
+        data: [
+          { id: "Agnes-6.8-flash-lite", input_modalities: ["text"] },
+          { id: "agnes-image-2.1-flash" },
+          { id: "agnes-video-v2.0" },
+          { id: "agnes-video-v2.0-flash" },
+          { id: "agnes-video-2.5" },
+          { id: "agnes-video-2.5-flash" }
+        ]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return net(url, init);
+  };
+  await withNetwork(stub, async () => {
+    const call = await mount(credentials);
+    const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+    const llm = snapshot.payload.llm;
+    check("M2 the poll succeeds against a mixed catalog", snapshot.payload.ok === true,
+      JSON.stringify(snapshot.payload).slice(0, 120));
+    check("M2 the video candidates are the V2.0 family only",
+      JSON.stringify(llm.videoCandidateIds) === JSON.stringify(["agnes-video-v2.0", "agnes-video-v2.0-flash"]) &&
+        llm.videoCandidateCount === 2,
+      JSON.stringify({ ids: llm.videoCandidateIds, count: llm.videoCandidateCount }));
+    check("M2 the excluded 2.5 family is reported separately",
+      JSON.stringify(llm.video25ModelIds) === JSON.stringify(["agnes-video-2.5", "agnes-video-2.5-flash"]),
+      JSON.stringify(llm.video25ModelIds));
+    check("M2 auto-pick addresses a V2.0 model",
+      llm.videoModel === "agnes-video-v2.0", String(llm.videoModel));
+    check("M2 no video id is a chat model, and no image id is a video candidate",
+      JSON.stringify(llm.models?.map((m) => m.id)) === JSON.stringify(["Agnes-6.8-flash-lite"]) &&
+        JSON.stringify(llm.drawCandidateIds) === JSON.stringify(["agnes-image-2.1-flash"]),
+      JSON.stringify({ roster: llm.models?.map((m) => m.id), draw: llm.drawCandidateIds }));
+  }).catch((error) => fail("M2: the video catalog split", error));
 }
 
 // === N. the inference API-key route: save / state / forget / fence =========
@@ -1375,6 +1438,109 @@ async function withNetwork(stub, body) {
     check("R8 a cross-origin draw POST is refused",
       foreign.statusCode === 403 && foreign.payload.ok === false, JSON.stringify(foreign.payload));
   } catch (error) { fail("R: the draw switch route", error); }
+}
+
+// === S. the video switch route: same handler, SEPARATE store ===============
+// `/draw` and `/video` are served by ONE handler body
+// (`registerToolSwitchRoute`), so the only things keeping their state apart
+// are the key names and the store each closure captured. S1–S5 pin the switch
+// and model round trips; S6 is the isolation check the shared handler makes
+// necessary — the key names are load-bearing, and a copy-paste that reused
+// `drawModelId` would silently give both tools the same model.
+{
+  try {
+    const credentials = makeCredentials(null);
+    const call = await mount(credentials);
+
+    const initial = await call(VIDEO_PATH, makeRequest());
+    check("S1 GET reports the config default with source config",
+      initial.payload.ok === true && initial.payload.videoEnabled === false &&
+        initial.payload.videoSource === "config", JSON.stringify(initial.payload));
+
+    const bad = await call(VIDEO_PATH, makePost({ enabled: "yes" }));
+    check("S2 a non-boolean enabled is refused",
+      bad.statusCode === 400 && bad.payload.ok === false, JSON.stringify(bad.payload));
+
+    const on = await call(VIDEO_PATH, makePost({ enabled: true }));
+    check("S3 POST saves the panel value and reports it as source panel",
+      on.payload.ok === true && on.payload.videoEnabled === true &&
+        on.payload.videoSource === "panel", JSON.stringify(on.payload));
+
+    // A second mount (fresh plugin instance, same state file) must read the
+    // persisted switch — the value outlives one Host process.
+    const call2 = await mount(credentials);
+    const again = await call2(VIDEO_PATH, makeRequest());
+    check("S4 the panel value survives a remount",
+      again.payload.videoEnabled === true && again.payload.videoSource === "panel",
+      JSON.stringify(again.payload));
+
+    // The model pick: a string pins one, `null` returns to auto-pick. The
+    // handler validates the SHAPE only (non-empty string or null); whether the
+    // id is in the catalogue is the tool's business at call time.
+    const pinned = await call2(VIDEO_PATH, makePost({ videoModelId: "agnes-video-v2.0" }));
+    check("S5 a model id is saved and reported with source panel",
+      pinned.payload.ok === true && pinned.payload.videoModelId === "agnes-video-v2.0" &&
+        pinned.payload.videoModelSource === "panel", JSON.stringify(pinned.payload));
+
+    const blank = await call2(VIDEO_PATH, makePost({ videoModelId: "  " }));
+    check("S5b a blank model id is refused rather than saved",
+      blank.statusCode === 400 && blank.payload.ok === false, JSON.stringify(blank.payload));
+
+    const auto = await call2(VIDEO_PATH, makePost({ videoModelId: null }));
+    // A `null` save is INDISTINGUISHABLE from an untouched state file — the
+    // store normalizes it away, so the value comes back as the config default
+    // ("") with source "config". That is the right answer rather than a lost
+    // one: both states resolve to auto-pick, which is what the panel's radio
+    // row reads. The source tag reports where the VALUE came from, not who
+    // last wrote.
+    check("S5c a null model id returns to auto-pick",
+      auto.payload.ok === true && auto.payload.videoModelId === "" &&
+        auto.payload.videoModelSource === "config", JSON.stringify(auto.payload));
+
+    // THE ISOLATION CHECK. One handler body serves both routes, so nothing but
+    // the key name and the captured store stops a draw POST from landing in
+    // the video store. Pin a DIFFERENT model on each and read both back: each
+    // route must report its own, and neither may report the other's.
+    const crossVideo = await call2(VIDEO_PATH, makePost({ drawModelId: "Agnes-image-2.1-flash" }));
+    check("S6 the video route does not accept the draw key",
+      crossVideo.payload.ok === false || crossVideo.payload.videoModelId !== "Agnes-image-2.1-flash",
+      JSON.stringify(crossVideo.payload));
+    const crossDraw = await call2(DRAW_PATH, makePost({ videoModelId: "agnes-video-v2.0" }));
+    check("S6b the draw route does not accept the video key",
+      crossDraw.payload.ok === false || crossDraw.payload.drawModelId !== "agnes-video-v2.0",
+      JSON.stringify(crossDraw.payload));
+
+    await call2(VIDEO_PATH, makePost({ videoModelId: "agnes-video-v2.0" }));
+    await call2(DRAW_PATH, makePost({ drawModelId: "Agnes-image-2.1-flash" }));
+    const videoRead = await call2(VIDEO_PATH, makeRequest());
+    const drawRead = await call2(DRAW_PATH, makeRequest());
+    check("S7 the two routes keep separate model stores",
+      videoRead.payload.videoModelId === "agnes-video-v2.0" &&
+        drawRead.payload.drawModelId === "Agnes-image-2.1-flash",
+      `video=${JSON.stringify(videoRead.payload)} draw=${JSON.stringify(drawRead.payload)}`);
+
+    // Forget the panel value so S8 can exercise the "untouched state file"
+    // path — without this the saved value would still be in the state file.
+    const forget = await call2(VIDEO_PATH, makePost({ forget: true }));
+    check("S7b forgetting the panel value returns to the config default",
+      forget.payload.ok === true && forget.payload.videoSource === "config",
+      JSON.stringify(forget.payload));
+
+    const call3 = await mount(credentials, { videoEnabled: true });
+    const configBacked = await call3(VIDEO_PATH, makeRequest());
+    check("S8 an untouched state file falls back to the config value",
+      configBacked.payload.videoEnabled === true && configBacked.payload.videoSource === "config",
+      JSON.stringify(configBacked.payload));
+    const flipped = await call3(VIDEO_PATH, makePost({ enabled: false }));
+    check("S9 a panel save overrides the config default",
+      flipped.payload.videoEnabled === false && flipped.payload.videoSource === "panel",
+      JSON.stringify(flipped.payload));
+
+    // The trust fence: a foreign page cannot flip the switch.
+    const foreign = await call(VIDEO_PATH, makePost({ enabled: true }, { origin: "https://evil.test" }));
+    check("S10 a cross-origin video POST is refused",
+      foreign.statusCode === 403 && foreign.payload.ok === false, JSON.stringify(foreign.payload));
+  } catch (error) { fail("S: the video switch route", error); }
 }
 
 // The Host routes are exercised against a stubbed console; nothing here may

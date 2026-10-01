@@ -19,6 +19,7 @@ import { join } from "node:path";
 import {
   parseProviderPayload,
   parseDrawPayload,
+  parseVideoPayload,
   parseCatalogPayload,
   diagnose,
   renderReport
@@ -53,6 +54,29 @@ function check(name, condition, detail = "") {
   check("a foreign draw version reads as unset", parseDrawPayload({ version: 99 }) === null);
 }
 
+// --- 2b. parseVideoPayload --------------------------------------------------
+// Same shape as draw, DIFFERENT wire key. The key is the whole point: a parser
+// that read `drawModelId` out of a video file would report "auto" for a file
+// that plainly pins a model.
+{
+  const ok = parseVideoPayload({ version: 1, enabled: true, videoModelId: "agnes-video-v2.0" });
+  check("video switch + model round-trip", ok.enabled === true && ok.modelId === "agnes-video-v2.0");
+  const noModel = parseVideoPayload({ version: 1, enabled: true });
+  check("video with no model preference reads modelId null (auto)",
+    noModel.enabled === true && noModel.modelId === null);
+  check("video with a junk model preference reads null",
+    parseVideoPayload({ version: 1, enabled: true, videoModelId: 7 }).modelId === null);
+  check("a foreign video version reads as unset", parseVideoPayload({ version: 99 }) === null);
+  check("a non-object video payload reads as unset",
+    parseVideoPayload(null) === null && parseVideoPayload([]) === null && parseVideoPayload("x") === null);
+  // The isolation check, on disk this time: the DRAW key in a video file is not
+  // a video preference, and vice versa.
+  check("a video file carrying only drawModelId reads as no preference",
+    parseVideoPayload({ version: 1, enabled: true, drawModelId: "Agnes-image-2.1-flash" }).modelId === null);
+  check("a draw file carrying only videoModelId reads as no preference",
+    parseDrawPayload({ version: 1, enabled: true, videoModelId: "agnes-video-v2.0" }).modelId === null);
+}
+
 // --- 3. parseCatalogPayload -------------------------------------------------
 {
   const ok = parseCatalogPayload({
@@ -79,6 +103,7 @@ function check(name, condition, detail = "") {
   // The shared (pre-§23) layout keeps its own values.
   await writeFile(join(sharedDir, "provider.json"), JSON.stringify({ version: 1, enabled: true }));
   await writeFile(join(sharedDir, "draw.json"), JSON.stringify({ version: 1, enabled: true }));
+  await writeFile(join(sharedDir, "video.json"), JSON.stringify({ version: 1, enabled: true, videoModelId: "agnes-video-v2.0" }));
   await writeFile(join(sharedDir, "catalog.json"), JSON.stringify({
     version: 1, fetchedAt: 1000,
     entries: [{ id: "a" }, { id: "b", output_modalities: ["image"] }],
@@ -86,6 +111,7 @@ function check(name, condition, detail = "") {
   }));
   // The profile-scoped layout has its own, DIFFERENT values.
   await writeFile(join(profileDir, "provider.json"), JSON.stringify({ version: 1, enabled: false }));
+  await writeFile(join(profileDir, "video.json"), JSON.stringify({ version: 1, enabled: false }));
   await writeFile(join(profileDir, "catalog.json"), JSON.stringify({
     version: 1, fetchedAt: 2000, entries: [{ id: "c" }], enabledModelIds: ["c"]
   }));
@@ -99,6 +125,11 @@ function check(name, condition, detail = "") {
     web.providerPanel === false && web.drawPanel === null && web.catalogEntries.length === 1,
     JSON.stringify({ provider: web.providerPanel, draw: web.drawPanel, entries: web.catalogEntries.length }));
   check("the profile scope reads its own allow-list", JSON.stringify(web.catalogEnabledIds) === JSON.stringify(["c"]));
+  // The video file is scoped exactly like the others: this profile saved its
+  // own switch and no model, so it must NOT inherit the shared scope's model.
+  check("the profile scope reads its own video switch, not the shared one",
+    web.videoPanel === false && web.videoModelPanel === null,
+    JSON.stringify({ panel: web.videoPanel, model: web.videoModelPanel }));
 
   // A machine that has a profile directory should NOT also report the shared
   // directory as a fake "profile" — the shared layout is only the pre-§23 answer.
@@ -134,14 +165,22 @@ function check(name, condition, detail = "") {
   const dir = join(stateRoot, PLUGIN_NAME);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "provider.json"), "this is not json");
+  // A second file that parses as JSON but is not THIS plugin's payload (a
+  // foreign version): also named, also read as unset.
+  await writeFile(join(dir, "video.json"), JSON.stringify({ version: 99, enabled: true }));
   const report = await diagnose({ dshHome: home });
   check("a corrupt provider.json is named in the scope's unreadable list",
     report.shared.unreadable.includes("provider.json"),
     JSON.stringify(report.shared.unreadable));
+  check("a foreign-version video.json is named too, not silently dropped",
+    report.shared.unreadable.includes("video.json") && report.shared.videoPanel === null,
+    JSON.stringify({ unreadable: report.shared.unreadable, panel: report.shared.videoPanel }));
   check("the unreadable file still reads the switch as null (fall back to config)",
     report.shared.providerPanel === null);
   const lines = renderReport(report);
   check("the human report names the unreadable file", lines.includes("provider.json"), lines);
+  check("the human report carries the video switch beside the draw one",
+    /video=unset/.test(lines), lines);
   await rm(home, { recursive: true, force: true });
 }
 

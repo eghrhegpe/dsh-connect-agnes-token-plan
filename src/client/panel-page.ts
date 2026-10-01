@@ -14,7 +14,7 @@ import type { Tt } from "./runtime.ts";
 import type { SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PlanCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
-import { DrawSwitch } from "./provider-controls.ts";
+import { DrawSwitch, VideoSwitch } from "./provider-controls.ts";
 import { RaccoonTab } from "./raccoon-tab.ts";
 
 export function PanelPage({ onClose, tt, localeSubscribe }: {
@@ -40,17 +40,17 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // maintenance action, one click away. Remounting on a page switch
   // restores these defaults.
   //
-  // The API tab's two feature cards (provider / draw) start OPEN too: they
-  // are the reason someone visits that tab, and a collapsed card hiding its
-  // own switch reads as "this does nothing". Only the API key editor stays
-  // closed — it holds a secret field, and it is a prerequisite the two
-  // cards above point at rather than the thing being configured.
-  const [openSections, setOpenSections] = useState({ quota: true, usage: true, account: false, provider: true, draw: true, llm: false });
+  // The API tab's three feature cards (provider / draw / video) start OPEN
+  // too: they are the reason someone visits that tab, and a collapsed card
+  // hiding its own switch reads as "this does nothing". Only the API key
+  // editor stays closed — it holds a secret field, and it is a prerequisite
+  // the three cards above point at rather than the thing being configured.
+  const [openSections, setOpenSections] = useState({ quota: true, usage: true, account: false, provider: true, draw: true, video: true, llm: false });
   // Three fixed perspectives: "quota" is the daily reading (plan, windows,
   // account totals), "api" is the Token Plan wiring (key, provider push,
-  // draw), and "raccoon" is the SECOND upstream provider (ROADMAP §6.1) — an
-  // independent credential + switch that shares no pool semantics with the
-  // first two.
+  // draw, video), and "raccoon" is the SECOND upstream provider (ROADMAP
+  // §6.1) — an independent credential + switch that shares no pool semantics
+  // with the first two.
   //
   // The tab bar renders from the FIRST FRAME, whatever the snapshot says. It
   // used to appear only once a body had landed, which meant a console nobody
@@ -364,10 +364,10 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
             )
           // One SectionCard per concern, parked on their own tab so the
           // quota view stays the panel's first screen. Key, provider+push,
-          // and draw are three different functions; cramming them into one
-          // card is what made the block read as a pile of look-alike
+          // draw, and video are four different functions; cramming them into
+          // one card is what made the block read as a pile of look-alike
           // notices. Order is WHAT THE READER CAME FOR, not dependency
-          // order: the two feature cards lead (and open), the key editor
+          // order: the three feature cards lead (and open), the key editor
           // trails because it is the prerequisite they point back at.
           : activeTab === "raccoon"
             // The Raccoon provider (ROADMAP §6.1) is a SECOND upstream, with
@@ -395,6 +395,11 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                   SectionCard,
                   { title: tt("draw.title"), open: openSections.draw, onToggle: () => toggleSection("draw"), tt },
                   h(DrawSwitch, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+                ),
+                h(
+                  SectionCard,
+                  { title: tt("video.title"), open: openSections.video, onToggle: () => toggleSection("video"), tt },
+                  h(VideoSwitch, { llm: data?.llm ?? null, onDone: () => void load(), tt })
                 ),
                 h(
                   SectionCard,

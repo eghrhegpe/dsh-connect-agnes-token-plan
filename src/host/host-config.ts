@@ -126,7 +126,35 @@ export const CONFIG_DEFAULTS = Object.freeze({
   /** Preferred draw model id; empty means "first image-gen model of the catalog". */
   drawModelId: "",
   /** Deadline for one image request. Image models are slow; chat deadlines do not apply. */
-  drawTimeoutMs: 120_000
+  drawTimeoutMs: 120_000,
+  /**
+   * Video absorption: register the `agnes_video_generate` agent tool
+   * (`video.ts`). A SEPARATE opt-in from `drawEnabled` on purpose — wanting
+   * image generation without video (or the reverse) is an ordinary
+   * preference, and one switch would force both on together.
+   *
+   * The protocol differs from drawing in the way that matters here: video is
+   * an ASYNCHRONOUS TASK (create, then poll until terminal), so this is the
+   * only module whose deadline is measured in MINUTES. Off by default, and
+   * degraded exactly like the draw tool: no tools service or a failing peer
+   * leaves the panel and the provider untouched.
+   *
+   * The panel's video switch (`POST /api/<name>/video`, stored in
+   * `video-store.ts`) overrides this live with no restart.
+   */
+  videoEnabled: false,
+  /** Preferred video model id; empty means "first V2.0-family video model of the catalog". */
+  videoModelId: "",
+  /** The whole-generation poll budget (create + poll). Video tasks run for minutes. */
+  videoTimeoutMs: 600_000,
+  /** Default video width in pixels (16:9). */
+  videoWidth: 1152,
+  /** Default video height in pixels (16:9). */
+  videoHeight: 768,
+  /** Default frame count — must satisfy 8n+1 and be ≤441; 121 @ 24fps ≈ 5 seconds. */
+  videoNumFrames: 121,
+  /** Default frame rate (1–60). */
+  videoFrameRate: 24
 });
 
 /**
@@ -238,7 +266,18 @@ export function resolveSettings(config) {
         // sized deadline would abort healthy requests.
         drawEnabled: source.drawEnabled === true,
         drawModelId: str(source.drawModelId, ""),
-        drawTimeoutMs: clampInt(source.drawTimeoutMs, CONFIG_DEFAULTS.drawTimeoutMs, 5_000)
+        drawTimeoutMs: clampInt(source.drawTimeoutMs, CONFIG_DEFAULTS.drawTimeoutMs, 5_000),
+        // Video absorption opt-in (strict boolean, independent of the draw
+        // switch) plus its knobs. The poll budget is clamped at 30s rather
+        // than 5s: this deadline covers a whole create-and-poll cycle, and a
+        // draw-sized value would abort every healthy generation.
+        videoEnabled: source.videoEnabled === true,
+        videoModelId: str(source.videoModelId, ""),
+        videoTimeoutMs: clampInt(source.videoTimeoutMs, CONFIG_DEFAULTS.videoTimeoutMs, 30_000),
+        videoWidth: clampInt(source.videoWidth, CONFIG_DEFAULTS.videoWidth, 1),
+        videoHeight: clampInt(source.videoHeight, CONFIG_DEFAULTS.videoHeight, 1),
+        videoNumFrames: clampInt(source.videoNumFrames, CONFIG_DEFAULTS.videoNumFrames, 1),
+        videoFrameRate: clampInt(source.videoFrameRate, CONFIG_DEFAULTS.videoFrameRate, 1)
       },
       configError: null
     };

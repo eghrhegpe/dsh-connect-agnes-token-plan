@@ -1,0 +1,509 @@
+/**
+ * Unit checks for the video absorption module (`video.js`) — PEER-FREE, like
+ * `draw.test.mjs`:
+ *
+ * - endpoint building, INCLUDING the one asymmetry that bites: creation lives
+ *   under `/v1` and the status query does not (`{host}/agnesapi`), so the
+ *   version segment has to be stripped rather than appended;
+ * - V2.0 parameter validation (`num_frames` 8n+1 and ≤441, `frame_rate` 1-60,
+ *   positive-integer dimensions, integer seed, public image URL);
+ * - the V2.0 / 2.5 split: the 2.5 family speaks a different, mutually
+ *   exclusive parameter system, so it must never be auto-picked;
+ * - create-task and status-query response parsing (both `video_id` and the
+ *   legacy `task_id`/`id`, `url` at the top level AND under `metadata`);
+ * - failure classification (the 429 quota-vs-rate split);
+ * - the async spine: `createVideoTask` then `pollVideoResult`, against a fake
+ *   fetch and an injected clock/sleeper (so a 10-minute budget runs instantly);
+ * - `defineVideoTool` end-to-end with a passthrough `defineTool`: hint shapes,
+ *   degradation errors, per-call key resolution, disposal.
+ *
+ * Nothing here imports a Host peer or opens a socket.
+ */
+import {
+  VIDEO_TOOL_NAME,
+  VIDEO_DEFAULT_MODEL,
+  VIDEO_MAX_FRAMES,
+  buildVideoEndpoint,
+  buildVideoQueryEndpoint,
+  isValidFrameCount,
+  nearestFrameCount,
+  isVideo25Family,
+  videoGenModelIds,
+  videoV2ModelIds,
+  pickVideoModel,
+  buildVideoBody,
+  parseVideoTask,
+  videoTaskIdOf,
+  parseVideoQuery,
+  isVideoTerminal,
+  describeVideoFailure,
+  createVideoTask,
+  queryVideoTask,
+  pollVideoResult,
+  defineVideoTool
+} from "../src/host/video.ts";
+
+const results = [];
+function check(name, condition, detail = "") {
+  results.push({ name, pass: Boolean(condition), detail });
+}
+function fail(name, error) {
+  results.push({ name, pass: false, detail: String(error?.message ?? error) });
+}
+async function rejects(fn) {
+  try {
+    await fn();
+  } catch (error) {
+    return String(error?.message ?? error);
+  }
+  return null;
+}
+function okResponse(json) {
+  return { ok: true, status: 200, json: async () => json, text: async () => JSON.stringify(json) };
+}
+function errResponse(status, text) {
+  return { ok: false, status, json: async () => ({}), text: async () => text };
+}
+
+// --- 1. endpoints: creation under /v1, the query one level above -----------
+{
+  check("a bare /v1 base appends /videos",
+    buildVideoEndpoint("https://api.agnes-ai.cn/v1") === "https://api.agnes-ai.cn/v1/videos");
+  check("a trailing slash is tolerated",
+    buildVideoEndpoint("https://api.agnes-ai.cn/v1/") === "https://api.agnes-ai.cn/v1/videos");
+  check("a full /videos URL passes through",
+    buildVideoEndpoint("https://api.agnes-ai.cn/v1/videos") === "https://api.agnes-ai.cn/v1/videos");
+  check("a deeper /v1/... path is rewound to /v1",
+    buildVideoEndpoint("https://api.agnes-ai.cn/v1/chat/completions") === "https://api.agnes-ai.cn/v1/videos");
+  check("a host with no version gets /v1/videos",
+    buildVideoEndpoint("https://api.agnes-ai.cn") === "https://api.agnes-ai.cn/v1/videos");
+  check("an empty base yields an empty endpoint",
+    buildVideoEndpoint("") === "" && buildVideoEndpoint(undefined) === "");
+
+  // The asymmetry that 404s if it is got wrong: /agnesapi is NOT under /v1.
+  check("the query endpoint strips /v1 rather than appending to it",
+    buildVideoQueryEndpoint("https://api.agnes-ai.cn/v1") === "https://api.agnes-ai.cn/agnesapi");
+  check("the query endpoint survives a deeper /v1 path",
+    buildVideoQueryEndpoint("https://api.agnes-ai.cn/v1/chat/completions") === "https://api.agnes-ai.cn/agnesapi");
+  check("the query endpoint tolerates a bare host",
+    buildVideoQueryEndpoint("https://api.agnes-ai.cn") === "https://api.agnes-ai.cn/agnesapi");
+  check("the query endpoint is empty for an empty base",
+    buildVideoQueryEndpoint("") === "");
+  check("no host is hardcoded — the configured base decides",
+    buildVideoEndpoint("https://example.test/v1").startsWith("https://example.test/"));
+}
+
+// --- 2. frame count / frame rate rules --------------------------------------
+{
+  check("8n+1 within bounds is valid",
+    isValidFrameCount(81) && isValidFrameCount(121) && isValidFrameCount(441));
+  check("1 is valid (8*0+1)", isValidFrameCount(1));
+  check("a non-8n+1 value is rejected",
+    isValidFrameCount(100) === false && isValidFrameCount(120) === false);
+  check("over the ceiling is rejected", isValidFrameCount(449) === false);
+  check("non-integers and junk are rejected",
+    isValidFrameCount(81.5) === false && isValidFrameCount("81") === false && isValidFrameCount(NaN) === false);
+  check("the hint names the nearest legal neighbour",
+    nearestFrameCount(100) === 121 && nearestFrameCount(130) === 161 && nearestFrameCount(500) === VIDEO_MAX_FRAMES);
+}
+
+// --- 3. the V2.0 / 2.5 split ------------------------------------------------
+{
+  check("the 2.5 family is recognised by name",
+    isVideo25Family("agnes-video-2.5") && isVideo25Family("agnes-video-2.5-flash"));
+  check("V2.0 is not the 2.5 family",
+    isVideo25Family("agnes-video-v2.0") === false && isVideo25Family(VIDEO_DEFAULT_MODEL) === false);
+
+  const live = [
+    { id: "agnes-2.0-flash" },
+    { id: "agnes-image-2.5-flash" },
+    { id: "agnes-video-2.5" },
+    { id: "agnes-video-2.5-flash" },
+    { id: "agnes-video-v2.0" }
+  ];
+  check("video models are found through the shared modality resolver",
+    JSON.stringify(videoGenModelIds(live)) === JSON.stringify(["agnes-video-2.5", "agnes-video-2.5-flash", "agnes-video-v2.0"]),
+    JSON.stringify(videoGenModelIds(live)));
+  check("only the V2.0 family is addressable by this module",
+    JSON.stringify(videoV2ModelIds(live)) === JSON.stringify(["agnes-video-v2.0"]),
+    JSON.stringify(videoV2ModelIds(live)));
+
+  check("an explicit request wins even when unlisted (manual override)",
+    pickVideoModel(live, "custom-video", "") === "custom-video");
+  check("auto-pick skips the 2.5 family it cannot address",
+    pickVideoModel(live, "", "") === "agnes-video-v2.0");
+  check("a configured preference is honoured when the catalog confirms it",
+    pickVideoModel(live, "", "agnes-video-v2.0") === "agnes-video-v2.0");
+  check("a 2.5 preference is ignored rather than dispatched",
+    pickVideoModel(live, "", "agnes-video-2.5-flash") === "agnes-video-v2.0");
+  check("a catalog with only 2.5 video models picks nothing",
+    pickVideoModel([{ id: "agnes-video-2.5-flash" }], "", "") === null);
+  check("an empty catalog picks nothing", pickVideoModel([], "", "") === null);
+}
+
+// --- 4. buildVideoBody: valid shapes and the throw-not-clamp rule -----------
+{
+  const full = buildVideoBody({
+    model: "agnes-video-v2.0",
+    prompt: "a cat",
+    width: 1152,
+    height: 768,
+    numFrames: 121,
+    frameRate: 24,
+    seed: 7,
+    negativePrompt: "blurry",
+    image: "https://img/a.png"
+  });
+  check("every V2.0 field travels",
+    full.model === "agnes-video-v2.0" && full.prompt === "a cat" && full.width === 1152 &&
+    full.height === 768 && full.num_frames === 121 && full.frame_rate === 24 &&
+    full.seed === 7 && full.negative_prompt === "blurry" && full.image === "https://img/a.png");
+
+  const minimal = buildVideoBody({ model: "m", prompt: "p" });
+  check("omitted optional fields are absent, not zeroed",
+    JSON.stringify(Object.keys(minimal).sort()) === JSON.stringify(["model", "prompt"]));
+
+  check("an empty negative_prompt is omitted",
+    buildVideoBody({ model: "m", prompt: "p", negativePrompt: "   " }).negative_prompt === undefined);
+
+  // A clamped frame count would silently change the video's DURATION after
+  // minutes of generation, so these throw instead of being overruled.
+  const badFrames = await rejects(() => buildVideoBody({ model: "m", prompt: "p", numFrames: 100 }));
+  check("an illegal num_frames throws with the 8n+1 rule and a suggestion",
+    /8n\+1/.test(badFrames ?? "") && /121/.test(badFrames ?? ""), badFrames);
+  check("a num_frames over 441 throws",
+    (await rejects(() => buildVideoBody({ model: "m", prompt: "p", numFrames: 449 }))) !== null);
+  check("a frame_rate below 1 throws",
+    (await rejects(() => buildVideoBody({ model: "m", prompt: "p", frameRate: 0 }))) !== null);
+  check("a frame_rate above 60 throws",
+    (await rejects(() => buildVideoBody({ model: "m", prompt: "p", frameRate: 61 }))) !== null);
+  check("a zero width throws",
+    (await rejects(() => buildVideoBody({ model: "m", prompt: "p", width: 0 }))) !== null);
+  check("a fractional height throws",
+    (await rejects(() => buildVideoBody({ model: "m", prompt: "p", height: 768.5 }))) !== null);
+  check("a non-integer seed throws",
+    (await rejects(() => buildVideoBody({ model: "m", prompt: "p", seed: 1.5 }))) !== null);
+  check("a non-URL image throws",
+    (await rejects(() => buildVideoBody({ model: "m", prompt: "p", image: "a.png" }))) !== null);
+  check("an http (not https) image is accepted — the rule is public-fetchable, not TLS",
+    buildVideoBody({ model: "m", prompt: "p", image: "http://img/a.png" }).image === "http://img/a.png");
+}
+
+// --- 5. create-task response parsing ----------------------------------------
+{
+  const preferred = parseVideoTask({ video_id: "v-1", task_id: "t-1", status: "queued" });
+  check("video_id and task_id are both read",
+    preferred.videoId === "v-1" && preferred.taskId === "t-1" && preferred.status === "queued");
+  check("video_id is the identifier a poll addresses",
+    videoTaskIdOf(preferred) === "v-1");
+  check("task_id is the fallback",
+    videoTaskIdOf(parseVideoTask({ task_id: "t-2" })) === "t-2");
+  check("the legacy `id` spelling is the same field",
+    videoTaskIdOf(parseVideoTask({ id: "t-3" })) === "t-3");
+  check("junk reads as no identifier",
+    videoTaskIdOf(parseVideoTask(null)) === "" && videoTaskIdOf(parseVideoTask("x")) === "");
+}
+
+// --- 6. status-query response parsing ---------------------------------------
+{
+  const done = parseVideoQuery({
+    video_id: "v-1", status: "COMPLETED", progress: 100,
+    seconds: "5", size: "1152x768", url: "https://cdn/v.mp4"
+  });
+  check("a terminal state is lowercased for comparison",
+    done.status === "completed" && isVideoTerminal(done.status));
+  check("url, seconds and size are read",
+    done.url === "https://cdn/v.mp4" && done.seconds === "5" && done.size === "1152x768");
+
+  check("url falls back to metadata.url (the two-layer compatibility)",
+    parseVideoQuery({ status: "completed", metadata: { url: "https://cdn/m.mp4" } }).url === "https://cdn/m.mp4");
+  check("the top-level url outranks metadata.url",
+    parseVideoQuery({ url: "https://cdn/top.mp4", metadata: { url: "https://cdn/meta.mp4" } }).url === "https://cdn/top.mp4");
+  check("a numeric seconds value is stringified",
+    parseVideoQuery({ status: "completed", seconds: 5 }).seconds === "5");
+
+  // num() insists on a POSITIVE value, which would erase a legitimate 0%.
+  check("progress 0 stays 0 rather than reading as absent",
+    parseVideoQuery({ status: "in_progress", progress: 0 }).progress === 0);
+  check("a missing progress reads as 0",
+    parseVideoQuery({ status: "queued" }).progress === 0);
+
+  check("terminal states are completed and failed only",
+    isVideoTerminal("completed") && isVideoTerminal("failed") &&
+    isVideoTerminal("queued") === false && isVideoTerminal("in_progress") === false &&
+    isVideoTerminal("") === false);
+  check("the error payload survives for the failure message",
+    parseVideoQuery({ status: "failed", error: "nsfw" }).error === "nsfw");
+}
+
+// --- 7. describeVideoFailure: the quota-vs-rate split -----------------------
+{
+  const q = describeVideoFailure(429, '{"code":"insufficient_quota"}');
+  check("a quota 429 says so (do not retry blind)", /配额不足/.test(q), q);
+  const r = describeVideoFailure(429, "rate limit exceeded");
+  check("a rate-limit 429 names the shared create+poll pool", /5 RPM/.test(r) && /共用/.test(r), r);
+  check("auth failures point at the key, not the endpoint",
+    /AGNES_TOKEN_PLAN_API_KEY/.test(describeVideoFailure(401, "")));
+  const nf = describeVideoFailure(404, "");
+  check("a 404 names both endpoint shapes", /\/videos/.test(nf) && /agnesapi/.test(nf), nf);
+  check("other statuses carry the raw body (truncated)",
+    describeVideoFailure(500, "x".repeat(500)).length < 400);
+}
+
+// --- 8. createVideoTask / queryVideoTask against a fake fetch ---------------
+{
+  const endpoint = "https://api.agnes-ai.cn/v1/videos";
+  const queryEndpoint = "https://api.agnes-ai.cn/agnesapi";
+  let seen;
+  const fetchOk = async (url, options) => {
+    seen = { url, options };
+    return okResponse({ video_id: "v-9", task_id: "t-9", status: "queued" });
+  };
+  try {
+    const task = await createVideoTask({
+      fetchImpl: fetchOk,
+      endpoint,
+      apiKey: "sk-test",
+      body: buildVideoBody({ model: "agnes-video-v2.0", prompt: "a cat" })
+    });
+    check("create returns the task identifiers", task.videoId === "v-9");
+    check("create POSTs to the create endpoint", seen.url === endpoint && seen.options.method === "POST");
+    check("the bearer key travels in the header",
+      seen.options.headers.Authorization === "Bearer sk-test");
+    check("the body is JSON-encoded", JSON.parse(seen.options.body).model === "agnes-video-v2.0");
+  } catch (error) {
+    fail("createVideoTask success path", error);
+  }
+
+  {
+    const message = await rejects(() => createVideoTask({
+      fetchImpl: async () => errResponse(429, '{"code":"insufficient_quota"}'),
+      endpoint, apiKey: "sk-test", body: {}
+    }));
+    check("a refused create is classified, not raw", /配额不足/.test(message ?? ""), message);
+  }
+  {
+    const message = await rejects(() => createVideoTask({
+      fetchImpl: async () => okResponse({ status: "queued" }),
+      endpoint, apiKey: "sk-test", body: {}
+    }));
+    check("a create with no task identifier fails loudly instead of polling nothing",
+      /未返回 video_id/.test(message ?? ""), message);
+  }
+
+  {
+    let seenQuery;
+    const value = await queryVideoTask({
+      fetchImpl: async (url, options) => {
+        seenQuery = { url, options };
+        return okResponse({ status: "in_progress", progress: 40 });
+      },
+      queryEndpoint, apiKey: "sk-test", videoId: "v-9", model: "agnes-video-v2.0"
+    });
+    check("query uses GET", seenQuery.options.method === "GET");
+    check("query hits the agnesapi endpoint, not /v1",
+      seenQuery.url.startsWith("https://api.agnes-ai.cn/agnesapi?") && !seenQuery.url.includes("/v1/"), seenQuery.url);
+    check("video_id and model_name travel as query parameters",
+      seenQuery.url.includes("video_id=v-9") && seenQuery.url.includes("model_name=agnes-video-v2.0"), seenQuery.url);
+    check("an in-progress answer is parsed", value.status === "in_progress" && value.progress === 40);
+  }
+}
+
+// --- 9. pollVideoResult: the async spine -----------------------------------
+{
+  const base = {
+    fetchImpl: async () => okResponse({ status: "completed", url: "https://cdn/v.mp4" }),
+    queryEndpoint: "https://api.agnes-ai.cn/agnesapi",
+    apiKey: "sk-test",
+    videoId: "v-1",
+    sleep: async () => {},
+    now: () => 0
+  };
+
+  try {
+    const done = await pollVideoResult(base);
+    check("a completed task returns immediately", done.status === "completed" && done.url === "https://cdn/v.mp4");
+  } catch (error) {
+    fail("pollVideoResult completed path", error);
+  }
+
+  {
+    const states = ["queued", "in_progress", "completed"];
+    let index = 0;
+    const value = await pollVideoResult({
+      ...base,
+      fetchImpl: async () => okResponse({ status: states[Math.min(index++, states.length - 1)] })
+    });
+    check("a queued task is polled again until it terminates",
+      value.status === "completed" && index === 3, `queries=${index}`);
+  }
+  {
+    const value = await pollVideoResult({
+      ...base,
+      fetchImpl: async () => okResponse({ status: "failed", error: "nsfw content" })
+    });
+    check("a failed task ends the loop (the tool turns it into an error)", value.status === "failed");
+  }
+  {
+    // The clock advances past the budget, so the loop must stop rather than
+    // query forever. The timeout carries the video_id, because the task keeps
+    // running server-side.
+    let clock = 0;
+    const message = await rejects(() => pollVideoResult({
+      ...base,
+      fetchImpl: async () => okResponse({ status: "in_progress" }),
+      timeoutMs: 10_000,
+      now: () => (clock += 6_000)
+    }));
+    check("the budget is wall-clock and the timeout names the video_id",
+      /超时/.test(message ?? "") && /video_id=v-1/.test(message ?? ""), message);
+    check("the timeout tells the agent not to re-submit",
+      /不要重复提交/.test(message ?? ""), message);
+  }
+  {
+    const message = await rejects(() => pollVideoResult({ ...base, isDisposed: () => true }));
+    check("a disposed plugin stops polling", /no longer mounted/.test(message ?? ""), message);
+  }
+  {
+    let waited = [];
+    let calls = 0;
+    const value = await pollVideoResult({
+      ...base,
+      fetchImpl: async () => okResponse({ status: ++calls < 3 ? "queued" : "completed", url: "https://cdn/v.mp4" }),
+      pollIntervalMs: 5_000,
+      sleep: async (ms) => { waited.push(ms); },
+      // A frozen clock never reaches the deadline, so this case also pins the
+      // poll-count ceiling: without it the loop would spin forever.
+      now: () => 0
+    });
+    check("the poll interval is honoured between queries",
+      value.status === "completed" && waited.length === 2 && waited[0] === 5_000, JSON.stringify(waited));
+  }
+  {
+    // The injected clock never advances and the task never terminates: the
+    // loop must still stop, on the poll-count ceiling.
+    const message = await rejects(() => pollVideoResult({
+      ...base,
+      fetchImpl: async () => okResponse({ status: "queued" }),
+      sleep: async () => {},
+      now: () => 0
+    }));
+    check("a non-advancing clock cannot make the poll loop spin forever",
+      /轮询超过/.test(message ?? "") && /video_id=v-1/.test(message ?? ""), message);
+  }
+}
+
+// --- 10. defineVideoTool end-to-end ----------------------------------------
+{
+  const passthrough = (definition) => definition;
+  const liveCatalog = [
+    { id: "agnes-2.5-flash" },
+    { id: "agnes-image-2.5-flash" },
+    { id: "agnes-video-2.5-flash" },
+    { id: "agnes-video-v2.0" }
+  ];
+  const makeTool = (overrides = {}) => defineVideoTool({
+    defineTool: passthrough,
+    resolveApiKey: async () => "sk-test",
+    getEntries: async () => liveCatalog,
+    settings: {
+      apiBase: "https://api.agnes-ai.cn/v1",
+      videoModelId: "",
+      videoTimeoutMs: 600_000,
+      videoWidth: 1152,
+      videoHeight: 768,
+      videoNumFrames: 121,
+      videoFrameRate: 24
+    },
+    fetchImpl: async (url) => {
+      if (url.includes("/agnesapi")) return okResponse({ status: "completed", url: "https://cdn/v.mp4", seconds: "5", size: "1152x768" });
+      return okResponse({ video_id: "v-42", status: "queued" });
+    },
+    ...overrides
+  });
+
+  check("the tool is named as expected", makeTool().name === VIDEO_TOOL_NAME);
+
+  try {
+    const result = await makeTool().execute({ prompt: "a cat on a beach" });
+    check("a full run returns the url, model and video_id",
+      result.url === "https://cdn/v.mp4" && result.model === "agnes-video-v2.0" && result.videoId === "v-42",
+      JSON.stringify(result));
+    check("the hint carries a Markdown link for the agent",
+      /\[视频\]\(https:\/\/cdn\/v\.mp4\)/.test(result.hint ?? ""), result.hint);
+    check("the hint reports duration and resolution",
+      /时长: 5 秒/.test(result.hint ?? "") && /分辨率: 1152x768/.test(result.hint ?? ""), result.hint);
+  } catch (error) {
+    fail("defineVideoTool full run", error);
+  }
+
+  {
+    const message = await rejects(() => makeTool().execute({ prompt: "" }));
+    check("an empty prompt is refused", /prompt is required/.test(message ?? ""), message);
+  }
+  {
+    const message = await rejects(() => makeTool({ resolveApiKey: async () => "" }).execute({ prompt: "x" }));
+    check("a missing key points at the panel", /AGNES_TOKEN_PLAN_API_KEY/.test(message ?? ""), message);
+  }
+  {
+    const message = await rejects(() => makeTool({ getEntries: async () => [] }).execute({ prompt: "x" }));
+    check("an empty catalog degrades with the catalog hint", /没有视频模型/.test(message ?? ""), message);
+  }
+  {
+    const message = await rejects(() => makeTool({
+      getEntries: async () => [{ id: "agnes-video-2.5-flash" }]
+    }).execute({ prompt: "x" }));
+    check("a 2.5-only catalog explains the parameter-system gap instead of dispatching",
+      /2\.5 系列/.test(message ?? "") && /V2\.0/.test(message ?? ""), message);
+  }
+  {
+    // The create call must still succeed here — only the QUERY reports failure.
+    const message = await rejects(() => makeTool({
+      fetchImpl: async (url) => (url.includes("/agnesapi")
+        ? okResponse({ status: "failed", error: "nsfw content" })
+        : okResponse({ video_id: "v-42", status: "queued" }))
+    }).execute({ prompt: "x" }));
+    check("a failed task becomes an actionable error carrying the video_id",
+      /视频生成失败/.test(message ?? "") && /v-42/.test(message ?? "") && /nsfw/.test(message ?? ""), message);
+  }
+  {
+    const message = await rejects(() => makeTool({ isDisposed: () => true }).execute({ prompt: "x" }));
+    check("a disposed plugin refuses video generation", /no longer mounted/.test(message ?? ""), message);
+  }
+  {
+    // The key is resolved per call, so rotating the panel-saved reference takes
+    // effect on the next generation without re-registration.
+    let key = "sk-first";
+    let seenAuth = [];
+    const tool = makeTool({
+      resolveApiKey: async () => key,
+      fetchImpl: async (url, options) => {
+        seenAuth.push(options.headers.Authorization);
+        if (url.includes("/agnesapi")) return okResponse({ status: "completed", url: "https://cdn/v.mp4" });
+        return okResponse({ video_id: "v-1" });
+      }
+    });
+    await tool.execute({ prompt: "one" });
+    key = "sk-second";
+    await tool.execute({ prompt: "two" });
+    check("the key is resolved per call, not cached at registration",
+      seenAuth.includes("Bearer sk-first") && seenAuth.includes("Bearer sk-second"), JSON.stringify(seenAuth));
+  }
+  {
+    const result = await makeTool().execute({ prompt: "x", model: "custom-vid", num_frames: 81, frame_rate: 24 });
+    check("an explicit model overrides the catalog pick", result.model === "custom-vid");
+  }
+  {
+    const message = await rejects(() => makeTool().execute({ prompt: "x", num_frames: 100 }));
+    check("an illegal parameter surfaces before any request is sent",
+      /8n\+1/.test(message ?? ""), message);
+  }
+}
+
+console.log(JSON.stringify(results, null, 2));
+const failedChecks = results.filter((r) => !r.pass);
+if (failedChecks.length > 0) {
+  console.error(`\n${failedChecks.length}/${results.length} check(s) FAILED`);
+  process.exit(1);
+}
+console.log(`\nall ${results.length} checks passed`);

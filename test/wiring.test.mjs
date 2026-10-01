@@ -280,7 +280,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   await stop();
 }
 
-// === B. the plugin activates and registers all three routes ===============
+// === B. the plugin activates and registers every route ====================
 {
   const { webServer, host, stop } = await bootPlugin();
   check("the plugin declares the services it needs", Array.isArray(host.inject) && host.inject.includes("webServer"),
@@ -292,9 +292,10 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     "/api/dsh-connect-agnes-token-plan/provider",
     "/api/dsh-connect-agnes-token-plan/models",
     "/api/dsh-connect-agnes-token-plan/draw",
+    "/api/dsh-connect-agnes-token-plan/video",
     "/api/dsh-connect-agnes-token-plan/raccoon"
   ];
-  check("all seven routes are registered on mount",
+  check("all eight routes are registered on mount",
     routes.every((path) => webServer.registered.has(path)),
     [...webServer.registered.keys()].join(", "));
   // The registered values must be callable handlers, not specs: the real
@@ -355,7 +356,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // in the real Host means a stale panel still polling a route nobody owns.
 {
   const { webServer, stop } = await bootPlugin();
-  check("all seven routes are present while mounted", webServer.registered.size === 7,
+  check("all eight routes are present while mounted", webServer.registered.size === 8,
     [...webServer.registered.keys()].join(", "));
   await stop();
   check("unmounting withdraws the routes", webServer.registered.size === 0,
