@@ -79,10 +79,13 @@ export function registerModelsRoute(ctx: HostCtx, wiring: HostWiring) {
         }, { "cache-control": "no-store" });
       };
       try {
-        await catalogStore.setEnabledIds(ids);
+        const persisted = await catalogStore.setEnabledIds(ids);
         // The next poll must not re-publish the same offer: adopt the signature
         // of what was just offered, or every poll would churn the registration.
-        providerState.signature = catalogSignature(providerState.entries, ids);
+        // But only when it actually reached disk — a signature describing an
+        // offer the disk does not hold would skip the write that fixes it
+        // (PITFALLS §40).
+        if (persisted) providerState.signature = catalogSignature(providerState.entries, ids);
         // Publish immediately with the CURRENT catalogue: the offer must not
         // wait for the next poll. A failed publish rolls back to the previous
         // pair inside publishProvider and surfaces its reason.

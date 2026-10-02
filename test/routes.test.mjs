@@ -200,7 +200,8 @@ async function mount(credentials, config = {}, deps = {}) {
     effect: () => () => {},
     webServer: { register(spec) { handlers.set(spec.path, spec.handler); return () => {}; } }
   }, { consoleBase: "https://console.test", cacheSeconds: 5, ...config }, {
-    loadAdapterModule: deps.loadAdapterModule
+    loadAdapterModule: deps.loadAdapterModule,
+    catalogStore: deps.catalogStore
   });
   return async (path, request) => {
     const response = makeResponse();
@@ -1397,6 +1398,93 @@ async function withNetwork(stub, body) {
         JSON.stringify(after.payload.llm?.enabledModelIds));
     });
   } catch (error) { fail("Q: the model roster route", error); }
+}
+
+// === S. PITFALLS §40: a swallowed catalog write must not advance the signature
+// `replace()`/`setEnabledIds()` swallow a write failure by contract — a
+// read-only Home must not break the panel. If the caller advanced the publish
+// signature anyway, that signature would describe a catalog the disk does NOT
+// hold, and its one job is "equal → skip publish": the next poll, serving the
+// same catalog from cache, would then skip the very write that fixes it, and
+// the disk would keep the old catalog until a restart re-seeds it. Inject a
+// store that never persists and assert the NEXT identical poll republishes.
+{
+  try {
+    // Local fakes, the same shape the O/Q groups use (they are block-scoped
+    // there, so they cannot be shared across groups).
+    const makeFakeLlm = () => {
+      const calls = { adapter: [], directory: [], releases: 0, events: [] };
+      const llm = {
+        calls,
+        registerAdapter(ids, adapter) { calls.adapter.push({ ids, adapter }); return () => { calls.releases += 1; }; },
+        registerConfigurableProviders(rows) { calls.directory.push(rows); return () => { calls.releases += 1; }; }
+      };
+      return llm;
+    };
+    const makeFakeAdapterDeps = () => {
+      const builds = [];
+      return {
+        builds,
+        loadAdapterModule: async () => ({
+          createAgnesAdapter(options) {
+            builds.push(options);
+            return { providerIds: ["agnes-token-plan"], adapter: { fake: true } };
+          }
+        })
+      };
+    };
+    const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
+    credentials.refs.set("AGNES_TOKEN_PLAN_API_KEY", "sk-failing");
+    const llm = makeFakeLlm();
+    const adapterDeps = makeFakeAdapterDeps();
+    const net = await loginNetwork();
+    // The failing store: memory updates, disk never does — exactly what a
+    // swallowed write failure produces, reported honestly as `false`.
+    const failingCatalogStore = {
+      held: null,
+      async list() { return this.held?.entries ?? []; },
+      async listEnabledIds() { return this.held?.enabledModelIds ?? []; },
+      async replace(entries, enabledModelIds) {
+        this.held = { entries, enabledModelIds: enabledModelIds ?? [] };
+        return false;
+      },
+      async setEnabledIds() { return false; },
+      async clear() { this.held = null; }
+    };
+    await withNetwork(async (url, init) => {
+      const target = String(url);
+      if (target.includes("/v1/models") || target.includes("/models")) {
+        return new Response(JSON.stringify({
+          data: [
+            { id: "Agnes-Lite", input_modalities: ["text"] },
+            { id: "Agnes-Vision", input_modalities: ["text", "image"] }
+          ]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return net(url, init);
+    }, async () => {
+      const call = await mount(credentials, { registerProvider: true }, {
+        llm, ...adapterDeps, emit: () => {}, catalogStore: failingCatalogStore
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await call(SNAPSHOT_PATH, makeRequest());
+      const afterFirst = adapterDeps.builds.length;
+      check("S1 the first poll publishes the fresh catalog",
+        afterFirst >= 1, String(afterFirst));
+      // The write failed, so the signature must NOT have advanced: the same
+      // catalog from the next poll has to republish rather than be skipped.
+      await call(SNAPSHOT_PATH, makeRequest());
+      check("S2 a failed write does not let the next poll skip the republish",
+        adapterDeps.builds.length === afterFirst + 1,
+        `${afterFirst} -> ${adapterDeps.builds.length}`);
+      // Graceful degradation stands: the panel still reads the catalog it was
+      // handed, even though the disk never took it.
+      const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+      check("S3 the panel still reports the offered models",
+        snapshot.payload.ok === true && snapshot.payload.llm?.modelCount === 2,
+        JSON.stringify({ ok: snapshot.payload.ok, n: snapshot.payload.llm?.modelCount }));
+    });
+  } catch (error) { fail("S: PITFALLS §40 signature after a swallowed write", error); }
 }
 
 // === R. the draw switch route: the panel value beats the config default ====

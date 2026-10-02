@@ -56,6 +56,12 @@ export interface HostDeps {
   drawFetch?: (...args: any[]) => Promise<any>;
   /** Host webserver fetch used by the video route (mirrors `drawFetch`). */
   videoFetch?: (...args: any[]) => Promise<any>;
+  /**
+   * The catalog store, injected by the tests so a `replace`/`setEnabledIds`
+   * whose write fails can be driven end to end (PITFALLS §40: the publish
+   * signature must not advance past a swallowed write failure).
+   */
+  catalogStore?: any;
 }
 
 /**

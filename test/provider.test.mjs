@@ -793,8 +793,16 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
     // The "directory" is actually a plain FILE: mkdir/rename cannot succeed.
     writeFileSync(scratch + "/blocker", "x", "utf8");
     const blocked = createFileCatalogStore({ dir: join(scratch, "blocker", "no"), now: () => 1 });
-    await blocked.replace([{ id: "a" }]);
-    check("a write failure keeps the catalog in memory", (await blocked.list()).length === 1);
+    check("a write failure keeps the catalog in memory",
+      (await blocked.replace([{ id: "a" }])) === false && (await blocked.list()).length === 1);
+    check("a failed write reports itself instead of pretending to persist",
+      (await blocked.setEnabledIds(["a"])) === false, "");
+    // The writable direction, so the boolean is not read backwards: a store
+    // that CAN write reports success, which is what lets the publish signature
+    // advance (PITFALLS §40).
+    const writable = createFileCatalogStore({ dir: join(scratch, "writable"), now: () => 1 });
+    check("a successful write reports itself as persisted",
+      (await writable.replace([{ id: "a" }])) === true, "");
   } catch (error) {
     fail("read-only directory degradation", error);
   } finally {

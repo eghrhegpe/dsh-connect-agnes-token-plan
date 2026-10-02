@@ -108,8 +108,8 @@ function parse(raw: Record<string, unknown> | null) {
  * @typedef {object} CatalogStore
  * @property {() => Promise<object[]>} list - stored entries, `[]` when none usable.
  * @property {() => Promise<string[]>} listEnabledIds - allow-list; `[]` means "no filter".
- * @property {(entries: object[], enabledModelIds?: string[]) => Promise<void>} replace - swap the catalog, preserving the allow-list unless given a new one.
- * @property {(ids: string[]) => Promise<void>} setEnabledIds - swap ONLY the allow-list.
+ * @property {(entries: object[], enabledModelIds?: string[]) => Promise<boolean>} replace - swap the catalog, preserving the allow-list unless given a new one; returns whether the record actually reached disk.
+ * @property {(ids: string[]) => Promise<boolean>} setEnabledIds - swap ONLY the allow-list; same return contract.
  * @property {() => Promise<void>} clear - remove the stored catalog.
  */
 
@@ -172,16 +172,24 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
    * The temp path is process-plus-clock unique (`state-store.ts`'s
    * `temporaryOf`), so two Host processes sharing this directory never write
    * the same temp name and `rename` each other's half-written file away.
+   *
+   * Returns whether the record actually reached disk. The failure is still
+   * swallowed — a read-only Home must not break the panel — but the caller has
+   * to know it happened: an in-memory record the disk does not hold must not
+   * be treated as settled (PITFALLS §40).
+   * @returns {Promise<boolean>} `true` when disk now holds `held`, `false` when the write failed.
    */
   const persist = async () => {
-    if (held === null) return;
+    if (held === null) return true;
     const temporary = temporaryOf(stateDir, "catalog.json", now);
     try {
       await ensureStateDir(stateDir);
       await writeStateFile(file, JSON.stringify(held), { temporary });
+      return true;
     } catch {
       // The in-memory record still serves this process.
       await rm(temporary, { force: true }).catch(() => {});
+      return false;
     }
   };
 
@@ -213,7 +221,7 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
      * PRESERVED across a catalog refresh unless a new one is supplied.
      * @param {object[]} entries - the fresh catalog entries.
      * @param {string[]} [enabledModelIds] - an optional replacement allow-list.
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>} whether the record reached disk.
      */
     async replace(entries: any[], enabledModelIds: string[] | undefined) {
       // Sync first, so the allow-list being preserved is the one ACTUALLY
@@ -229,17 +237,20 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
         enabledModelIds: enabledModelIds === undefined ? kept : normalizeEnabledIds(enabledModelIds)
       };
       cache.remember(held);
-      await persist();
+      return persist();
     },
 
-    /** Replace ONLY the curated allow-list, keeping the cached catalog. */
+    /**
+     * Replace ONLY the curated allow-list, keeping the cached catalog.
+     * @returns {Promise<boolean>} whether the record reached disk.
+     */
     async setEnabledIds(ids: string[] | undefined) {
       const current = await seen();
       const entries = current === null ? [] : current.entries;
       const fetchedAt = current === null ? now() : current.fetchedAt;
       held = { version: CATALOG_VERSION, fetchedAt, entries, enabledModelIds: normalizeEnabledIds(ids) };
       cache.remember(held);
-      await persist();
+      return persist();
     },
 
     /** Remove the stored catalog (used when the API key is forgotten). */
@@ -280,11 +291,15 @@ export function createMemoryCatalogStore(now = Date.now) {
         entries: normalizeEntries(entries),
         enabledModelIds: enabledModelIds === undefined ? kept : normalizeEnabledIds(enabledModelIds)
       };
+      // Memory IS the authority here: a record that never left the process
+      // cannot have failed to persist, so it always reports success.
+      return true;
     },
     async setEnabledIds(ids: string[] | undefined) {
       const entries = held === null ? [] : held.entries;
       const fetchedAt = held === null ? now() : held.fetchedAt;
       held = { version: CATALOG_VERSION, fetchedAt, entries, enabledModelIds: normalizeEnabledIds(ids) };
+      return true;
     },
     async clear() {
       held = null;

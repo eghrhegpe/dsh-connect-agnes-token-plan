@@ -59,10 +59,10 @@ const PREDICTIVE_ASSIGN = /(?:providerState|publisher\.state|state)\.signature\s
  * key 为仓库相对路径（正斜杠），value 为允许的处数。
  */
 const SANCTIONED = new Map([
-  // 写盘成功后才推进：replace() 的 swallow 语义意味着这里的签名可能与磁盘脱节，
-  // 这正是 §40 登记的形状——保留在册以便检查其上下文仍然可见/可自愈。
-  ["src/host/snapshot-aggregate.ts", { count: 1, why: "轮询去抖；写盘失败时签名先行（PITFALLS §40，修法待定）" }],
-  ["src/host/routes/models.ts", { count: 1, why: "save 后采用刚下发的签名；同 §40" }],
+  // §40 方案②已落地：`replace()`/`setEnabledIds()` 返回「是否真的落盘」，两处签名
+  // 只在落盘成功后才推进——写盘失败时签名停在旧值，下一次轮询会重试写盘并重发。
+  ["src/host/snapshot-aggregate.ts", { count: 1, why: "轮询去抖；仅 replace 落盘成功才推进签名（PITFALLS §40 方案②）" }],
+  ["src/host/routes/models.ts", { count: 1, why: "save 后采用刚下发的签名；仅 setEnabledIds 落盘成功才推进（§40 方案②）" }],
   ["src/host/routes/api-key.ts", { count: 1, why: "清除 key 时置空签名，强制下次重注册" }],
   // seed 是「从磁盘读回后同步内存」——方向相反，不是预测。
   ["src/host/provider-publish.ts", { count: 1, why: "seed：从磁盘读回事实，方向与预测相反" }],

@@ -144,7 +144,10 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   // `$DSH_HOME/state/[<profile>/]<plugin>/catalog.json`, never in the settings
   // row or the patch layer — a catalog is operational state, not an operator
   // decision.
-  const catalogStore = createFileCatalogStore({ profile });
+  // `deps.catalogStore` is a test seam: the §40 test injects a store whose
+  // writes always fail so the signature-after-swallowed-write path is driven
+  // end to end instead of only reasoned about.
+  const catalogStore = deps.catalogStore ?? createFileCatalogStore({ profile });
   // The panel's live provider switch (docs/PROVIDER-HOT-RELOAD.md). A value
   // saved from the panel overrides the patch's `registerProvider`; an untouched
   // state file falls back to it, so configuration-driven deployments keep

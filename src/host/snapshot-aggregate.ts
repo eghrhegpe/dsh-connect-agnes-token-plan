@@ -441,8 +441,15 @@ export async function buildSnapshotBody({
     const freshSignature = catalogSignature(catalog, enabledIds);
     if (freshSignature !== providerState.signature) {
       catalogChanged = true;
-      providerState.signature = freshSignature;
-      await catalogStore.replace(catalog, enabledIds).catch(() => {});
+      // `replace()` swallows a write failure (a read-only Home must not break
+      // the panel). The signature's ONLY job is "equal → skip publish", so it
+      // must describe what the disk holds: advancing it past a failed write
+      // would make the next poll — serving the same catalog from cache — skip
+      // the write that would fix it, and the disk would keep the old catalog
+      // until a restart re-seeds it (PITFALLS §40). Not persisted → retry next
+      // poll, which is the abnormal case anyway.
+      const persisted = await catalogStore.replace(catalog, enabledIds).catch(() => false);
+      if (persisted) providerState.signature = freshSignature;
       await publisher.publish(catalog, enabledIds, unavailableModelIds);
     }
     offered = catalog;
