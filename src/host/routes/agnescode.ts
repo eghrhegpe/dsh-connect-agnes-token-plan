@@ -33,6 +33,7 @@ import {
   decodeAgnescodeJwtExpMs,
   AGNESCODE_FALLBACK_MODELS
 } from "../agnescode.ts";
+import { filterAgnescodeRows } from "../agnescode-models.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBody } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
@@ -53,7 +54,7 @@ const AGNESCODE_SELF_HEAL_COOLDOWN_MS = 60_000;
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
-  const { settings, agnescodeStore, agnescodeSwitch, agnescodePublisher } = wiring;
+  const { settings, agnescodeStore, agnescodeSwitch, agnescodePublisher, agnescodeModels } = wiring;
 
   // ── The AgnesCode route: the desktop-app upstream provider (ROADMAP §6.3) ──
   // The route-scoped state — declared BEFORE any handler runs, never after a
@@ -126,6 +127,10 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           ? models
           : AGNESCODE_FALLBACK_MODELS;
         const publisherState = agnescodePublisher?.state ?? null;
+        // The curated subset (empty = no curation = push the roster whole).
+        const enabledModelIds = agnescodeModels !== null && agnescodeModels !== undefined
+          ? await agnescodeModels.listEnabledIds().catch(() => [])
+          : [];
         return {
           ok: true,
           enabled: effectiveEnabled,
@@ -138,6 +143,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           expiresAtMs,
           balance,
           models: roster,
+          enabledModelIds,
           providerRegistered: publisherState?.registered === true,
           ...(publisherState?.error !== null && publisherState?.error !== undefined ? { providerError: publisherState.error } : {}),
           ...(lastHarvest !== null ? { harvest: lastHarvest } : {}),
@@ -162,7 +168,12 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         } catch {
           // Fallback roster is already the safe default.
         }
-        await agnescodePublisher.publish(rows, bffBase);
+        // The panel's curation is a filter over the roster, never a catalogue
+        // of its own: only the ticked ids ride into the registration.
+        const enabledIds = agnescodeModels !== null && agnescodeModels !== undefined
+          ? await agnescodeModels.listEnabledIds().catch(() => [])
+          : [];
+        await agnescodePublisher.publish(filterAgnescodeRows(rows, enabledIds), bffBase);
       };
 
       const method = request.method === undefined ? "GET" : request.method;
@@ -215,6 +226,29 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         }
         try {
           await agnescodeSwitch.save(body.value.enabled);
+          await publishFromStore();
+        } catch (error) {
+          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
+          return;
+        }
+        await answer();
+        return;
+      }
+
+      // ── saveModels: curate which of the roster's models the adapter offers ──
+      // The panel's tick-list, persisted then re-published, so a curation is
+      // LIVE the moment it is saved ("改动即时生效") rather than on the next poll.
+      if (action === "saveModels") {
+        if (!Array.isArray(body.value.enabledModelIds)) {
+          writeJson(response, 400, { ok: false, error: 'expected { action: "saveModels", enabledModelIds: string[] }' }, { "cache-control": "no-store" });
+          return;
+        }
+        if (agnescodeModels === null || agnescodeModels === undefined) {
+          await answer({ ok: false, error: "the agnescode model store is unavailable" });
+          return;
+        }
+        try {
+          await agnescodeModels.save(body.value.enabledModelIds);
           await publishFromStore();
         } catch (error) {
           await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
@@ -289,7 +323,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         return;
       }
 
-      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"logout\" }" }, { "cache-control": "no-store" });
+      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"logout\"|\"saveModels\" }" }, { "cache-control": "no-store" });
     }
   });
 }

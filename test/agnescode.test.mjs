@@ -777,6 +777,48 @@ const GOOD_SESSION = {
   }
 }
 
+// --- 8b. model allow-list (agnescode-models-store.ts + filterAgnescodeRows) --
+{
+  section("model allow-list (agnescode-models-store.ts + filterAgnescodeRows)");
+  try {
+    const { createFileAgnescodeModelsStore, parseAgnescodeModelsPayload, AGNESCODE_MODELS_VERSION } = await import("../src/host/agnescode-models-store.ts");
+    const { filterAgnescodeRows } = await import("../src/host/agnescode-models.ts");
+
+    const dir = mkdtempSync(join(tmpdir(), "agnescode-models-"));
+    const store = createFileAgnescodeModelsStore({ dir, ttlMs: 20 });
+    check("an untouched store curates nothing (empty = push the roster whole)",
+      (await store.listEnabledIds()).length === 0);
+    await store.save(["agnes-3.0-flash", "kimi-k3", "", "agnes-3.0-flash"]);
+    check("a saved list round-trips, deduped and junk dropped",
+      JSON.stringify(await store.listEnabledIds()) === JSON.stringify(["agnes-3.0-flash", "kimi-k3"]));
+    const second = createFileAgnescodeModelsStore({ dir, ttlMs: 20 });
+    check("a second reader sees the curated list", (await second.listEnabledIds()).includes("kimi-k3"));
+    await store.save([]);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const third = createFileAgnescodeModelsStore({ dir, ttlMs: 20 });
+    check("saving an empty list clears curation", (await third.listEnabledIds()).length === 0);
+
+    const roster = agnescodeRoster([
+      { id: "agnes-3.0-flash", name: "A" },
+      { id: "kimi-k3", name: "K" },
+      { id: "glm-5.2", name: "G" }
+    ]);
+    check("no curation keeps the roster whole", filterAgnescodeRows(roster, []).length === 3);
+    check("a curated list keeps only the ticked rows",
+      filterAgnescodeRows(roster, ["agnes-3.0-flash", "glm-5.2"]).map((row) => row.id).join(",") === "agnes-3.0-flash,glm-5.2");
+    check("a hide-all sentinel keeps nothing (no row carries that id)",
+      filterAgnescodeRows(roster, ["__hide_all__"]).length === 0);
+    check("the parser rejects a foreign shape version",
+      parseAgnescodeModelsPayload({ version: 999, enabledModelIds: ["a"] }) === null);
+    check("the parser accepts its own version",
+      parseAgnescodeModelsPayload({ version: AGNESCODE_MODELS_VERSION, enabledModelIds: ["a"] })?.enabledModelIds.join(",") === "a");
+
+    rmSync(dir, { recursive: true, force: true });
+  } catch (error) {
+    fail("model allow-list", error);
+  }
+}
+
 // --- 9. client surface -------------------------------------------------------
 {
   section("client surface (the shipped bundle's own definitions)");
@@ -984,6 +1026,108 @@ const GOOD_SESSION = {
       publishes === 1, String(publishes));
   } catch (error) {
     fail("route surface (self-heal)", error);
+  }
+}
+
+// --- 10c. saveModels: the curation persists and republishes the roster -------
+// The panel's tick-list must be LIVE the moment it is saved: the action writes
+// the allow-list AND re-runs the publish with the filtered rows, so a curation
+// is not a promise for the next poll to keep.
+{
+  section("route surface (saveModels curates the pushed roster)");
+  try {
+    const { registerRoutes } = await import("../src/host/routes.ts");
+    const routes = new Map();
+    const ctx = {
+      webServer: {
+        register({ path, handler }) {
+          routes.set(path, handler);
+          return () => routes.delete(path);
+        }
+      }
+    };
+    const unused = new Proxy({}, { get: () => async () => null });
+    const held = [];
+    let publishedRows = null;
+    registerRoutes(ctx, {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused,
+      apiKeyStore: unused,
+      catalogStore: unused,
+      providerStore: unused,
+      drawStore: unused,
+      videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      agnescodeStore: {
+        async state() {
+          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
+        },
+        async resolve() {
+          // A credential with a token: publishFromStore tries the live
+          // catalogue, the network guard turns it into null, and the route
+          // falls back to the static roster — which is what gets filtered.
+          return { credential: { accessToken: "x".repeat(40), bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }, source: "credentials" };
+        },
+        async save() {},
+        async forget() {}
+      },
+      agnescodeSwitch: { async enabled() { return true; }, async save() {} },
+      agnescodeModels: {
+        async listEnabledIds() { return held.slice(); },
+        async save(raw) {
+          held.splice(0, held.length, ...(Array.isArray(raw) ? raw.filter((id) => typeof id === "string" && id !== "") : []));
+        }
+      },
+      agnescodePublisher: {
+        state: { registered: true, error: null },
+        isDisposed() { return false; },
+        async publish(rows) { publishedRows = rows; }
+      }
+    });
+    const handler = routes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    const response = {
+      status: 0,
+      body: "",
+      writeHead(status) { this.status = status; },
+      end(payload) { this.body = payload; }
+    };
+
+    await handler({ method: "GET", headers: { host: "127.0.0.1" } }, response);
+    const before = JSON.parse(response.body);
+    check("the GET reports no curation by default (empty = push all)",
+      Array.isArray(before.enabledModelIds) && before.enabledModelIds.length === 0,
+      JSON.stringify(before.enabledModelIds));
+
+    const post = async (payload) => {
+      const request = (async function* () { yield Buffer.from(JSON.stringify(payload)); })();
+      request.method = "POST";
+      request.headers = { host: "127.0.0.1" };
+      return handler(request, response);
+    };
+    await post({ action: "saveModels", enabledModelIds: ["agnes-3.0-flash", "kimi-k3"] });
+    check("saveModels persists the curated list",
+      JSON.stringify(held) === JSON.stringify(["agnes-3.0-flash", "kimi-k3"]), JSON.stringify(held));
+    check("the save re-publishes ONLY the curated rows",
+      Array.isArray(publishedRows) && publishedRows.length === 2
+        && publishedRows.every((row) => ["agnes-3.0-flash", "kimi-k3"].includes(String(row?.id))),
+      JSON.stringify((publishedRows ?? []).map((row) => row?.id)));
+
+    await post({ action: "saveModels", enabledModelIds: [] });
+    check("clearing curation re-publishes the whole fallback roster",
+      Array.isArray(publishedRows) && publishedRows.length === AGNESCODE_FALLBACK_MODELS.length,
+      String(publishedRows?.length));
+
+    await post({ action: "bogus" });
+    check("an unknown action is refused", JSON.parse(response.body).ok === false);
+  } catch (error) {
+    fail("route surface (saveModels)", error);
   }
 }
 

@@ -26,6 +26,7 @@ import {
   AGNESCODE_FALLBACK_MODELS
 } from "./agnescode.ts";
 import { createAgnescodePublisher } from "./agnescode-publish.ts";
+import { filterAgnescodeRows } from "./agnescode-models.ts";
 import { str } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 
@@ -52,6 +53,8 @@ export const AGNESCODE_REHARVEST_BACKOFF_MS = 60_000;
  * @param {object} options.store - the `createAgnescodeStore` instance.
  * @param {() => Promise<boolean|null>} options.panelSwitch - the panel's live
  *   switch (`agnescode-switch-store.enabled()`); null when no switch file.
+ * @param {() => Promise<string[]>} [options.enabledIds] - the panel's curated
+ *   model ids (`agnescode-models-store.listEnabledIds()`); empty = no curation.
  * @param {(service: string) => object|null} options.getLlm - the optional
  *   `llm` service resolver.
  * @param {() => Promise<object>} [options.loadAdapterModule] - the lazy peer
@@ -62,13 +65,14 @@ export const AGNESCODE_REHARVEST_BACKOFF_MS = 60_000;
  * @returns {{publisher: object, seed: () => Promise<void>}} the publisher and
  *   its mount-seed function.
  */
-export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapterModule, emit, logger }: {
+export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm, loadAdapterModule, emit, logger }: {
   store: {
     resolve: () => Promise<{ credential: { accessToken: string; bffBase?: string } | null }>;
     isExpired: () => Promise<boolean>;
     save: (credential: Record<string, unknown>) => Promise<unknown>;
   };
   panelSwitch?: () => Promise<boolean | null>;
+  enabledIds?: () => Promise<string[]>;
   getLlm: (service: string) => object | null;
   loadAdapterModule?: () => Promise<{ createAgnescodeAdapter: (...args: any[]) => any }>;
   emit?: (event: string) => void;
@@ -78,6 +82,17 @@ export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapter
   // this wiring instance (the equivalent of the closure variables the old
   // inline version held in apply()'s scope).
   const harvest: { inFlight: Promise<unknown> | null; blockedUntil: number } = { inFlight: null, blockedUntil: 0 };
+
+  /**
+   * The panel's curation, resolved fresh at each publish so a save between
+   * publishes is honoured without any extra plumbing. An unreadable store is
+   * "no curation" — the roster rides whole, never to nothing.
+   * @returns {Promise<string[]>} the curated ids.
+   */
+  const curated = async (): Promise<string[]> => {
+    if (enabledIds === undefined) return [];
+    return enabledIds().catch(() => []);
+  };
 
   // The cross-base rebuild reads the live publisher's `state.bffBase`, so the
   // resolveToken closure must be built AFTER the publisher exists. A deferred
@@ -108,7 +123,7 @@ export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapter
             });
             const pub = holder.current;
             if (pub && walk.session.bffBase !== pub.state.bffBase) {
-              await pub.publish(AGNESCODE_FALLBACK_MODELS, walk.session.bffBase).catch(() => {});
+              await pub.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), walk.session.bffBase).catch(() => {});
             }
             return walk;
           })
@@ -146,7 +161,7 @@ export function wireAgnescodePublisher({ store, panelSwitch, getLlm, loadAdapter
       // Panel-only switch: no config default, so "unset" is off.
       if (resolveSwitchEnabled(await readPanelValue(panelSwitch)).enabled) {
         const { credential } = await store.resolve().catch(() => ({ credential: null }));
-        await publisher.publish(AGNESCODE_FALLBACK_MODELS, credential?.bffBase ?? "");
+        await publisher.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), credential?.bffBase ?? "");
       }
     } catch {
       // No seed: the first switch/harvest publishes.

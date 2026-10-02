@@ -26,7 +26,9 @@
  */
 import { AGNESCODE_PATH, AGNESCODE_SITE_URL } from "./const.ts";
 import { clockLong, count, format, tokenSize } from "./format.ts";
-import { postJson, postJsonOrThrow } from "./http.ts";import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
+import { postJson, postJsonOrThrow } from "./http.ts";
+import { modelIsOn, toggleModelIn } from "./models.ts";
+import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
 
@@ -79,6 +81,7 @@ interface AgnescodeState {
     permanentBalance?: number;
   } | null;
   models?: AgnescodeModel[];
+  enabledModelIds?: string[];
   providerRegistered?: boolean;
   providerError?: string;
   harvest?: { ok?: boolean; attempts?: AgnescodeHarvestAttempt[] };
@@ -211,6 +214,13 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
     }
   }, [load, tt]);
+
+  // The curation write: persist the allow-list, then reload so the picker's
+  // next echo matches what was saved — the edit is live the moment it lands.
+  const saveModels = useCallback(async (ids: string[]) => {
+    await postJsonOrThrow(AGNESCODE_PATH, { action: "saveModels", enabledModelIds: ids });
+    if (alive.current) void load();
+  }, [load]);
 
   const enabled = state?.enabled === true;
   const loggedIn = state?.loggedIn === true;
@@ -354,7 +364,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                 }))
             : null,
           models.length > 0
-            ? h(AgnescodeRoster, { models, registered: state?.providerRegistered === true, tt })
+            ? h(AgnescodeModelPicker, { models, hostIds: state?.enabledModelIds, registered: state?.providerRegistered === true, tt, onSave: saveModels })
             : null
         )
       : null,
@@ -383,17 +393,34 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
  * the tab's data is internal state, so the render suite can only ever reach
  * the unlinked frame — a roster inlined there is unassertable. The row is the
  * SAME two-line shape as the sibling rosters (head line over an indented
- * parameter line), sharing `S.modelRow`'s contract. What it carries instead
+ * parameter line), sharing `S.modelRow`'s contract — and, since the panel can
+ * now curate this provider, the SAME checkbox. What it carries instead
  * of a rate chip is the `memberOnly` badge — the platform-declared
  * gating fact this provider HAS; no multiplier chip exists here because the
  * upstream declares no per-model rate (billing is the credit pool), and
  * inventing one would libel the roster.
+ *
+ * The checkbox is hook-free like the sibling rows: `onToggle` is handed in, so
+ * without it the box is display-only and the roster cannot be edited at all.
  * @param {object} props
  * @param {AgnescodeModel[]} props.models - the rows the route reported.
+ * @param {boolean} [props.registered] - whether the provider is registered.
+ * @param {unknown} [props.enabledIds] - the curated ids (empty = all on).
+ * @param {boolean} [props.busy] - disable the rows while a save is in flight.
+ * @param {string} [props.hint] - one quiet rule line under the header.
+ * @param {(id: string) => void} [props.onToggle] - the toggle handler.
  * @param {import("./runtime.ts").Tt} props.tt - the dictionary.
  * @returns {unknown} the roster list element.
  */
-export function AgnescodeRoster({ models, registered, tt }: { models: AgnescodeModel[]; registered?: boolean; tt: Tt }): unknown {
+export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, tt, onToggle }: {
+  models: AgnescodeModel[];
+  registered?: boolean;
+  enabledIds?: unknown;
+  busy?: boolean;
+  hint?: string;
+  tt: Tt;
+  onToggle?: (id: string) => void;
+}): unknown {
   const rows = Array.isArray(models) ? models : [];
   return h(
     "div",
@@ -406,15 +433,21 @@ export function AgnescodeRoster({ models, registered, tt }: { models: AgnescodeM
       h("div", { style: { ...S.muted, fontSize: 12, fontWeight: 600 } }, format(tt("agnescode.models"), { count: count(rows.length) })),
       h("span", { style: S.spacer }),
       registered === true
-        ? h("span", { role: "status", style: { ...S.modelBadge, color: "var(--dsw-alias-state-success-primary, var(--dsw-alias-label-secondary))" } }, tt("agnescode.registeredPill"))
+        ? h("span", { style: { ...S.modelBadge, color: "var(--dsw-alias-state-success-primary, var(--dsw-alias-label-secondary))" } }, tt("agnescode.registeredPill"))
         : null
     ),
+    // The one rule the rows live by — a quiet line under the header, so the
+    // checkboxes explain themselves without a sentence on every row.
+    typeof hint === "string" && hint !== ""
+      ? h("div", { style: { ...S.muted, fontSize: 11, marginBottom: 6 } }, hint)
+      : null,
     h(
       "ul",
       { style: S.modelList, role: "list" },
       rows.map((row) => {
         const id = String(row?.id ?? "");
         const label = String(row?.name ?? id);
+        const on = modelIsOn(enabledIds, id);
         const ctx = typeof row?.contextWindow === "number" && row.contextWindow > 0
           ? format(tt("llm.contextBadge"), { ctx: tokenSize(row.contextWindow) })
           : null;
@@ -424,11 +457,28 @@ export function AgnescodeRoster({ models, registered, tt }: { models: AgnescodeM
         const meta = [ctx, out].filter(Boolean).join(" · ");
         return h(
           "li",
-          { key: id, style: S.modelRow },
+          { key: id, style: { ...S.modelRow, ...(on ? {} : S.modelRowOff) } },
           h(
             "div",
             { style: S.modelRowHead },
-            h("span", { style: S.modelName, title: id }, label),
+            h(
+              "label",
+              {
+                style: {
+                  display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto",
+                  minWidth: 0, cursor: busy === true ? "default" : "pointer"
+                }
+              },
+              h("input", {
+                type: "checkbox",
+                checked: on,
+                disabled: busy === true,
+                style: S.modelCheck,
+                "aria-label": label,
+                onChange: onToggle ? () => onToggle(id) : undefined
+              }),
+              h("span", { style: S.modelName, title: id }, label)
+            ),
             h("span", { style: S.spacer }),
             row.memberOnly === true ? h("span", { style: S.modelBadge }, tt("agnescode.memberOnly")) : null
           ),
@@ -436,5 +486,120 @@ export function AgnescodeRoster({ models, registered, tt }: { models: AgnescodeM
         );
       })
     )
+  );
+}
+
+/**
+ * The AgnesCode model allow-list: which roster rows get pushed to DSH.
+ *
+ * Hook-based like `ModelPicker`, so the render suite exercises the secret-free
+ * half it draws — {@link AgnescodeRoster} and the counts — instead of this
+ * state machine. The edit is local until saved: a draft of the allow-list,
+ * an "unsaved" state DERIVED by comparing it with the Host's value, and a
+ * "saved" state that is the same comparison after the write echoes back.
+ *
+ * 精简版 deliberately: no search box, no bulk tick — the AgnesCode roster is
+ * the desktop account's own, small, and the per-row checkbox plus save/discard
+ * covers the whole need. The draft/derived/saved machinery is the same shape
+ * as `ModelPicker`, so a fuller version (search + tick-all) can layer on later
+ * without changing the row contract.
+ * @param {object} props
+ * @param {AgnescodeModel[]} props.models - the rows the route reported.
+ * @param {unknown} [props.hostIds] - the Host's curated ids.
+ * @param {boolean} [props.registered] - whether the provider is registered.
+ * @param {Tt} props.tt - the dictionary.
+ * @param {(ids: string[]) => Promise<void>} [props.onSave] - the save action.
+ * @returns {unknown} the roster card plus its edit affordances.
+ */
+export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }: {
+  models: AgnescodeModel[];
+  hostIds?: unknown;
+  registered?: boolean;
+  tt: Tt;
+  onSave?: (ids: string[]) => Promise<void>;
+}): unknown {
+  const rows = Array.isArray(models) ? models : [];
+  const host = Array.isArray(hostIds) ? hostIds.filter((id): id is string => typeof id === "string") : [];
+  const [ids, setIds] = useState<string[]>(() => host.slice());
+  const [saving, setSaving] = useState(false);
+  const [savedKey, setSavedKey] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Serialising the allow-list is the picker's only cost that scales with the
+  // roster, so it is memoised on the arrays rather than per render.
+  const hostKey = JSON.stringify(host);
+  const idsKey = JSON.stringify(ids);
+  const dirty = idsKey !== hostKey;
+  const justSaved = savedKey !== null && savedKey === hostKey;
+
+  // Follow the Host while the picker is untouched: a save from another client
+  // clears the draft, and `dirty` keeps an edit in flight from being clobbered.
+  useEffect(() => {
+    if (dirty === false) setIds(host);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostKey]);
+
+  // The "已保存" notice ends when the picker is edited again (or the Host's
+  // value moves on) — but NOT on the poll that echoes our own write.
+  useEffect(() => {
+    if (dirty === true) setSavedKey(null);
+  }, [dirty]);
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      await onSave?.(ids.slice());
+      setSavedKey(idsKey);
+    } catch (error) {
+      setNotice(format(tt("agnescode.rosterError"), { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h(
+    "div",
+    null,
+    h(AgnescodeRoster, {
+      models: rows,
+      registered,
+      enabledIds: ids,
+      busy: saving,
+      hint: tt("agnescode.rosterHint"),
+      tt,
+      // One row is toggled against the WHOLE roster, so an edit survives a
+      // later change of the roster the Host reports.
+      onToggle: (id: string) => {
+        setIds(toggleModelIn(ids, rows.map((row) => String(row?.id ?? "")), id));
+        setNotice(null);
+      }
+    }),
+    dirty
+      ? h(
+          "div",
+          { style: S.rosterFoot },
+          h("button", {
+            type: "button",
+            style: S.primary,
+            disabled: saving === true,
+            onClick: () => void save()
+          }, saving ? tt("agnescode.rosterSaving") : tt("agnescode.rosterSave")),
+          h("button", {
+            type: "button",
+            style: S.button,
+            disabled: saving === true,
+            onClick: () => {
+              setIds(host);
+              setNotice(null);
+            }
+          }, tt("agnescode.rosterDiscard")),
+          h("span", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.rosterUnsaved"))
+        )
+      : justSaved
+        ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("agnescode.rosterSaved"))
+        : null,
+    notice !== null ? h("p", { style: S.formError, role: "alert" }, notice) : null
   );
 }

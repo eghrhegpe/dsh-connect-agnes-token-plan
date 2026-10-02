@@ -26,6 +26,7 @@
 import { str, num } from "./util.ts";
 import { AGNESCODE_FALLBACK_MODELS } from "./agnescode.ts";
 import { PROBED_VISION } from "./llm-models.ts";
+import { normalizeEnabledIds } from "./catalog-store.ts";
 
 /**
  * The provider id this plugin registers under for AgnesCode.
@@ -112,6 +113,25 @@ export function agnescodeRoster(catalog: unknown) {
     });
   }
   return out;
+}
+
+/**
+ * Curate a roster with the panel's allow-list.
+ *
+ * The EMPTY list is the load-bearing convention (same as the Token Plan side):
+ * no curation means the roster is pushed WHOLE, so a fresh install keeps the
+ * old behaviour. Only a non-empty list filters — and it filters by the row's
+ * `id`, the one fact both the checkbox and the descriptor are keyed on.
+ * @param {object[]} rows - the {@link agnescodeRoster} result.
+ * @param {unknown} enabledIds - the curated ids (empty = no filter).
+ * @returns {object[]} the rows to publish.
+ */
+export function filterAgnescodeRows(rows: any, enabledIds: unknown) {
+  const list = Array.isArray(rows) ? rows : [];
+  const ids = normalizeEnabledIds(enabledIds);
+  if (ids.length === 0) return list;
+  const keep = new Set(ids);
+  return list.filter((row) => keep.has(str(row?.id, "")));
 }
 
 /**

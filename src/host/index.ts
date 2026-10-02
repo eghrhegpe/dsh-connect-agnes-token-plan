@@ -37,6 +37,7 @@ import { profileSegment } from "./state-store.ts";
 import { createApiKeyStore } from "./api-key-store.ts";
 import { createAgnescodeStore } from "./agnescode-store.ts";
 import { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
+import { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
 import { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 import { createProviderPublisher } from "./provider-publish.ts";
 import { registerRoutes } from "./routes.ts";
@@ -212,12 +213,17 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     credentials: () => ctx.get("credentials") ?? null
   });
   const agnescodeSwitch = createFileAgnescodeStore({ profile });
+  // The panel's curation of which roster models the adapter offers. EMPTY means
+  // "no curation" — the roster rides whole, so an untouched install keeps the
+  // old behaviour; only a ticked list filters.
+  const agnescodeModels = createFileAgnescodeModelsStore({ profile });
   // The AgnesCode publisher's re-harvest seam (single-flight + backoff +
   // cross-base rebuild) and mount seed now live in `agnescode-lifecycle.ts`
   // — extracted from this mount seam so it stays a thin router.
   const { publisher: agnescodePublisher, seed: agnescodeSeed } = wireAgnescodePublisher({
     store: agnescodeStore,
     panelSwitch: () => agnescodeSwitch.enabled().catch(() => null),
+    enabledIds: () => agnescodeModels.listEnabledIds().catch(() => []),
     getLlm: (service) => getService(service),
     loadAdapterModule: deps.loadAgnescodeAdapterModule,
     emit: (event) => {
@@ -293,6 +299,7 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     // owns the harvest-then-save walk) rather than logged-in here.
     agnescodeStore,
     agnescodeSwitch,
+    agnescodeModels,
     agnescodePublisher
   };
 

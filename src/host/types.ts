@@ -22,6 +22,7 @@ import type { createProviderPublisher } from "./provider-publish.ts";
 import type { PublisherLogger } from "./publish-core.ts";
 import type { createAgnescodeStore } from "./agnescode-store.ts";
 import type { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
+import type { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
 import type { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 
 /** A failure code this plugin can produce or carry (a `CODE` wire value). */
@@ -359,5 +360,6 @@ export interface HostWiring {
   };
   agnescodeStore: ReturnType<typeof createAgnescodeStore>;
   agnescodeSwitch: ReturnType<typeof createFileAgnescodeStore>;
+  agnescodeModels?: ReturnType<typeof createFileAgnescodeModelsStore>;
   agnescodePublisher: ReturnType<typeof wireAgnescodePublisher>["publisher"];
 }
