@@ -398,7 +398,7 @@ export function supportedThinkingLevels(entry: Record<string, unknown>) {
  * @param {string} [options.baseUrl] - the OpenAI-compatible base URL.
  * @returns {object} the pi-ai descriptor.
  */
-export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
+export function toPiDescriptor(entry: Record<string, unknown>, options: AdapterConfig = {}) {
   const { providerId = LLM_PROVIDER_ID, baseUrl } = options;
   const id = str(entry?.id, "");
   if (id === "") throw new Error("toPiDescriptor: catalog entry has no id");
@@ -441,11 +441,11 @@ export function toPiDescriptor(entry: any, options: AdapterConfig = {}) {
  * @param {string[]} [enabledIds] - the allow-list; empty/absent disables it.
  * @returns {object[]} the entries still offered, in catalog order.
  */
-export function filterByEnabled(entries: any[], enabledIds: string[] | undefined) {
+export function filterByEnabled(entries: unknown, enabledIds: string[] | undefined): Record<string, unknown>[] {
   const list = Array.isArray(enabledIds) ? enabledIds : [];
-  if (list.length === 0) return Array.isArray(entries) ? entries : [];
+  if (list.length === 0) return Array.isArray(entries) ? entries as Record<string, unknown>[] : [];
   const allow = new Set(list);
-  return (Array.isArray(entries) ? entries : []).filter((entry) => allow.has(str(entry?.id, "")));
+  return (Array.isArray(entries) ? entries as Record<string, unknown>[] : []).filter((entry) => allow.has(str(entry?.id, "")));
 }
 
 /**
@@ -496,29 +496,58 @@ export function isModelEnabled(enabledIds: string[] | undefined, id: unknown) {
  * @param {object[]} entries - the normalized catalog entries.
  * @returns {{id: string, name: string, vision: boolean}[]}
  */
-export function rosterOf(entries: any[]) {
-  const position = new Map();
-  const out: Array<{ id: string; name: string; vision: boolean }> = [];
-  for (const entry of Array.isArray(entries) ? entries : []) {
+export function rosterOf(entries: unknown) {
+  const rows = lastWinsById<{ id: string; name: string; vision: boolean }>();
+  for (const { id, name, entry } of chatEntries(entries)) {
+    rows.put({ id, name, vision: visionOf(entry).vision });
+  }
+  return rows.done();
+}
+
+/**
+ * Iterate the entries that can be ADDRESSED as chat models.
+ *
+ * The shared preamble of both rosters: `isChatModel` (image/video entries answer
+ * 400 on `/v1/chat/completions`) plus a non-empty `id` (an entry with none could
+ * not be named on the wire). Yields the id, the display name and the entry, so
+ * each caller projects only its own extra columns.
+ * @param {object[]} entries - the normalized catalog entries.
+ */
+function* chatEntries(entries: unknown) {
+  for (const entry of (Array.isArray(entries) ? entries : []) as Record<string, unknown>[]) {
     // Image-generation models are not chat models and are not offered (see
     // `isChatModel`): the roster and the registered offer must agree about
     // which models exist, or a ticked model could become an unregistered one.
     if (!isChatModel(entry)) continue;
     const id = str(entry?.id, "");
     if (id === "") continue;
-    const row = {
-      id,
-      name: str(entry?.name, id),
-      vision: visionOf(entry).vision
-    };
-    if (position.has(id)) {
-      out[position.get(id)] = row;
-    } else {
-      position.set(id, out.length);
-      out.push(row);
-    }
+    yield { id, name: str(entry?.name, id), entry };
   }
-  return out;
+}
+
+/**
+ * A "last occurrence wins" collector keyed by `id`.
+ *
+ * Both rosters drop duplicate ids exactly the way `catalog-store`'s
+ * normalization does — the LAST row for an id is the one that survives, at its
+ * first-seen position — so the rule lives here once instead of being re-derived
+ * per roster.
+ */
+function lastWinsById<T extends { id: string }>() {
+  const position = new Map<string, number>();
+  const out: T[] = [];
+  return {
+    put(row: T) {
+      const at = position.get(row.id);
+      if (at === undefined) {
+        position.set(row.id, out.length);
+        out.push(row);
+      } else {
+        out[at] = row;
+      }
+    },
+    done: () => out
+  };
 }
 
 /**
@@ -531,7 +560,7 @@ export function rosterOf(entries: any[]) {
  * @param {object} options - `{ providerId, baseUrl, enabledIds }`.
  * @returns {object[]} the pi-ai descriptors, in first-seen order.
  */
-export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
+export function buildDescriptors(entries: unknown, options: AdapterConfig = {}) {
   const { providerId = LLM_PROVIDER_ID, baseUrl, enabledIds = [], unavailableModelIds = [] } = options;
   // Image- and video-generation models cannot be addressed as chat models
   // (`modality.ts` resolves which entries those are) and are excluded BEFORE
@@ -580,17 +609,13 @@ export function buildDescriptors(entries: any[], options: AdapterConfig = {}) {
  * @param {string[]} [blockedIds] - model ids to report as unavailable.
  * @returns {{id: string, name: string, vision: boolean, available: boolean, quotaExhausted: boolean, contextWindow: number, maxOutputLength: number, thinkingLevels: string[]}[]}
  */
-export function rosterWithAvailability(entries: any[], blockedIds: string[] = []) {
+export function rosterWithAvailability(entries: unknown, blockedIds: string[] = []) {
   const blocked = new Set(Array.isArray(blockedIds) ? blockedIds : []);
-  const position = new Map();
-  const out: Array<{ id: string; name: string; vision: boolean; available: boolean; quotaExhausted: boolean; contextWindow: number; maxOutputLength: number; thinkingLevels: string[] }> = [];
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    if (!isChatModel(entry)) continue;
-    const id = str(entry?.id, "");
-    if (id === "") continue;
-    const row = {
+  const rows = lastWinsById<{ id: string; name: string; vision: boolean; available: boolean; quotaExhausted: boolean; contextWindow: number; maxOutputLength: number; thinkingLevels: string[] }>();
+  for (const { id, name, entry } of chatEntries(entries)) {
+    rows.put({
       id,
-      name: str(entry.name, id),
+      name,
       vision: visionOf(entry).vision,
       available: !blocked.has(id),
       quotaExhausted: blocked.has(id),
@@ -608,15 +633,9 @@ export function rosterWithAvailability(entries: any[], blockedIds: string[] = []
       // repeating on a row, unlike the provider-wide default, which the panel
       // states once in its header.
       thinkingLevels: supportedThinkingLevels(entry)
-    };
-    if (position.has(id)) {
-      out[position.get(id)] = row;
-    } else {
-      position.set(id, out.length);
-      out.push(row);
-    }
+    });
   }
-  return out;
+  return rows.done();
 }
 
 /**
@@ -626,8 +645,8 @@ export function rosterWithAvailability(entries: any[], blockedIds: string[] = []
  * @param {object[]} entries - the normalized catalog entries.
  * @returns {{modelCount: number, visionCount: number, visionIds: string[]}}
  */
-export function summarizeCatalog(entries: any[]) {
-  const list = (Array.isArray(entries) ? entries : []).filter(isChatModel);
+export function summarizeCatalog(entries: unknown) {
+  const list = ((Array.isArray(entries) ? entries : []) as Record<string, unknown>[]).filter(isChatModel);
   const visionIds = list
     .filter((entry) => str(entry?.id, "") !== "")
     .filter((entry) => visionOf(entry).vision === true)

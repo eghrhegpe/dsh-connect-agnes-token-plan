@@ -22,13 +22,22 @@ import type { PluginError } from "./types.ts";
  * }} PluginError
  */
 
-/** Read a finite positive number, else the fallback. */
-export function num(value: any, fallback?: any): any {
+/**
+ * Read a finite positive number, else the fallback.
+ *
+ * `value` is `unknown` on purpose: every call site reads a field off a payload
+ * the plugin did not author (a console response, a state file, a settings row),
+ * so the honest type at this boundary is "could be anything". Narrowing the
+ * PARAMETER costs callers nothing (everything is assignable to `unknown`) and
+ * stops the `any` from propagating inward — the returns stay loose because the
+ * fallback is the caller's own value and is passed straight back.
+ */
+export function num(value: unknown, fallback?: any): any {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 /** Read a non-empty string, else the fallback. */
-export function str(value: any, fallback?: any): string {
+export function str(value: unknown, fallback?: any): string {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : fallback;
 }
 
@@ -66,9 +75,15 @@ export function redactSecrets(text: string) {
   );
 }
 
-/** Read a plain object, else `{}`. */
-export function obj(value?: any): any {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+/**
+ * Read a plain object, else `{}`.
+ *
+ * Returns `Record<string, unknown>` rather than `any`: the reader's whole job is
+ * to hand back a shape the caller must still validate field by field, and typing
+ * it as `any` would silently wave through every unvalidated read downstream.
+ */
+export function obj(value?: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 /**
@@ -79,7 +94,7 @@ export function obj(value?: any): any {
  * password of only whitespace is still "not filled in", which the caller
  * judges with `.trim()`.
  */
-export function verbatim(value: any, fallback?: any): string {
+export function verbatim(value: unknown, fallback?: any): string {
   return typeof value === "string" ? value : fallback;
 }
 

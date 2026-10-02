@@ -124,7 +124,8 @@ export function parseUsageOverview(body) {
  * @returns {{days: number, totals: object, buckets: object[]}}
  */
 export function parseUsageSeries(body, days) {
-  const items = Array.isArray(obj(body).items) ? obj(body).items : [];
+  const raw = obj(body).items;
+  const items = Array.isArray(raw) ? raw : [];
   const buckets: Array<{ bucket: string; requestCount: number; textTokens: number; imageCount: number; videoSeconds: number }> = [];
   for (const entry of items) {
     const source = obj(entry);

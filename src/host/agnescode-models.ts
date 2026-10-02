@@ -80,7 +80,7 @@ export function agnescodeRequestHeaders() {
  * @param {object} row - one AgnesCode roster row (must carry `id`).
  * @returns {boolean} whether the row accepts image input.
  */
-export function agnescodeVisionOf(row: any) {
+export function agnescodeVisionOf(row: Record<string, unknown>) {
   if (row?.vision === true) return true;
   const id = str(row?.id, "");
   return (PROBED_VISION as Record<string, boolean>)[id] === true;
@@ -130,8 +130,8 @@ export function agnescodeRoster(catalog: unknown) {
  * @param {unknown} enabledIds - the curated ids (empty = no filter).
  * @returns {object[]} the rows to publish.
  */
-export function filterAgnescodeRows(rows: any, enabledIds: unknown) {
-  const list = Array.isArray(rows) ? rows : [];
+export function filterAgnescodeRows(rows: unknown, enabledIds: unknown) {
+  const list = (Array.isArray(rows) ? rows : []) as Record<string, unknown>[];
   const ids = normalizeEnabledIds(enabledIds);
   if (ids.length === 0) return list;
   const keep = new Set(ids);
@@ -144,7 +144,7 @@ export function filterAgnescodeRows(rows: any, enabledIds: unknown) {
  * @param {object} [options] - `{ bffBase }` — the pinned per-account base.
  * @returns {object} the pi-ai descriptor.
  */
-export function agnescodeToDescriptor(row: any, options: { bffBase?: string } = {}) {
+export function agnescodeToDescriptor(row: Record<string, unknown>, options: { bffBase?: string } = {}) {
   const id = str(row?.id, "");
   if (id === "") throw new Error("agnescodeToDescriptor: row has no id");
   const bffBase = str(options.bffBase, "");
@@ -179,8 +179,8 @@ export function agnescodeToDescriptor(row: any, options: { bffBase?: string } = 
  * @param {object} [options] - `{ bffBase }`.
  * @returns {object[]} the pi-ai descriptors.
  */
-export function buildAgnescodeDescriptors(roster: any, options: { bffBase?: string } = {}) {
-  const list = Array.isArray(roster) ? roster : agnescodeRoster(null);
+export function buildAgnescodeDescriptors(roster: unknown, options: { bffBase?: string } = {}) {
+  const list = (Array.isArray(roster) ? roster : agnescodeRoster(null)) as Record<string, unknown>[];
   const out: ReturnType<typeof agnescodeToDescriptor>[] = [];
   const seen = new Set();
   for (const row of list) {
