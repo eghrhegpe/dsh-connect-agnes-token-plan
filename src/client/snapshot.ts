@@ -31,6 +31,22 @@ export interface SnapshotView {
 }
 
 /**
+ * Whether a body is a DATA snapshot, as opposed to a refusal.
+ *
+ * The two `ok` checks in `interpretSnapshot` do the real work — this is the
+ * name for the fact they establish, so the caller types the payload as data
+ * instead of casting through `unknown`. A type predicate still trusts the
+ * wire (the Host owns the shape; `wire.ts` documents that types are loaded,
+ * never enforced at runtime), but it records that `ok:true` was seen, where
+ * `as unknown as` threw that fact away.
+ * @param {unknown} value - the body that reached the `ok:true` branch.
+ * @returns {boolean} whether the value is a data snapshot.
+ */
+function isSnapshotData(value: unknown): value is SnapshotData {
+  return typeof value === "object" && value !== null && (value as { ok?: unknown }).ok === true;
+}
+
+/**
  * Read one snapshot response into the (data, error) pair the panel renders.
  *
  * The Host answers HTTP 200 for every expected outcome and signals the
@@ -54,7 +70,7 @@ export function interpretSnapshot(body: unknown): SnapshotRead {
     return { data: null, error: { message: payload.error || "unexpected payload", code: payload.code, auth: payload.auth ?? null } };
   }
   if (!payload || payload.ok !== true) return { data: null, error: "unexpected payload" };
-  return { data: payload as unknown as SnapshotData, error: null };
+  return { data: isSnapshotData(payload) ? payload : null, error: null };
 }
 
 /**

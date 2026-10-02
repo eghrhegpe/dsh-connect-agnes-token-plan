@@ -75,10 +75,22 @@ check("host bundle is non-empty", existsSync(HOST_BUNDLE) && readFileSync(HOST_B
 
 // 3. freshness: the working-tree artifact must equal a rebuild of the sources.
 //    `before` is null on a clean checkout (no artifact yet) — a fresh build is
-//    then trivially fresh.
+//    then trivially fresh. A STALE artifact is a real failure, as ROADMAP §6.2
+//    documents ("过期即红"): it means `src/client/` changed without a rebuild,
+//    so the panel would have shipped yesterday's client. The gate has already
+//    rebuilt above, so the working tree is fresh again — the red just makes the
+//    drift visible instead of hiding it inside a green run's detail string.
 const after = normalized(ARTIFACT);
-check("client.js is fresh (rebuild reproduces it byte-for-byte)", before === null || before === after,
-  before === null ? "" : "the artifact drifted from src/client/ — the fresh build is now in the working tree; review and commit it");
+const drifted = before !== null && before !== after;
+check("client.js is fresh (rebuild reproduces it byte-for-byte)", !drifted,
+  drifted ? "the artifact did not match a rebuild of src/client/ — it was rebuilt above; run `npm run build:client` and keep it in sync with src/ (the artifact is gitignored, not committed)" : "");
+if (drifted) {
+  process.stderr.write(
+    `\n[build-gate] WARNING: client.js did not match a rebuild of src/client/.\n` +
+    `[build-gate]   A fresh build is already in the working tree. If you edited src/client,\n` +
+    `[build-gate]   keep the artifact in sync; it is gitignored, so nothing needs committing.\n\n`
+  );
+}
 
 // 4. shape: no top-level import/export statement — the file is evaluated by
 //    the browser module table AND imported as legal ESM in Node (the tail in

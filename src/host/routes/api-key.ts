@@ -12,6 +12,7 @@
 
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
+import { redactError } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
@@ -73,21 +74,26 @@ export function registerApiKeyRoute(ctx: HostCtx, wiring: HostWiring) {
           // answer success, but record it — silently losing it would make a
           // "forgot the key but old models still offered" report undebuggable.
           await catalogStore.clear()
-            .catch((error) => logger?.warn?.(`${name}: catalog cache clear failed after api-key forget`, error));
+            .catch((error) => {
+              // A LOG EXIT: the redaction the panel applies to error text applies
+              // here too, so a credential can never reach a log line even if the
+              // clear path starts throwing one (util.ts).
+              logger?.warn?.(`${name}: catalog cache clear failed after api-key forget: ${redactError(error)}`);
+            });
           cache.clear();
           providerState.signature = "";
           providerState.quotaSignature = "";
           await publishProvider([], [], []);
           await answer();
         } catch (error) {
-          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          await answer({ ok: false, error: redactError(error) });
         }
         return;
       }
       try {
         await apiKeyStore.save(body.value.apiKey);
       } catch (error) {
-        await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        await answer({ ok: false, error: redactError(error) });
         return;
       }
       // The next poll fetches the catalog with the new key; a stale catalog

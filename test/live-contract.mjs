@@ -2,8 +2,8 @@
  * The Agnes inference contract against the LIVE platform — run
  * deliberately, never by default.
  *
- * Companion to `test/live-jwks.test.mjs` (same discipline: not part of
- * `npm test`, a default run must not reach a real service). This one replays
+ * The only check allowed to reach a real service: not part of
+ * `npm test`, a default run must not reach a real platform. This one replays
  * the frozen `test/baselines/agnes-contract.json` against the platform's
  * `/v1/models` catalogue and a SMALL set of inference probes, so a platform
  * dialect drift (a renamed field, a flipped 400, a new modality spelling)

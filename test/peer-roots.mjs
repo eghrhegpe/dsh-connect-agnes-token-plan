@@ -220,8 +220,8 @@ export function installNetworkGuard() {
     escaped.add(url);
     throw new Error(
       `the offline suite made an unstubbed request to ${url}. ` +
-        "Every check must serve its own network; see test/live-jwks.test.mjs for the one " +
-        "check that is allowed to reach the platform, and run it with `npm run test:live`."
+        "Every check must serve its own network; see test/live-contract.mjs for the one " +
+        "check that is allowed to reach the platform, and run it with `npm run test:live:contract`."
     );
   };
   return () => {

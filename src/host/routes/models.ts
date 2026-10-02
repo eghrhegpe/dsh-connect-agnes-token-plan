@@ -15,6 +15,7 @@ import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { normalizeEnabledIds } from "../catalog-store.ts";
 import { catalogSignature } from "../provider-publish.ts";
+import { redactError } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
@@ -91,7 +92,7 @@ export function registerModelsRoute(ctx: HostCtx, wiring: HostWiring) {
         // pair inside publishProvider and surfaces its reason.
         await publishProvider(providerState.entries, ids, providerState.unavailableIds ?? []);
       } catch (error) {
-        await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        await answer({ ok: false, error: redactError(error) });
         return;
       }
       await answer();

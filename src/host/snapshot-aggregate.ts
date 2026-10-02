@@ -58,7 +58,7 @@ import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER
 import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
 import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video-models.ts";
-import { str } from "./util.ts";
+import { redactSecrets, str } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import type { CacheMap, InflightMap, Settings } from "./types.ts";
 import type { createTokenStore } from "./token-store.ts";
@@ -153,7 +153,9 @@ function firstFailure(sources: Array<[string, { error: (Error & { code?: unknown
       return {
         source,
         code: typeof outcome.error.code === "string" ? outcome.error.code : null,
-        message: outcome.error.message
+        // Red line: `quota.error.message` reaches the panel, and a console
+        // refusal message may echo the key it was refused for.
+        message: redactSecrets(outcome.error.message)
       };
     }
   }

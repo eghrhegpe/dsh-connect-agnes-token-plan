@@ -213,7 +213,9 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
   （`deps.neverBundle` 钉住）。三世界尾巴保留在源码里，CJS require 世界照旧声明。
 - **门禁**：`test/build-gate.mjs`（npm test 链尾、e2e-gate 之前；文件名不含
   `.test.`，不入 `package.test.mjs` 三方名册，同 e2e-gate 范式）——**freshness**
-  （重建与提交产物做换行归一化的逐字节比对，过期即红并提示提交新产物）+ **形状**
+  （重建与产物做换行归一化的逐字节比对，**过期即红**：`src/client/` 变了没重建会被
+  门禁拦住；产物 gitignore 不入库，所以红只是提示「保持产物与源码同步」，无需提交）
+  + **形状**
   （无顶层 import/export、ESM 导入恰好注册一份、react-only 替身可物化、panel 测试面
   键齐全）。tsdown 缺席则醒目 SKIP 退出 0。
 - **新纪律**：改 `src/client/*.ts` 后必须 `npm run build:client`，并把根 `client.js`

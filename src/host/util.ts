@@ -76,6 +76,24 @@ export function redactSecrets(text: string) {
 }
 
 /**
+ * The panel-facing text for a thrown value: an `Error`'s message — or a plain
+ * value's string form — with every credential-shaped substring removed.
+ *
+ * AGENTS.md's red line names three places that must redact — the provider, the
+ * desktop upstream, and the ROUTE — and every route answers `ok:false` with an
+ * `error` field drawn from whatever was thrown. Some of those values are built
+ * by the console client from the request it made (an axios/fetch error embeds
+ * the header it was built from, and a Agnes 4xx body may echo the `sk-` key),
+ * so the message must not travel verbatim. A store error that carries no
+ * credential is left untouched by the call.
+ * @param {unknown} error - the thrown value, `Error` or otherwise.
+ * @returns {string} secret-free text for a panel-facing `error`/`detail` field.
+ */
+export function redactError(error: unknown): string {
+  return redactSecrets(error instanceof Error ? error.message : String(error));
+}
+
+/**
  * Read a plain object, else `{}`.
  *
  * Returns `Record<string, unknown>` rather than `any`: the reader's whole job is

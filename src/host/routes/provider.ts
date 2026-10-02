@@ -13,6 +13,7 @@
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
+import { redactError } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
@@ -87,7 +88,7 @@ export function registerProviderRoute(ctx: HostCtx, wiring: HostWiring) {
         // surfaces its reason in providerState.error.
         await publishProvider(providerState.entries, providerState.enabledIds, providerState.unavailableIds ?? []);
       } catch (error) {
-        await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        await answer({ ok: false, error: redactError(error) });
         return;
       }
       await answer();

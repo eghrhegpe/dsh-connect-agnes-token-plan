@@ -12,6 +12,7 @@
 import { isAdmitted, name } from "../host-config.ts";
 import { buildSnapshotBody } from "../snapshot-aggregate.ts";
 import { CODE, isAuthFailure } from "../codes.ts";
+import { redactError } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
@@ -97,7 +98,14 @@ export function registerSnapshotRoute(ctx: HostCtx, wiring: HostWiring) {
           // reads a stale or empty set with no trace to explain why. Log it; the
           // in-memory body the panel already got is unaffected.
           void visionPublish.current?.(body.visionModels, body.visionModels.map((entry) => entry.id))
-            .catch((error) => logger?.warn?.(`${name}: vision model list write failed`, error));
+            .catch((error) => {
+              // The value is a best-effort write, and its error provably carries
+              // no credential today — but this is still a LOG EXIT, so it goes
+              // through the same redaction the panel does (util.ts: a credential
+              // never reaches a log). A future change to what this publish
+              // throws cannot regress that.
+              logger?.warn?.(`${name}: vision model list write failed: ${redactError(error)}`);
+            });
         }
         writeJson(response, 200, body, { "cache-control": "no-store" });
       } catch (error) {
@@ -112,7 +120,11 @@ export function registerSnapshotRoute(ctx: HostCtx, wiring: HostWiring) {
         // guidance line still names the right fix.
         writeJson(response, 200, {
           ok: false,
-          error: error instanceof Error ? error.message : String(error),
+          // Red line: the route is one of the three places an error message
+          // must pass `redactSecrets`. What reaches here is usually a store or
+          // publish failure, but the console client's own refusals ride this
+          // path and must not echo a credential back to the panel.
+          error: redactError(error),
           code: failureCode(error),
           auth: await tokenStore.state().catch(() => null)
         }, { "cache-control": "no-store" });

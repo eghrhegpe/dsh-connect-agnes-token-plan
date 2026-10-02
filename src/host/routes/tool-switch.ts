@@ -15,6 +15,7 @@
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled, resolveSwitchValue } from "../switch-precedence.ts";
+import { redactError } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring, SwitchStore } from "../types.ts";
 
@@ -126,7 +127,7 @@ export function registerToolSwitchRoute(
         try {
           await store.forget();
         } catch (error) {
-          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          await answer({ ok: false, error: redactError(error) });
           return;
         }
         await answer();
@@ -145,7 +146,7 @@ export function registerToolSwitchRoute(
         try {
           await store.saveModel(raw);
         } catch (error) {
-          await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+          await answer({ ok: false, error: redactError(error) });
           return;
         }
         await answer();
@@ -162,7 +163,7 @@ export function registerToolSwitchRoute(
       try {
         await store.save(body.value.enabled);
       } catch (error) {
-        await answer({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        await answer({ ok: false, error: redactError(error) });
         return;
       }
       await answer();

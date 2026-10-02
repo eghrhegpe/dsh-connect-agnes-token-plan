@@ -93,10 +93,13 @@ export function useRosterDraft(rows: RosterRow[], hostIds: string[]): RosterDraf
 
   // Follow the Host while the picker is untouched, so a catalogue refresh
   // reaches the list and a save from another client clears the draft.
-  // `dirty` in the guard keeps an edit in flight from being clobbered.
+  // `dirty` in the guard keeps an edit in flight from being clobbered. The dep
+  // array is `[hostKey]` ON PURPOSE: `dirty` is derived from `idsKey`/`ids`,
+  // and re-running on it would echo our own writes back onto the list. (No
+  // eslint runs here — the tsc + gates take its place — so there is no
+  // directive to carry for the deliberate omission.)
   useEffect(() => {
     if (dirty === false) setIds(hostIds);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostKey]);
 
   // The "已保存" notice ends when the picker is edited again (or the Host's
