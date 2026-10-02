@@ -15,8 +15,13 @@
  *
  * The difference that shapes the publish: the offered set is driven by THREE
  * facts — "is the switch on?", "is there a (harvested) credential?", and the
- * credential's per-account BFF base — and the offered-set signature includes
- * that base, so a re-harvest that lands on a different base rebuilds.
+ * credential's per-account BFF base — and a re-harvest that lands on another
+ * base rebuilds. That rebuild is the CALLER's decision: `agnescode-lifecycle`
+ * compares the harvested base against `state.bffBase` and re-publishes. No
+ * offered-set signature is kept here, unlike the Token Plan publisher — whose
+ * caller polls a catalogue that changes without ever calling in, so it needs
+ * something to compare. Here every publish is already an explicit call that
+ * carries the roster, so a signature would be written and never read.
  *
  * Peer-free: the adapter factory is injected (`loadAdapterModule`, defaulting
  * to `import("./agnescode-llm-adapter.ts")`), so the offline suites substitute
@@ -91,8 +96,6 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     rows: [] as unknown[],
     /** The per-account BFF base the current registration addresses. */
     bffBase: "",
-    /** A cheap signature of the offered roster (ids + vision bits + base). */
-    signature: "",
     /** Whether an `llm` service answering `registerAdapter` is present. */
     llmAvailable: false,
     /** Whether the AgnesCode provider pair is registered without error. */
@@ -148,7 +151,6 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     const previousBase = state.bffBase;
     state.rows = Array.isArray(rows) ? rows : [];
     state.bffBase = str(bffBase, "");
-    state.signature = agnescodeSignature(state.rows, state.bffBase);
 
     // No config default (AgnesCode has no `Settings` key), so an unset panel
     // value means off — never a fallback nobody declared.
@@ -217,20 +219,4 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     dispose,
     isDisposed: () => queue.isDisposed()
   };
-}
-
-/**
- * A cheap signature of the AgnesCode offered roster: the model ids, each
- * tagged with the vision bit, over the per-account base — an id whose
- * modality flipped OR a re-harvest that landed on another base must rebuild
- * even though the id list did not change.
- * @param {object[]} rows - the `agnescodeRoster` result.
- * @param {string} bffBase - the pinned per-account base.
- * @returns {string}
- */
-export function agnescodeSignature(rows: readonly any[], bffBase = "") {
-  const models = (Array.isArray(rows) ? rows : [])
-    .map((row) => `${str(row?.id, "")}:${row?.vision === true ? 1 : 0}`)
-    .join(",");
-  return `${str(bffBase, "")}|${models}`;
 }

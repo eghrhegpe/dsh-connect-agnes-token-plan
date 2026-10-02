@@ -63,13 +63,14 @@
 |---|---|---|
 | publish 闸 | 面板开关（**回落到**补丁 `registerProvider`，经 `switch-precedence`）+ 持久化目录 + 白名单 | 面板开关（**无配置默认**，unset 即 off）+ 逐账号 BFF base |
 | 无凭据的语义 | 不适用（额度面板本身可用） | `not_configured`（面板据此显示「重新检测」） |
-| 状态形状 | `entries` / `enabledIds` / `unavailableIds` / `signature` / `quotaSignature` | `rows` / `bffBase` / `signature` |
+| 状态形状 | `entries` / `enabledIds` / `unavailableIds` / `signature` / `quotaSignature` | `rows` / `bffBase` |
 | 回滚还原 | `entries` + `enabledIds` + `unavailableIds` | `rows` + `bffBase` |
 | 构建告警的 label | `Agnes` | `AgnesCode` |
 
-**`signature` 的归属不对称是既有事实，原样保留**：Token Plan 侧由调用方写（目录轮询、
-花名册保存、种子），AgnesCode 侧在 `publishProviderOnce` 内写。这不是共享层的职责——
-共享层不知道「哪次改动该让签名失效」。
+**两侧的 `signature` 不对称是有理由的，不是遗漏**：Token Plan 侧由调用方写（目录轮询、
+花名册保存、种子），因为它的调用方**在目录变化时并不会来调用**——签名是「这次与上次是否
+同一份 offer」的比较基准。AgnesCode 侧每一次 publish 都是显式调用、且花名册随调用送达，
+不存在「不请自来」的变更，签名写了也没人读，故已删除（见 §6）。
 
 ---
 
@@ -116,9 +117,9 @@ AgnesCode 侧少了后半句（复制时漏的）。共享后统一为完整版�
 - [x] 状态字段名不变（`state.built` 有测试读者，不能改名）：`built` / `releaseAdapter` /
       `releaseDirectory` / `registered` / `error` / `llmAvailable`。
 - [x] 对外返回面不变：`createProviderPublisher` 仍返回 `{state, publish, release, dispose,
-      isDisposed}`；`seedPublisherFromCatalog` / `catalogSignature` / `agnescodeSignature`
-      仍从原文件导出（调用方 `index.ts` / `lifecycle.ts` / `snapshot-aggregate.ts` /
-      `routes/models.ts` 一行未改）。
+      isDisposed}`；`seedPublisherFromCatalog` / `catalogSignature` 仍从原文件导出（调用方
+      `index.ts` / `lifecycle.ts` / `snapshot-aggregate.ts` / `routes/models.ts` 一行未改）。
+      AgnesCode 侧原有的 `agnescodeSignature()` 是只写不读的死状态，已在收敛后删除（见 §6）。
 - [x] peer-free 不变：`publish-core.ts` 只 import `util.ts` 与 `host-config.ts`，无静态
       `@deepseek-ai/*`（`docs.test.mjs` 检查 13）。
 - [x] 隔离不变：两侧 publisher 仍是各自的 `state` 实例，`registerPair` 各绑自己的
@@ -131,8 +132,13 @@ AgnesCode 侧少了后半句（复制时漏的）。共享后统一为完整版�
 - **`getLlm` 返回 `undefined` 不被容忍**：`llm !== null && typeof llm.registerAdapter === …`
   在 `undefined` 上会抛（原先如此，本次原样保留）。改成宽松判断能多一层降级，但那是另一个
   行为改动，不塞进「只搬不写」的重构里。
-- **AgnesCode 的 `state.signature` 目前只写不读**：重建判定实际由 `agnescode-lifecycle.ts`
-  比较 `bffBase` 做。它要么该被删，要么该被某个读者用起来——留给下一次判定，不在本次动。
+- **AgnesCode 的 `state.signature` 已删除**：它只写不读——重建判定由 `agnescode-lifecycle.ts`
+  比较 `bffBase` 做，签名写得再准也没人看。留着比删掉贵：它连带一条名不副实的测试（名字说
+  「signature 覆盖 base，所以换 base 会重建」，实际只测纯函数性质），读者会因此以为重建门在
+  publisher 里、因而不敢删。上游若将来改成轮询式变更，再按 Token Plan 形态加回来。
+  **覆盖缺口如实记账**：「换 base 会重建」由调用方（`agnescode-lifecycle.ts` 在 re-harvest
+  落地时比对 `state.bffBase`）实现，而 harvest walk 在离线套件里不可注入，故这条门没有测试
+  覆盖——这是既存缺口，不是删除引入的。
 - **`HostDeps` 仍是宽包**：主通道 `createProviderPublisher(deps: HostDeps)` 的字段是 `any`，
   而 AgnesCode 用的是专用 deps 类型。收紧它属类型围栏议题（与 `routes/` 那次同类），
   与「机制收敛」无关，故不在本次。

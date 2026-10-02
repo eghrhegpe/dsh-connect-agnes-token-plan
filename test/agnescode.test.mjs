@@ -14,7 +14,7 @@
  *   base rides the descriptor, `reasoning:false`, the memberOnly badge, the
  *   no-multiplier honesty);
  * - `agnescode-publish.ts`: the third, independent publisher (the switch-off /
- *   no-token / register path, the base in the signature, the `disposed` gate,
+ *   no-token / register path, the per-account base, the `disposed` gate,
  *   the rollback on failure);
  * - `agnescode-switch-store.ts`: the opt-in file-backed switch (atomic
  *   round-trip, version rejection);
@@ -56,7 +56,7 @@ import {
   buildAgnescodeDescriptors,
   agnescodeRequestHeaders
 } from "../src/host/agnescode-models.ts";
-import { createAgnescodePublisher, agnescodeSignature } from "../src/host/agnescode-publish.ts";
+import { createAgnescodePublisher } from "../src/host/agnescode-publish.ts";
 import { createFileAgnescodeStore, normalizeAgnescodeEnabled, AGNESCODE_SWITCH_VERSION } from "../src/host/agnescode-switch-store.ts";
 import { installNetworkGuard } from "./peer-roots.mjs";
 import { surface as clientSurface } from "./client-surface.js";
@@ -687,10 +687,14 @@ const GOOD_SESSION = {
     check("the state records the offered rows and base",
       publisher.state.rows.length === rows.length && publisher.state.bffBase === base);
 
-    // A re-harvest that lands on another base must rebuild (signature covers it).
-    check("the signature covers the base, so a base change rebuilds",
-      agnescodeSignature(rows, base) !== agnescodeSignature(rows, "https://api-agnes-code.agnes-ai.com/v1")
-      && agnescodeSignature(rows, base) === agnescodeSignature([...rows], base));
+    // A re-harvest that lands on another base MUST rebuild — but that gate is
+    // the CALLER's: `agnescode-lifecycle.ts` compares the harvested base
+    // against `state.bffBase` and re-publishes. This publisher keeps no
+    // offered-set signature, so there is nothing here to assert about one;
+    // the old line claimed "the signature covers the base" while only testing
+    // the pure function, which is why it read as coverage it never was. The
+    // harvest walk is not injectable from this suite, so the caller's gate is
+    // not reachable offline — recorded as a gap rather than faked.
 
     // Rollback: a failed registration restores the previous pair.
     const failingLlm = makeLlm();
