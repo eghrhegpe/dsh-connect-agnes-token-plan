@@ -62,11 +62,26 @@ function existsExact(path) {
 /** 官方文档一手信源目录（逐字抓取，只读）——不参与断链/去重检查。 */
 const OFFICIAL_DOCS_DIR = "AGNES-API-docs";
 
+/**
+ * 不进扫描面的目录。三类，理由各不相同：
+ * - `upstream/` / `AGNES-API-docs/`：外部容器与一手信源，逐字抓取、只读，
+ *   它们的一致性不归本仓管（见 REFERENCES.md）。
+ * - `node_modules/` / `.git/`：不是文档。
+ * - **`tmp/`：已被 `.gitignore` 忽略的临时草稿区**。它此前只在 `COUNT_GUARD`
+ *   内部被逐条跳过，于是同一个 `tmp/` 在「活文档计数护栏」里被豁免、在断链/
+ *   表格去重/考古纪律里却仍受审——**扫描面不一致**。后果是真实的：一次审计
+ *   把 PITFALLS 的拟稿写进 `tmp/`，正文落库后拟稿还引用着旧条目数，全量门禁
+ *   当场判红，而它审的是一份**不进版本库的草稿**。纪律上 `tmp/` 本就是
+ *   「探针产物可以落」的地方（见 PITFALLS §10），在这里统一排除，与那条纪律对齐。
+ *   判据：**凡是 gitignored 的目录，都不该进任何「活文档一致性」检查的扫描面。**
+ */
+const SKIP_DIRS = new Set(["upstream", ".git", "node_modules", OFFICIAL_DOCS_DIR, "tmp"]);
+
 function collectMd(dir) {
   const out = [];
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
-    if (name === "upstream" || name === ".git" || name === "node_modules" || name === OFFICIAL_DOCS_DIR) continue;
+    if (SKIP_DIRS.has(name)) continue;
     if (statSync(p).isDirectory()) out.push(...collectMd(p));
     else if (extname(p) === ".md") out.push(p);
   }
@@ -672,8 +687,6 @@ const CHECK_IDS = new Map([
   let hits = 0;
   for (const f of mdFiles) {
     if (COUNT_EXEMPT.has(basename(f))) continue;
-    // tmp/ 是临时草稿区（不按活文档标准审查）
-    if (relative(ROOT, f).split(sep)[0] === "tmp") continue;
     scanned++;
     const lines = readFileSync(f, "utf8").split(/\r?\n/);
     const allowLine = !LINE_COUNT_OK.has(basename(f));
