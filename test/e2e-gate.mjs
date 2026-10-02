@@ -20,6 +20,15 @@ import { spawnSync } from "node:child_process";
 const DSH = process.env.DSH_CLI ?? "dsh";
 
 function cliPresent() {
+  // An unset OR EMPTY override both mean "use whatever PATH says", so treat an
+  // empty string as absent rather than feeding it to spawnSync. Passing "" as
+  // the file makes Node throw ERR_INVALID_ARG_VALUE synchronously — so a bare
+  // `export DSH_CLI=` (or a workflow `env: DSH_CLI: ${{ }}` that expands empty)
+  // crashed this gate with a stack trace and exit 1, the exact opposite of the
+  // contract below: an environment that cannot run the suite must SKIP, never
+  // fail. A non-empty value that does not exist is the ordinary case and still
+  // resolves through probe.error.
+  if (DSH === "") return false;
   // Ask the CLI itself rather than trusting PATH bookkeeping; `--version` is the
   // cheapest thing that proves the shim resolves AND runs. shell:true mirrors how
   // e2e.mjs spawns it, so a Windows .cmd shim behaves the same here as there.
@@ -34,8 +43,18 @@ if (!cliPresent()) {
     `[e2e]   This is the only suite that boots a real Host; do not treat the green run\n` +
     `[e2e]   above as having exercised the loader, routes, or trust fence.\n\n`
   );
+  // Machine-readable verdict. The SKIP exits 0 by design, so a green badge alone
+  // says nothing about whether the loader was exercised — a CI log that only
+  // carries the prose above needs a human to read it. Emitting one stable token
+  // lets `.github/workflows/ci.yml` promote the outcome into the job summary
+  // instead of trusting a green icon.
+  process.stderr.write(`[e2e] VERDICT=SKIPPED (dsh CLI absent)\n\n`);
   process.exit(0);
 }
 
 const run = spawnSync(process.execPath, ["test/e2e.mjs"], { stdio: "inherit" });
-process.exit(run.status === null ? 1 : run.status);
+// The count is already in e2e.mjs's output; this line only names the outcome so
+// the same verdict is greppable whether the suite ran, skipped, or crashed.
+const code = run.status === null ? 1 : run.status;
+process.stderr.write(`\n[e2e] VERDICT=${code === 0 ? "PASSED" : "FAILED"} (exit ${code})\n\n`);
+process.exit(code);

@@ -154,7 +154,26 @@ jobs:
       # skip safe. package.test.mjs pins this — a gate file present but bypassed
       # is a red.
       - name: Run the end-to-end suite
-        run: node test/e2e-gate.mjs
+        shell: bash
+        run: |
+          set +e
+          out=$(node test/e2e-gate.mjs 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          # The gate exits 0 for BOTH "passed" and "skipped", so a green
+          # outcome alone never says which. Lift the gate's VERDICT token into
+          # the job summary: a green badge that skipped the loader must not read
+          # the same as one that exercised it. The token is emitted by
+          # test/e2e-gate.mjs, so the two cannot drift apart.
+          if printf '%s' "$out" | grep -q 'VERDICT=SKIPPED'; then
+            echo "**e2e: SKIPPED** - no dsh CLI on this runner. This green job did NOT exercise the loader, routes, or trust fence." >> "$GITHUB_STEP_SUMMARY"
+          elif printf '%s' "$out" | grep -q 'VERDICT=PASSED'; then
+            echo "**e2e: RAN and PASSED** - a real dsh web process against the fake platform." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**e2e: FAILED** - see the check list above." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $code
 
   live-contract:
     name: Live platform contract (best effort)

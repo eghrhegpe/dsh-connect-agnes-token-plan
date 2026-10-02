@@ -3,9 +3,15 @@
  *
  * Everything below the Host is a stub — a fake Agnes platform on
  * 127.0.0.1 — but nothing below the plugin is faked: the bundle is loaded by
- * the Loader, the routes are registered with the real webserver, the browser
- * trust fence and auth cookie are the Host's own, and the panel renders from
- * the response a real HTTP client received.
+ * the Loader, the routes are registered with the real webserver, and the browser
+ * trust fence and auth cookie are the Host's own. A real HTTP client receives the
+ * responses and this file asserts on their JSON — but be precise about what is
+ * NOT exercised: **no React component ever mounts here**. The suite never fetches
+ * `/` or `client.js`, so a client bundle that crashes on mount would still see
+ * every check below go green. The panel's DECISIONS are covered, just not by a
+ * browser: `test/panel.test.mjs` and `test/render.test.mjs` import the real
+ * `src/client/` modules through a capture loader. Rendering is the one gap that
+ * no suite in this repository closes (docs/TESTING.md §4).
  *
  * The isolation is deliberate and total:
  *
@@ -269,9 +275,13 @@ function startHost(home, port) {
     child.stderr.on("data", onData);
     child.on("exit", (code, signal) => {
       clearTimeout(timer);
-      // Recorded rather than thrown: an exit AFTER the URL was printed is a
-      // different (and much more interesting) failure than one before, and it
-      // arrives while requests are in flight.
+      // Recorded AND rejected. The reject is a no-op once the URL was printed
+      // (the promise is already resolved), so what actually survives an
+      // after-boot exit is `child.exited` — which is what the fetch error
+      // handler below reads to name whether the Host died mid-run. That is the
+      // distinction that matters: an exit AFTER the URL is a different (and much
+      // more interesting) failure than one before, and it arrives while requests
+      // are in flight.
       child.exited = { code, signal };
       reject(new Error(`the Host exited (${String(code)}/${String(signal)}) before serving:\n${out}`));
     });
@@ -447,6 +457,12 @@ try {
     // and the run POSTED A REAL LOGIN ATTEMPT to the live platform. The plugin
     // now rejects that shape outright; this asserts the redirect holds.
     check("the request reached the fake, not the platform", fake.log.login > before,
+      `login calls ${before} -> ${fake.log.login}`);
+    // The retry above is a single retry, so at most two attempts can ever reach
+    // the fake. Bound the count, because "> before" alone would also pass a loop
+    // that posted the password N times — and Agnes locks an account after a few
+    // bad attempts, so an unbounded retry is a lockout, not a resilience win.
+    check("the sign-in looped at most once", fake.log.login - before <= 2,
       `login calls ${before} -> ${fake.log.login}`);
     // Agnes ships no JWE walk: the password reaches the backend as typed over
     // TLS, and the fake records exactly what arrived.
@@ -650,11 +666,20 @@ try {
 
   // === a wrong password is classified, and the panel explains itself =====
   {
+    // Counter taken BEFORE the call, so the two body assertions below are proved
+    // against a response the fake actually produced. Without this, a plugin that
+    // never POSTed at all and fabricated "login_rejected" plus the platform's
+    // own refusal phrase would still pass — the phrase is English on a Chinese
+    // platform, which makes hard-coding it a realistic regression. The success
+    // path above already asserts its counter delta; the failure path did not.
+    const badBefore = fake.log.badPassword;
     const res = await call("/api/dsh-connect-agnes-token-plan/account", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: "e2e-user", password: "wrong-one" })
     });
+    check("the wrong-password attempt actually reached the fake",
+      fake.log.badPassword === badBefore + 1, `badPassword ${badBefore} -> ${fake.log.badPassword}`);
     check("a wrong password is reported as such", res.body?.code === "login_rejected", String(res.body?.code));
     check("the platform's own words reach the user",
       typeof res.body?.error === "string" && res.body.error.includes("Invalid username or password"),
@@ -662,6 +687,30 @@ try {
     check("a wrong password demands user action, not a countdown",
       res.body?.needsUserAction === true, String(res.body?.needsUserAction));
     check("a wrong password serves no wait", res.body?.retryAfterMs === null, String(res.body?.retryAfterMs));
+  }
+
+  // === a typo does not lock the operator out ==============================
+  // The refusal above PARKS the store: a credential-shaped refusal gets no
+  // countdown, because waiting cannot make a wrong password right. A park that
+  // ALSO blocked the operator's own corrected attempt would turn one typo into a
+  // lockout the plugin cannot escape. `saveAccount` is meant to bypass the park
+  // and clear it — but only this run settles it, because it needs the real route,
+  // the real throttle record on disk, and the real credentials service inside one
+  // Host process, with no unit stub in between.
+  {
+    const res = await call("/api/dsh-connect-agnes-token-plan/account", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "e2e-user", password: "e2e-test-password" })
+    });
+    check("a corrected password signs in despite the parked refusal",
+      res.body?.ok === true && res.body?.hasAccount === true, JSON.stringify(res.body ?? {}).slice(0, 200));
+    check("the successful sign-in cleared the park",
+      res.body?.needsUserAction === false, String(res.body?.needsUserAction));
+    const snap = await call("/api/dsh-connect-agnes-token-plan/snapshot");
+    check("the panel is working again after the typo",
+      snap.body?.ok === true && snap.body?.quota?.consoleConnected === true,
+      JSON.stringify(snap.body?.quota?.error ?? null));
   }
 } catch (error) {
   check("the e2e run completed", false, String(error?.message ?? error));
