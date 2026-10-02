@@ -8,8 +8,8 @@
  * percentage the platform never stated, still passed every check — the
  * decision tests assert which view renders, not what that view says.
  *
- * The five hook-free components (`PlanCard`, `QuotaWindowCard`, `UsageTotals`,
- * `UsageChart`, `SectionCard`) are plain functions, so they run unchanged in
+ * The six hook-free components (`PlanCard`, `CatalogueCard`, `QuotaWindowCard`,
+ * `UsageTotals`, `UsageChart`, `SectionCard`) are plain functions, so they run unchanged in
  * Node once the shipped bundle is materialized by `client-surface.js`: they
  * come pre-wired to the recording `h`, with every closure dependency (`S`,
  * `count`, `clock`, `clockLong`, `format`) the same definitions the browser

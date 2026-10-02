@@ -13,7 +13,7 @@ import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import type { SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
-import { PlanCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
+import { PlanCard, CatalogueCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
 import { DrawSwitch, VideoSwitch } from "./provider-controls.ts";
 import { AgnescodeTab } from "./agnescode-tab.ts";
 import type { TabStatus } from "./agnescode-tab.ts";
@@ -92,7 +92,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // hiding its own switch reads as "this does nothing". Only the API key
   // editor stays closed — it holds a secret field, and it is a prerequisite
   // the three cards above point at rather than the thing being configured.
-  const [openSections, setOpenSections] = useState({ quota: true, usage: true, account: false, provider: true, draw: true, video: true, llm: false });
+  const [openSections, setOpenSections] = useState({ quota: true, catalogue: false, usage: true, account: false, provider: true, draw: true, video: true, llm: false });
   // Three fixed perspectives: "quota" (daily reading), "api" (Token Plan
   // wiring), and "agnescode" (desktop-app upstream, ROADMAP §6.3).
   // Inline union literal so `docs.test.mjs` check 9 can derive the tab set
@@ -374,13 +374,6 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                         format(tt("quota.error"), { source: String(quota.error.source ?? ""), message: String(quota.error.message ?? "") }))
                     : null,
                 h(PlanCard, { quota, tt }),
-                // The one thing the reader would otherwise get wrong: the
-                // windows above and the totals below are measured over
-                // different periods, so subtracting them would invent a
-                // "remaining" figure. Said once, here, rather than on each of
-                // the four window cards.
-                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 12 } }, tt("quota.windowNote")),
-                h(UsageTotals, { totals: quota?.totals, label: tt("quota.accountTotals"), tt }),
                 // Step one of the vision plan: which of THIS key's models take
                 // image input. Only shown when the Host actually had a catalog to
                 // ask (no API key → the field is absent → no claim either way).
@@ -391,9 +384,29 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                       }))
                   : null
               ),
+              // The catalogue is its own section — the reader's plan above is
+              // about what they have, the catalogue below is about what they
+              // could buy. Keeping them apart stops the plan card from reading
+              // as a sales pitch and lets the reader collapse "upgrade?" without
+              // hiding their own numbers.
+              Array.isArray(quota?.plans) && quota.plans.length > 0
+                ? h(
+                    SectionCard,
+                    { title: format(tt("section.catalogue"), { count: quota.plans.length }), open: openSections.catalogue, onToggle: () => toggleSection("catalogue"), tt },
+                    h(CatalogueCard, { plans: quota.plans, tt })
+                  )
+                : null,
               h(
                 SectionCard,
-                { title: format(tt("section.usage"), { days: usage?.days ?? 30 }), open: openSections.usage, onToggle: () => toggleSection("usage"), tt },
+                { title: tt("section.usage"), open: openSections.usage, onToggle: () => toggleSection("usage"), tt },
+                // The one thing the reader would otherwise get wrong: the
+                // windows above and the totals below are measured over
+                // different periods, so subtracting them would invent a
+                // "remaining" figure. Said once, here, rather than on each of
+                // the four window cards.
+                h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 12 } }, tt("quota.windowNote")),
+                h(UsageTotals, { totals: quota?.totals, label: tt("quota.accountTotals"), tt }),
+                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 16, marginBottom: 8 } }, format(tt("usage.period"), { days: usage?.days ?? 30 })),
                 h(UsageChart, { usage, tt })
               ),
               // The cache age is quoted from the snapshot, not written down here:

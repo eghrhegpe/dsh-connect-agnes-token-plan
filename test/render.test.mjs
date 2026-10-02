@@ -283,24 +283,25 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the two responsibility groups are named",
     out.includes("quota.group.requests") && out.includes("quota.group.media"), out.join("\n"));
   check("the subscription expiry is rendered when present", out.includes("quota.expires"), out.join("\n"));
-  // The card is about the READER's plan; the other tiers fold away so they
-  // cannot crowd it, but they stay one click from the answer to "is upgrading
-  // worth it" — using the platform's own numbers rather than a link.
-  check("no catalogue fold is drawn when no catalogue arrived",
-    !out.includes("quota.catalogue"), out.join("\n"));
+  // The card is about the READER's plan; the catalogue is a separate section,
+  // so the plan card must never draw it — even when the quota carries plans.
+  check("the plan card never draws the catalogue (it lives in its own section)",
+    !out.includes("quota.catalogue") && !out.includes("section.catalogue"), out.join("\n"));
 
-  const withCatalogue = rendered(render.PlanCard, {
-    quota: {
-      ...quota,
-      plans: [
-        { uuid: "a", planId: 1, name: "入门版", displayName: "入门版", billingCycle: "monthly", displayCycle: "月付", priceMinor: 2500, currency: "CNY", usageLimitText: "", limits: { requests5h: 1500, requestsWindowH: 5, requestsWeekly: 15000, imagesDaily: 4000, videoDaily: 500 } },
-        { uuid: "b", planId: 3, name: "高级版", displayName: "高级版", billingCycle: "monthly", displayCycle: "月付", priceMinor: 9900, currency: "CNY", usageLimitText: "", limits: { requests5h: 30000, requestsWindowH: 5, requestsWeekly: 300000, imagesDaily: 4000, videoDaily: 500 } }
-      ]
-    },
+  // The catalogue now renders via CatalogueCard, which returns null when the
+  // plans array is empty (so the section can be hidden) and draws the rows
+  // otherwise.
+  const emptyCatalogue = rendered(render.CatalogueCard, { plans: [], tt });
+  check("an empty catalogue renders nothing (the section can be hidden)",
+    emptyCatalogue.length === 0, JSON.stringify(emptyCatalogue));
+
+  const withCatalogue = rendered(render.CatalogueCard, {
+    plans: [
+      { uuid: "a", planId: 1, name: "入门版", displayName: "入门版", billingCycle: "monthly", displayCycle: "月付", priceMinor: 2500, currency: "CNY", usageLimitText: "", limits: { requests5h: 1500, requestsWindowH: 5, requestsWeekly: 15000, imagesDaily: 4000, videoDaily: 500 } },
+      { uuid: "b", planId: 3, name: "高级版", displayName: "高级版", billingCycle: "monthly", displayCycle: "月付", priceMinor: 9900, currency: "CNY", usageLimitText: "", limits: { requests5h: 30000, requestsWindowH: 5, requestsWeekly: 300000, imagesDaily: 4000, videoDaily: 500 } }
+    ],
     tt
   });
-  check("the catalogue fold is drawn when a catalogue arrived",
-    withCatalogue.includes("quota.catalogue"), withCatalogue.join("\n"));
   check("every catalogue tier becomes a comparable row",
     withCatalogue.includes("入门版") && withCatalogue.includes("高级版"), withCatalogue.join("\n"));
   check("a catalogue row states its limits, not just its name",
@@ -653,7 +654,8 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the style tokens were lifted from the client", S.card?.borderRadius === 12 && S.bar?.height === 6,
     JSON.stringify(S.card ?? {}));
   check("the components were lifted from the shipped bundle",
-    render.PlanCard instanceof Function && render.QuotaWindowCard instanceof Function
+    render.PlanCard instanceof Function && render.CatalogueCard instanceof Function
+      && render.QuotaWindowCard instanceof Function
       && render.UsageTotals instanceof Function && render.UsageChart instanceof Function
       && render.SectionCard instanceof Function, JSON.stringify(Object.keys(render)));
   check("count renders its input rounded to 2 places",

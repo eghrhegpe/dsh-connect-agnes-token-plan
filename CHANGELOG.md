@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 面板信息架构：额度 / 累计 / 套餐拆成三个 section
+
+- **问题**：`积分额度` tab 原来只有两个 section——「额度上限」里塞了当前套餐 + 四个窗口池 + 账号累计用量，「用量统计（近 30 天）」里只有柱图；套餐目录（catalogue）折叠在 PlanCard 内部。这导致三件彼此无关的事（我的窗口额度 / 我的历史累计 / 平台卖的所有套餐）共享同一个 section 标题「额度上限」，名字只覆盖其中一件；账号累计（无上限）挤在「额度上限」section 里，而真正的用量数据（柱图）在另一个 section，读者要把两个 section 的数字相减才能算「剩余」——这个减法没有意义（窗口周期 ≠ 账号累计周期）。
+- **修法**：拆成三个 section：
+  - **「我的额度」**（`section.quota`）：当前套餐身份 + 四个窗口池 + vision 模型行。只讲「我当前能用多少」。
+  - **「套餐对比（{count} 档）」**（`section.catalogue`）：`CatalogueCard`（从 `PlanCard` 剥离），独立 section，默认折叠。未登录时它是唯一的额度信息源；已登录时它回答「升级值不值」，不再与读者自己的数字挤在同一张卡里读起来像推销。
+  - **「我的用量」**（`section.usage`）：`windowNote`（「不能相减」的诚实声明）+ 账号累计用量 + 近 N 天柱图。窗口在上一 section，累计在本 section，声明放在两者之间。
+- **`windowNote` 跟着累计走**：「下面的上限 / 下方的账号累计」这段诚实声明原来夹在 PlanCard 与 UsageTotals 之间（同一个 section 内），现在随累计移入「我的用量」section 开头——读者进入这个 section 先看到声明、再看到累计数字。
+- **`section.usage` 不再含 `{days}` 占位符**：柱图的日期范围由 x 轴自带，section 标题「我的用量」是稳定标签；「近 {days} 天」作为 chart 上方的小标题（`usage.period`），与累计用量分开。
+- **`PlanCard` 不再吃 `quota.plans`**：它的空态判定从「plan null + windows 空 + catalogue 空」收窄为「plan null + windows 空」；`CatalogueCard` 在 `plans` 为空时返回 `null`，section 整块隐藏（不画空卡）。
+- 影响面：`src/client/{i18n, cards, index, panel-page}.ts`、`test/{render.test.mjs, panel-render.js}`；`quota.catalogue` 键退役（`section.catalogue` 接管，带 count），`usage.period` 键新增。
+
 ### AgnesCode：存储格式漂移哨子——桌面端升级不再冒充「文件不存在」
 
 - **问题**：AgnesCode 线吃的是从桌面 App 逆推的私有格式。App 升级改了会话文件形状（如 `code-auth-session.cn.v2`）时，严格模式全 miss，面板只给出与「没登录」**同款**的「文件不存在」档；而此前采集的 JWT 还能用约 28 天——没人会注意，直到凭据死掉、重登重采也无济于事的那天。

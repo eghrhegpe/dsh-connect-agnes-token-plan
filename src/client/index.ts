@@ -57,6 +57,7 @@ import {
 } from "./account-form.ts";
 import {
   PlanCard,
+  CatalogueCard,
   QuotaWindowCard,
   SectionCard,
   UsageChart,
@@ -111,6 +112,7 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
     }),
     components: Object.freeze({
       PlanCard,
+      CatalogueCard,
       QuotaWindowCard,
       UsageTotals,
       UsageChart,

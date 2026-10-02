@@ -221,20 +221,16 @@ function windowGroups(windows: unknown[], tt: Tt): Array<{ label: string; items:
 }
 
 /**
- * The current plan: its identity, the four windows it caps, and — folded away
- * — what the other tiers would allow.
+ * The reader's own plan: its identity and the four windows it caps.
  *
- * The catalogue rides along because it is the ONE quota source that answers an
- * anonymous request, so it is what the card can still show when no account is
- * stored. Folding it into `<details>` keeps the open card about the reader's
- * own plan; expanding it answers "is upgrading worth it" with the platform's
- * own numbers rather than a link.
+ * The plan catalogue (the other tiers) is a separate concern — "what would
+ * upgrading buy?" — and lives in its own section below, so the open card is
+ * purely about the reader's current plan.
  */
 export function PlanCard({ quota, tt }: { quota?: QuotaData | null; tt: Tt }): unknown {
   const plan: PlanData | null = quota?.plan ?? null;
   const windows = Array.isArray(quota?.windows) ? quota.windows : [];
-  const catalogue = Array.isArray(quota?.plans) ? quota.plans : [];
-  if (plan === null && windows.length === 0 && catalogue.length === 0) {
+  if (plan === null && windows.length === 0) {
     return h("div", { style: S.card }, h("div", { style: S.empty }, tt("quota.none")));
   }
   return h(
@@ -287,33 +283,41 @@ export function PlanCard({ quota, tt }: { quota?: QuotaData | null; tt: Tt }): u
           )
         )
       : null,
-    catalogue.length > 0
-      ? h(
-          "details",
-          { style: S.details },
-          h("summary", { style: S.detailsSummary }, format(tt("quota.catalogue"), { count: catalogue.length })),
-          h(
-            "div",
-            { style: S.detailsBody },
-            catalogue.map((entry) => {
-              const limits = entry.limits ?? {};
-              const parts = [
-                limits.requests5h !== undefined && limits.requests5h > 0 ? `${count(limits.requests5h)}${tt("quota.unit.requests")} / ${limits.requestsWindowH || 5}h` : "",
-                limits.requestsWeekly !== undefined && limits.requestsWeekly > 0 ? `${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}` : "",
-                limits.imagesDaily !== undefined && limits.imagesDaily > 0 ? `${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}` : ""
-              ].filter((part) => part !== "");
-              return h(
-                "div",
-                { key: entry.uuid || String(entry.planId), style: S.catalogueRow },
-                h("span", { style: S.catalogueName }, entry.displayName || entry.name || ""),
-                h("span", { style: S.muted }, cycleLabel(entry.billingCycle, tt)),
-                entry.priceMinor !== undefined && entry.priceMinor > 0 ? h("span", { style: S.muted }, money(entry.priceMinor, entry.currency)) : null,
-                h("span", { style: S.catalogueLimits }, parts.join(" · "))
-              );
-            })
-          )
-        )
-      : null
+  );
+}
+
+/**
+ * The public plan catalogue — what the other tiers would allow.
+ *
+ * Rendered inside its own section (not folded into the reader's plan card),
+ * so the reader's own numbers stay uncluttered and the "is upgrading worth it"
+ * question is one click away without crowding the plan identity.
+ *
+ * Returns `null` when no catalogue arrived, so the section can be hidden
+ * entirely rather than showing an empty card.
+ */
+export function CatalogueCard({ plans, tt }: { plans?: PlanData[] | null; tt: Tt }): unknown {
+  const catalogue = Array.isArray(plans) ? plans : [];
+  if (catalogue.length === 0) return null;
+  return h(
+    "div",
+    null,
+    catalogue.map((entry) => {
+      const limits = entry.limits ?? {};
+      const parts = [
+        limits.requests5h !== undefined && limits.requests5h > 0 ? `${count(limits.requests5h)}${tt("quota.unit.requests")} / ${limits.requestsWindowH || 5}h` : "",
+        limits.requestsWeekly !== undefined && limits.requestsWeekly > 0 ? `${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}` : "",
+        limits.imagesDaily !== undefined && limits.imagesDaily > 0 ? `${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}` : ""
+      ].filter((part) => part !== "");
+      return h(
+        "div",
+        { key: entry.uuid || String(entry.planId), style: S.catalogueRow },
+        h("span", { style: S.catalogueName }, entry.displayName || entry.name || ""),
+        h("span", { style: S.muted }, cycleLabel(entry.billingCycle, tt)),
+        entry.priceMinor !== undefined && entry.priceMinor > 0 ? h("span", { style: S.muted }, money(entry.priceMinor, entry.currency)) : null,
+        h("span", { style: S.catalogueLimits }, parts.join(" · "))
+      );
+    })
   );
 }
 

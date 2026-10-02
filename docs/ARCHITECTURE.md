@@ -84,7 +84,9 @@ client.js: interpretSnapshot(body) → {data, error}
    │  error 携带 auth 块（含 needsAccount / retryAfterMs / needsUserAction）
    ▼
 决策块（panel-decision.js 从同一模块取的 viewOf）决定渲染：
-   - 有数据 → 额度上限（四窗口）/ 账号累计用量 / 分桶柱图 / 套餐对比
+   - 有数据 → 「我的额度」section（套餐身份 + 四窗口池 + vision 模型行）
+      + 「套餐对比（{count} 档）」section（默认折叠，未登录时展开）
+      + 「我的用量」section（windowNote 诚实声明 + 账号累计用量 + 近 N 天柱图）
    - 控制台未连接（quota.consoleConnected:false）→ 额度 tab 内明说，
      并把登录卡展开；另两个 tab 不受影响
    - 需配置账号且完全没有 body → 额度 tab 内是 AccountForm
