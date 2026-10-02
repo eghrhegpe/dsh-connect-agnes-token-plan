@@ -13,7 +13,7 @@
 //   peer 边界（13）：静态 `@deepseek-ai/*` import 只许 llm adapter 层——「内核 peer-free
 //                    才能缺席降级」这条自述承诺的静态面（与 9-11 同族：验的是文档说的
 //                    架构纪律在代码里真的成立，不是格式）
-//   活文档计数护栏（14）：现行文档不得写死会随代码漂移的模块数/规模/行数（历史·账本·研究档豁免）
+//   活文档计数护栏（14）：现行文档不得写死会随代码漂移的模块数/规模/行数/路由条数/套件规模（历史·账本·研究档豁免）
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve, relative, sep, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -564,7 +564,7 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   if (offenders === 0) note(`peer 边界：${scanned} 个内核文件零静态 peer import（adapter 壳 2 个豁免）`);
 }
 
-// 14) 活文档硬编码计数护栏：现行文档不得断言会随代码漂移的模块数/规模/行数
+// 14) 活文档硬编码计数护栏：现行文档不得断言会随代码漂移的模块数/规模/行数/路由条数/套件规模
 // 同源病（PITFALLS §25）：形式全绿、语义已漂。本检查钉的是「活文档里写死代码
 // 形状数字」——加一个模块 / 做一次重构，文档就失真，逼出一次纯文档提交。
 // 历史·账本·研究档整 file 豁免（它们本就是定格快照，写死数字是如实记录）；
@@ -580,6 +580,15 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   // 路由条数同样随代码漂移（每加一条路由就陈旧一次）。ROADMAP 是历史重构记录，
   // 它的「N 条路由」是那次重构的范围快照而非现行断言——与 N 行 同理豁免。
   const ROUTE_COUNT_OK = new Set(["ROADMAP.md"]);
+  // 套件项数**不在**豁免之列，ROADMAP 亦然。与上面两个子检查的区别是承重的：
+  // 「那次重构改了哪几条路由」「某段上游对照多少行」是**一次动作的范围快照**，
+  // 删掉数字这段历史就说不清；而「某个套件多少项」不是任何一次动作的范围，它是
+  // **持续增长的现行规模**，与 `N 万行` 同类。它必然漂、且已经漂过——ROADMAP
+  // 同一份文件里同一个套件的项数曾出现两个互相矛盾的值（一次计划估算、一次落地
+  // 实测，各自都是当下的真值，却让读者无从判定哪个是终态）。CHANGELOG.md 早有同款
+  // 裁定：「消灭『离线 N 套件』
+  // 数字漂移源……文档不再背书套件数量与枚举，事实源收敛到 package.json scripts.test」；
+  // 本子检查就是把那条规矩变成机器可验的。
   const moduleRe = /\d+\s*个(?:Host |Client |前端|服务端)?模块/g;
   const wanRe = /\d+(?:\.\d+)?\s*万行/g;
   // 中文「N 条路由」在汉语里既可能是计数断言（「六条写路由改接审计版」），也可能是
@@ -592,6 +601,14 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   const routeCountRe = /(?:\d+\s*条(?:写)?路由)|(?:[二两三四五六七八九十百]+\s*条写路由)|(?:（\s*[0-9二两三四五六七八九十百]+\s*条(?:写)?路由)|(?:（\s*[0-9二两三四五六七八九十百]+\s*条(?=[，、都均]))/g;
   // 行数声明：排除「第 N 行」这类引用定位（如「见第 3 行」），只钉裸「N 行」
   const lineRe = /(?<!第)\d{1,}\s*行/g;
+  // 套件规模：`N 项` / `N checks` / `N 套件`（后者即 CHANGELOG.md 那句「文档不再
+  // 背书套件数量与枚举」的另一半），但**仅当同行出现测试语境词**才判红。单看
+  // `N 项` 会误伤正常叙述——`docs/API.md` 的「超过 500 项返回 400」是接口限额，
+  // 与测试无关（本护栏靠这个合取避开它）。同理只认「项」/「checks」，不认
+  // 「N/N 通过」这种分数式实跑结果（那是定格记录，且探针结果本就随真机而变）；
+  // 也只用阿拉伯数字，避开「四条路由套件全绿」这种**指定**某几个套件的写法。
+  const suiteCountRe = /(?:\d+\s*项|\d+\s*checks?\b|\d+\s*套件)/g;
+  const testCtxRe = /(?:\.test\.mjs|\.mjs|\bchecks?\b|套件|离线|门禁|全绿|npm test|单测|测试)/;
   let scanned = 0;
   let hits = 0;
   for (const f of mdFiles) {
@@ -620,9 +637,40 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
         hits++;
         bad(`${f}:${i + 1} 写死路由条数「${m[0].trim()}」——路由数随代码漂移，改以 \`registerRoutes\` 为准（历史档豁免）`);
       }
+      if ((m = line.match(suiteCountRe)) && testCtxRe.test(line)) {
+        hits++;
+        bad(`${f}:${i + 1} 写死套件规模「${m[0].trim()}」——项数/套件数随测试增补漂移，规模以 \`package.json scripts.test\` 实跑为准，活文档只点名套件与其覆盖面`);
+      }
     });
   }
-  if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档零写死模块数/规模/行数/路由条数（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
+  // 代码注释里同样会点名套件规模，而且这里正是「点名守护物却不校验守护物」
+  // （PITFALLS §39）的高发区——本次审计抓到的三处假/漂声明有两处就在代码注释里
+  // （client/wire.ts 声称存在而实不存在的门禁、host/llm-models.ts 指错的套件、
+  // test/e2e.mjs 注释里那个早已过期的 "all N checks"）。只扫 md 等于只堵一半。代码文件
+  // **只跑这一条子检查**：`N 个模块` / `N 行` 在代码注释里语义完全不同
+  // （「见第 3 行」「3 个模块参数」），那三条照搬进来必误伤。
+  const codeFiles = [];
+  const walkCode = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (name === "node_modules" || name === "lib" || name === "upstream") continue;
+      if (statSync(p).isDirectory()) walkCode(p);
+      else if (/\.(?:ts|mjs)$/.test(name)) codeFiles.push(p);
+    }
+  };
+  walkCode(join(ROOT, "src"));
+  walkCode(join(ROOT, "test"));
+  for (const f of codeFiles) {
+    const lines = readFileSync(f, "utf8").split(/\r?\n/);
+    lines.forEach((line, i) => {
+      const m = line.match(suiteCountRe);
+      if (m && testCtxRe.test(line)) {
+        hits++;
+        bad(`${f}:${i + 1} 写死套件规模「${m[0].trim()}」——注释里的项数与真实项数会各自漂移，改以 \`package.json scripts.test\` 实跑为准（同源病：PITFALLS §39 点名守护物却不校验它）`);
+      }
+    });
+  }
+  if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档 + ${codeFiles.length} 个代码文件零写死模块数/规模/行数/路由条数/套件规模（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
 }
 
 if (fails.length) {

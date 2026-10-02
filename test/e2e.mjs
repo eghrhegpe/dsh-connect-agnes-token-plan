@@ -702,7 +702,7 @@ else console.log(`\nall ${results.length} e2e checks passed`);
 
 // Leave explicitly. The failure path used to `process.exit(1)` while the
 // success path relied on the event loop draining — and it never did, because a
-// spawned Host's pipes keep a handle open. A run that prints "all 24 checks
+// spawned Host's pipes keep a handle open. A run that prints "all N checks
 // passed" and then hangs reads exactly like a run that is still working, which
 // is how six minutes disappeared. One turn for stdout to drain, then exit.
 const exitCode = failed.length > 0 ? 1 : 0;

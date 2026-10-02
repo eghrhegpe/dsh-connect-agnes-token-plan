@@ -367,6 +367,98 @@ for (const model of contract.models) {
     `${visionOffer.length} vs ${visionChat.length}`);
 }
 
+// --- 10. the snapshot wire contract: both halves name the same keys -------
+//
+// `src/client/wire.ts` states the CONSTRAINT in prose — "Every type here
+// mirrors a field the Host's `buildSnapshotBody` returns" — and that prose
+// named a gate in THIS file which, until now, did not exist (docs/PITFALLS.md
+// §39). The client half bundles without the Host, so the check cannot be an
+// import: it parses the Host's top-level `return {` literal and the client's
+// `SnapshotData` declaration as TEXT and compares the key sets.
+//
+// The load-bearing direction is Host ⊆ Client. A key the Host serves and the
+// client never declares is data dropped silently on the floor — the failure
+// this whole duplication constraint exists to prevent. The reverse direction
+// (client declares, Host never serves) is reported as a note, never failed:
+// every client field is optional by design, so it is a §38 "looks like a
+// path" signal for review rather than a break.
+{
+  const readSource = (rel) => readFileSync(join(ROOT, rel), "utf8");
+
+  /**
+   * Top-level keys of the Host snapshot literal (exactly 4-space indent, so
+   * nested objects at 6+ spaces stay out).
+   * @param {string} text - `snapshot-aggregate.ts` source.
+   * @returns {Set<string>} the key names, empty if the parse found no literal.
+   */
+  function hostKeys(text) {
+    const lines = text.split(/\r?\n/);
+    const at = lines.findIndex((l) => /^export async function buildSnapshotBody\b/.test(l));
+    const open = at < 0 ? -1 : lines.findIndex((l, i) => i > at && /^ {2}return \{$/.test(l));
+    const keys = new Set();
+    if (open < 0) return keys;
+    for (let i = open + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^ {2}\};/.test(line)) break;
+      // `...(cond ? { key } : {})` — a conditional field is still a served key.
+      let m = line.match(/^ {4}\.\.\..*\{\s*(\w+)\s*\}/);
+      // A plain key ends in `:` or `,` — or nothing at all, which is how the
+      // LAST field of the literal is written. Requiring the separator dropped
+      // `shapeWarnings` and turned it into a phantom "client declares what the
+      // Host never serves" (the parser bug this guard set exists to catch).
+      if (!m) m = line.match(/^ {4}(\w+)\s*(?::|,|$)/);
+      if (m) keys.add(m[1]);
+    }
+    return keys;
+  }
+
+  /**
+   * Top-level fields of the client's `SnapshotData` interface (2-space indent).
+   * @param {string} text - `wire.ts` source.
+   * @returns {Set<string>} the field names, empty if the interface is absent.
+   */
+  function clientKeys(text) {
+    const lines = text.split(/\r?\n/);
+    const at = lines.findIndex((l) => /^export interface SnapshotData \{/.test(l));
+    const keys = new Set();
+    if (at < 0) return keys;
+    for (let i = at + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\}/.test(line)) break;
+      const m = line.match(/^ {2}(\w+)\??:/);
+      if (m) keys.add(m[1]);
+    }
+    return keys;
+  }
+
+  const host = hostKeys(readSource(join("src", "host", "snapshot-aggregate.ts")));
+  const client = clientKeys(readSource(join("src", "client", "wire.ts")));
+
+  // Parser-liveness guard FIRST. If either regex stops matching — a reindent, a
+  // renamed function, a reformatted return — the sets shrink and a subset
+  // assertion passes for the wrong reason. The anchors are the blocks the panel
+  // cannot render without, plus `shapeWarnings` — the LITERAL'S LAST KEY, so a
+  // parser that only reads separator-terminated lines is caught too. Without
+  // this the gate itself becomes another §39 specimen.
+  const ANCHORS = ["ok", "now", "quota", "usage", "llm", "shapeWarnings"];
+  const anchored = ANCHORS.every((k) => host.has(k) && client.has(k));
+  check("both halves' key parsers are live (snapshot anchors found on each side)",
+    anchored, JSON.stringify({ host: [...host], client: [...client] }));
+
+  if (anchored) {
+    const missing = [...host].filter((k) => !client.has(k));
+    check("every key the Host serves is declared in the client's SnapshotData",
+      missing.length === 0, `SnapshotData is missing: ${missing.join(", ") || "(none)"}`);
+
+    const extra = [...client].filter((k) => !host.has(k));
+    if (extra.length > 0) {
+      console.log(`  note - SnapshotData declares keys the Host never serves: ${extra.join(", ")}`);
+    } else {
+      console.log(`  note - snapshot key sets match exactly (${host.size} keys)`);
+    }
+  }
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.pass);
 if (failed.length > 0) {

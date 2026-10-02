@@ -28,9 +28,9 @@
 >
 > **落地状态（本节完成时）**：§2.1 抽 `provider-publish.js` + `snapshot-aggregate.js`，
 > `index.js` 从 1187 行瘦到 778 行（wiring F3 经新模块注入仍全绿）；§2.2 落
-> `test/contract.test.mjs`（77 项，进 `npm test`）+ `test/baselines/sensenova-contract.json`
+> `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/sensenova-contract.json`
 > （冻结 2026-09-29 实测）+ `test/live-contract.mjs`（`npm run test:live:contract`，手动档）。
-> 离线全量 12 套件 + e2e-gate 全绿。
+> 离线全量套件 + e2e-gate 全绿。
 >
 > **2026-10 迁移补记**：插件整体迁到 Agnes 控制台，上段的文件名与端点是 2026-09 的落地面。
 > 现行对应关系：`test/baselines/sensenova-contract.json` → `test/baselines/agnes-contract.json`、
@@ -222,7 +222,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - **【当晚已被取代】「Host 半边不动」**：随后按 workbuddy 规范完成全仓归一——Host 源码迁
   `src/host/*.ts`（Host 模块），tsdown 多入口构建 `lib/`（ESM bundle + 切分 chunk）；`lib/` 与根
   `client.js` 一并 `.gitignore`，**产物彻底不入库**（上文「产物与源码同 commit」纪律随之作废），
-  测试面与门禁已适配；17 套件 + build-gate + e2e + tsc 全绿，「删 lib 可重建」验收通过。
+  测试面与门禁已适配；全量套件 + build-gate + e2e + tsc 全绿，「删 lib 可重建」验收通过。
   checkJs 的 JSDoc 投入随 .ts 化自然并入类型标注。
 
 **遗留项已闭合（2026-09-30）**：CI 离线 job 现已安装 devDeps（`npm install
@@ -354,7 +354,7 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 
 > **落地记录**：本节探针当日完成实现——`src/host/agnescode*.ts` 六件套（协议层 + 本机采集 /
 > 凭据 store / 开关 store / 花名册映射 / 独立 publisher / peer adapter）+ `/agnescode` 路由 +
-> 面板第四个 tab，套件 `test/agnescode.test.mjs`（94 项离线检查）进 `npm test` 门禁。隔离纪律
+> 面板第四个 tab，套件 `test/agnescode.test.mjs`（离线检查）进 `npm test` 门禁。隔离纪律
 > 与 §6.1 的 raccoon 行同款：独立 publisher / store / 凭据引用，对主注册影响恒为零。
 
 > **背景**：用户问及 `https://agnes-ai.cn/agnescode`（AgnesCode，独立编程助手产品，微信登录、
@@ -427,11 +427,11 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 | **P0 ✅** | 推理契约自动化回归（§2.2：`test/contract.test.mjs` 进 `npm test` + `test/live-contract.mjs` live 手动档 + `test/baselines/agnes-contract.json`） | 低（纯测试基建，不碰运行时） | `npm test` 全绿；`package.json` 有 `test:live:contract` 脚本 |
 | **P0 ✅** | 429 spike + 配额联动（全局策略 `llm-retry.ts` + per-model 可用性 `llm-models.ts` + `index.ts` quota 重注册） | 低（1 行 peer + peer-free 分类器 + 状态文件桥） | `e2e-gate`（dsh CLI 在则实跑）；`test/retry.test.mjs` 已落地 |
 | **P0 文档** | §5 纠偏 + 本文入库 | 无（仅 doc） | `docs.test.mjs` |
-| **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.ts`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.ts` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs`（56 项）已落地；离线 12 套件全绿 |
+| **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.ts`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.ts` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs` 已落地；离线套件全绿 |
 | **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
-| **P2 ✅ 已落地后移除（2026-10-01）** | 第二上游 provider（小浣熊 / `sensenova-raccoon`）：曾随 0.4.3 落地、2026-10-01 续做网关契约复测**契约成立**（§6.1.2），但已随 Agnes 线独立**整条移除**（兄弟插件保留该线）——移除即本项终态，无「剩余未做」 | 高（新上游 + 新凭据生命周期） | 移除时同删 `test/raccoon.test.mjs`（离线 101 项）与全部接线/文档；`docs.test.mjs` 检查 9 改钉三 tab |
-| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第三个 tab + `test/agnescode.test.mjs`（101 项）；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）、**格式漂移哨子 `format_drift`**（2026-10：walk 第 9 档直说「格式变了，升级插件」+ doctor 只读盘点三事实分点名，见上方哨子段）；**仍缺**：带凭据的 live 端到端探针档（比照 `live-contract`）、真 DPAPI 路径（`defaultDpapiUnprotect`）零自动覆盖（可加平台守卫的可选档）、会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线 101 项 + `docs.test.mjs` 检查 9（三 tab 全覆盖）+ render 首帧三 tab 断言 |
+| **P2 ✅ 已落地后移除（2026-10-01）** | 第二上游 provider（小浣熊 / `sensenova-raccoon`）：曾随 0.4.3 落地、2026-10-01 续做网关契约复测**契约成立**（§6.1.2），但已随 Agnes 线独立**整条移除**（兄弟插件保留该线）——移除即本项终态，无「剩余未做」 | 高（新上游 + 新凭据生命周期） | 移除时同删 `test/raccoon.test.mjs` 与全部接线/文档；`docs.test.mjs` 检查 9 改钉三 tab |
+| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第三个 tab + `test/agnescode.test.mjs`；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）、**格式漂移哨子 `format_drift`**（2026-10：walk 第 9 档直说「格式变了，升级插件」+ doctor 只读盘点三事实分点名，见上方哨子段）；**仍缺**：带凭据的 live 端到端探针档（比照 `live-contract`）、真 DPAPI 路径（`defaultDpapiUnprotect`）零自动覆盖（可加平台守卫的可选档）、会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线检查 + `docs.test.mjs` 检查 9（三 tab 全覆盖）+ render 首帧三 tab 断言 |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 | 明确不做 | 伪倍率折进注册模型名（qoder ② 法：把倍率嵌进 DSH 原生选择器的模型名里，绕「选择器无旁路字段」限制）。2026-09-30 决议 | 低 | 现状即决议：`×N` 只作**面板侧标记**（模型花名册行尾 + 趋势图，同一匹配器、同一数值，均标「非官方」）。理由：① 倍率是操作者手填的对比数据、非平台计费事实，折进 DSH 全局模型名会把个人配置泄漏给所有会话；② qoder 嵌名是「DSH 无字段携带平台真实倍率」的 workaround，本插件的倍率本就没有平台出处，面板就是它唯一合理的位置；③ 模型名是 DSH 配置 / 选择器的稳定标识（id 匹配），加 `×N` 会破坏 id 语义 |
 

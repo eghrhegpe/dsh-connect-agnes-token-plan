@@ -383,7 +383,9 @@ const THINKING_LADDER = ["off", "minimal", "low", "medium", "high", "xhigh", "ma
  * builds the model-settings effort list through exactly that function, so a
  * roster row quoting this list cannot disagree with what the picker lets the
  * user select — one contract, both ends. If pi-ai's rule ever changes, this
- * filter changes with it (pinned by test/render + routes).
+ * filter changes with it (pinned by `test/contract.test.mjs` §6, which compares
+ * a roster row's levels against this function cell by cell, and by the ladder
+ * assertions in `test/retry.test.mjs`).
  * @param {object} entry - one normalized catalog entry.
  * @returns {string[]} level ids in escalation order, e.g. ["off","low",...].
  */

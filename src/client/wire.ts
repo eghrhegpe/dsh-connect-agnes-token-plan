@@ -4,8 +4,10 @@
  * Every type here mirrors a field the Host's `buildSnapshotBody` returns
  * (see `src/host/snapshot-aggregate.ts`); keeping them in the client half
  * is a deliberate duplication CONSTRAINT: the client bundles unbuilt, so it
- * cannot import the Host's types, and `test/contract.test.mjs` asserts the
- * snapshot's key shape against the same names.
+ * cannot import the Host's types. `test/contract.test.mjs` §10 holds the two
+ * ends together — it parses this file's `SnapshotData` keys and the Host's
+ * return literal, and fails when the Host serves a key that is declared
+ * nowhere here.
  *
  * The shapes stay forgiving on purpose: a missing field must render as
  * "no data yet", never throw — so every property is optional, and reading
