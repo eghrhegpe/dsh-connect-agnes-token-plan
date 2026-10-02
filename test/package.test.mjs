@@ -224,6 +224,24 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
   check("the manual live contract is not a default-run check",
     !npmTest.has("live-contract.mjs") && !ci.has("live-contract.mjs"),
     "the live tier must not be a default-run check");
+
+  // The roster pin above matches only `*.test.mjs`, because that suffix is the
+  // line between "a default-run check" and "a tier with its own CI job". But
+  // ci.yml also runs plain `.mjs` directly — e2e.mjs, live-contract.mjs,
+  // build-gate.mjs, tsc-gate.mjs — and none of those names is pinned anywhere:
+  // a CI line naming a removed file would rot silently, with no test to catch
+  // it. That is the same ghost-reference drift class as the roster pin, just
+  // outside its regex. These names must NOT join the npmTest == ci comparison
+  // above (the tiers are deliberately not roster members), so this only asserts
+  // that what ci.yml names is actually on disk.
+  const ciRuns = new Set(
+    [...ciText.matchAll(/node test\/([\w.-]+\.mjs)/g)].map((m) => m[1])
+  );
+  const onDisk = new Set(readdirSync(TEST_DIR));
+  for (const name of [...ciRuns].sort()) {
+    check(`CI runs test/${name} which exists on disk`, onDisk.has(name),
+      onDisk.has(name) ? "" : "ci.yml names a file not in test/");
+  }
 }
 
 // --- 7. the plugin-meta resource chain is exported and shipped ---------------
