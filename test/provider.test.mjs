@@ -44,7 +44,7 @@ import { createApiKeyStore, API_KEY_REF } from "../src/host/api-key-store.ts";
 import { PROVIDER_VERSION, createFileProviderStore } from "../src/host/provider-store.ts";
 import { DRAW_STORE_VERSION, createFileDrawStore, normalizeDrawEnabled } from "../src/host/draw-store.ts";
 import { redactSecrets } from "../src/host/util.ts";
-import { profileSegment, profileStateDir } from "../src/host/state-store.ts";
+import { profileSegment, profileStateDir, writeStateFile, temporaryOf } from "../src/host/state-store.ts";
 import { surface as clientSurface } from "./client-surface.js";
 
 const results = [];
@@ -730,6 +730,56 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
     fail("the per-profile state split and its one-shot adoption", error);
   } finally {
     restoreHome();
+  }
+}
+
+// --- 8e. writeStateFile settles the payload's SHAPE at the primitive --------
+// PITFALLS §36: the documented trap is that a caller passing an object lands
+// the literal text `[object Object]`, which reads back as `null` and — for
+// the audit/throttle files whose failure direction is "unreadable = it
+// never happened" — is the worst kind of silent failure. The guard moved
+// INTO `writeStateFile` (a string is written verbatim, an object is
+// serialised, an absent value throws), so a future caller that forgets to
+// serialise can no longer corrupt a state file. These checks pin that the
+// primitive itself is the last line of defence, not the call-site examples.
+{
+  const scratch = mkdtempSync(join(tmpdir(), "wsf-shape-"));
+  try {
+    const file = join(scratch, "state.json");
+    const temp = temporaryOf(scratch, "state.json");
+
+    // 1) A JSON string is written VERBATIM (not re-serialised): the spaces
+    //    survive, so the reader sees exactly what the writer meant.
+    const raw = '{ "a": 1 }';
+    await writeStateFile(file, raw, { temporary: temp });
+    check("a JSON string payload is written verbatim (spaces survive)",
+      readFileSync(file, "utf8").trim() === raw, readFileSync(file, "utf8").trim());
+
+    // 2) An object is serialised to the same JSON a careful caller would
+    //    have produced by hand — the trap is closed without touching the
+    //    existing string call sites.
+    const obj = { b: 2, c: [3, 4] };
+    await writeStateFile(file, obj, { temporary: temp });
+    check("an object payload is JSON.stringify-ed before landing",
+      readFileSync(file, "utf8").trim() === JSON.stringify(obj));
+
+    // 3) An ABSENT value must throw, not silently land as the literal text
+    //    of a bare `null` / `undefined` / number / boolean (which would
+    //    read back as `null` = "nothing stored").
+    let refused = 0;
+    for (const bad of [null, undefined, 5, true]) {
+      try {
+        await writeStateFile(file, bad, { temporary: temp });
+      } catch {
+        refused++;
+      }
+    }
+    check("null / undefined / number / boolean payloads all throw",
+      refused === 4, `${refused}/4 refused`);
+  } catch (error) {
+    fail("writeStateFile payload-shape guard", error);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
 
