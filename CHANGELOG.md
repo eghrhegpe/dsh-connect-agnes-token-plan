@@ -2,6 +2,16 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.8.1] — 2026-10-03
+
+### 修复：AgnesCode provider 补全思考契约——档位可用，`off` 诚实不提供
+
+- **背景**：AgnesCode 是桌面端上游，v1 一直按「wire 通道未验证」把 `reasoning` 钉成 `false`，DSH 里看不到思考档位。2026-10-03 对真 BFF（`agnes-3.0-flash`）补探 7 发，推翻两条假设。
+- **实测**：`{bffBase}/v1/chat/completions` 在**不发任何思考字段**时仍返回 `message.reasoning_content`（406 字 / 320 reasoning_tokens）——默认即思考开；`reasoning_effort` 的 `none`/`low`/`medium`/`high` 全被接受（都 200）。
+- **关键发现**：`reasoning_effort:"none"` **关不掉思考**（仍回 257 字 / 188 reasoning_tokens）。桌面端真正关思考的开关是 `request_params.agnes_thinking_enabled=false`（或 `thinking_effort:"off"`），而 pi-ai 的档位映射是字符串值、表达不了它。
+- **落地**：descriptor 翻 `reasoning:true` + `agnescodeThinkingLevelMap()`（`off:null` 诚实不提供，避免「点关思考实际还开着」的静默谎言；`low/medium/high` 开；`xhigh/max` 关，BFF 未实测）；profile 钉 `reasoning: DEFAULT_REASONING_EFFORT`（high），与 Token Plan 侧对齐。
+- 影响面：`src/host/{agnescode-models, agnescode-llm-adapter}.ts`、`test/agnescode.test.mjs`、`docs/ROADMAP.md` §6.3、`lib/`（按 ADR-008 重建入库）。
+
 ## [0.8.0] — 2026-10-02
 
 ### 修复：AgnesCode provider 必须进 tab 才启用（mount seed 竞态）

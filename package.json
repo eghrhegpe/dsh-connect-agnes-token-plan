@@ -1,7 +1,7 @@
 {
   "name": "dsh-connect-agnes-token-plan",
   "displayName": "DSH Connect Agnes Token Plan",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Agnes connect bundle for the Harness Web UI: Token Plan quota panel (account-wide quota windows, cumulative usage, console sign-in) plus optional provider registration that brings Agnes models into DSH conversation, with host-side rate-limit self-healing.",
   "keywords": [
     "dsh-plugin",
