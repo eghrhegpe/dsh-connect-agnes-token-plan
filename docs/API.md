@@ -43,8 +43,11 @@
     // 控制台的 `subscription.usage` 给到该窗口时，会带上平台自己报出的 `used`
     // 与窗口起止 / 重置时间（下面省略号处）；没有就留空，面板不画进度条。
     // 没有 remaining —— 控制台从不报「剩余」，面板也从不计算它。
+    // usagePct / rangeStart / rangeEnd / resetInSeconds 由窗口内用量算出后随 used 一并下发：
+    // 面板画进度条用 usagePct，重置倒计时用 resetInSeconds（resetAt 是绝对时间、resetInSeconds 是相对秒）。
     "windows": [{ "key": "requests5h", "unit": "requests", "limit": 30000, "windowHours": 5,
-      "used": 12345, "resetAt": 1790866800 }],
+      "used": 12345, "usagePct": 41, "rangeStart": 1790848800, "rangeEnd": 1790902800,
+      "resetAt": 1790866800, "resetInSeconds": 17190 }],
     // 账号累计用量（控制台口径）。刻意不与上面的上限相减：两者周期不同。
     // **读不到时是 null，不是零值块**——把没读到渲染成「0 次请求」就是把
     // 一次失败伪装成一次测量（面板显示「暂未读到」）。
@@ -105,6 +108,8 @@
     // 目录里判定为出图模型的条目：自动选择藏掉同侪时，候选让它可见
     "drawCandidateCount": 1,
     "drawCandidateIds": ["agnes-image-2.5-flash"],
+    // 面板/配置钉死的出图模型偏好（effectiveDrawModelId 非空时才下发；未钉=自动选择，此键缺席）
+    "drawPreferredModel": "agnes-image-2.5-flash",
     // 视频工具（0.4.3）：与 draw 同构；工具同时驱动 V2.0 与 2.5 两个参数家族，
     // 候选集含**全部**视频模型（两家族都在选择器里），工具按选中模型构造对应请求体
     "videoEnabled": false, "videoSource": "config",
@@ -113,7 +118,9 @@
     "videoCandidateIds": ["agnes-video-v2.0", "agnes-video-2.5", "agnes-video-2.5-flash"],
     // 2.5 家族（秒数制 seconds/size/aspect_ratio）单独点名：工具已支持并自动换算
     // （见 AGNES-API.md §7.5.1 / §7.5.1b），面板据此说明这些模型走哪套参数
-    "video25ModelIds": ["agnes-video-2.5", "agnes-video-2.5-flash"]
+    "video25ModelIds": ["agnes-video-2.5", "agnes-video-2.5-flash"],
+    // 面板/配置钉死的视频模型偏好（effectiveVideoModelId 非空时才下发；未钉=自动选择，此键缺席）
+    "videoPreferredModel": "agnes-video-v2.0"
   },
   "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
 }

@@ -1,7 +1,7 @@
 # token-store.js 拆分方案（登录 / 续期 / 节流 / 迁移）
 
 > 锐评 #5：944 行 `token-store.js` 单体。本文是拆分的设计蓝图。
-> 前置护栏：`test/store-baseline.test.mjs`（17 场景 48 帧全行为冻结基线，
+> 前置护栏：`test/store-baseline.test.mjs`（15 场景 42 帧全行为冻结基线，
 > 见 [TESTING.md §5](./TESTING.md)）。拆分的门禁 = 基线零漂移 + `store.test.mjs` 131 项全绿。
 >
 > **状态（2026-09-29）：6 步全部落地，token-store.js 从 944 行收口为 314 行薄 facade。**

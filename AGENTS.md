@@ -97,10 +97,11 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
    是唯一出处，别在别处再写一遍字面量。
 5. **登录路径的每次尝试（成功也算）必须经 `onTrace` 落盘**。没有成功 trace，
    "浏览器能登、面板不能"就无法对照排查。
-6. **`/api/usage/overview` 必须保持唯一致命源**，series / subscription / plans 三个源必须保持
-   **降级**（失败只写 `quota.error`）。面板的 `needsSetup` 判定是
-   `data === null && !FORM_EXCLUDED_CODES.has(code)`——把图表源也做成致命，会让「图表挂了」
-   变成「要你重登」，而重登解决不了它。
+6. **五个额度源一律软失败**（`overview` / `series` / `subscription` / `plans` / `/v1/models`），
+   任一失败只写 `quota.error` 并保留其余数据；`overview` 失败时置 `quota.consoleConnected:false`
+   且 `quota.totals:null`（不是零值块），面板据此判定 `needsSetup`、tab 栏无条件渲染（沿革与举证见
+   ADR-007）。旧的「`overview` 唯一致命源」裁决已废止：把任一源做成致命，会让「一个源挂了」冒泡成
+   整个快照 `ok:false`、连带把根本不读控制台的其它 tab 一起埋掉——正是 §5 不变量禁止的形状。
 7. **不得计算「剩余」**：平台只给上限与**累计**用量，两者周期不同，`limit − total` 是个没人能
    负责的数。同理 `unavailableModelIds` 恒为空是**设计**而非遗漏——Agnes 没有按模型配额，
    账号级额度不足必须在面板**明说**，而不是静默把模型从选择器摘掉。

@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey, hostName, isAdmitted, name } from "../src/host/index.ts";
 import { resolveTrendMultipliers } from "../src/host/host-config.ts";
+import { AUTH_DEFAULTS } from "../src/host/agnes-auth.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const patch = readFileSync(join(here, "..", "cordis.patch.yml"), "utf8");
@@ -30,6 +31,16 @@ function check(name, condition, detail = "") {
   const { settings, configError } = resolveSettings({});
   check("no config error on an empty config", configError === null, String(configError));
   check("consoleBase default", settings.consoleBase === CONFIG_DEFAULTS.consoleBase, settings.consoleBase);
+  // Red line 4 pins the backend origin as ONE value, but it ships twice on
+  // purpose: `AUTH_DEFAULTS.consoleOrigin` (agnes-auth.ts, the no-credential
+  // fallback login path) and `CONFIG_DEFAULTS.consoleBase` (host-config.ts, the
+  // operator-facing row). Each file only proves it equals its OWN default, so
+  // before this pin NO test crossed the two literals — a one-sided edit would
+  // let the fallback login and the normal login hit different hosts while every
+  // suite stayed green. This is that missing cross-source pin (red line 4).
+  check("the two shipped backend-origin literals agree",
+    CONFIG_DEFAULTS.consoleBase === AUTH_DEFAULTS.consoleOrigin,
+    `${CONFIG_DEFAULTS.consoleBase} vs ${AUTH_DEFAULTS.consoleOrigin}`);
   check("apiBase default", settings.apiBase === CONFIG_DEFAULTS.apiBase, settings.apiBase);
   check("usageDays default", settings.usageDays === CONFIG_DEFAULTS.usageDays, String(settings.usageDays));
   check("cacheSeconds default", settings.cacheSeconds === CONFIG_DEFAULTS.cacheSeconds, String(settings.cacheSeconds));

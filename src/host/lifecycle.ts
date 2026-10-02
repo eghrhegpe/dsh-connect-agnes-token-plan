@@ -293,7 +293,20 @@ export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSid
   // publish simply never runs.
   // ------------------------------------------------------------------
   {
-    const settingsService = ctx.get("settings") ?? null;
+    // Read the optional `settings` service the way every sibling does —
+    // index.ts:168 `getService` and state-store.ts `readOptionalService` both
+    // use `ctx.get?.()` behind a try, because a Host that never publishes the
+    // ReflectService mixin throws on an undeclared service read, and this block
+    // runs inside `apply()` with no outer try to catch a mount-time throw. A
+    // Host without a settings service simply leaves the vision publisher null
+    // and it never runs — never a mount failure.
+    const settingsService = (() => {
+      try {
+        return ctx.get?.("settings") ?? null;
+      } catch {
+        return null;
+      }
+    })();
     if (settingsService !== null && typeof settingsService.update === "function") {
       const descriptorOf = () => {
         try {
