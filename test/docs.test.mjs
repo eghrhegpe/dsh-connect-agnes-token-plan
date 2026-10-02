@@ -16,13 +16,15 @@
 //   peer 边界：PEER_BOUNDARY 静态 `@deepseek-ai/*` import 只许 llm adapter 层——
 //                    「内核 peer-free 才能缺席降级」这条自述承诺的静态面（与自述面同族：
 //                    验的是文档说的架构纪律在代码里真的成立，不是格式）
+//   client 分层：RULE_LAYER_BOUNDARY 规则层纯模块可被 Node 直 import，且规则不得从
+//                    client 产物抠文本求值（ADR-006 判据的可执行形态；与 PEER_BOUNDARY 同族）
 //   活文档计数护栏：COUNT_GUARD 现行文档不得写死会随代码漂移的模块数/规模/行数/路由条数/套件规模（历史·账本·研究档豁免）
 //   检查引用可解析：REF_RESOLVABLE 全仓 md 里的「检查 <名字>」按就近套件名限定作用域后
 //                    必须落在 CHECK_IDS 里；docs.test 语境的**数字**序号视为待迁移、报红；
 //                    指到别的套件的不越权解析
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve, relative, sep, basename } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fails = [];
@@ -115,6 +117,7 @@ const CHECK_IDS = new Map([
   ["SCREENSHOTS", "screenshots.json 声明的图真实存在于磁盘"],
   ["ARCHAEOLOGY", "现行文档禁「修订（日期）」式内联补丁"],
   ["PEER_BOUNDARY", "内核零静态 `@deepseek-ai/*` import"],
+  ["RULE_LAYER_BOUNDARY", "client 规则层 Node 可直 import，规则不得从产物抠取（ADR-006）"],
   ["COUNT_GUARD", "活文档计数护栏：不得写死会漂移的规模"],
   ["REF_RESOLVABLE", "检查引用可解析（本条自己）"]
 ]);
@@ -639,7 +642,111 @@ const CHECK_IDS = new Map([
   if (offenders === 0) note(`peer 边界：${scanned} 个内核文件零静态 peer import（adapter 壳与共享组装核心共 ${ALLOW_STATIC_PEER.size} 个豁免）`);
 }
 
-// 14) 活文档硬编码计数护栏：现行文档不得断言会随代码漂移的模块数/规模/行数/路由条数/套件规模
+// 14) client 规则层边界（ADR-006）：能算的进纯模块，规则名不得从产物抠取
+// 与 PEER_BOUNDARY 同族——验的是「文档说的架构纪律在代码里真的成立」。ADR-006 把
+// client 的可测边界钉在「能算的 vs 画出树」：纯规则模块必须能被 Node 直接 import，
+// 规则层不得以「抓产物文本 + 在测试里抄一遍」兜底（那是双重真源换地方放，源码一漂
+// 照样绿——PITFALLS §39「点名守护物而不校验守护物」的同源病）。
+// 本检查上线前 ADR-006 只是文字纪律：没有任何门禁会拦住「从产物抠规则函数」。
+{
+  const CLIENT_DIR = join(ROOT, "src", "client");
+  // 「值位置」import runtime.ts 才算耦合：`import type {...}` 编译期擦除，纯模块
+  // 完全可以带它（snapshot.ts 就带），把它算进来会误伤。
+  const importsRuntimeAsValue = (text) => {
+    // 副作用式 `import "./runtime.ts"` 与动态 import() 都算耦合
+    if (/(?:^|\n)\s*import\s*["']\.\/runtime\.ts["']/.test(text)) return true;
+    if (/import\s*\(\s*["']\.\/runtime\.ts["']\s*\)/.test(text)) return true;
+    for (const m of text.matchAll(/(?:^|\n)\s*import\s+(type\s+)?\{([^}]*)\}\s*from\s*["']\.\/runtime\.ts["']/g)) {
+      if (m[1]) continue; // `import type {…}` —— 类型位置，不算耦合
+      const named = m[2].split(",").map((s) => s.trim()).filter(Boolean);
+      if (named.some((s) => !/^type\s/.test(s))) return true; // 有非 type 项即值位置
+    }
+    return false;
+  };
+
+  const clientFiles = readdirSync(CLIENT_DIR).filter((n) => n.endsWith(".ts")).sort();
+  const pure = [];
+  const coupled = [];
+  for (const name of clientFiles) {
+    const text = readFileSync(join(CLIENT_DIR, name), "utf8");
+    (importsRuntimeAsValue(text) ? coupled : pure).push(name);
+  }
+  // 钉住 ADR-006 点名的那层：它们一旦开始值位置 import runtime.ts，边界就塌了。
+  const PINNED_PURE = ["snapshot.ts", "models.ts", "format.ts"];
+  for (const name of PINNED_PURE) {
+    if (!clientFiles.includes(name)) bad(`规则层边界：${name} 不存在——ADR-006 点名的纯模块被改名/删除，请同步 ADR 与本节`);
+    else if (coupled.includes(name)) bad(`规则层边界：src/client/${name} 值位置 import 了 runtime.ts——它必须是 Node 可直 import 的纯模块（ADR-006 判据 1；类型位置 import 不受影响）`);
+  }
+
+  // 判据 1 的可执行形态：纯模块要真的能被 Node import（不只是「没写 runtime」）。
+  let imported = 0;
+  for (const name of pure) {
+    try {
+      await import(pathToFileURL(join(CLIENT_DIR, name)).href);
+      imported++;
+    } catch (e) {
+      bad(`规则层边界：src/client/${name} 无 runtime 耦合却 import 失败（${String(e.message).split("\n")[0]}）——纯模块必须能被 Node 直接加载`);
+    }
+  }
+
+  // 判据 2：不得**从产物文本抠规则函数**。探测器锚在「抽取器惯用法」而非函数名清单——
+  // 按名清单既会误伤合法用法（build-gate 把 `viewOf` 当 surface 键断言，那是**引用
+  // 模块面**，不是抠源码），又会随规则改名而失效。三家同族插件里该惯用法完全同形：
+  // 用模板串 `function ${name}(...) {` 定位，再走花括号配平切出函数体。这才是签名。
+  const testDir = join(ROOT, "test");
+  const SELF = "docs.test.mjs"; // 见下方 self-scan 说明
+  const testFiles = readdirSync(testDir).filter((n) => n.endsWith(".mjs")).sort();
+  // 「读了 client 产物」＝真的 readFileSync 了它，而不是注释里提一句。裸 `BUNDLE`
+  // 会让「注释里出现 BUNDLE」也算数，所以要求 readFileSync 与产物名同时出现。
+  const readsArtifact = (text) =>
+    /readFileSync/.test(text) && /(?:client\.js|\bBUNDLE\b|\bclientBundle\b)/.test(text);
+  // 惯用法指纹（三家同族插件完全同形）：模板串里嵌 `function ${…}` 定位函数头，
+  // 再用花括号配平切出函数体。**不锚函数名**——按名清单会误伤合法用法
+  // （build-gate 把 `viewOf` 当 surface 键断言是引用模块面，不是抠源码），
+  // 也会随规则改名而静默失效。
+  const TEMPLATE_HEADER_RE = /function\s+\$\{/;
+  const BRACE_WALK_RE = /depth\s*(?:\+\+|--|[-+]=)/;
+  let scrapes = 0;
+  let evals = 0;
+  let artifactReaders = 0;
+  for (const name of testFiles) {
+    if (name === SELF) continue; // 本文件的负向对照必须含有被打击的形状
+    const text = readFileSync(join(testDir, name), "utf8");
+    if (!readsArtifact(text)) continue;
+    artifactReaders++;
+    if (TEMPLATE_HEADER_RE.test(text) && BRACE_WALK_RE.test(text)) {
+      scrapes++;
+      bad(`规则层边界：test/${name} 用「模板串定位函数头 + 花括号配平」从 client 产物里抠函数体——规则要 import 真模块，产物只做装载/新鲜度检查（ADR-006 判据 2；同形先例见 qoder 的 extract/extractFromBundle）`);
+    }
+    if (/new Function\s*\(/.test(text)) {
+      evals++;
+      bad(`规则层边界：test/${name} 既读 client 产物又用 new Function 求值其片段——规则必须从真模块 import（ADR-006 判据 2）`);
+    }
+  }
+
+  // 反空转：探测器必须被证明有效。用 qoder 三处真实残留的同形代码做负向对照——
+  // 没有这一段，上面两条断言可能在「正则永远不匹配」时全绿通过（那正是 §39 的病）。
+  // 对照是本检查**唯一的**自我证明手段，故 SELF 从扫描面排除（否则本文件因含此
+  // 对照而自报违规），排除带来的盲区由这一段补上。
+  const FIXTURE = [
+    "const header = new RegExp(`function ${name}\\([^)]*\\) \\{`).exec(BUNDLE)",
+    "let depth = 0",
+    "for (let i = BUNDLE.indexOf('{', header.index); i < BUNDLE.length; i++) {",
+    "  if (BUNDLE[i] === '{') depth++",
+    "}",
+    "const fn = new Function('model', source)",
+  ].join("\n");
+  const fixtureHit = readsArtifact("const BUNDLE = readFileSync(u, 'utf8')\n" + FIXTURE)
+    && TEMPLATE_HEADER_RE.test(FIXTURE)
+    && BRACE_WALK_RE.test(FIXTURE)
+    && /new Function\s*\(/.test(FIXTURE);
+  if (!fixtureHit) bad("规则层边界：本检查的负向对照未命中——探测器已失效（正则改坏了），上面的全绿不算数");
+  else if (scrapes === 0 && evals === 0) {
+    note(`规则层边界：${pure.length} 个纯模块可 Node 直 import（含 ${PINNED_PURE.join("/")}），${coupled.length} 个含 runtime 耦合；${testFiles.length - 1} 个受检测试文件零「产物抠函数」、零 new Function 求值产物（读产物的 ${artifactReaders} 个仅做装载/新鲜度检查；负向对照命中）`);
+  }
+}
+
+// 15) 活文档硬编码计数护栏：现行文档不得断言会随代码漂移的模块数/规模/行数/路由条数/套件规模
 // 同源病（PITFALLS §25）：形式全绿、语义已漂。本检查钉的是「活文档里写死代码
 // 形状数字」——加一个模块 / 做一次重构，文档就失真，逼出一次纯文档提交。
 // 历史·账本·研究档整 file 豁免（它们本就是定格快照，写死数字是如实记录）；
