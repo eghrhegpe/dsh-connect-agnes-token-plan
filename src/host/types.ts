@@ -196,7 +196,7 @@ export interface AgnescodeAdapterOptions {
   bffBase?: string;
   /** Resolve the live AgnesCode JWT per request (re-harvested when expired). */
   resolveToken?: () => Promise<string>;
-  /** Service resolver (reserved for the image hooks). */
+  /** Service resolver for the image hooks (`attachments`, `fs`). */
   get?: (service: string) => any;
 }
 

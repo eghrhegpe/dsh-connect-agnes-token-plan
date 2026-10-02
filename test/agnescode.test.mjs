@@ -61,9 +61,13 @@ import { createFileAgnescodeStore, normalizeAgnescodeEnabled, AGNESCODE_SWITCH_V
 import { installNetworkGuard } from "./peer-roots.mjs";
 import { surface as clientSurface } from "./client-surface.js";
 import { createCipheriv, randomBytes } from "node:crypto";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Repo root, so the cross-file fence can read the adapter source by path. */
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
@@ -604,6 +608,63 @@ const GOOD_SESSION = {
     check("the builder dedupes by id", built.length === rows.length);
   } catch (error) {
     fail("descriptors", error);
+  }
+}
+
+// --- 6b. the vision claim and the adapter wiring must not drift apart -------
+// The bug this fences: `agnescode-models.ts` declared `input: ["text","image"]`
+// for the Agnes family (borrowed from `PROBED_VISION`), while
+// `agnescode-llm-adapter.ts` still had `resolveImageAccess: undefined` — the v1
+// state, when no row claimed vision. A message carrying an image then reached
+// the durable attachment service with no way to locate the image, and failed
+// before the request ever left the machine. The claim (peer-free, checked above)
+// and the wiring (peer-dependent, so NOT importable in this suite) live in two
+// files with nothing between them; this is that something.
+//
+// The requirement is DERIVED, not hardcoded: ask the models layer whether ANY
+// descriptor claims image input, and only then require the adapter to wire both
+// hooks. If the claim ever goes away, the wiring requirement relaxes with it —
+// the fence tracks the real invariant ("claim ⟺ wiring"), not a frozen snapshot.
+{
+  section("vision claim ⟺ adapter image wiring (cross-file)");
+  try {
+    const bff = "https://api-agnes-code.agnes-ai.cn/v1";
+    const anyClaimsVision = agnescodeRoster(null)
+      .some((row) => agnescodeToDescriptor(row, { bffBase: bff }).input.includes("image"));
+    check("at least one Agnes-family row claims image input (the premise this fence guards)",
+      anyClaimsVision === true);
+
+    if (anyClaimsVision) {
+      // Read the adapter SOURCE (it imports Host peers, so this suite cannot
+      // load it as a module). Strip comments first: the fix's own prose names
+      // these hooks, and a fence satisfiable by a comment guards nothing.
+      const adapterSrc = readFileSync(join(ROOT, "src", "host", "agnescode-llm-adapter.ts"), "utf8");
+      const code = adapterSrc
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .split("\n")
+        .map((line) => {
+          const i = line.indexOf("//");
+          if (i === 0) return ""; // a whole-line comment carries no code
+          // An inline `//` that is not part of a `https://` URL starts a comment.
+          return i > 0 && line[i - 1] !== ":" ? line.slice(0, i) : line;
+        })
+        .join("\n");
+      // Both hooks wired: `resolveAttachments` reaches the store, and
+      // `resolveImageAccess` maps a reference to a readable path. Wiring one
+      // without the other is precisely the state that shipped broken.
+      check("the adapter wires resolveImageAccess to a function, not undefined",
+        /resolveImageAccess:\s*\(/.test(code) && !/resolveImageAccess:\s*undefined/.test(code));
+      check("the adapter wires resolveAttachments",
+        /resolveAttachments:\s*\(/.test(code));
+      check("the adapter imports the shared image-access resolver",
+        /resolveImageAttachmentAccess/.test(code));
+      // The budgets the Token Plan route pins; without them the profile still
+      // defaults, but the two Agnes upstreams would resize images differently.
+      check("the adapter pins the same image budgets as the Token Plan route",
+        /requestImagePixelBudget/.test(code) && /maxRequestImageBytes/.test(code));
+    }
+  } catch (error) {
+    fail("vision-claim/wiring", error);
   }
 }
 

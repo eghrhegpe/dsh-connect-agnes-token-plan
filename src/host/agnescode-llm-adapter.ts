@@ -9,11 +9,15 @@
  * baked into the profile — the picker advertises models without one and a
  * request fails at resolve time, where the panel status is visible.
  *
- * IMAGE hooks are deliberately NOT wired in v1: every catalogue row declares
- * `model_type: "text"` with no image modality fact (ROADMAP §6.3), so there
- * is nothing honest to advertise — a vision answer here would be an invented
- * fact. If the platform later declares image input, this is the one place to
- * add the hooks (mirror the Token Plan adapter's wiring).
+ * Both IMAGE hooks are wired, mirroring the Token Plan adapter (`llm-adapter.ts`)
+ * and the qoder adapter — the shape a working vision route has. The catalogue
+ * still declares no modality field (`model_type: "text"`), so the vision CLAIM
+ * is borrowed from `PROBED_VISION` in the peer-free `agnescode-models.ts` (the
+ * Agnes family is the same gateway the Token Plan side probed accepting
+ * `image_url`); the descriptor's `input` and this adapter's hooks must agree,
+ * or a message carrying an image reaches the durable attachment service with no
+ * way to locate the image and fails. Wiring the hooks without the claim would
+ * be inert; making the claim without the hooks is the bug this closes.
  *
  * The descriptor mapping lives in the peer-free `agnescode-models.ts`, so this
  * module holds only assembly against the runtime and is exercised by the
@@ -24,7 +28,7 @@
 import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
-import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
+import { resolveRetryPolicy, resolveImageAttachmentAccess } from "@deepseek-ai/dsh-llm";
 import { name } from "./host-config.ts";
 import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME, buildAgnescodeDescriptors, agnescodeRoster } from "./agnescode-models.ts";
 import { buildRetryPolicyConfig } from "./llm-retry.ts";
@@ -33,6 +37,18 @@ import type { AgnescodeAdapterOptions } from "./types.ts";
 
 /** Idle ceiling while one stream read is outstanding (dsh-llm-pi-ai default). */
 const STREAM_IDLE_TIMEOUT_MS = 300_000;
+
+/**
+ * Image budgets at the `dsh-llm-pi-ai` defaults — the SAME figures the Token
+ * Plan route pins (`llm-adapter.ts`), so both Agnes upstreams resize a request
+ * image identically. They bound requests to models whose descriptor declares
+ * image input; text-only models never see images.
+ */
+const REQUEST_IMAGE_BUDGETS = {
+  maxRequestImageBytes: 20_971_520,
+  requestImagePixelBudget: 4_194_304,
+  requestImageMaxBytes: 1_048_576
+};
 
 /**
  * Inert pi-ai auth plane.
@@ -71,8 +87,9 @@ const INERT_AUTH = {
  * @param {string} options.bffBase - the credential's pinned per-account BFF base.
  * @param {() => Promise<string>} options.resolveToken - resolves the live
  *   AgnesCode JWT per request (re-harvested by the caller when expired).
- * @param {(service: string) => unknown} [options.get] - service resolver
- *   (reserved for the image hooks when the platform declares image input).
+ * @param {(service: string) => unknown} [options.get] - service resolver for
+ *   the image hooks (`attachments`, `fs`); resolved lazily per request because
+ *   a service may register after this adapter is built.
  * @returns {{adapter: object, providerIds: string[]}} the adapter and the ids
  *   it owns.
  */
@@ -115,6 +132,7 @@ export function createAgnescodeAdapter({
         retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${AGNESCODE_PROVIDER_ID}.retryPolicy`),
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
+        ...REQUEST_IMAGE_BUDGETS,
         piProvider: provider
       }
     ]
@@ -124,8 +142,18 @@ export function createAgnescodeAdapter({
     profiles: () => profiles,
     auth: INERT_AUTH,
     resolveApiKey: async () => resolveToken?.() ?? "",
+    // Both image hooks wired exactly as the Token Plan route wires them: an
+    // image-carrying message reaches the durable attachment service, and
+    // `resolveImageAccess` maps one reference onto a request-readable path.
+    // Wiring `resolveAttachments` alone (the v1 state) makes the store
+    // reachable but leaves no image locatable — the failure this closes.
     resolveAttachments: () => get?.("attachments"),
-    resolveImageAccess: undefined
+    resolveImageAccess: (attachments: any, ref: any) =>
+      resolveImageAttachmentAccess(
+        attachments,
+        (hostPath: string) => (get?.("fs") as { processPathFromHostPath?: (hostPath: string) => unknown } | undefined)?.processPathFromHostPath?.(hostPath),
+        ref
+      )
   });
 
   // The same 429-misclassification correction layer `llm-adapter.ts` applies
