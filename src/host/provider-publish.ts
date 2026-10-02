@@ -34,7 +34,7 @@ import {
   resolveRegistrationService,
   unregister
 } from "./publish-core.ts";
-import type { HostDeps } from "./types.ts";
+import type { ProviderPublisherDeps } from "./types.ts";
 
 /**
  * The provider publisher.
@@ -74,7 +74,7 @@ import type { HostDeps } from "./types.ts";
  *   isDisposed: () => boolean
  * }}
  */
-export function createProviderPublisher(deps: HostDeps = {}) {
+export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
   const {
     settings,
     panelSwitch,

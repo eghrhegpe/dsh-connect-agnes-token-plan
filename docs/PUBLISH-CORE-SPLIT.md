@@ -127,10 +127,10 @@ AgnesCode 侧少了后半句（复制时漏的）。共享后统一为完整版�
 
 ---
 
-## 6. 已知边界与后续候选（本次**不做**）
+## 6. 已知边界与后续跟进
 
 - **`getLlm` 返回 `undefined` 不被容忍**：`llm !== null && typeof llm.registerAdapter === …`
-  在 `undefined` 上会抛（原先如此，本次原样保留）。改成宽松判断能多一层降级，但那是另一个
+  在 `undefined` 上会抛（原先如此，原样保留）。改成宽松判断能多一层降级，但那是另一个
   行为改动，不塞进「只搬不写」的重构里。
 - **AgnesCode 的 `state.signature` 已删除**：它只写不读——重建判定由 `agnescode-lifecycle.ts`
   比较 `bffBase` 做，签名写得再准也没人看。留着比删掉贵：它连带一条名不副实的测试（名字说
@@ -139,6 +139,11 @@ AgnesCode 侧少了后半句（复制时漏的）。共享后统一为完整版�
   **覆盖缺口如实记账**：「换 base 会重建」由调用方（`agnescode-lifecycle.ts` 在 re-harvest
   落地时比对 `state.bffBase`）实现，而 harvest walk 在离线套件里不可注入，故这条门没有测试
   覆盖——这是既存缺口，不是删除引入的。
-- **`HostDeps` 仍是宽包**：主通道 `createProviderPublisher(deps: HostDeps)` 的字段是 `any`，
-  而 AgnesCode 用的是专用 deps 类型。收紧它属类型围栏议题（与 `routes/` 那次同类），
-  与「机制收敛」无关，故不在本次。
+- **`HostDeps` 已收窄**：主通道 `createProviderPublisher` 改用专用 `ProviderPublisherDeps`
+  （7 个字段各有其型，`settings` 取精确 `Settings` 而非 `any`——字段名拼错 tsc 会拦），
+  `HostDeps` 随之只剩 5 个 test-only seams。删掉的 12 个字段分两类：6 个
+  （`settings` / `panelSwitch` / `getLlm` / `resolveApiKey` / `emit` / `logger`）是 publisher
+  **借道** `HostDeps` 读取的输入，专用类型一落地即失去唯一读者；6 个（`onTrace` /
+  `credential` / `timeoutMs` / `headers` / `baseUrl` / `requestTimeoutMs`）是 auth/transport
+  遗留，产品代码从未读过。列在 `HostDeps` 里的字段是对外**承诺**一个注入点——没有读者就该撤。
+

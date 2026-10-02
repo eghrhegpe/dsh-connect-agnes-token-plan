@@ -1,12 +1,14 @@
 /**
  * Shared structural types for the Host half.
  *
- * The Host wires its modules together with an injected dependency object
- * (`HostDeps`). That object is built once in `index.ts` from the Cordis
- * context and passed down; the runtime fields are many and come from peers
- * that ship no `.d.ts`, so the single source of truth for "what a dep may
- * carry" lives here rather than in per-file `{}` placeholders (which TS
- * reads as an empty object and then rejects every field access on).
+ * The Host's modules talk to each other through named types declared here
+ * rather than through an untyped bag: `HostCtx` for the Cordis service bag the
+ * routes read, and one `*Deps` per injectable seam (`ProviderPublisherDeps`,
+ * `AgnescodePublisherDeps`). Peer-typed members stay loose because the matching
+ * `@deepseek-ai/*` packages ship no `.d.ts` in this repo — the single source of
+ * truth for "what a seam may carry" lives here rather than in per-file `{}`
+ * placeholders (which TS reads as an empty object and then rejects every field
+ * access on).
  * @module dsh-connect-agnes-token-plan/types
  */
 
@@ -17,6 +19,7 @@ import type { createFileProviderStore } from "./provider-store.ts";
 import type { createFileDrawStore } from "./draw-store.ts";
 import type { createFileVideoStore } from "./video-store.ts";
 import type { createProviderPublisher } from "./provider-publish.ts";
+import type { PublisherLogger } from "./publish-core.ts";
 import type { createAgnescodeStore } from "./agnescode-store.ts";
 import type { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
 import type { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
@@ -25,47 +28,33 @@ import type { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 export type CodeValue = string;
 
 /**
- * The dependency bag injected into the Host modules. Every field is optional:
- * each consumer falls back to a local default when a field is absent, so a
- * module keeps working even if `index.ts` does not wire a given capability.
- * Peer-typed members (`logger`, `emit`, …) use loose types because the
- * matching `@deepseek-ai/*` packages ship no declarations in this repo.
+ * The third argument of `apply()` — TEST-ONLY seams, not the plugin's
+ * dependency list. The real Loader passes nothing here; the offline suites use
+ * it to substitute the peer adapter / tools modules and the draw/video
+ * fetches. Every field is optional, and a missing seam falls back to the real
+ * module (or the Host's own fetch) at its point of use.
+ *
+ * Narrow on purpose. It used to also carry the provider publisher's inputs
+ * (`settings`, `panelSwitch`, `getLlm`, `resolveApiKey`, `emit`, `logger`) plus
+ * a row of auth/transport leftovers (`onTrace`, `credential`, `timeoutMs`,
+ * `headers`, `baseUrl`, `requestTimeoutMs`). None of them had a reader: the
+ * publisher took them through this type only because there was no type of its
+ * own, and it now has one (`ProviderPublisherDeps`); the auth half resolves its
+ * settings from the row, and the console client owns its transport. A field
+ * listed here promises an injection point, so the unread ones are gone rather
+ * than left to promise something that does not exist.
  */
 export interface HostDeps {
-  /** Resolved plugin settings object. */
-  settings?: any;
-  /** Toggle that flips the sidebar panel on/off from the Host. */
-  panelSwitch?: any;
   /** Lazy-load the LLM adapter module (peer `dsh-llm-pi-ai`). */
   loadAdapterModule?: any;
   /** Lazy-load the AgnesCode LLM adapter module (ROADMAP §6.3 third provider). */
   loadAgnescodeAdapterModule?: any;
-  /** Resolve the registered LLM instance. */
-  getLlm?: any;
-  /** Resolve the API key from the credentials service. */
-  resolveApiKey?: any;
-  /** Cordis event emitter. */
-  emit?: (...args: any[]) => void;
-  /** Cordis logger (loose: peer has no declarations here). */
-  logger?: any;
   /** Lazy-load the tools module. */
   loadToolsModule?: any;
   /** Host webserver fetch used by the draw route. */
   drawFetch?: (...args: any[]) => Promise<any>;
   /** Host webserver fetch used by the video route (mirrors `drawFetch`). */
   videoFetch?: (...args: any[]) => Promise<any>;
-  /** Login-trace sink used by the auth half. */
-  onTrace?: (...args: any[]) => void;
-  /** The resolved credential record. */
-  credential?: any;
-  /** Per-request timeout in milliseconds. */
-  timeoutMs?: number;
-  /** Extra request headers. */
-  headers?: Record<string, string>;
-  /** Base URL override for the LLM adapter / provider config. */
-  baseUrl?: string;
-  /** Login request timeout in milliseconds (config alias). */
-  requestTimeoutMs?: number;
 }
 
 /**
@@ -131,6 +120,39 @@ export interface AdapterConfig {
   enabledIds?: string[];
   unavailableModelIds?: string[];
   baseUrl?: string;
+}
+
+/**
+ * Dependency bag for the Token Plan provider publisher (`provider-publish.ts`).
+ *
+ * Deliberately NOT `HostDeps`: that one is the wide bag `apply()` receives, and
+ * handing it to a consumer that reads six fields means every field it reads is
+ * `any` — the compiler cannot catch a settings key that was renamed or never
+ * existed. `AgnescodePublisherDeps` next door already draws this line for the
+ * sibling publisher; this is the same line drawn for the main one.
+ */
+export interface ProviderPublisherDeps {
+  /**
+   * The resolved settings row. Read for `registerProvider` (the switch's config
+   * default) and `apiBase` (what the adapter is built against) only — `Partial`
+   * because `apply()` may pass none at all, and every reader here falls back.
+   */
+  settings?: Partial<Settings>;
+  /** Panel-saved switch value; `null` = state file untouched (falls back to the config default). */
+  panelSwitch?: () => Promise<boolean | null>;
+  /** Lazy-load the adapter factory module (peer `dsh-llm-pi-ai`). */
+  loadAdapterModule?: () => Promise<{ createAgnesAdapter: (...args: any[]) => any }>;
+  /** Optional-service resolver for the `llm` registration service. */
+  getLlm?: (service: string) => any;
+  /**
+   * Resolve the live `sk-` key per request (the `api-key-store.ts` seam). The
+   * adapter factory reads it, so it must be a real resolver, never a snapshot.
+   */
+  resolveApiKey?: () => Promise<string>;
+  /** Cordis event emitter for `llm/adapters-updated`. */
+  emit?: (event: string) => void;
+  /** Cordis logger for the build-failure warning (shared shape with the sibling publisher). */
+  logger?: PublisherLogger;
 }
 
 /** Dependency bag for the AgnesCode provider publisher (`agnescode-publish.ts`). */
