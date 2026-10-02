@@ -103,13 +103,11 @@ export const GUIDANCE_BY_CODE: Readonly<Record<string, string>> = Object.freeze(
   jwt_expired: "panel.jwtExpired",
   no_refresh_token: "panel.jwtExpired",
   refresh_rejected: "panel.jwtExpired",
-  // Kept mapped although Agnes no longer produces them (they are SenseNova
-  // OIDC-era codes): a missing line costs the reader the explanation, while an
-  // extra line costs one string nobody will ever see.
-  jwks: "panel.jwtExpired",
-  login_flow: "panel.jwtExpired",
-  token_rejected: "panel.jwtExpired",
-  refresh_failed: "panel.jwtExpired",
+  // The SenseNova OIDC-era codes (`jwks` / `login_flow` / `token_rejected` /
+  // `refresh_failed`) are deliberately ABSENT. Agnes produces none of them, and
+  // this table may not name a code `codes.ts` does not declare — the "every code
+  // the panel branches on is declared in codes.js" check enforces exactly that,
+  // so re-adding one fails the suite instead of helping a reader.
   // --- the account side ----------------------------------------------------
   // Nothing has been entered yet, so the form is the whole answer.
   not_configured: "panel.jwtMissing",

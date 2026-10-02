@@ -32,10 +32,6 @@
 export const CODE = Object.freeze({
   /** A malformed endpoint override. Surfaced as `config_error`, never retried. */
   CONFIG: "config",
-  /** The password-sealing key set could not be read. */
-  JWKS: "jwks",
-  /** The OIDC walk ended without a challenge or a code. */
-  LOGIN_FLOW: "login_flow",
 
   /** The submitted account is empty. The user's to fix, not the clock's. */
   MISSING_CREDENTIALS: "missing_credentials",
@@ -53,12 +49,8 @@ export const CODE = Object.freeze({
   /** The platform refused without naming a reason this table knows. */
   LOGIN_FAILED: "login_failed",
 
-  /** The token endpoint would not exchange the code. */
-  TOKEN_REJECTED: "token_rejected",
   /** The refresh token is dead: only a password login can recover. */
   REFRESH_REJECTED: "refresh_rejected",
-  /** The refresh call failed for any other reason (network, 5xx). */
-  REFRESH_FAILED: "refresh_failed",
   /** A stored grant carries no refresh token to renew with. */
   NO_REFRESH_TOKEN: "no_refresh_token",
 
@@ -133,8 +125,6 @@ export const CREDENTIAL_REFUSALS: ReadonlySet<string> = Object.freeze(new Set([
  * @type {ReadonlySet<string>}
  */
 export const AUTH_FAILURE_CODES: ReadonlySet<string> = Object.freeze(new Set([
-  CODE.JWKS,
-  CODE.LOGIN_FLOW,
   CODE.MISSING_CREDENTIALS,
   CODE.NOT_CONFIGURED,
   CODE.LOGIN_REJECTED,
@@ -142,9 +132,7 @@ export const AUTH_FAILURE_CODES: ReadonlySet<string> = Object.freeze(new Set([
   CODE.RATE_LIMITED,
   CODE.VERIFICATION_REQUIRED,
   CODE.LOGIN_FAILED,
-  CODE.TOKEN_REJECTED,
   CODE.REFRESH_REJECTED,
-  CODE.REFRESH_FAILED,
   CODE.NO_REFRESH_TOKEN
 ]));
 

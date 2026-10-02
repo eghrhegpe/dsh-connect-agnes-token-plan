@@ -62,16 +62,8 @@ export interface HostDeps {
   timeoutMs?: number;
   /** Extra request headers. */
   headers?: Record<string, string>;
-  /** JWKS endpoint override. */
-  jwksEndpoint?: string;
-  /** Encryption key id used by the JWE sealer. */
-  encKeyId?: string;
   /** Base URL override for the LLM adapter / provider config. */
   baseUrl?: string;
-  /** Shared JWKS cache. */
-  cache?: any;
-  /** Max redirect hops for the login trace. */
-  maxHops?: number;
   /** Login request timeout in milliseconds (config alias). */
   requestTimeoutMs?: number;
 }
@@ -109,15 +101,6 @@ export interface AdapterConfig {
   enabledIds?: string[];
   unavailableModelIds?: string[];
   baseUrl?: string;
-}
-
-/** Options for the JWKS cache / JWE sealer. */
-export interface JwksOptions {
-  /** A caller-owned key-set cache; typed loosely (see createJwksCache). */
-  cache?: any;
-  jwksEndpoint?: string;
-  encKeyId?: string;
-  timeoutMs?: number;
 }
 
 /** Dependency bag for the AgnesCode provider publisher (`agnescode-publish.ts`). */
