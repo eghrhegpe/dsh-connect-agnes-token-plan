@@ -69,7 +69,23 @@ export interface HostDeps {
 export interface HostCtx {
   get(service: string): any;
   tools?: { register(definition: unknown): unknown } | null;
-  effect?(callback: () => () => void, label?: string): void;
+  effect(callback: () => () => void, label?: string): void;
+  /**
+   * The Cordis event emitter `apply` and the publisher seams call
+   * (`llm/adapters-updated` after a registration). Loose on the event shape
+   * because the peer ships no declarations here; a `Host` that lacks it is a
+   * no-op, never a crash.
+   */
+  emit?(event: string): void;
+  /**
+   * The Host logger. REQUIRED, not a probe: `apply` reads it unconditionally to
+   * hand the publisher seams and the routes their `ctx.logger`, so a Host
+   * without one cannot mount this plugin. The degrade paths that survive a
+   * missing service read OPTIONAL services through `getService`, never the
+   * logger. Loose on the shape (the peer ships no declarations), shared with
+   * the publisher seams via `PublisherLogger`.
+   */
+  logger: PublisherLogger;
   /**
    * The Host web server every route registers on. REQUIRED (not optional like
    * the probes above): a route module cannot do anything without it, and a

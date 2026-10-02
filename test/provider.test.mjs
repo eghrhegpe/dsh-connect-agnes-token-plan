@@ -1041,6 +1041,18 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
       redactSecrets('request failed with "authorization": "sk-xxx123456"')
         === 'request failed with "authorization": "[REDACTED]"',
       redactSecrets('request failed with "authorization": "sk-xxx123456"'));
+    // ORDER-OF-RULES invariant: an Authorization value that is ITSELF a bare
+    // sk- key must be redacted as the whole header value (the rule-1
+    // authorization-value path, which runs before the bare-key rule), NOT as
+    // the `sk-[REDACTED]` shape the bare-key rule alone would leave. If the
+    // five rules were ever re-ordered or the header-value rule dropped, the
+    // output would regress to that second shape — exactly the leak a
+    // reordering would permit. Pinning the two forms apart turns that into a
+    // failing check instead of a silent regression.
+    check("an sk- Authorization value redacts as the header value, not the bare-key shape",
+      redactSecrets("Authorization: sk-a1b2c3d4") === "Authorization: [REDACTED]"
+        && redactSecrets("Authorization: sk-a1b2c3d4") !== "Authorization: sk-[REDACTED]",
+      redactSecrets("Authorization: sk-a1b2c3d4"));
     check("a JSON api_key pair is redacted",
       redactSecrets('{"api_key":"sk-live-123456789"}') === '{"api_key":"[REDACTED]"}',
       redactSecrets('{"api_key":"sk-live-123456789"}'));
