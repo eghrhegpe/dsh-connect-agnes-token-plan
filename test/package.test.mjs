@@ -185,9 +185,14 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
   const listed = (text) => new Set(
     [...text.matchAll(/node test\/([\w.-]+\.test\.mjs)/g)].map((m) => m[1])
   );
-  const npmTest = listed(manifest.scripts.test ?? "");
   const ciText = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
   const ci = listed(ciText);
+  // `npm test` now invokes the runner; its roster is the single source of
+  // truth (test/_roster.mjs), shared with this gate — derive npmTest from it
+  // so disk / npm / CI cannot drift apart. The old design parsed a 24-segment
+  // `&&` chain out of `package.json`, which let the three copies diverge.
+  const { listSuites } = await import("./_roster.mjs");
+  const npmTest = new Set(await listSuites());
 
   // disk ⊆ npmTest and disk ⊆ ci: no orphaned suite.
   for (const name of disk) {
