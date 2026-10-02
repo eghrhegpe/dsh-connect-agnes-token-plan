@@ -18,6 +18,7 @@ import { render, styles as S, texts, findElement, findAll } from "./panel-render
 import { surface } from "./client-surface.js";
 import { THINKING_LADDER } from "../src/host/llm-models.ts";
 import { API_KEY_SOURCES } from "../src/host/api-key-store.ts";
+import { AGNES_SIGNUP_URL } from "../src/client/const.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -866,6 +867,53 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   }
 }
 
+// === I1c. the sign-up host in PROSE tracks the sign-up host in CODE =======
+// `auth.placeholderUser` tells the reader which email to type, and it ends with
+// the console host: "注册 platform.agnes-ai.cn 的邮箱". That host is a SECOND
+// spelling of `AGNES_SIGNUP_URL` in `const.ts` — and a third one lived in this
+// file's own assertion. Three copies, none derived from another, so moving the
+// console to a different host would leave the form telling users to register on
+// a domain the plugin no longer points at.
+//
+// This is the prose-vs-code case that no ordinary contract check reaches: the
+// value is INSIDE a sentence, so it cannot be `format()`-ed from a constant
+// without turning the dictionary into a template. Pinning the host instead
+// keeps the sentence natural and still fails when the two drift apart.
+{
+  const hostOf = (url) => String(url).replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  const declared = hostOf(AGNES_SIGNUP_URL);
+
+  // Every `something.tld` that appears in a dictionary line, across both
+  // languages, wherever it sits in the sentence. The TLD must be alphabetic and
+  // at least two chars, which is what keeps version numbers out: a looser
+  // `\w+(\.\w+)+` reads "V2.0" and "2.5-series" as hostnames.
+  const HOSTISH = /\b[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/gi;
+  const found = new Set();
+  for (const lang of ["zh", "en"]) {
+    for (const [key, text] of Object.entries(surface.dictionaries[lang])) {
+      if (typeof text !== "string") continue;
+      // The console API paths in `note` are not hostnames and are pinned by the
+      // Host's own route constants, so only bare host-shaped tokens are read.
+      for (const match of text.match(HOSTISH) ?? []) {
+        if (match.includes(".")) found.add(match);
+      }
+    }
+  }
+
+  // The guard on the guard: if the regex stops matching (a dictionary rewritten
+  // without any hostname at all), an empty set would make the assertion below
+  // vacuously true — the exact "silently green" shape this file exists to
+  // prevent. `auth.placeholderUser` is the line that carries the host today.
+  const placeholder = String(surface.dictionaries.zh["auth.placeholderUser"] ?? "");
+  check("the sign-up host is actually present in the dictionary text",
+    found.size > 0 && placeholder.includes(declared),
+    `found ${found.size} host-shaped token(s): ${[...found].join(", ")} | the zh placeholder line reads: ${placeholder}`);
+
+  check("every host named in the dictionaries is the declared sign-up host",
+    [...found].every((host) => host === declared),
+    `declared: ${declared} | named in dictionaries: ${[...found].join(", ")}`);
+}
+
 // === I2. no fillable text input is left for the browser to guess at =======
 // A browser-autofill bug, traced to its cause. Both plugins in this profile
 // render a `<form>` holding `type="password"` on the SAME origin
@@ -945,7 +993,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("no key shows the register hint",
     withoutKey.text === "llm.keyRegisterHint", withoutKey.text);
   check("both hints point at the official site in a new tab",
-    withKey.href === "https://platform.agnes-ai.cn" && withoutKey.href === withKey.href
+    withKey.href === AGNES_SIGNUP_URL && withoutKey.href === withKey.href
       && texts(treeOf(render.ApiKeyForm, { llm: { models: [], hasApiKey: true }, onDone: () => {}, tt }))
         .length > 0,
     `${withKey.href}`);
