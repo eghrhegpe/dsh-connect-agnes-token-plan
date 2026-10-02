@@ -562,13 +562,16 @@ const GOOD_SESSION = {
 {
   section("roster → pi-ai descriptors (agnescode-models.ts)");
   try {
-    // The id must stay in the `agnes-` namespace: the sibling plugin
-    // `dsh-connect-sensenova-token-plan` registers `sensenova-*` ids, and a
-    // duplicated id is rejected as DUPLICATE_ADAPTER (one provider would
-    // silently vanish). Pinning the literal here is what keeps a stray
-    // "sensenova-" rename from reintroducing the collision.
-    check("the provider id is in the agnes- namespace, not sensenova-", AGNESCODE_PROVIDER_ID === "agnes-agnescode");
-    check("the display name is the picker's own label", AGNESCODE_DISPLAY_NAME === "Agnes AgnesCode");
+    // The id must not enter the `sensenova-` namespace: the sibling plugin
+    // `dsh-connect-sensenova-token-plan` registers those ids, and a duplicated
+    // id is rejected as DUPLICATE_ADAPTER (one provider would silently
+    // vanish). Pinning the literal here is what keeps a stray "sensenova-"
+    // rename from reintroducing the collision. The bare product name also
+    // keeps the id out of the stuttering `agnes-agnescode` shape a repeated
+    // vendor prefix produced.
+    check("the provider id is the bare product name, not sensenova- and not agnes-agnescode",
+      AGNESCODE_PROVIDER_ID === "agnescode");
+    check("the display name is the picker's own label", AGNESCODE_DISPLAY_NAME === "AgnesCode");
 
     const rows = agnescodeRoster(null);
     check("a null catalogue falls back to the probed roster", rows.length === AGNESCODE_FALLBACK_MODELS.length);

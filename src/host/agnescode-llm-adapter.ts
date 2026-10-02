@@ -3,7 +3,7 @@
  * the desktop-app upstream (ROADMAP §6.3).
  *
  * ONE `PiAiAdapter` carrying ONE
- * profile (`agnes-agnescode` → the credential's per-account BFF base), an
+ * profile (`agnescode` → the credential's per-account BFF base), an
  * INERT pi-ai auth plane (the AgnesCode JWT is resolved per request from the
  * plugin's own credential store, pi-ai never manufactures it), and no token
  * baked into the profile — the picker advertises models without one and a

@@ -15,6 +15,13 @@
   - `lifecycle.ts` 的 draw/video 工具读 `tools` 服务改为 `resolveServiceWithRetry`（与工具线同款防护：只重试读、绝不重试注册）。
 - 影响面：`src/host/{util, agnescode-lifecycle, lifecycle, routes/agnescode}.ts`、`test/agnescode.test.mjs`。
 
+### 破坏性改动：AgnesCode provider id 改为裸产品名 `agnescode`
+
+- **改动**：provider id `agnes-agnescode` → `agnescode`，显示名 `Agnes AgnesCode` → `AgnesCode`。
+- **为什么**：`agnes-agnescode` 读起来是结巴——供应商前缀 `agnes-` 重复了产品名里本就有的 "Agnes"（显示名 `Agnes AgnesCode` 同样）。兄弟插件 `dsh-connect-workbuddy` 的 id 就是裸产品名（`workbuddy` / `workbuddy-global`），本线对齐这个粒度。**撞名论证不依赖前缀**：裸 `agnescode` 与 `sensenova-*` 命名空间仍不相交，`dsh-connect-sensenova-token-plan` 的 `DUPLICATE_ADAPTER` 风险不变；`test/agnescode.test.mjs` 的钉字面量从「在 agnes- 命名空间」改为「是裸产品名、既非 sensenova- 也非 agnes-agnescode」。
+- **迁移**：**不需要重新勾选**——开关文件 `agnescode-provider.json`、模型勾选 `agnescode-models.json`、凭据引用 `AGNESCODE_CREDENTIAL` 的名称都没变，只有注册用的 id 变。Host 重启后 mount seed 会在新 id 下重新注册（上一节修好的有界重试正是这条路径的兜底），旧 id 的注册随进程结束自然消失。（历史上 `sensenova-agnescode` → `agnes-agnescode` 那次需要重勾，是因为当时 seed 是单次、可能撞上服务晚到；这次 seed 已收敛，无此要求。）
+- **影响面**：`src/host/{agnescode-models, agnescode-llm-adapter}.ts`、`test/agnescode.test.mjs`、`README.md`、`AGENTS.md`。
+
 ## [0.7.0] — 2026-10-02
 
 **AgnesCode 面板从「只读花名册」升级为「可勾选的模型推送给」**：每个模型一行勾选框，决定哪些模型注册进 DSH 模型列表，改动即时生效；配套搜索 + 全部勾选/取消 + 已勾选计数，与 Token Plan 那套同一形状。勾选存在独立的 profile 级状态文件，**空 = 不筛选 = 全推**，所以没勾过的安装行为完全不变。面板信息架构另有一刀（额度 / 累计 / 套餐拆成三个 section）。另修掉一个「删注释时误删三元条件行、构建失败、插件无法加载」的问题。

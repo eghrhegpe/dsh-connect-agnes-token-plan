@@ -31,17 +31,21 @@ import { normalizeEnabledIds } from "./catalog-store.ts";
 /**
  * The provider id this plugin registers under for AgnesCode.
  *
- * `agnes-*` by design: the sibling plugin `dsh-connect-sensenova-token-plan`
- * registers `sensenova-*` ids, and a duplicated id is rejected by
- * `registerAdapter` as DUPLICATE_ADAPTER — one of the two would silently
- * vanish from the picker (ARCHITECTURE.md §5). This plugin is all-Agnes, so
- * its ids stay in the `agnes-` namespace and cannot collide with the
- * sibling's `sensenova-` namespace.
+ * The bare product name, the same granularity the sibling `dsh-connect-workbuddy`
+ * uses for `workbuddy` / `workbuddy-global`: the vendor is implied by the
+ * plugin. (It used to be `agnes-agnescode`, which read as a stutter — the
+ * vendor prefix repeated the product name that already carries "Agnes".)
+ *
+ * Deliberately NOT `sensenova-*`: the sibling plugin
+ * `dsh-connect-sensenova-token-plan` registers those ids, and a duplicated id
+ * is rejected by `registerAdapter` as DUPLICATE_ADAPTER — one of the two would
+ * silently vanish from the picker (ARCHITECTURE.md §5). `agnescode` sits in
+ * neither namespace, so that collision is impossible either way.
  */
-export const AGNESCODE_PROVIDER_ID = "agnes-agnescode";
+export const AGNESCODE_PROVIDER_ID = "agnescode";
 
 /** What the DSH model picker shows as the AgnesCode provider's name. */
-export const AGNESCODE_DISPLAY_NAME = "Agnes AgnesCode";
+export const AGNESCODE_DISPLAY_NAME = "AgnesCode";
 
 /** The zero-cost sentinel: per-token prices are unknowable (credit-gated). */
 const NO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
