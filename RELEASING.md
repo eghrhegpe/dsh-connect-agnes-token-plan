@@ -46,9 +46,11 @@ git log --oneline origin/main..HEAD  # 应为空（HEAD 不领先）
 grep -n '"version"' package.json docs/DSH-PLUGIN.md
 ```
 
-`test/docs.test.mjs` 检查 4 会核对 `docs/DSH-PLUGIN.md` §2 那段 bundle 教学快照的
-`name` / `version` / `main` / `files` 是否与真实 `package.json` 一致。**只改
-`package.json` 会让 docs.test 红**——它只在 `npm test` 时才告诉你，发版前才发现很
+`test/docs.test.mjs` 会核对 `docs/DSH-PLUGIN.md` §2 那段 bundle 教学快照的
+`name` / `version` / `main` / `files` 是否与真实 `package.json` 一致——**具体比对项以
+该套件为准，本文不背书它的「检查 N」编号**：那编号是测试文件顶部注释里的序号，
+增删一条检查就会把它顶错位，而活文档的纪律是「只点名套件与覆盖面，不背书数量/序号」。
+**只改 `package.json` 会让 docs.test 红**——它只在 `npm test` 时才告诉你，发版前才发现很
 尴尬。第 2 步升版本号时把这两个文件一起改。
 
 ### 0.3 npm 必须先验证登录

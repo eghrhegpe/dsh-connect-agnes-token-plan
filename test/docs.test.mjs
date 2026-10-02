@@ -14,6 +14,9 @@
 //                    才能缺席降级」这条自述承诺的静态面（与 9-11 同族：验的是文档说的
 //                    架构纪律在代码里真的成立，不是格式）
 //   活文档计数护栏（14）：现行文档不得写死会随代码漂移的模块数/规模/行数/路由条数/套件规模（历史·账本·研究档豁免）
+//   检查引用可解析（15）：全仓 md 里的「检查 N」按就近套件名限定作用域后，docs.test
+//                    语境的序号必须落在它的检查号集合里——检查号是顶部注释里的序号，
+//                    增删即漂移；指到别的套件的不越权解析
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve, relative, sep, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +72,17 @@ function collectMd(dir) {
 
 const mdFiles = collectMd(ROOT).sort();
 console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`);
+
+/**
+ * docs.test 自己的检查号——顶部注释里那段（1-6 / 8 / 9-11 / 12 / 13 / 14）的
+ * 机器可解析形式。**注意 7 不在列**：文档结构只到 6，事实引用从 8 起（编号跳到
+ * 7 是历史遗留的「事实引用（N=条目数本身、8）」），所以「检查 7」在 docs.test
+ * 语境下指空——它属于 package.test.mjs 自己的一套编号。
+ *
+ * 检查 15 用它来解析全仓文档里的「检查 N」引用；活文档只应点名套件与覆盖面、
+ * 不背书序号，但历史积累的引用要先能核验再谈迁移。
+ */
+const DOCS_TEST_CHECKS = new Set([1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]);
 
 // 1) 内部链接全部可解析
 {
@@ -671,6 +685,45 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
     });
   }
   if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档 + ${codeFiles.length} 个代码文件零写死模块数/规模/行数/路由条数/套件规模（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
+}
+
+// === 15) 文档对「检查 N」的引用必须可解析 ====================================
+// 检查号只存在于本文件顶部注释里，不是机器可解析的 ID——增删一条检查（比如插入
+// 一个「检查 7」）就会把下游所有「检查 N」静默顶错位，而 AGENTS / CHANGELOG /
+// PITFALLS / ROADMAP 等处已积累一批这样的引用，此前没有任何门禁去解析它们。
+//
+// 本检查把 docs.test 自己的检查号升格为上面的 DOCS_TEST_CHECKS 常量（单一事实
+// 源），再扫全仓 md 把每处「检查 N」按同一行上就近的套件名限定作用域：
+//   - 指到 docs.test（显式 `docs.test.mjs` 或裸「检查 N」）→ 序号必须在集合里；
+//   - 指到别的套件（如 `test/package.test.mjs 检查 7`）→ 那套件的合法编号不归我们
+//     维护，本检查**不越权解析、直接跳过**（否则会拿 package.test 的 7 当悬空误判）。
+const scopeRe = /([A-Za-z0-9_.-]+\.test\.mjs)/g;
+const refRe = /检查\s*(\d+)(?:\s*[/／]\s*(\d+))?/g;
+{
+  const dangling = [];
+  let resolved = 0;
+  let skipped = 0;
+  for (const f of mdFiles) {
+    const text = readFileSync(f, "utf8");
+    refRe.lastIndex = 0;
+    let m;
+    while ((m = refRe.exec(text)) !== null) {
+      const nums = m[2] ? [m[1], m[2]] : [m[1]];
+      const lineStart = text.lastIndexOf("\n", m.index) + 1;
+      const lineEnd = text.indexOf("\n", m.index);
+      const line = text.slice(lineStart, lineEnd < 0 ? text.length : lineEnd);
+      const scoped = [...line.matchAll(scopeRe)].pop();
+      if (scoped && scoped[1] !== "docs.test.mjs") { skipped++; continue; }
+      for (const n of nums) {
+        resolved++;
+        if (!DOCS_TEST_CHECKS.has(Number(n))) {
+          dangling.push(`${f} 引用「检查 ${n}」——不在 docs.test 的检查号集合（${[...DOCS_TEST_CHECKS].join("/")}）里：要么是增删检查后没同步，要么指错了套件`);
+        }
+      }
+    }
+  }
+  if (dangling.length) dangling.forEach(bad);
+  else note(`检查引用可解析：${resolved} 处 docs.test 语境引用全部命中（另 ${skipped} 处指到别的套件，本检查不越权）`);
 }
 
 if (fails.length) {
