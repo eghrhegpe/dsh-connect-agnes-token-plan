@@ -10,7 +10,7 @@
  *
  * @module dsh-connect-agnes-token-plan/doctor
  */
-import { readdir, stat, readFile } from "node:fs/promises";
+import { readdir, stat, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { name } from "./host-config.ts";
 import { isProfileSegment, dshHome as defaultDshHome } from "./state-store.ts";
@@ -59,6 +59,17 @@ export interface DoctorScope {
   catalogFetchedAt: number;
   /** The state file could not be read as this plugin's payload. */
   unreadable: string[];
+  /**
+   * Whether this scope's state directory accepted a write, probed live.
+   *
+   * `true` / `false` / `null` (nothing to say — no directory). This is the one
+   * answer the doctor cannot get by reading: `catalog-store.ts`'s `persist()`
+   * swallows write failures by design, so a failed write leaves the disk behind
+   * the memory and the process stops republishing a catalog it thinks it
+   * published. Reading the directory would report the OLD catalog honestly and
+   * never reveal the newer one that failed to land.
+   */
+  writable: boolean | null;
 }
 
 /** The full doctor report: one entry per state scope, plus the shared layout. */
@@ -97,6 +108,53 @@ async function readJson(file: string) {
   }
 }
 
+/**
+ * Can this plugin actually WRITE its state directory right now?
+ *
+ * Why the doctor asks, rather than reading a record of past failures: the
+ * failure this answers for is `catalog-store.ts`'s `persist()`, which
+ * deliberately swallows write failures (the in-memory record keeps serving the
+ * process — that is load-bearing for a read-only `$DSH_HOME`, see its comment).
+ * The consequence is that a failed write leaves the DISK behind the MEMORY, and
+ * `snapshot-aggregate.ts` / `routes/models.ts` advance
+ * `providerState.signature` anyway. That signature's only job is "equal ⇒ skip
+ * publishing", so once a write fails the process can stop republishing a catalog
+ * it believes it already published — while disk holds the old one.
+ *
+ * A doctor that only READ the directory could not see this: it would report the
+ * OLD catalog, honestly, and never learn that a newer one failed to land. So
+ * this probe writes instead of reading. That also sidesteps the obvious trap —
+ * an audit file recording "the last write failed" would itself have to be
+ * written by the very operation that is failing.
+ *
+ * The probe is a real write to a throwaway name (never `catalog.json`), removed
+ * immediately. It answers about the DIRECTORY, which is what every state file
+ * here shares. `null` = could not determine (the directory does not exist and
+ * could not be created, so there is nothing to say about writability — that is
+ * "no state here", not "unwritable").
+ *
+ * @param {string} stateDir - the plugin state directory to probe.
+ * @returns {Promise<boolean|null>} writable / not / unknown.
+ */
+export async function probeStateWritable(stateDir: string) {
+  const probeFile = join(stateDir, `.write-probe-${process.pid}-${Date.now()}`);
+  let verdict: boolean | null;
+  try {
+    // NO `mkdir`: this probe must not be able to create the directory it is
+    // asking about. `readScope` only runs for directories that already exist, so
+    // creating one here would make the probe change the very report it feeds.
+    // A missing directory is `null` ("nothing to say"), never `false`.
+    await writeFile(probeFile, "probe", { mode: 0o600, flag: "wx" });
+    verdict = true;
+  } catch {
+    // "exists but refuses writes" (the interesting answer) and "does not exist"
+    // are told apart by one stat.
+    verdict = await stat(stateDir).then(() => false).catch(() => null);
+  }
+  await rm(probeFile, { force: true }).catch(() => {});
+  return verdict;
+}
+
 /** Parse one stored catalog record, or `null` when absent / corrupt / foreign version. */
 export function parseCatalogPayload(raw: Record<string, unknown> | null) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -130,6 +188,7 @@ async function readScope(stateDir: string, profile: string | null) {
     catalogEntries: [],
     catalogEnabledIds: [],
     catalogFetchedAt: 0,
+    writable: null,
     unreadable: []
   };
   // Distinguish "file absent" from "file present but not this plugin's
@@ -184,6 +243,9 @@ async function readScope(stateDir: string, profile: string | null) {
       scope.catalogFetchedAt = parsed.fetchedAt;
     } else scope.unreadable.push("catalog.json");
   }
+  // Asked LAST, and after every read above: a probe that creates the directory
+  // would otherwise turn "no state here" into "state here" for this very report.
+  scope.writable = await probeStateWritable(stateDir);
   return scope;
 }
 
@@ -303,6 +365,21 @@ export function renderReport(report: any) {
       `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} catalog=${scope.catalogEntries.length} enabled=${enabledPart}`
     );
     if (scope.unreadable.length > 0) lines.push(`${label}: unreadable state: ${scope.unreadable.join(", ")}`);
+    // Only the failure is worth a line. `true` is the ordinary case and `null`
+    // ("no directory to ask about") has nothing to report — printing either
+    // would train the reader to skip this line, which is exactly how a
+    // diagnostic stops working. What it must never do is stay SILENT while the
+    // disk is behind the memory (`persist()` swallows the write and the
+    // signature is already advanced), because then the panel shows a catalog
+    // that will not survive a restart and nothing anywhere says so.
+    if (scope.writable === false) {
+      lines.push(
+        `${label}: STATE DIRECTORY IS NOT WRITABLE — writes are being swallowed`
+          + " (catalog-store.persist() keeps the in-memory record, so the panel can show a"
+          + " catalog that will NOT survive a restart, and publish de-duplication may have"
+          + " stopped republishing it); fix permissions on this directory"
+      );
+    }
   }
   return lines.join("\n");
 }

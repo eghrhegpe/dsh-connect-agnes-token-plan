@@ -15,7 +15,7 @@
  *
  * Nothing here imports a Host peer or opens a socket.
  */
-import { mkdtemp, rm, writeFile, mkdir, copyFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, copyFile, chmod, stat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -23,6 +23,7 @@ import {
   parseDrawPayload,
   parseVideoPayload,
   parseCatalogPayload,
+  probeStateWritable,
   diagnose,
   renderReport
 } from "../src/host/doctor.ts";
@@ -237,6 +238,74 @@ function check(name, condition, detail = "") {
   await rm(home, { recursive: true, force: true });
   await rm(appRootDrift, { recursive: true, force: true });
   await rm(appRootOk, { recursive: true, force: true });
+}
+
+// --- 9. the state-directory writability probe --------------------------------
+//
+// PITFALLS §40's visibility half. `catalog-store.ts`'s `persist()` swallows
+// write failures BY DESIGN (the in-memory record keeps serving the process), so
+// a failed write leaves the DISK behind the MEMORY while the publish signature
+// is already advanced — the process stops republishing a catalog it believes it
+// published. A doctor that only READ could never see this: it would report the
+// old catalog, honestly, and never learn a newer one failed to land.
+//
+// So the doctor WRITES. That also dodges the obvious trap — an audit file
+// recording "the last write failed" would have to be written by the very
+// operation that is failing.
+{
+  const stateDir = await mkdtemp(join(tmpdir(), "dsh-doctor-writable-"));
+
+  check("a writable directory answers true",
+    (await probeStateWritable(stateDir)) === true);
+
+  // The probe must not be able to CREATE the directory it is asking about: it
+  // runs from `readScope`, which only runs for directories that already exist,
+  // so creating one here would let the probe change the report it feeds.
+  const missing = join(stateDir, "not-created-not-ever");
+  check("a missing directory answers null (not false)",
+    (await probeStateWritable(missing)) === null);
+  check("the probe did not create the directory it was asking about",
+    (await stat(missing).then(() => true).catch(() => false)) === false);
+
+  // Nothing left behind — a diagnostic that litters is a diagnostic that gets
+  // turned off.
+  check("the probe leaves no file behind",
+    (await readdir(stateDir)).filter((n) => n.startsWith(".write-probe-")).length === 0);
+
+  // On POSIX a read-only directory is the real failure this exists for. On
+  // Windows `chmod` barely restricts directories, so the assertion is skipped
+  // there rather than faked — and CI (Linux) is where it actually runs.
+  if (process.platform !== "win32") {
+    await chmod(stateDir, 0o555);
+    check("a read-only directory answers false",
+      (await probeStateWritable(stateDir)) === false);
+    await chmod(stateDir, 0o755);
+  }
+
+  // …and the line the reader actually sees. Only the failure is worth a line:
+  // `true` is ordinary and `null` has nothing to say. Printing either would
+  // train the reader to skip this line, which is how a diagnostic stops working.
+  const quiet = { shared: null, scopes: [{ profile: null, stateDir, writable: true, unreadable: [],
+    providerPanel: null, drawPanel: null, drawModelPanel: null, videoPanel: null, videoModelPanel: null,
+    agnescodePanel: null, catalogEntries: [], catalogEnabledIds: [], catalogFetchedAt: 0 }],
+    dshHome: "/tmp/x", plugin: PLUGIN_NAME, profiled: false, agnescode: null, admission: null };
+  check("a writable scope says nothing",
+    renderReport(quiet).includes("NOT WRITABLE") === false, renderReport(quiet));
+
+  const broken = { ...quiet, scopes: [{ ...quiet.scopes[0], writable: false }] };
+  const rendered = renderReport(broken);
+  check("an unwritable scope is named loudly", rendered.includes("STATE DIRECTORY IS NOT WRITABLE"), rendered);
+  // The line has to say what the reader LOSES, or "not writable" reads like a
+  // permissions nit rather than "your panel is showing a catalog that will not
+  // survive a restart".
+  check("…and says what it costs the reader",
+    rendered.includes("will NOT survive a restart"), rendered);
+
+  const unknown = { ...quiet, scopes: [{ ...quiet.scopes[0], writable: null }] };
+  check("an unknown answer is not reported as a failure",
+    renderReport(unknown).includes("NOT WRITABLE") === false, renderReport(unknown));
+
+  await rm(stateDir, { recursive: true, force: true });
 }
 
 console.log(JSON.stringify(results, null, 2));
