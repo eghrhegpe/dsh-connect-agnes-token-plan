@@ -2,7 +2,23 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
-## [Unreleased]
+## [0.7.0] — 2026-10-02
+
+**AgnesCode 面板从「只读花名册」升级为「可勾选的模型推送给」**：每个模型一行勾选框，决定哪些模型注册进 DSH 模型列表，改动即时生效；配套搜索 + 全部勾选/取消 + 已勾选计数，与 Token Plan 那套同一形状。勾选存在独立的 profile 级状态文件，**空 = 不筛选 = 全推**，所以没勾过的安装行为完全不变。面板信息架构另有一刀（额度 / 累计 / 套餐拆成三个 section）。另修掉一个「删注释时误删三元条件行、构建失败、插件无法加载」的问题。
+
+### AgnesCode：模型勾选决定哪些模型推送进 DSH
+
+- **能力**：AgnesCode tab 的模型花名册每行加勾选框（未勾选行降低透明度），决定哪些模型注册进 DSH 模型列表；保存后**立刻**重发一次过滤后的 roster，不必等下一次轮询。
+- **完整版交互**：搜索框（`autocomplete="off"`，避免浏览器密码管理器把控制台账号填进这个 tab 唯一的文本输入）+ 全部勾选/全部取消（作用于可见行）+ 已勾选/共 N 计数；搜索只过滤「渲染什么」，不改变「保存什么」。
+- **持久化**：新增 profile 级状态文件 `agnescode-models.json`（空列表 = 不筛选 = 全推，与 Token Plan 侧同一约定）；`/agnescode` 路由新增 `saveModels` 动作。
+- **隔离**：独立的 store 与过滤点（`agnescode-models-store.ts` + `filterAgnescodeRows`），只在发布前裁剪 roster，不与 Token Plan 的 `enabledModelIds` 或 publisher 状态串味。
+- 影响面：`src/host/{agnescode-models-store, agnescode-models, agnescode-lifecycle, index, routes/agnescode, types}.ts`、`src/client/{agnescode-tab, i18n}.ts`、`test/agnescode.test.mjs`。
+
+### 修复：删除注释时误删三元条件行，导致构建失败、插件无法加载
+
+- **现象**：插件报 `Cannot find module 'lib/agnescode-llm-adapter-DkN4N4JD.js'`，Host 起不来。
+- **根因**：一个临时脚本按正则删「冗余注释」，误删了 `src/client/account-form.ts` 里三元表达式的条件行（`cooling`），rolldown 解析失败、整次构建中断，`lib/` 从未重建——而 `index.js` 还引用着旧的 chunk。
+- **修法**：补回条件行；修复另两处被删掉句子主语/替换成重复 `@param` 的注释；仓库换行统一回 LF；删除临时脚本。
 
 ### 面板信息架构：额度 / 累计 / 套餐拆成三个 section
 
