@@ -1,0 +1,7 @@
+{
+  "$comment": "提交信息风格自查（docs/CONTRIBUTING.md §1：沿用中文 type: 前缀）。这是本地 `npm run lint:commits` 的读入配置，不挂 git hook——本仓是多会话并行开发的工作树，husky 会改 core.hooksPath 影响该机器的所有 git 行为（见 AGENTS.md 并行纪律），故只做显式自查脚本，也不进 CI：§1 是软约定、历史里有无 type: 前缀的提交。config-conventional 的默认 type 集已覆盖本仓的 feat/fix/docs/chore/refactor/test/ci；header-max-length 放宽到 120 以容纳中文正文。",
+  "extends": ["@commitlint/config-conventional"],
+  "rules": {
+    "header-max-length": [2, "always", 120]
+  }
+}

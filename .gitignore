@@ -18,6 +18,10 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+# 本仓无 lockfile by design（peerDependencies 无 registry 可解析，CI 按 package.json 做
+# npm 缓存）；一次 npm install 会在仓库根生成 package-lock.json，它若不忽略就是本文件末尾
+# 「未跟踪也未忽略、一次 git add -A 卷进历史」那条纪律描述的裸区形状。
+package-lock.json
 
 # 构建产物：源码在 src/，lib/ 与根 client.js 由 `npm run build` 从 src 重建，
 # 纯产物、可删可重建、绝不进版本库（workbuddy 同款约定）。

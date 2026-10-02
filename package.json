@@ -40,6 +40,8 @@
     "test:peer-contract": "node test/run.mjs --only peer-contract",
     "doctor": "node tools/doctor.mjs",
     "doctor:json": "node tools/doctor.mjs --json",
+    "lint:dup": "jscpd src --min-tokens 70 --threshold 3 --reporters console",
+    "lint:commits": "commitlint --from HEAD~1 --to HEAD",
     "build": "tsdown -c tsdown.config.mjs",
     "prepack": "npm run build"
   },
@@ -58,16 +60,16 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.2 <5.0.0",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-client-ui-layout": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-credentials": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-home-paths": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-llm": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-settings": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-home-paths": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-tools": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-client-locale": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-client-ui-renderer": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-client-ui-layout": ">=0.1.5 <0.3",
     "@deepseek-ai/schemastery": "^3.18.2",
     "@earendil-works/pi-ai": "^0.85.1"
   },
@@ -85,7 +87,10 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
     "@types/node": "^26.6.3",
+    "jscpd": "^5.4.0",
     "jsqr": "^1.4.0",
     "tsdown": "^0.23.0",
     "typescript": "^5.9.3"

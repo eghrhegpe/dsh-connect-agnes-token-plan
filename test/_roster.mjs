@@ -34,4 +34,4 @@ export function listSuites() {
  * HEAD on 2026-10-02 with no gate, no CI job, and 24 green suites.
  * @type {string[]}
  */
-export const GATES = ["tsc-gate.mjs", "build-gate.mjs", "e2e-gate.mjs"];
+export const GATES = ["tsc-gate.mjs", "build-gate.mjs", "dup-gate.mjs", "e2e-gate.mjs"];

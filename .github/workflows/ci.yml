@@ -119,6 +119,11 @@ jobs:
           # build-gate. `typescript` is a devDependency (installed above), so
           # this really runs here instead of taking its SKIP path.
           node test/tsc-gate.mjs
+          # The duplication gate (jscpd): a positive regression fence — src/ must
+          # stay below the measured draw/video-isomorphism baseline, so a NEW
+          # large copy fails the build. Same non-roster exemption as build-gate
+          # / tsc-gate; SKIPs loudly when jscpd is absent.
+          node test/dup-gate.mjs
 
   e2e:
     name: End-to-end (hard gate)
