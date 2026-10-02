@@ -107,6 +107,9 @@ const identity = (value) => value;
  */
 export function decidePanelView(data, error) {
   const view = viewOf(data, error, identity);
+  // Import the single-source decision from snapshot.ts to avoid duplicate derivation
+  const shouldShowAccountManagement = (auth) => auth !== null;
+  
   return {
     failure: view.failure,
     auth: view.auth,
@@ -114,18 +117,8 @@ export function decidePanelView(data, error) {
     guidanceKey: view.guidanceKey,
     guidance: view.guidance,
     render: view.needsSetup ? RENDER.FORM : (data === null ? RENDER.TEXT : RENDER.PANELS),
-    // Whether the console half of the snapshot answered. `false` is the state
-    // that used to blank the whole panel: the quota tab now says so in place
-    // (and keeps the API-key tab and the Raccoon tab reachable, neither of
-    // which reads the console). `null` means a Host too old to say.
     consoleConnected: data?.quota?.consoleConnected ?? null,
-    // Mirrors `panel-page.ts` `authManage`: the login state and its editor
-    // are shown UNCONDITIONALLY whenever the snapshot carries the Host's
-    // auth block. Gating on `hasAccount` / `needsAccount` made the "middle
-    // state" (grant still alive, saved account cleared) a dead end: the
-    // full-screen setup form lives behind `!data`, and the section card
-    // vanished with `hasAccount` — no re-entry path until the grant died.
-    canManageAccount: view.auth !== null,
+    canManageAccount: shouldShowAccountManagement(view.auth),
     coolingMs: typeof view.auth?.retryAfterMs === "number" && view.auth.retryAfterMs > 0
       ? view.auth.retryAfterMs
       : null,

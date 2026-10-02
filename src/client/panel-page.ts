@@ -8,7 +8,7 @@ import {
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { PANEL_ID, SNAPSHOT_PATH } from "./const.ts";
 import { clock, format } from "./format.ts";
-import { errorOfStatus, interpretSnapshot, viewOf } from "./snapshot.ts";
+import { errorOfStatus, interpretSnapshot, viewOf, shouldShowAccountManagement } from "./snapshot.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import type { SnapshotData, VisionModelData } from "./wire.ts";
@@ -304,7 +304,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // end: the full-screen setup form lives behind `!data`, and the section card
   // vanished with `hasAccount` — the user was locked out of their own account
   // with no re-entry path until the grant died.
-  const authManage = auth !== null;
+  const authManage = shouldShowAccountManagement(auth);
   // The tab bar renders UNCONDITIONALLY, and that is the point of this block.
   // It used to live inside the `data` branch, so a console that had never been
   // signed in took the other tabs down with it — two of which do not read the

@@ -270,3 +270,19 @@ export function viewOf(
     : [];
   return { failure, auth, needsSetup, guidanceKey, guidance, shapeWarnings };
 }
+
+/**
+ * Whether to show the account management section.
+ *
+ * Decision: show the account editor UNCONDITIONALLY whenever the snapshot
+ * carries the Host's auth block. Gating on `hasAccount` / `needsAccount` made
+ * the "middle state" (grant still alive, saved account cleared) a dead end:
+ * the full-screen setup form lives behind `!data`, and the section card
+ * vanished with `hasAccount` — the user was locked out of their own account
+ * with no re-entry path until the grant died. This is a single-point-of-truth
+ * declaration; callers should use `shouldShowAccountManagement(auth)` rather
+ * than duplicating `auth !== null`.
+ */
+export function shouldShowAccountManagement(auth: AuthData | null): boolean {
+  return auth !== null;
+}

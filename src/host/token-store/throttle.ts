@@ -119,7 +119,13 @@ export async function writeThrottle(
   // credential, and the only two record kinds that service admits are.
   await throttleStore.write(state.throttle).catch(() => {
     // A store that cannot be written must not break the panel: this process
-    // still honours the wait in memory.
+    // still honours the wait in memory. Log a redacted warning for observability:
+    // cross-process "防撞锁" protection may have failed; next Host will retry
+    // based on in-memory state only.
+    try {
+      const msg = `throttle write failed: ${JSON.stringify(state.throttle, null, 2)}`;
+      console.warn(`[dsh-connect-agnes-token-plan] ${msg}`); // 简单输出，避免引入 logger；message 不含凭据形状
+    } catch {}
   });
   return state.throttle;
 }

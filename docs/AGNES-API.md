@@ -54,7 +54,7 @@
 | 端点 | 鉴权 | 返回的 `data` |
 |---|---|---|
 | `POST /api/user/login` | 无 | `{access_token, user}` |
-| `GET /api/usage/overview` | Bearer | 账号**累计**用量（唯一致命源，见下） |
+| `GET /api/usage/overview` | Bearer | 账号**累计**用量（认证探针；旧文曾写「唯一致命源」，现已改为五源软失败，见 §3.1） |
 | `GET /api/usage/series?range=custom&start_date=…&end_date=…` | Bearer | `{items:[…]}` 分桶用量 |
 | `GET /api/cn/user/subscription` | Bearer | 当前账号的套餐信息 + **窗口内已用量**（`usage`，见 §4） |
 | `GET /api/cn/user/subscription/plans` | **无**（公开） | 套餐目录数组，六档 |
@@ -63,10 +63,7 @@
 **唯一无需登录**的额度来源：面板可以在没有账号时照常回答"升级能买到什么"，也是
 认证半边整体失败时唯一还能显示的内容。
 
-**`usage/overview` 是唯一致命源。** 它是认证探针——最便宜的认证调用，任何已登录账号都能发，
-所以它的失败是"令牌不可用"的唯一信号，必须冒泡到路由的 catch（那里才决定显示登录表单）。
-其余三个源（series / subscription / plans）全部**降级**：失败只写进 `quota.error`，
-面板渲染已经到手的部分，而不是整页报错。
+**overview 曾是唯一致命源，现已改为五源软失败**。它是认证探针——最便宜的认证调用，任何已登录账号都能发。它的失败是"令牌不可用"的强信号：当它失败时面板会显示 `consoleConnected:false` 且 `quota.totals=null`（而非把失败伪装成测量值），其余四个源仍然照常应答并降级为 `quota.error`（若失败）。旧文曾写「必须冒泡到路由的 catch（那里才决定显示登录表单）」，现已改为与 series / subscription / plans 一样软失败；五个源的失败都在 `firstFailure` 中标记来源，由 `viewOf` 决定面板渲染哪一类提示。详细决策见 ADR-004 及 ARCHITECTURE §3。
 
 ## 3. 响应信封
 

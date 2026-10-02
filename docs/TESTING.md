@@ -7,14 +7,12 @@
 ## 1. 运行
 
 ```powershell
-npm test                    # 全量离线门禁：agnes-auth / store / store-baseline / routes / panel / render /
-                            # parsers / provider / config / package / docs / wiring / contract / retry /
-                            # error-fix / peer-contract / draw / doctor / agnescode，末尾 build-gate
-                            #（重建 src/ 全部源码并验证 lib/ 与 client.js 产物；无 tsdown 则 SKIP）+ e2e-gate
-                            #（无 dsh CLI 则 SKIP）
+npm test                    # 全量离线门禁：请见 `test/_roster.mjs` 与 `node test/run.mjs --list`（磁盘所有 *.test.mjs 自动构成名册）；末尾 build-gate（重建 src/ 全部源码并验证 lib/ 与 client.js 产物；无 tsdown 则 SKIP）+ e2e-gate（无 dsh CLI 则 SKIP）
 npm run test:e2e            # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
 npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PLAN_API_KEY，重放推理契约
 ```
+
+**套件名册的事实源只有一个**：`test/_roster.mjs` 的 `listSuites()`（对 `test/*.test.mjs` 逐文件扫描）。`package.json#scripts.test` = `"node test/run.mjs"`，`run.mjs` 直接 `import roster`；CI offline job 与 `package.test.mjs` 三方钉死一致性。**本行枚举不再维护第二份清单**。如需查看当前套件列表，运行：`node test/run.mjs --list`。
 
 套件清单以 `package.json#scripts.test` 为准（不在本文件背书数字）。测试**无需 `npm install`**：`@deepseek-ai/dsh-credentials` 是 Host 里的 peer 依赖，由 `test/peer-roots.mjs` 在 DSH 运行时里就地解析（`$DSH_HOME` → 插件 `node_modules` → 默认安装位置 `~/.dsh/dsh-asar-unpacked` → 打包安装目录）。找不到时会列出每个候选根**各自失败的原因**，而不是静默跳过或只报搜索路径。`config.test.mjs` / `parsers.test.mjs` / `contract.test.mjs` / `retry.test.mjs` 不依赖任何 peer，干净检出即可跑。
 

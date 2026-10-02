@@ -114,7 +114,7 @@ AgnesCode tab 走的是桌面端登录态采集，**没有刷新端点**：会�
 | 面板顶部 `config_error` | 配置面有非法端点地址等挂载期错误 | 检查 `cordis.patch.yml` 的端点类字段（§3），改后重装 / 重载 Host |
 | 快照带 `shapeWarnings` | 控制台返回结构与预期不符（如字段改名） | 对照 [AGNES-API.md](./AGNES-API.md) §2 核对接口字段——这是接口变更的第一信号，不是「暂无数据」 |
 | 面板 `console_error` | 控制台没应答 | 通常是下一轮轮询自愈；持续出现再查网络与控制台状态 |
-| `quota.error` 指名某个 source | 那一个额度源降级了（series / subscription / plans），其余照常 | 看 `message` 里平台自己的话；`usage/overview` **不会**出现在这里——它是致命源，失败会直接进登录表单 |
+| `quota.error` 指名某个 source | 那一个额度源降级了（series / subscription / plans / overview），其余照常 | 看 `message` 里平台自己的话；当前实现将五个源一律软失败，`overview` 失败时面板会显示 `consoleConnected:false` 并保留其他来源数据。旧文曾写「overview 是致命源」，现已改为软降级（见 ADR 账本及 ARCHITECTURE §3）。 |
 | 快照接口没有 `auth` 字段 | 跑的还是旧代码 | 完全退出 DSH（含托盘）再启动（见 §4） |
 | 面板提示需要重新登录 | 令牌被拒且环境里已无密码 | 面板表单填一次账号密码即可 |
 | 面板「可看图」一行缺失，但 `/v1/models` 有模型 | 没有 API key，模型目录没拉（`catalogAvailable: false`），视觉清单随之不显示 | 在面板「API Key」卡粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可；写入 DSH 凭据服务引用），或在用户级 env 变量层配 `AGNES_TOKEN_PLAN_API_KEY`；下一轮 poll 自动亮起来，无需重启 |

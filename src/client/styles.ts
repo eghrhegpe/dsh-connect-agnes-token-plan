@@ -1,6 +1,10 @@
 /**
- * Theme-token-only styles; a renamed token degrades looks, never rendering.
- * Verbatim from the pre-split `client.js`.
+ * Theme tokens with brand color fallbacks.
+ * 
+ * Brand color: #1E40AF is our chosen technology blue, distinct from
+ * SenseTime's purple (#6C5CE7) to avoid visual confusion while maintaining
+ * professional appearance across environments. This ensures consistent
+ * branding and clear identity separation.
  */
 /** The shared button skin; `rosterBulk` reuses it one step taller so the bulk
  *  buttons sit level with the 32px roster search box. */
@@ -25,7 +29,7 @@ export const S = {
   // so the setup cards stop crowding the numbers the panel exists for.
   tabBar: { display: "flex", gap: 4, borderBottom: "1px solid var(--dsw-alias-border-l1)", marginBottom: 4 },
   tab: { appearance: "none", background: "none", border: "none", borderBottom: "2px solid transparent", padding: "8px 12px", fontSize: 13, color: "var(--dsw-alias-label-secondary)", cursor: "pointer" },
-  tabActive: { color: "var(--dsw-alias-label-primary)", fontWeight: 600, borderBottom: "2px solid var(--agnes-brand, #6C5CE7)" },
+  tabActive: { color: "var(--dsw-alias-label-primary)", fontWeight: 600, borderBottom: "2px solid var(--agnes-brand, #1E40AF)" },
   updated: { color: "var(--dsw-alias-label-secondary)", fontSize: 12 },
   spacer: { flex: 1 },
   button: BUTTON,
@@ -94,7 +98,7 @@ export const S = {
   quotaFoot: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
   quotaUsed: { fontSize: 11, lineHeight: "15px", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums" },
   bar: { height: 6, borderRadius: 3, background: "var(--dsw-alias-bg-layer-1)", overflow: "hidden" },
-  barFill: { height: "100%", borderRadius: 3, background: "var(--agnes-brand, #6C5CE7)" },
+  barFill: { height: "100%", borderRadius: 3, background: "var(--agnes-brand, #1E40AF)" },
   barFillWarn: { background: "var(--dsw-alias-state-warn-primary)" },
   barFillError: { background: "var(--dsw-alias-state-error-primary)" },
   // Secondary bookkeeping (grant expiry, model coverage) folds away so a
@@ -137,7 +141,7 @@ export const S = {
   // buckets inside the card instead of pushing it into a horizontal scroll.
   usageBars: { display: "flex", alignItems: "flex-end", gap: 2, height: 96, padding: "0 1px" },
   usageBar: { flex: 1, minWidth: 2, height: "100%", display: "flex", alignItems: "flex-end" },
-  usageBarFill: { width: "100%", minHeight: 2, borderRadius: 2, background: "var(--agnes-brand, #6C5CE7)" },
+  usageBarFill: { width: "100%", minHeight: 2, borderRadius: 2, background: "var(--agnes-brand, #1E40AF)" },
   usageAxis: { display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6, fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
   // One plan row in the collapsed catalogue: name, cycle, then the limits
   // right-aligned so the three tiers line up and can be compared by eye.
@@ -179,7 +183,7 @@ export const S = {
   modelRow: { display: "flex", flexDirection: "column", gap: 2, padding: "8px 4px", borderBottom: "1px solid var(--dsw-alias-border-l1)" },
   modelRowHead: { display: "flex", alignItems: "center", gap: 8 },
   modelRowOff: { opacity: 0.55 },
-  modelCheck: { flex: "none", width: 15, height: 15, cursor: "pointer", accentColor: "var(--agnes-brand, #6C5CE7)", margin: 0 },
+  modelCheck: { flex: "none", width: 15, height: 15, cursor: "pointer", accentColor: "var(--agnes-brand, #1E40AF)", margin: 0 },
   // `0 1 auto` (not `1 1 auto`): the name hugs the rate chip instead of
   // stretching to the right edge; the label shrinks, so ellipsis still works.
   modelName: { flex: "0 1 auto", minWidth: 0, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
