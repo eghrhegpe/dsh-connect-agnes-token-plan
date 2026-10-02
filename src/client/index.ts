@@ -67,7 +67,7 @@ import {
   UsageChart,
   UsageTotals
 } from "./cards.ts";
-import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch, VideoSwitch } from "./provider-controls.ts";
+import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch, VideoSwitch, RpmNote } from "./provider-controls.ts";
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage, barPlan } from "./panel-page.ts";
@@ -130,6 +130,10 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       ProviderSwitch,
       DrawSwitch,
       VideoSwitch,
+      // The API tab's closing RPM note: the one number the panel states but
+      // cannot measure, so the render suite reads it back against the official
+      // FAQ rather than trusting the transcription.
+      RpmNote,
       ModelRoster,
       ModelPicker,
       PanelPage,

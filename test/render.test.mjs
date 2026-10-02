@@ -1305,6 +1305,77 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   }
 }
 
+// === G9. the API tab's RPM note says the ceiling, and says it as a shape ====
+// The note is the ONE place the panel states a number it cannot measure: the
+// platform exposes no per-key RPM reading (docs/AGNES-API.md §4.1), so the
+// three figures are transcribed from the official FAQ. Transcribed numbers rot
+// silently when the source is re-synced, so each one is read back OUT of
+// `AGNES-API-docs/4、Token Plan FAQ.md` — the same file §3 of the text table
+// lives in — and required to appear in the rendered line. A FAQ update that
+// moves a number now fails here instead of shipping a stale note.
+{
+  const faq = readFileSync(join(ROOT, "docs", "AGNES-API-docs", "4、Token Plan FAQ.md"), "utf8");
+  const tableRow = (userType) => {
+    const re = new RegExp(`^\\|\\s*文本模型\\s*\\|\\s*\`${userType}\`\\s*\\|.*?\\|\\s*(\\d+)\\s*\\|\\s*(\\d+)\\s*\\|`, "m");
+    const m = re.exec(faq);
+    return m ? Number(m[2]) : null; // column 2 = 实际 RPM (the effective one)
+  };
+  const defaultRpm = tableRow("default");
+  const enterpriseRpm = tableRow("enterprise");
+  const tokenPlanRpm = tableRow("TokenPlan");
+  check("the official FAQ table parses for all three key types",
+    defaultRpm !== null && enterpriseRpm !== null && tokenPlanRpm !== null,
+    `default=${defaultRpm} enterprise=${enterpriseRpm} tokenplan=${tokenPlanRpm}`);
+
+  const zh = surface.dictionaries.zh;
+  const ttZh = (key) => zh[key] ?? key;
+  const note = texts(treeOf(render.RpmNote, { tt: ttZh })).join("\n");
+
+  // The figures are read out as label→number PAIRS and compared exactly, not
+  // sniffed with a substring or a loose "label then some digits" pattern.
+  // Both of those pass on wrong copy: `includes("10")` is satisfied by the
+  // `1000` further along the line, and a `label[^0-9]{0,12}NN` gap search
+  // happily skips over the number that belongs to the NEXT label. Only a
+  // parse that binds each number to the label immediately before it can fail
+  // on a transposed or altered ceiling — which is what this note is for.
+  const parsed = new Map();
+  {
+    const pairRe = /(免费\s*\/\s*默认|企业认证|Token ?Plan)[^0-9]{0,20}?(\d+)/g;
+    let m;
+    while ((m = pairRe.exec(note)) !== null) parsed.set(m[1].replace(/\s+/g, " ").trim(), Number(m[2]));
+  }
+  const ratio = (label) => parsed.get(label) ?? null;
+  check("the note parses as three label→ceiling pairs",
+    parsed.size === 3, JSON.stringify([...parsed]));
+  check("the free-key ceiling is the FAQ's effective figure",
+    defaultRpm !== null && ratio("免费/默认") === defaultRpm, `parsed=${ratio("免费/默认")} faq=${defaultRpm}`);
+  check("the enterprise-key ceiling is the FAQ's effective figure",
+    enterpriseRpm !== null && ratio("企业认证") === enterpriseRpm, `parsed=${ratio("企业认证")} faq=${enterpriseRpm}`);
+  check("the Token Plan ceiling is the FAQ's effective figure",
+    tokenPlanRpm !== null && ratio("Token Plan") === tokenPlanRpm, `parsed=${ratio("Token Plan")} faq=${tokenPlanRpm}`);
+
+  // The two facts that make the note worth its space: this is a SECOND layer
+  // beside subscription quota, and a rate 429 is not a quota exhaustion. The
+  // distinction is the whole reason `llm-error-fix.ts` retries rather than
+  // reporting a dead account, so the copy must not blur it.
+  check("the note says the two layers apply together",
+    /同时生效/.test(note), note);
+  check("the note separates a rate 429 from quota exhaustion",
+    /429/.test(note) && /(等一分钟|等 1 分钟|wait a minute)/.test(note), note);
+  // Pool identity follows the key prefix — the fact that makes "switch keys"
+  // mean "switch pools" (FAQ Q7). Without it the note reads as a flat ceiling.
+  check("the note names the per-key-type pools",
+    note.includes("sk-") && note.includes("cpk-"), note);
+
+  // English must carry the same numbers: a translation that drops one leaves
+  // the English UI asserting less than the Chinese one.
+  const en = surface.dictionaries.en;
+  const enNote = texts(treeOf(render.RpmNote, { tt: (key) => en[key] ?? key })).join("\n");
+  check("the English note carries all three ceilings",
+    defaultRpm !== null && enNote.includes(String(defaultRpm))
+      && enNote.includes(String(enterpriseRpm)) && enNote.includes(String(tokenPlanRpm)), enNote);
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.pass);
 if (failed.length > 0) {

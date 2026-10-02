@@ -14,7 +14,7 @@ import type { Tt } from "./runtime.ts";
 import type { SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PlanCard, CatalogueCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
-import { DrawSwitch, VideoSwitch } from "./provider-controls.ts";
+import { DrawSwitch, RpmNote, VideoSwitch } from "./provider-controls.ts";
 import { AgnescodeTab } from "./agnescode-tab.ts";
 import type { TabStatus } from "./agnescode-tab.ts";
 
@@ -504,7 +504,13 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                   SectionCard,
                   { title: tt("llm.title"), open: openSections.llm, onToggle: () => toggleSection("llm"), tt },
                   h(ApiKeyForm, { llm: data?.llm ?? null, onDone: () => void load(), tt, bare: true })
-                )
+                ),
+                // The tab's closing note, OUTSIDE any card: RPM is a property
+                // of the provider as a whole (it follows the key type, not the
+                // key card's own state), so hanging it on a single card would
+                // file a provider-wide fact under one section. The panel has no
+                // RPM reading to show — see `RpmNote` for why it is prose.
+                h(RpmNote, { tt })
               )
       );
 

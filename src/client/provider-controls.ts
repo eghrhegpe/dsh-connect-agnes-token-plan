@@ -79,6 +79,41 @@ export function ProviderRegStatus({ llm, tt }: { llm?: LlmData | null; tt: Tt })
 }
 
 /**
+ * The RPM note at the foot of the API tab: the one limit that governs this
+ * provider but that the panel can neither measure nor display as live state.
+ *
+ * WHY AN EXPLANATION AND NOT A COLUMN. `llm-error-fix.ts` already corrects a
+ * bare 429 into "this is a rate ceiling, back off" — the panel's retry ladder
+ * leans on that. But the platform exposes no per-key RPM reading anywhere
+ * (`/v1/models` and the subscription payload both carry only the four
+ * SUBSCRIPTION windows, see docs/AGNES-API.md §4.1), so the ceiling cannot be
+ * rendered the way `quota.windows` is. What the user is missing is not a
+ * number we could poll but the SHAPE of the rule: the ceiling is set by WHICH
+ * KIND OF KEY is in the box, and it is a DIFFERENT limit from subscription
+ * quota — the official error table gives one 429 code for both, so a reader
+ * who cannot tell them apart does not know whether to wait a minute or to stop
+ * and check their quota. Both facts are static, so both are said in words.
+ *
+ * The figures are the official FAQ tables (docs/AGNES-API-docs/4、Token Plan
+ * FAQ.md §3–§5, updated 2026-09-23) — transcribed, never recomputed, and
+ * pinned against that file by `test/render.test.mjs` so a docs re-sync that
+ * changes a number fails a check instead of silently shipping a stale note.
+ * Only the three TEXT tiers appear: the image (per-resolution) and video
+ * ceilings are many rows and belong with each tool's own selection rules.
+ *
+ * Hook-free, like the other status lines, so the render suite reaches it.
+ */
+export function RpmNote({ tt }: { tt: Tt }): unknown {
+  return h(
+    "div",
+    { style: { marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)", fontSize: 12, color: "var(--dsw-alias-label-secondary)" } },
+    h("div", { style: { color: "var(--dsw-alias-label-primary)", marginBottom: 4 } }, tt("rpm.title")),
+    h("div", null, tt("rpm.body")),
+    h("div", { style: { marginTop: 4 } }, tt("rpm.pool"))
+  );
+}
+
+/**
  * The live provider-registration switch (docs/PROVIDER-HOT-RELOAD.md).
  *
  * Posts `{ enabled }` to the plugin's own `/provider` route; the Host
