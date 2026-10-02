@@ -128,7 +128,8 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
 | 接/改 LLM provider（descriptor、`maxTokens`、注册三件套、adapter 组装） | `docs/DSH-LLM-DEVELOP.md`（peer 分工 → 注册 → descriptor 契约 → 探针纪律 → 排查速查） |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（41 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（43 条现象→根因→修法） |
+| 排查「浏览器/控制台看不到插件报错」「有没有环形日志」 | `docs/PITFALLS.md` §42（两半进程 + 有意降级：Host 报错在 `dsh web` 终端 stdout 与 `$DSH_HOME/logs/`，不在浏览器 F12） |
 | 查某条事实「当初从哪来」 / 要落盘新参照件 | `docs/REFERENCES.md`（`upstream/` 容器清单：来源 / 版本 / 许可 / 承重在哪） |
 | 排查「这条配置到底生效没」 / 改了源码却没变 | `docs/PITFALLS.md` §22（bundles 装载 → patch overlay → `$DSH_HOME/state/<profile>/<name>/` 三层，desktop 是安装副本、web 是 symlink） |
 | 加/改 **state 文件**、读 `profileContext`、判断某状态该不该按 profile 分段 | `docs/PITFALLS.md` §23（catalog/provider/draw 分段；throttle 与凭据 grant **故意共享**，别统一） |
