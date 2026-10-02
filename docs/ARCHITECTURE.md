@@ -368,7 +368,7 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 现行边界就是上面 §5 的不变量正文；历次划界的裁定、举证与取代链登记在
 [ADR.md](./ADR.md)（ADR-001 ～ ADR-003），失效裁定的完整原文在
 [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md)。本节不再承载
-裁定正文——「修订（日期）」式内联补丁由 `docs.test.mjs` 检查 12 禁止，避免沉积
+裁定正文——「修订（日期）」式内联补丁由 `docs.test.mjs` 检查 `ARCHAEOLOGY` 禁止，避免沉积
 再次把现行文档变成地层。
 
 ---

@@ -121,7 +121,7 @@ AgnesCode 侧少了后半句（复制时漏的）。共享后统一为完整版�
       `index.ts` / `lifecycle.ts` / `snapshot-aggregate.ts` / `routes/models.ts` 一行未改）。
       AgnesCode 侧原有的 `agnescodeSignature()` 是只写不读的死状态，已在收敛后删除（见 §6）。
 - [x] peer-free 不变：`publish-core.ts` 只 import `util.ts` 与 `host-config.ts`，无静态
-      `@deepseek-ai/*`（`docs.test.mjs` 检查 13）。
+      `@deepseek-ai/*`（`docs.test.mjs` 检查 `PEER_BOUNDARY`）。
 - [x] 隔离不变：两侧 publisher 仍是各自的 `state` 实例，`registerPair` 各绑自己的
       provider id 与 display name；AgnesCode 的动作无法触达 Token Plan 的状态。
 

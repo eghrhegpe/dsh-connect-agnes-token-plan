@@ -105,7 +105,7 @@
   - 「接入 API」tab：同一份快照（它渲染的就是快照里的 `llm` 块），因此同样的「更新于」与刷新，但**不再挂令牌 chip**——那枚令牌是控制台凭据，这个 tab 用的是已保存的 API Key；
   - 「AgnesCode」tab：它读自己的路由、按 60s 自己的节奏轮询，所以由该 tab **自己发布**「更新于」与刷新。此前顶栏在这一 tab 上引用的是快照的时间戳，刷新按钮也只重载快照——两者都指向**另一个 tab** 的数据。
 - **顺带修掉一个看不见的失败**：AgnesCode tab 的路由读取失败时 `error` 只被 set、从不渲染，于是「Host 没回话」显示成「未关联——请先在桌面端登录」，把原因甩给了用户的桌面 App。现在失败会明说，且这一刻不再声称「未关联」（面板没有这个证据）；顶栏刷新按钮在该 tab 尚未发布 loader 时置灰，而不是静默重载另一个 tab。
-- 契约：`barPlan` 的决策由 `test/render.test.mjs` H3 驱动，接线与「失败必须渲染」由 `test/panel.test.mjs` F6 钉住；`docs.test.mjs` 检查 9 依赖 `activeTab` 的字面联合类型，源码注释已写明不要改成类型别名。
+- 契约：`barPlan` 的决策由 `test/render.test.mjs` H3 驱动，接线与「失败必须渲染」由 `test/panel.test.mjs` F6 钉住；`docs.test.mjs` 检查 `README_TABS` 依赖 `activeTab` 的字面联合类型，源码注释已写明不要改成类型别名。
 
 ### 修复：AgnesCode tab 的「检测本机登录态」点了没反应（GET 路由每次都抛错）
 
@@ -231,12 +231,12 @@
 
 `test/panel.test.mjs` 补三条断言把这次的决定钉住：三张卡的渲染顺序、默认展开集合、跨卡指引必须点卡片名而非方向词（均做过「故意改回旧序 / 改回 false → 红 → 还原 → 绿」验证）。
 
-### 截图与市场清单对齐（`docs` 门禁新增检查 11）
+### 截图与市场清单对齐（`docs` 门禁新增检查 `SCREENSHOTS`）
 
 重截截图时文件名从 `panel-credit-pools.png` / `panel-provider-setup.png` 换了新名，磁盘与 git 都已同步，**唯独 `screenshots.json` 仍指着两个已删掉的旧文件**——工作树干净、构建通过、其余检查全绿，**没有任何东西在报错**，而它是市场页取图的唯一依据，推上去就是图裂。
 
 - **清单对齐当前两张**：`assets/panel-credit.png`（「积分额度」tab）、`assets/panel-API-provider.png`（「接入 API」tab）；「小浣熊」那张待补。
-- **`docs.test.mjs` 新增检查 11**：清单声明的每条路径必须**真实存在于磁盘**、是图片扩展名、条目数 1–8、且为仓库根相对路径。三种破坏实测红过再还原复验绿（换回旧名 / `..` 逃逸 / 拿 `README.md` 当条目）。
+- **`docs.test.mjs` 新增检查 `SCREENSHOTS`**：清单声明的每条路径必须**真实存在于磁盘**、是图片扩展名、条目数 1–8、且为仓库根相对路径。三种破坏实测红过再还原复验绿（换回旧名 / `..` 逃逸 / 拿 `README.md` 当条目）。
 - **`PITFALLS` 新增 §26**（条目数 25 → 26，三处引用由门禁当场抓出并同步）：**清单类文件（`.json` / `.yml` / `.toml`）不是文档，但同样是契约**——改资产名前先问「还有谁按名字引用它」；本仓库按名字引用 `assets/` 的机器消费方只有 `screenshots.json` 一处，正是「只有一处 + 又不叫 `.md`」让它成了盲区。
 - **`CONTRIBUTING` §8** 那句「重截并推送后截图自动生效（**文件名不变**）」已修正：它藏了个未言明的前提——**改名就必须同步清单**，而这次恰恰是换了名。
 
@@ -357,8 +357,8 @@ Token Plan 与小浣熊同为商汤旗下产品线，`sensenova` 这个名头名
 - **`cordis.patch.yml` 头注释的同类漂移**：第 3 行同款地写着 "sidebar panel"，同样进 npm 包，一并改掉。
 - **第二上游的网关契约补复测**（新增 `docs/ROADMAP.md` §6.1.2）：2026-10-01 的四次无凭据只读请求——本插件实际依赖的 `/model_catalog` 与 `/chat/completions` 均回 `401 authorization_empty_error`（已抵鉴权层，路由健在）；09-30 记录里那个 404 的是参考件 `dsh-raccoon-work` 的 `/models`，**本插件不使用**。此前据前缀相同就判「实现的常量正是被标注 404 的那份清单」属**误判，已更正**。附带教训收进 PITFALLS §24。
 - **护栏：`docs.test.mjs` 新增两条语义检查**——原有的全是形式校验（链接 / 表格去重 / 行数上限），对面「文档断言的事是否与代码一致」毫无感知：
-  - **检查 9**：README 必须覆盖面板的每一个 tab。tab 名单从 `panel-page.ts` 的 `activeTab` 联合类型派生、文案从 `i18n.ts` 的 `tab.<id>` 派生，**不写死任何名字**，于是「加 tab 忘了告诉用户」和「改 tab 名不跟」都必然红。
-  - **检查 10**：README 与 `cordis.patch.yml` 声称的 UI 位置必须与 `src/client/*.ts` 实际注册的槽位一致。
+  - **检查 `README_TABS`**：README 必须覆盖面板的每一个 tab。tab 名单从 `panel-page.ts` 的 `activeTab` 联合类型派生、文案从 `i18n.ts` 的 `tab.<id>` 派生，**不写死任何名字**，于是「加 tab 忘了告诉用户」和「改 tab 名不跟」都必然红。
+  - **检查 `SELF_DESCRIPTION`**：README 与 `cordis.patch.yml` 声称的 UI 位置必须与 `src/client/*.ts` 实际注册的槽位一致。
   - 两条都做过「故意破坏 → 必须红 → 还原 → 复绿」的双向验证（删光「小浣熊」精确报出 `raccoon（面板文案「小浣熊」）`；改回事故原文报「声称面板在侧边栏但没有 sidebar 槽位注册」）。
 - **PITFALLS 新增 §24（GET 探活会误判）与 §25（形式门禁全绿 ≠ 文档说实话）**，总数 23 → 25；三处散落的过期引用（`README.md` / `AGENTS.md` / `docs/README.md`）同步——这批数字正是由新门禁当场揪出来的。
 

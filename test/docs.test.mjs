@@ -1,22 +1,25 @@
 // docs.test.mjs —— 文档与引用一致性钉子（纯文件读取：无网络、无 peer 依赖、干净检出即可跑）
 //
-// 守住五类「一致性纪律」：
-//   文档结构（1-6）：内部链接可解析、跨文件表格去重、README 行数上限、
-//                    DSH-PLUGIN.md 教学快照同步、API.md 快照契约、docs/ 孤儿文件
-//   事实引用（N=条目数本身、8）：PITFALLS 条数引用有效、src/ 注释里的模块名引用完整（含伪文件名扫描）
-//   自述面与实际一致（9-11）：README 覆盖每个 tab、声明的 UI 位置与 client 槽位注册一致、
-//                    screenshots.json 声明的图真实存在于磁盘。这三条与 1-8 有本质区别：
-//                    前两组验的是「文档格式对不对」，它们验的是「文档有没有说实话」——
-//                    形式全绿而语义已漂，是本仓库踩过两次的坑（见 PITFALLS §25）。
-//   考古纪律（12）：现行文档不许盖「修订（日期）」式内联补丁——决策沿革只登记在
-//                    docs/ADR.md 账本（规则本体见该文件「使用规则」）
-//   peer 边界（13）：静态 `@deepseek-ai/*` import 只许 llm adapter 层——「内核 peer-free
-//                    才能缺席降级」这条自述承诺的静态面（与 9-11 同族：验的是文档说的
-//                    架构纪律在代码里真的成立，不是格式）
-//   活文档计数护栏（14）：现行文档不得写死会随代码漂移的模块数/规模/行数/路由条数/套件规模（历史·账本·研究档豁免）
-//   检查引用可解析（15）：全仓 md 里的「检查 N」按就近套件名限定作用域后，docs.test
-//                    语境的序号必须落在它的检查号集合里——检查号是顶部注释里的序号，
-//                    增删即漂移；指到别的套件的不越权解析
+// 守住五类「一致性纪律」。每条检查都**有一个名字**（见下方 CHECK_IDS）——文档引用
+// 一律写名字、不写序号：序号只存在于本注释里，增删一条检查就会把下游所有「检查 N」
+// 静默顶错位；名字增删只增删集合成员，已有名字永不变。
+//   文档结构：LINKS 内部链接可解析、TABLES 跨文件表格去重、README_LINES 根 README
+//                    行数上限、SNAPSHOT DSH-PLUGIN.md 教学快照同步、API_SNAPSHOT
+//                    API.md 快照契约、ORPHAN_DOCS docs/ 孤儿文件
+//   事实引用：PITFALLS_REFS 条目数/条号引用有效、SRC_COMMENT_REFS src/ 注释里的模块名引用完整（含伪文件名扫描）
+//   自述面与实际一致：README_TABS README 覆盖每个 tab、SELF_DESCRIPTION 声明的 UI 位置
+//                    与 client 槽位注册一致、SCREENSHOTS 声明的图真实存在于磁盘。这三条
+//                    与前两组有本质区别：前两组验的是「文档格式对不对」，它们验的是
+//                    「文档有没有说实话」——形式全绿而语义已漂，是本仓库踩过两次的坑（见 PITFALLS §25）。
+//   考古纪律：ARCHAEOLOGY 现行文档不许盖「修订（日期）」式内联补丁——决策沿革只登记
+//                    在 docs/ADR.md 账本（规则本体见该文件「使用规则」）
+//   peer 边界：PEER_BOUNDARY 静态 `@deepseek-ai/*` import 只许 llm adapter 层——
+//                    「内核 peer-free 才能缺席降级」这条自述承诺的静态面（与自述面同族：
+//                    验的是文档说的架构纪律在代码里真的成立，不是格式）
+//   活文档计数护栏：COUNT_GUARD 现行文档不得写死会随代码漂移的模块数/规模/行数/路由条数/套件规模（历史·账本·研究档豁免）
+//   检查引用可解析：REF_RESOLVABLE 全仓 md 里的「检查 <名字>」按就近套件名限定作用域后
+//                    必须落在 CHECK_IDS 里；docs.test 语境的**数字**序号视为待迁移、报红；
+//                    指到别的套件的不越权解析
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve, relative, sep, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,15 +77,32 @@ const mdFiles = collectMd(ROOT).sort();
 console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`);
 
 /**
- * docs.test 自己的检查号——顶部注释里那段（1-6 / 8 / 9-11 / 12 / 13 / 14）的
- * 机器可解析形式。**注意 7 不在列**：文档结构只到 6，事实引用从 8 起（编号跳到
- * 7 是历史遗留的「事实引用（N=条目数本身、8）」），所以「检查 7」在 docs.test
- * 语境下指空——它属于 package.test.mjs 自己的一套编号。
+ * docs.test 的检查名册——顶部注释那串描述的机器可解析形式。**文档引用写名字、不写
+ * 序号**：序号只存在于注释里，增删一条检查（比如插入一个「检查 7」）就会把下游所有
+ * 「检查 N」静默顶错位；名字增删只增删集合成员，已有名字永不变。值是一句话说明，
+ * 让 `REF_RESOLVABLE` 的红报直接说「检查 <名>」而非让人去反查序号。
  *
- * 检查 15 用它来解析全仓文档里的「检查 N」引用；活文档只应点名套件与覆盖面、
- * 不背书序号，但历史积累的引用要先能核验再谈迁移。
+ * 注意旧的序号体系里**没有 7**（文档结构到 6，事实引用从 8 起），而「检查 7」属于
+ * `test/package.test.mjs` 自己的一套编号——同一个 7，在不同套件语境下指空/存在。
+ * `REF_RESOLVABLE` 只解析 docs.test 语境的引用，指到别的套件的不越权。
  */
-const DOCS_TEST_CHECKS = new Set([1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]);
+const CHECK_IDS = new Map([
+  ["LINKS", "内部链接可解析"],
+  ["TABLES", "跨文件表格去重"],
+  ["README_LINES", "根 README 行数上限"],
+  ["SNAPSHOT", "DSH-PLUGIN.md 教学快照与 package.json 同步"],
+  ["API_SNAPSHOT", "API.md 快照契约"],
+  ["ORPHAN_DOCS", "docs/ 孤儿文件"],
+  ["PITFALLS_REFS", "PITFALLS 条目数/条号引用有效"],
+  ["SRC_COMMENT_REFS", "src/ 注释里的模块名引用完整"],
+  ["README_TABS", "README 覆盖面板每一个 tab"],
+  ["SELF_DESCRIPTION", "自述 UI 位置与 client 槽位注册一致"],
+  ["SCREENSHOTS", "screenshots.json 声明的图真实存在于磁盘"],
+  ["ARCHAEOLOGY", "现行文档禁「修订（日期）」式内联补丁"],
+  ["PEER_BOUNDARY", "内核零静态 `@deepseek-ai/*` import"],
+  ["COUNT_GUARD", "活文档计数护栏：不得写死会漂移的规模"],
+  ["REF_RESOLVABLE", "检查引用可解析（本条自己）"]
+]);
 
 // 1) 内部链接全部可解析
 {
@@ -687,43 +707,55 @@ const DOCS_TEST_CHECKS = new Set([1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15
   if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档 + ${codeFiles.length} 个代码文件零写死模块数/规模/行数/路由条数/套件规模（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
 }
 
-// === 15) 文档对「检查 N」的引用必须可解析 ====================================
-// 检查号只存在于本文件顶部注释里，不是机器可解析的 ID——增删一条检查（比如插入
-// 一个「检查 7」）就会把下游所有「检查 N」静默顶错位，而 AGENTS / CHANGELOG /
-// PITFALLS / ROADMAP 等处已积累一批这样的引用，此前没有任何门禁去解析它们。
-//
-// 本检查把 docs.test 自己的检查号升格为上面的 DOCS_TEST_CHECKS 常量（单一事实
-// 源），再扫全仓 md 把每处「检查 N」按同一行上就近的套件名限定作用域：
-//   - 指到 docs.test（显式 `docs.test.mjs` 或裸「检查 N」）→ 序号必须在集合里；
+// === REF_RESOLVABLE) 文档对「检查 <名>」的引用必须可解析 ====================
+// 检查名只存在于本文件的 CHECK_IDS 里，增删一条检查就改集合、不改已有名字。本检查
+// 扫全仓 md 把每处「检查 <名>」按同一行上就近的套件名限定作用域：
+//   - 指到 docs.test（显式 `docs.test.mjs` 或裸「检查 <名>」）→ 名字必须在名册里；
+//   - docs.test 语境出现**数字序号**（如「检查 9」）→ 报红，请改引名字——序号是
+//     历史遗留，会随增删漂移（REF_RESOLVABLE 自己就是从数字迁过来的）；
 //   - 指到别的套件（如 `test/package.test.mjs 检查 7`）→ 那套件的合法编号不归我们
-//     维护，本检查**不越权解析、直接跳过**（否则会拿 package.test 的 7 当悬空误判）。
+//     维护，本检查**不越权解析、直接跳过**（否则会拿 package.test 的 7 误判）。
+// 形如 `检查 docs/DSH-PLUGIN.md` 不是检查引用，静默跳过（名字只认全大写下划线形、
+// 且至少 2 字符——单字母如「检查 N」是占位短语，不是引用）。
 const scopeRe = /([A-Za-z0-9_.-]+\.test\.mjs)/g;
-const refRe = /检查\s*(\d+)(?:\s*[/／]\s*(\d+))?/g;
+const refRe = /检查\s*([`'"\[\]A-Za-z0-9_/／、]+)/g;
+const CHECK_NAMES = new Set(CHECK_IDS.keys());
 {
   const dangling = [];
   let resolved = 0;
+  let deprecated = 0;
   let skipped = 0;
   for (const f of mdFiles) {
     const text = readFileSync(f, "utf8");
     refRe.lastIndex = 0;
     let m;
     while ((m = refRe.exec(text)) !== null) {
-      const nums = m[2] ? [m[1], m[2]] : [m[1]];
       const lineStart = text.lastIndexOf("\n", m.index) + 1;
       const lineEnd = text.indexOf("\n", m.index);
       const line = text.slice(lineStart, lineEnd < 0 ? text.length : lineEnd);
       const scoped = [...line.matchAll(scopeRe)].pop();
       if (scoped && scoped[1] !== "docs.test.mjs") { skipped++; continue; }
-      for (const n of nums) {
-        resolved++;
-        if (!DOCS_TEST_CHECKS.has(Number(n))) {
-          dangling.push(`${f} 引用「检查 ${n}」——不在 docs.test 的检查号集合（${[...DOCS_TEST_CHECKS].join("/")}）里：要么是增删检查后没同步，要么指错了套件`);
+      const tokens = m[1].replace(/[`"'\[\]]/g, "").split(/[/／、]/).map((t) => t.trim()).filter(Boolean);
+      for (const tok of tokens) {
+        // 名字只在 docs.test 名册里，见到即确定作用域——同一行若也提到别的套件
+        // （如 PITFALLS §39 那句既写 `contract.test.mjs` 又写「检查 14」），就近匹配
+        // 会误判，所以**名字不看作用域**、只有数字序号才靠就近套件名判定。
+        if (CHECK_NAMES.has(tok)) { resolved++; continue; }
+        const inDocsScope = !scoped || scoped[1] === "docs.test.mjs";
+        if (!inDocsScope) { skipped++; continue; }
+        if (/^\d+$/.test(tok)) {
+          deprecated++;
+          dangling.push(`${f} 用数字序号「检查 ${tok}」——docs.test 的检查请改引名字（如 \`检查 LINKS\`），序号会随增删漂移`);
+          continue;
+        }
+        if (/^[A-Z][A-Z0-9_]{1,}$/.test(tok)) {
+          dangling.push(`${f} 引用「检查 ${tok}」——不在 docs.test 检查名册（${[...CHECK_NAMES].join("/")}）里：要么是增删检查后没同步，要么指错了套件`);
         }
       }
     }
   }
   if (dangling.length) dangling.forEach(bad);
-  else note(`检查引用可解析：${resolved} 处 docs.test 语境引用全部命中（另 ${skipped} 处指到别的套件，本检查不越权）`);
+  else note(`检查引用可解析：${resolved} 处 docs.test 语境命名引用命中、数字序号 0 处（${deprecated} 处数字已全部迁移；另 ${skipped} 处指到别的套件，本检查不越权）`);
 }
 
 if (fails.length) {

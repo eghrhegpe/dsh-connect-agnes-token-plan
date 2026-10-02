@@ -49,7 +49,7 @@ Host 半边源码位于 `src/host/`（**模块清单以该目录为准**，不�
 - 结构或双仓库关系变化 → `ARCHITECTURE.md` / `DSH-PLUGIN.md`
 - 测试套件或流程变化 → `TESTING.md`
 - 新踩坑或修法 → `PITFALLS.md`
-- 拍新裁定 / 改既有裁定 → 先在 [ADR.md](./ADR.md) 记一笔（日期 / 状态 / 取代链），再改现行正文；**现行正文不留「修订（日期）」式内联补丁**——`docs.test.mjs` 检查 12 为这条把关。
+- 拍新裁定 / 改既有裁定 → 先在 [ADR.md](./ADR.md) 记一笔（日期 / 状态 / 取代链），再改现行正文；**现行正文不留「修订（日期）」式内联补丁**——`docs.test.mjs` 检查 `ARCHAEOLOGY` 为这条把关。
 - 吸收准入门槛（[ADR.md](./ADR.md) ADR-005）→ 新能力动工前，先在 ROADMAP / ARCHITECTURE 写明它进哪个现有文件 / 分册；现有结构装不下，先出拆分蓝图（先例 [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md)）并冻结行为基线，再实现。
 
 根 `README.md` 保持为索引与快速上手，细节下沉到 `docs/`。
@@ -106,7 +106,7 @@ description:
 
 - **当前 2 张已重截**（2026-10-01，0.4.3 面板归位之后）：`assets/panel-credit.png`（「积分额度」tab：池卡 + 每模型消耗）、`assets/panel-API-provider.png`（「接入 API」tab：语言模型开关 + 花名册勾选）。旧两张 `panel-credit-pools.png` / `panel-provider-setup.png` 拍于归位之前（标题还是「积分面板」、右上角挂着已摘掉的「返回会话」按钮、无 tab bar、模型行带已删的「纯文本」徽章），已删除。
 - 重截条目与 tab 覆盖同理，**每张必须对应一个真实 tab**；仍缺第 ③ 张「AgnesCode」= 登录态检测 / 余额 / 花名册。
-- **清单与资产必须同一次提交**（2026-10-01 实测事故）：重截换名那次 `assets/` 与 git 都已换成新名，唯独 `screenshots.json` 还指着两个已不存在的文件——工作树干净、构建通过、其余十条检查全绿，**没有任何东西在报错**，而市场按这份清单取图，推上去就是图裂。现由 `docs.test.mjs` 检查 11 兜住：每条路径必须真实存在、是图片扩展名、1–8 张、且为仓库根相对路径。
+- **清单与资产必须同一次提交**（2026-10-01 实测事故）：重截换名那次 `assets/` 与 git 都已换成新名，唯独 `screenshots.json` 还指着两个已不存在的文件——工作树干净、构建通过、其余十条检查全绿，**没有任何东西在报错**，而市场按这份清单取图，推上去就是图裂。现由 `docs.test.mjs` 检查 `SCREENSHOTS` 兜住：每条路径必须真实存在、是图片扩展名、1–8 张、且为仓库根相对路径。
 - **不要凭想象补图**——画一个不存在的界面比没有图更坏，本插件的市场描述是「每句都会被对照代码核对」。
 
 投稿前的硬门槛（CI 自动检查 + 维护者人工读码）：
@@ -135,7 +135,7 @@ description:
 **市场收录状态（2026-10-01 实测）**：投稿 PR 已提且**仍处于 open、未合并**——
 [awesome-dsh-plugin#6139](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6139)
 （2026-09-29 提交，`merged_at: null`，0 评论）；`data/plugins/` 目录下尚无
-`eghrhegpe__dsh-connect-agnes-token-plan.yml`，与实际一致。**该 PR 的正文与条目文件已于 2026-10-01 更新**（原先两处都停在旧形态）：原文写的是 "for the Harness Web sidebar"，原文引用 yml 里的 "sidebar panel" 与「侧边栏面板」；两处现都改为 Plugins 页的配置卡，并补上三个默认关闭的可选开关（provider 注册 / 出图工具 / 第二上游）。**原文其实提过 provider 注册**——但只提了它一个，且未提第二上游（此前本节误写为「未提 provider 注册」，2026-10-01 读到 PR 原文后更正）。**yml 才是市场条目的实际描述**：只改正文不改 yml，是另一种「分头走路」。收录后市场按 `screenshots.json` 取图，动图只需更新清单与资产（**改名就必须同步清单**，见检查 11 与 PITFALLS §26）。
+`eghrhegpe__dsh-connect-agnes-token-plan.yml`，与实际一致。**该 PR 的正文与条目文件已于 2026-10-01 更新**（原先两处都停在旧形态）：原文写的是 "for the Harness Web sidebar"，原文引用 yml 里的 "sidebar panel" 与「侧边栏面板」；两处现都改为 Plugins 页的配置卡，并补上三个默认关闭的可选开关（provider 注册 / 出图工具 / 第二上游）。**原文其实提过 provider 注册**——但只提了它一个，且未提第二上游（此前本节误写为「未提 provider 注册」，2026-10-01 读到 PR 原文后更正）。**yml 才是市场条目的实际描述**：只改正文不改 yml，是另一种「分头走路」。收录后市场按 `screenshots.json` 取图，动图只需更新清单与资产（**改名就必须同步清单**，见检查 `SCREENSHOTS` 与 PITFALLS §26）。
 
 **更新一个已投稿的条目**（2026-10-01 实操，两处都要改）：条目文件在 **PR 的 head fork** 上（`eghrhegpe/awesome-dsh-plugin`，分支 `add-sensenova-token-plan`），既不在本仓、也不在 base 仓。
 
