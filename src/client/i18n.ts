@@ -180,6 +180,8 @@ export const zh = {
   "video.noCandidates": "当前 API Key 目录里暂无视频模型；视频不可用。",
   "video.note25": "其中 {count} 个为 2.5 系列视频模型（{ids}）：走秒数制参数（seconds / size / aspect_ratio），工具已支持并自动换算；选中时按 2.5 体系出片。",
   "note": "数据来自 Agnes 控制台 API（/api/usage/overview、/api/usage/series、/api/cn/user/subscription 与公开的套餐目录），Host 侧缓存 {cache} 秒；令牌失效后 Host 会用已保存的账号自动重新登录一次。",
+  // 同一句话在 Host 没有报出缓存秒数时使用：不写数字，也不猜一个默认值。
+  "note.noCache": "数据来自 Agnes 控制台 API（/api/usage/overview、/api/usage/series、/api/cn/user/subscription 与公开的套餐目录）；令牌失效后 Host 会用已保存的账号自动重新登录一次。",
   "tab.quota": "积分额度",
   "tab.api": "接入 API",
   "tab.agnescode": "AgnesCode",
@@ -399,6 +401,9 @@ export const en: typeof zh = {
   "video.noCandidates": "This API key's catalogue has no video model; video is unavailable.",
   "video.note25": "{count} of these are 2.5-series video model(s) ({ids}): they take the whole-second scheme (seconds / size / aspect_ratio); the tool supports them and adapts automatically when one is selected.",
   "note": "Data from the Agnes console API (/api/usage/overview, /api/usage/series, /api/cn/user/subscription, and the public plan catalogue), cached {cache}s on the Host; a dead token makes the Host sign in again with the saved account.",
+  // The same sentence for a Host that did not state a cache age: no number,
+  // and no guessed default standing in for one.
+  "note.noCache": "Data from the Agnes console API (/api/usage/overview, /api/usage/series, /api/cn/user/subscription, and the public plan catalogue); a dead token makes the Host sign in again with the saved account.",
   "tab.quota": "Quota & Usage",
   "tab.api": "API Integration",
   "tab.agnescode": "AgnesCode",

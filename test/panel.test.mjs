@@ -332,6 +332,13 @@ const healthy = {
 // time either side is tuned, so the bundle is checked for literals rather than
 // for behaviour it cannot exercise here.
 //
+// The first version of this check only looked at `setInterval(run, …)` and at
+// `cache: data?.cacheSeconds` — and BOTH literals it was written to kill
+// survived it: `useState(30_000)` sat outside the regex's reach, and
+// `?? 60` matched the cache pattern happily. A guard whose prose claims more
+// than the guard checks is worse than no guard, so the three cases are now
+// pinned separately, each against the shape that would reintroduce it.
+//
 // The check targets the POLL timer specifically: `setInterval(run, cadenceMs)`
 // in `PanelPage`, whose cadence the Host states in every snapshot. The form's
 // 1-second countdown timer is unrelated to polling and may stay a literal.
@@ -342,8 +349,27 @@ const healthy = {
     pollTimers.length === 1 && /\d/.test(pollTimers[0]) === false,
     pollTimers.join(" | "));
   check("the cache note quotes the snapshot's own number",
-    /cache:\s*data\?\.cacheSeconds/.test(source),
+    /format\(tt\("note"\),\s*\{\s*cache:\s*data\.cacheSeconds\s*\}\)/.test(source),
     (source.match(/cache:[^,}]*cacheSeconds[^)]*\)/g) ?? []).join(" | "));
+
+  // The cadence STATE must start unknown, not at a number that duplicates the
+  // Host's own default. `useState(30_000)` was exactly the second spelling of
+  // `CONFIG_DEFAULTS.pollSeconds` this check was written to prevent, and it sat
+  // one line above the timer the old pattern looked at.
+  const cadenceInit = source.match(/\[cadenceMs,\s*setCadenceMs\]\s*=\s*useState[^;]*/);
+  check("the cadence state starts unknown (null), not at a Host-default literal",
+    cadenceInit !== null && /useState<number \| null>\(null\)/.test(cadenceInit[0]),
+    cadenceInit === null ? "(no useState for cadenceMs found)" : cadenceInit[0]);
+
+  // And the cache note must have no numeric fallback either: a `?? <number>`
+  // here is the "cached 60s" literal wearing a different hat. A snapshot that
+  // states no cache age gets the no-number variant instead.
+  const noteLine = source.match(/tt\("note(?:\.noCache)?"\)[^;]*/g) ?? [];
+  check("the cache note has no numeric fallback for an unstated age",
+    noteLine.length > 0 && noteLine.every((line) => !/cacheSeconds\s*\?\?\s*\d/.test(line)),
+    noteLine.join(" | "));
+  check("an unstated cache age falls back to the numberless variant",
+    /tt\("note\.noCache"\)/.test(source), noteLine.join(" | "));
 }
 
 // === F5. the API tab's card order and its open-by-default set ==============

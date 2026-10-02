@@ -116,9 +116,15 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     return (localeSubscribe as (fn: () => void) => () => void)(() => setLocaleRevision((revision) => revision + 1));
   }, [localeSubscribe]);
 
-  // How often to ask again, in ms. The Host states it in every snapshot;
-  // this default only covers the first load, before any answer arrives.
-  const [cadenceMs, setCadenceMs] = useState(30_000);
+  // How often to ask again, in ms — `null` until the Host states it.
+  //
+  // This used to start at `30_000`, a second spelling of the Host's own
+  // `CONFIG_DEFAULTS.pollSeconds`. A literal here cannot be right for an
+  // operator who configured something else, and "not yet known" is a real
+  // state that a plausible-looking number hides. `null` keeps that state
+  // visible: the polling effect below fires its first load immediately and
+  // installs the timer only once the Host has actually stated a cadence.
+  const [cadenceMs, setCadenceMs] = useState<number | null>(null);
 
   // A snapshot only writes if it is still the newest one: the interval can
   // start a second load before the first returns, and without this the
@@ -167,9 +173,15 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       // Follow the Host's cadence instead of assuming one: the two would
       // otherwise disagree about how fresh this screen is, and the panel
       // would go on polling at the old rate after the operator changed it.
+      //
+      // The Host has already clamped its own setting, so the only job here is
+      // to reject a value that could not be a cadence at all. This used to
+      // clamp to `[5, 3600]` — the `5` was a copy of the Host's own floor and
+      // the `3600` was a ceiling the Host does not have, so an operator who
+      // configured 7200 got a panel polling at a rate its Host never stated.
       const stated = read.data?.pollSeconds;
-      if (typeof stated === "number" && Number.isFinite(stated)) {
-        setCadenceMs(Math.min(3600, Math.max(5, Math.floor(stated))) * 1000);
+      if (typeof stated === "number" && Number.isFinite(stated) && stated > 0) {
+        setCadenceMs(Math.floor(stated) * 1000);
       }
     } catch (reason) {
       // An abort is our own supersession, not a network failure.
@@ -194,6 +206,13 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // then the cadence the Host last stated. Re-running on `cadenceMs` is
   // what lets a changed rate take effect without a reload.
   //
+  // `cadenceMs === null` means the Host has not stated a rate yet, which is
+  // every render before the first answer: the load still fires (that request
+  // IS what produces the answer), but no timer is installed. Because the
+  // first answer flips this dependency, the effect re-runs once with the real
+  // cadence — and that second pass installs the interval WITHOUT loading
+  // again, which is what keeps the mount-time request from being duplicated.
+  //
   // The interval is stopped while the tab is hidden — nobody is watching
   // the screen, and every poll keeps a Host connection open — and a single
   // load fires on the way back, which also gives a stale "更新于" line
@@ -205,7 +224,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       if (alive) void load();
     };
     const start = () => {
-      if (timer === null) timer = setInterval(run, cadenceMs);
+      if (timer === null && cadenceMs !== null) timer = setInterval(run, cadenceMs);
     };
     const stop = () => {
       if (timer !== null) {
@@ -213,7 +232,14 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
         timer = null;
       }
     };
-    run();
+    if (cadenceMs === null) {
+      // No stated rate yet: ask once, install nothing.
+      run();
+      return () => {
+        alive = false;
+        stop();
+      };
+    }
     start();
     const onVisibility = () => {
       if (!alive) return;
@@ -414,8 +440,13 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               ),
               // The cache age is quoted from the snapshot, not written down here:
               // a note that says 60 while the Host caches for 300 is a lie the
-              // reader has no way to catch.
-              h("div", { style: S.note }, format(tt("note"), { cache: data?.cacheSeconds ?? 60 })),
+              // reader has no way to catch. A snapshot that does not state one
+              // gets the variant WITHOUT the number — the same rule as the
+              // quota figures, where an unread value renders as "not read yet"
+              // rather than as a plausible default.
+              h("div", { style: S.note }, typeof data?.cacheSeconds === "number"
+                ? format(tt("note"), { cache: data.cacheSeconds })
+                : tt("note.noCache")),
               // The login state stays visible while everything works — and
               // while nothing does: a collapsed section (unlike the content
               // sections) keeps the editor one click away without cluttering

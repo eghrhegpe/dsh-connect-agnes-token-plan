@@ -16,6 +16,8 @@
  */
 import { render, styles as S, texts, findElement, findAll } from "./panel-render.js";
 import { surface } from "./client-surface.js";
+import { THINKING_LADDER } from "../src/host/llm-models.ts";
+import { API_KEY_SOURCES } from "../src/host/api-key-store.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -819,6 +821,49 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     viewOf(null, "network down", tt).needsSetup === true);
   check("an unrecognised code keeps the sign-in form reachable",
     viewOfCode("some_new_code").needsSetup === true);
+}
+
+// === I1b. the two dynamic dictionary families, pinned BOTH ways ============
+// The panel names two Host enums by building a dictionary key at runtime:
+//
+//     tt(`llm.src.${keySource}`)   provider-controls.ts — the API key's origin
+//     tt(`llm.level.${level}`)     model-picker.ts      — a thinking level
+//
+// A missing key in either family does NOT degrade to a blank line: the client's
+// `tt` returns the key it was handed (`apply.ts`, the shell-absent fallback), so
+// the reader sees the raw `llm.src.profile`. `provider-controls.ts` claims
+// otherwise — it appends `|| String(llm.keySource)` expecting an empty string —
+// which is unreachable for that very reason, and is why these sets are pinned
+// here instead of trusted to a fallback.
+//
+// `agnescode.tier.*` already had this treatment (`agnescode.test.mjs`, the
+// tier-coverage checks pin it against `AGNESCODE_HARVEST_TIER` in both
+// directions). These two did not, so the pattern is now applied to all three:
+// each direction catches a different real drift — a level or source added on
+// the Host with no line (raw key on screen), and a line left behind for one
+// that no longer exists (a dead entry no reader can reach).
+{
+  /** Every `llm.<family>.<member>` dictionary key, split back to its member. */
+  const membersOf = (family) => Object.keys(surface.dictionaries.zh)
+    .filter((key) => key.startsWith(`llm.${family}.`))
+    .map((key) => key.slice(`llm.${family}.`.length));
+
+  const families = [
+    { family: "src", declared: [...API_KEY_SOURCES], host: "API_KEY_SOURCES" },
+    { family: "level", declared: [...THINKING_LADDER], host: "THINKING_LADDER" }
+  ];
+
+  for (const { family, declared, host } of families) {
+    const present = membersOf(family);
+    // The en side is already proven key-for-key equal to zh by `panel.test.mjs`
+    // F3; this check is about the HOST contract, so zh stands in for both.
+    check(`llm.${family}.* covers every member of ${host}`,
+      declared.filter((member) => present.includes(member) === false).length === 0,
+      `missing: ${declared.filter((m) => present.includes(m) === false).join(", ") || "(none)"} | declared: ${declared.join(", ")}`);
+    check(`llm.${family}.* has no entry ${host} does not declare`,
+      present.filter((member) => declared.includes(member) === false).length === 0,
+      `extra: ${present.filter((m) => declared.includes(m) === false).join(", ") || "(none)"} | present: ${present.join(", ")}`);
+  }
 }
 
 // === I2. no fillable text input is left for the browser to guess at =======

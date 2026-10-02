@@ -115,7 +115,12 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
       const waitMs = typeof body?.retryAfterMs === "number" ? body.retryAfterMs : null;
       if (waitMs !== null && waitMs > 0) {
         setCooldown(waitMs);
-        setFormError(tt(COOLDOWN_TEXT[code] ?? "auth.rateLimited"));
+        // Same guard the refusal lookup below uses: an absent code must not be
+        // used as an index. `COOLDOWN_TEXT[undefined]` happens to read as
+        // `undefined` at runtime and land on the same line, but the two
+        // adjacent lookups spelling that rule differently is exactly what let
+        // `tsc` sit red on this file with no gate watching.
+        setFormError(tt(code !== undefined ? COOLDOWN_TEXT[code] ?? "auth.rateLimited" : "auth.rateLimited"));
         return;
       }
       // Only say "wrong password" when the platform said so. Every other

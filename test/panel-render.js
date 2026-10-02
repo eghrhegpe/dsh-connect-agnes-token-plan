@@ -46,7 +46,13 @@ export const styles = surface.styles;
  * same components serve any dictionary — the tests pass an identity `tt` and
  * assert on dictionary KEYS, which is what decides the text, not the text
  * behind it.
- * @type {{QuotaCard: Function, PoolCard: Function, TrendTable: Function, SectionCard: Function}}
+ *
+ * The type names the SHAPE, not the members: it previously listed
+ * `{QuotaCard, PoolCard, TrendTable, SectionCard}` and three of those four had
+ * already been renamed away in the client, so the declared type described a
+ * surface that no longer existed while the checks happily read the real one.
+ * Use `render.<Name>` and let a missing member fail loudly at the call site.
+ * @type {Record<string, Function>}
  */
 export const render = surface.components;
 

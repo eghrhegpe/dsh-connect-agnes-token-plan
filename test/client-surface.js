@@ -110,11 +110,21 @@ if (registration === undefined) {
  * purpose: naming only what is actually read means a member the client renames
  * or drops fails here instead of silently, while an untouched member costs
  * nothing to leave out. Extend when a checked consumer needs another.
+ *
+ * `components` is deliberately `Record<string, Function>` rather than a list of
+ * member names, matching how `dictionaries` / `tables` / `styles` are declared
+ * above. It used to name four components (`QuotaCard`, `PoolCard`,
+ * `TrendTable`, `SectionCard`), and by the time anyone looked, three of those no
+ * longer existed in the client at all — the suites were reading the real
+ * `surface.components` while this typedef described a surface that had been
+ * gone for releases. A hand-written member list is a third copy of the client's
+ * roster, and nothing type-checks it (`registration` is `any`, and the checked
+ * suites are `.mjs`); naming the shape instead of the members cannot rot.
  * @typedef {{
  *   interpretSnapshot: (body: unknown) => {data: SnapshotLike|null, error: object|string|null},
  *   viewOf: (data: SnapshotLike|null, error: object|string|null, tt: Function) => PanelView,
  *   dictionaries: object, tables: object, styles: object,
- *   components: {QuotaCard: Function, PoolCard: Function, TrendTable: Function, SectionCard: Function}
+ *   components: Record<string, Function>
  * }} PanelSurface
  */
 

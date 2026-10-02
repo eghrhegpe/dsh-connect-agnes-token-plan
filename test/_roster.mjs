@@ -27,6 +27,11 @@ export function listSuites() {
  * Non-suite gates that run after the suite set on a full `npm test`.
  * These are `.mjs` (not `.test.mjs`) and are intentionally excluded from the
  * default roster — a clean checkout without a build emits loud SKIP, not fail.
+ *
+ * `tsc-gate` is the type layer: `i18n.ts`'s `const en: typeof zh`, the
+ * `wire.ts` mirror, and the strict flags in tsconfig.json are all compile-time
+ * fences, and a compile-time fence nothing runs is not a fence. It sat red at
+ * HEAD on 2026-10-02 with no gate, no CI job, and 24 green suites.
  * @type {string[]}
  */
-export const GATES = ["build-gate.mjs", "e2e-gate.mjs"];
+export const GATES = ["tsc-gate.mjs", "build-gate.mjs", "e2e-gate.mjs"];

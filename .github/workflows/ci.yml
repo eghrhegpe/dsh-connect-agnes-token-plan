@@ -106,6 +106,12 @@ jobs:
           # where the build must be proven (artifacts are gitignored, so a
           # fresh checkout has none until this build produces them).
           node test/build-gate.mjs
+          # The type gate: i18n's `en: typeof zh`, the wire.ts mirror and the
+          # strict tsconfig flags are compile-time fences, so they need a
+          # compile step in the gate. Same exemption from the roster pin as
+          # build-gate. `typescript` is a devDependency (installed above), so
+          # this really runs here instead of taking its SKIP path.
+          node test/tsc-gate.mjs
 
   e2e:
     name: End-to-end (best effort)

@@ -346,8 +346,19 @@ export function thinkingLevelMapFor(entry: Record<string, unknown>) {
   };
 }
 
-/** pi-ai's escalation ladder (`EXTENDED_THINKING_LEVELS`, dist/models.js:550). */
-const THINKING_LADDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+/**
+ * pi-ai's escalation ladder (`EXTENDED_THINKING_LEVELS`, dist/models.js:550).
+ *
+ * Exported because it is the authoritative spelling of "every thinking level a
+ * roster row can name": the panel renders `tt(\`llm.level.${level}\`)`, so its
+ * `llm.level.*` dictionary keys are a mirror of this ladder and
+ * `test/render.test.mjs` pins the two sets against each other in BOTH
+ * directions — a level added here must get a line in each language, and a line
+ * for a level that no longer exists is a dead key. Without that pin a new level
+ * rendered as the raw key `llm.level.<name>` (the dictionary lookup misses, and
+ * the client's `tt` returns the key it was given).
+ */
+export const THINKING_LADDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /**
  * The thinking levels DSH's selector will actually offer for one model.

@@ -29,6 +29,23 @@ import { verbatim } from "./util.ts";
 export const API_KEY_REF = "AGNES_TOKEN_PLAN_API_KEY";
 
 /**
+ * Every place a key can come from, in precedence order.
+ *
+ * The panel labels the source with `tt(\`llm.src.${keySource}\`)`, so the
+ * `llm.src.*` dictionary keys are a mirror of this list and
+ * `test/render.test.mjs` pins the two sets against each other in BOTH
+ * directions. Before that pin the union lived only in a JSDoc comment and three
+ * `return` statements: a fourth source would have rendered as the raw key
+ * `llm.src.<name>`, and the client's `|| String(keySource)` fallback could not
+ * catch it — the client's own `tt` returns the key it was handed, which is a
+ * non-empty string.
+ *
+ * `null` is not a member: it means "no key at all", which the panel renders
+ * with its own line (`llm.noKey`) rather than a source label.
+ */
+export const API_KEY_SOURCES = Object.freeze(["credentials", "memory", "env"]);
+
+/**
  * Build the API-key store.
  * @param {object} [options] - wiring.
  * @param {object|Function|null} [options.credentials] - the `ctx.credentials`

@@ -87,6 +87,7 @@
   "devDependencies": {
     "@types/node": "^26.6.3",
     "jsqr": "^1.4.0",
-    "tsdown": "^0.23.0"
+    "tsdown": "^0.23.0",
+    "typescript": "^5.9.3"
   }
 }
