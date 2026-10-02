@@ -5,12 +5,19 @@
  * is the peer-dependent half.
  *
  * Three decisions carried here:
- *   1. `reasoning: false` — the catalogue rows declare a `thinking_toggle`
- *      (default ON), but the WIRE field that would control it from OpenAI
- *      chat is UNVERIFIED (ROADMAP §6.3). Offering a thinking selector would
- *      promise something the descriptor cannot emit; the honest v1 shape is
- *      "no toggle; the BFF defaults to thinking ON". A stated limitation, not
- *      an oversight.
+ *   1. `reasoning: true` + a BFF-specific `thinkingLevelMap` — probed LIVE on
+ *      2026-10-03 against the per-account BFF (`agnes-3.0-flash`,
+ *      `{bffBase}/v1/chat/completions`): the OpenAI-compatible `reasoning_effort`
+ *      ladder `none`/`low`/`medium`/`high` is ACCEPTED (HTTP 200 under every
+ *      one) and the BFF returns `message.reasoning_content` under each — even
+ *      with NO thinking field at all (the v1 shape), which is why v1's
+ *      `reasoning: false` never actually turned thinking off, it only hid the
+ *      selector. `off` is `null` on purpose: `reasoning_effort:"none"` does NOT
+ *      disable thinking (still 188 reasoning tokens), and the desktop App's real
+ *      off switch (`request_params.agnes_thinking_enabled:false`) is not
+ *      expressible in pi-ai's string-valued map. Offering "off" would promise
+ *      "thinking off" and deliver "still thinking". `xhigh`/`max` stay closed
+ *      until a probe proves them on the BFF.
  *   2. The base URL is PER-ACCOUNT (`bffPublicBaseUrl` from the session
  *      file), so it rides through the builder's options instead of a module
  *      constant — the reference reverse-proxy's hardcoded `.com` constant is
@@ -139,6 +146,26 @@ export function filterAgnescodeRows(rows: unknown, enabledIds: unknown) {
 }
 
 /**
+ * The thinking level map this provider offers, keyed on pi-ai's ladder.
+ *
+ * The BFF's `reasoning_effort` ladder was probed live on 2026-10-03
+ * (`agnes-3.0-flash`): `none`/`low`/`medium`/`high` are all ACCEPTED (HTTP 200)
+ * — but `none` does NOT disable thinking (the response still carried
+ * `reasoning_content`, 188 reasoning tokens). The desktop App's real off switch
+ * is `request_params.agnes_thinking_enabled:false` (or
+ * `request_params.thinking_effort:"off"`), which a string-valued thinking map
+ * cannot emit. So `off` is DELIBERATELY `null`: offering it would promise
+ * "thinking off" and deliver "still thinking" — the same class of silent lie
+ * `docs/DSH-LLM-DEVELOP.md` §4 warns about for the opposite direction. The
+ * levels pi-ai actually sends (`low`/`medium`/`high`) are the ones probed 200.
+ * `xhigh`/`max` stay closed until a probe proves them on the BFF.
+ * @returns {object} the level → wire-spelling map.
+ */
+export function agnescodeThinkingLevelMap() {
+  return { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: null, max: null };
+}
+
+/**
  * Map one AgnesCode row onto the pi-ai model descriptor the adapter offers.
  * @param {object} row - an {@link agnescodeRoster} row (must carry `id`).
  * @param {object} [options] - `{ bffBase }` — the pinned per-account base.
@@ -157,9 +184,12 @@ export function agnescodeToDescriptor(row: Record<string, unknown>, options: { b
     provider: AGNESCODE_PROVIDER_ID,
     baseUrl: bffBase,
     input: vision ? ["text", "image"] : ["text"],
-    // See the module header: the thinking wire channel is unverified in v1;
-    // the BFF defaults to thinking ON.
-    reasoning: false,
+    // See the module header: probed live 2026-10-03 — the BFF accepts
+    // `reasoning_effort` none/low/medium/high and returns `reasoning_content`
+    // under every one, so a thinking selector is honest here. `off` is null
+    // (`agnescodeThinkingLevelMap`): the BFF's "none" does not disable thinking.
+    reasoning: true,
+    thinkingLevelMap: agnescodeThinkingLevelMap(),
     cost: { ...NO_COST },
     // A positive window is required (pi-ai does arithmetic on it); the
     // AgnesCode catalogue always declares one, but guard against shape drift.

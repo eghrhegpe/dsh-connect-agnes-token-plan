@@ -26,8 +26,9 @@
  * itself (auth plane, image budgets/hooks, 429 correction) is shared with the
  * Token Plan route through `pi-ai-adapter-core.ts` — what stays here is the
  * AgnesCode configuration: provider id, model builder, credential resolver, and
- * a profile that deliberately pins no `reasoning` default (the BFF defaults
- * thinking ON; the wire channel is unverified in v1).
+ * a profile that pins the SAME effort default as the Token Plan route (probed
+ * live 2026-10-03: the BFF accepts `reasoning_effort` and defaults thinking ON,
+ * so an unselected effort must not reach pi-ai as "no effort").
  *
  * @module dsh-connect-agnes-token-plan/agnescode-llm-adapter
  */
@@ -36,6 +37,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
 import { name } from "./host-config.ts";
 import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME, buildAgnescodeDescriptors, agnescodeRoster } from "./agnescode-models.ts";
+import { DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
 import { buildRetryPolicyConfig } from "./llm-retry.ts";
 import { createWrappedPiAiAdapter, STREAM_IDLE_TIMEOUT_MS, REQUEST_IMAGE_BUDGETS } from "./pi-ai-adapter-core.ts";
 import type { AgnescodeAdapterOptions } from "./types.ts";
@@ -87,9 +89,13 @@ export function createAgnescodeAdapter({
     getModels: () => models
   };
 
-  // No `reasoning` key on purpose: the AgnesCode BFF defaults thinking ON and
-  // the wire channel that would switch it is unverified in v1, so this profile
-  // must NOT pin the Token Plan route's effort default.
+  // The picker's "Default" pins to DEFAULT_REASONING_EFFORT (high), the same
+  // pin the Token Plan route uses (`docs/DSH-LLM-DEVELOP.md` §4): an unselected effort
+  // must not reach pi-ai as "no effort". Unlike that route, this provider's
+  // `thinkingLevelMap` spells `off` as `null` (the BFF's reasoning_effort:"none"
+  // does NOT disable thinking, probed 2026-10-03) — so a user can pick
+  // low/medium/high or leave the default, but cannot silently turn thinking off
+  // through a level DSH would advertise as "off".
   const profiles = new Map([
     [
       AGNESCODE_PROVIDER_ID,
@@ -100,6 +106,7 @@ export function createAgnescodeAdapter({
         retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${AGNESCODE_PROVIDER_ID}.retryPolicy`),
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
+        reasoning: DEFAULT_REASONING_EFFORT,
         ...REQUEST_IMAGE_BUDGETS,
         piProvider: provider
       }

@@ -593,8 +593,16 @@ const GOOD_SESSION = {
     // OpenAI image_url block live (AGNES-API.md §7.3).
     check("an agnes-family row (agnes-3.0-flash) offers image input from the official-doc table",
       JSON.stringify(descriptor.input) === '["text","image"]', JSON.stringify(descriptor.input));
-    check("reasoning is false in v1 (the thinking wire channel is unverified)",
-      descriptor.reasoning === false);
+    check("reasoning is true (probed live 2026-10-03: the BFF accepts reasoning_effort and returns reasoning_content)",
+      descriptor.reasoning === true);
+    check("the thinking map opens low/medium/high (the levels probed HTTP 200)",
+      descriptor.thinkingLevelMap?.low === "low" &&
+      descriptor.thinkingLevelMap?.medium === "medium" &&
+      descriptor.thinkingLevelMap?.high === "high");
+    check("off is null: the BFF's reasoning_effort:\"none\" does NOT disable thinking, so \"off\" would be a silent lie",
+      descriptor.thinkingLevelMap?.off === null);
+    check("xhigh/max stay closed on the BFF (never probed there)",
+      descriptor.thinkingLevelMap?.xhigh === null && descriptor.thinkingLevelMap?.max === null);
     check("the descriptor headers carry the catalogue gates",
       agnescodeRequestHeaders()["X-App-Id"] === "1" && agnescodeRequestHeaders()["X-Platform"] === "1");
     check("the cost is the zero sentinel (credit-gated, per-token prices unknowable)",
