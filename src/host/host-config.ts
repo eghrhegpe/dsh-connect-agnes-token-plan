@@ -144,7 +144,13 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * `video-store.ts`) overrides this live with no restart.
    */
   videoEnabled: false,
-  /** Preferred video model id; empty means "first V2.0-family video model of the catalog". */
+  /**
+   * Preferred video model id; empty means auto-pick — the first V2.0-family
+   * video model of the catalog, falling back to the first 2.5 model when the
+   * catalog holds no V2.0 one (`pickVideoModel` in `video-models.ts` is the
+   * implementation; the wording here, in the tool's `model` description and in
+   * the panel's `video.autoOption` is pinned to it by `video.test.mjs` §3d).
+   */
   videoModelId: "",
   /** The whole-generation poll budget (create + poll). Video tasks run for minutes. */
   videoTimeoutMs: 600_000,

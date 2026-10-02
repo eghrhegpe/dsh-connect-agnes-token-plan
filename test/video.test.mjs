@@ -50,6 +50,12 @@ import {
   pollVideoResult,
   defineVideoTool
 } from "../src/host/video.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Repo root — section 3d reads source text to pin prose against behaviour. */
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -157,6 +163,208 @@ function errResponse(status, text) {
   check("a 2.5-only catalog falls back to the first 2.5 model",
     pickVideoModel([{ id: "agnes-video-2.5" }, { id: "agnes-video-2.5-flash" }], "", "") === "agnes-video-2.5");
   check("an empty catalog picks nothing", pickVideoModel([], "", "") === null);
+}
+
+// --- 3d. the auto-pick rule is restated in prose in four other places ------
+// `pickVideoModel` is the source of truth, and 3a above already pins its
+// behaviour branch by branch. What nothing pinned is the SENTENCE: the rule
+// ("prefer one family, fall back to the other") is written out again in
+//   * `host-config.ts` — the `videoModelId` doc comment,
+//   * `video.ts`      — the tool's `model` parameter description (what the
+//                       model itself reads when deciding what to pass),
+//   * `i18n.ts`       — `video.autoOption`, zh AND en (what the user reads),
+// plus this suite's own header. Five copies of one rule, none derived from the
+// code that implements it.
+//
+// Two ways to write this fence badly, both rejected:
+//   * Asserting each sentence contains "V2.0" — that is a sixth copy of the
+//     rule wearing a test's clothes, and it stays green if the implementation
+//     flips to 2.5-first.
+//   * Requiring the preferred family's NAME to come first — this was the first
+//     version, and it is spelling, not meaning. English states the same rule
+//     both ways and both are correct: "the first V2.0 model, or the first 2.5
+//     model when the catalog holds no V2.0 one" and "falling back to the first
+//     2.5 model when the catalog holds no V2.0 one". Only the first shape
+//     passed, so the fence was red on correct prose.
+//
+// What is actually invariant: the sentence names BOTH families, and it marks
+// exactly one of them as the conditional fallback. The preferred family and the
+// fallback marker are both DERIVED — the family from the function's own
+// behaviour, the marker vocabulary from the rule's meaning — so flipping the
+// implementation makes the prose, not the fence, the thing that must change.
+{
+  /** Which family the auto-pick actually reaches for first. */
+  const bothFamilies = [{ id: "agnes-video-2.5" }, { id: "agnes-video-v2.0" }];
+  const winner = pickVideoModel(bothFamilies, "", "");
+  const preferred = winner === "agnes-video-v2.0" ? "V2.0" : "2.5";
+  const fallback = preferred === "V2.0" ? "2.5" : "V2.0";
+
+  // The anchor that keeps this honest: the derivation only means something if
+  // the function really did prefer one family over the other. An empty or
+  // unexpected pick would make every assertion below vacuous.
+  check("the auto-pick's preferred family is derivable from the function",
+    winner === "agnes-video-v2.0" || winner === "agnes-video-2.5",
+    `pickVideoModel(both families) === ${JSON.stringify(winner)}`);
+
+  const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
+
+  /**
+   * The CONDITION half of the rule — "when the catalog holds no V2.0 one",
+   * 「无 V2.0 时」. Only this kind is read, because it is the half that names
+   * what the rule is an exception TO.
+   *
+   * The bound is a WORD COUNT, not a punctuation class: an earlier version cut
+   * clauses at `.`, which silently truncated every one of them at the dot in
+   * "V2.0" — the clause read "when the catalogue has no V2", matched no family,
+   * and the check reported "no exception clause names a family" on correct
+   * prose. Family names contain dots; a clause delimiter cannot.
+   */
+  const CONDITION = /(?:when|if)\s+(?:\S+\s+){0,10}|无\s*(?:\S+\s*){0,10}?时/gi;
+
+  /**
+   * Does this text state the rule, with the DERIVED preference?
+   *
+   * Three designs were rejected before this one, all recorded because each
+   * looked reasonable and each was wrong in a way only a negative test showed:
+   *   * "does the sentence contain the family name" — a sixth copy of the rule
+   *     in a test's clothes; green after the implementation flips.
+   *   * "is an exception marker NEAR the fallback family" — green on sentences
+   *     meaning the opposite (measured against a flipped implementation).
+   *   * "does the exception clause name the FALLBACK family" — red on all four
+   *     correct sentences. This is the one that taught the actual grammar.
+   *
+   * Every phrasing in this repo writes the rule the same way: the CONDITION
+   * clause names the PREFERRED family as the thing that may be absent, and the
+   * family that appears as the consequence is what you take instead —
+   *   "…first 2.5 model when the catalog holds no V2.0 one"      (video.ts)
+   *   "…falling back to the first 2.5 model when the catalog
+   *      holds no V2.0 one"                                      (host-config.ts)
+   *   「无 V2.0 时取第一个 2.5」                                     (i18n zh)
+   *   "…(first 2.5 when the catalogue has no V2.0 one)"           (i18n en)
+   * That is not a style choice: a condition clause has to name what it is a
+   * condition ON. So the test reads the family inside the condition and
+   * requires it to be the DERIVED preferred one. A sentence privileged the
+   * other way names that other family in the condition instead, and fails.
+   *
+   * Reading only `when`/`if`/「…时」 and not the consequence phrase ("falling
+   * back to 2.5") matters: host-config.ts carries both, so a test that accepted
+   * any clause naming either family rejected that sentence — the clearest of
+   * the four — because it saw the fallback named in the consequence.
+   * @param {string} text
+   * @returns {{ok: boolean, why: string}}
+   */
+  const statesRule = (text) => {
+    // Flatten doc-comment line wraps; keep a space so words stay apart.
+    const flat = text.replace(/\s*\n\s*\*?\s*/g, " ");
+
+    let sawPreferred = false;
+    let sawFallback = false;
+    let bestWhy = "";
+    for (let at = flat.indexOf(preferred); at >= 0; at = flat.indexOf(preferred, at + 1)) {
+      sawPreferred = true;
+      const near = flat.slice(Math.max(0, at - 120), at + 120);
+      if (!near.includes(fallback)) continue;
+      sawFallback = true;
+
+      // The condition clause governing the rule, found either side of the
+      // mention (it may precede or follow the family it qualifies).
+      const window = flat.slice(Math.max(0, at - 130), at + 130);
+      CONDITION.lastIndex = 0;
+      const clauses = [...window.matchAll(CONDITION)].map((m) => m[0]);
+      if (clauses.length === 0) {
+        bestWhy = `no condition clause near the rule (${preferred} at ${at})`;
+        continue;
+      }
+
+      // The condition names the family that may be ABSENT — the preferred one.
+      // A sentence whose condition names the fallback family instead says the
+      // opposite rule ("2.5 by default, V2.0 when there is no 2.5").
+      const namesPreferred = clauses.some((c) => c.includes(preferred));
+      const namesFallback = clauses.some((c) => c.includes(fallback));
+      if (namesPreferred && !namesFallback) return { ok: true, why: "" };
+      bestWhy = namesFallback && !namesPreferred
+        ? `the condition names ${fallback}, so the sentence treats ${fallback} as the default — the code prefers ${preferred}`
+        : `the condition names both families or neither: ${clauses.map((c) => JSON.stringify(c)).join(", ")}`;
+    }
+    if (!sawPreferred) return { ok: false, why: `never names ${preferred}` };
+    if (!sawFallback) return { ok: false, why: `names ${preferred} but never the ${fallback} fallback nearby` };
+    return { ok: false, why: bestWhy };
+  };
+
+  /**
+   * The HEADER comment of a source file — everything before its first line of
+   * real code.
+   *
+   * This matters for the self-check below: that site reads THIS file, and the
+   * fence's own comments discuss the rule in both directions (including the
+   * deliberately backwards example). Scanning the whole file let the suite
+   * satisfy its own assertion from its own explanation — it passed against a
+   * flipped implementation, at an offset inside `statesRule`'s docstring.
+   * Confining each site to the text that actually documents it removes both
+   * that self-reference and any unrelated aside.
+   * @param {string} text
+   * @returns {string}
+   */
+  const headerOf = (text) => {
+    const lines = text.split(/\r?\n/);
+    const out = [];
+    for (const line of lines) {
+      const t = line.trim();
+      // Comment and blank lines belong to the header; the first code line ends it.
+      if (t === "" || t.startsWith("*") || t.startsWith("//") || t.startsWith("/*") || t.startsWith("*/")) out.push(line);
+      else break;
+    }
+    return out.join("\n");
+  };
+
+  /**
+   * The text this site uses to document the rule. Narrower than the whole file
+   * on purpose: a doc comment, a parameter description, a dictionary line, a
+   * file header. Everything else is other people's prose.
+   */
+  const PROSE = [
+    {
+      name: "host-config.ts videoModelId doc",
+      text: (() => {
+        const src = read(join("src", "host", "host-config.ts"));
+        // Anchor on the declaration, then take the doc block immediately above
+        // it — the comment's own opening line is not a stable anchor (it may be
+        // `/** text` or `/**` followed by `* text`).
+        const decl = src.indexOf("videoModelId:");
+        if (decl < 0) return "";
+        const open = src.lastIndexOf("/**", decl);
+        const close = src.indexOf("*/", open);
+        return open < 0 || close < 0 || close > decl ? "" : src.slice(open, close + 2);
+      })()
+    },
+    {
+      name: "video.ts model parameter doc",
+      text: (() => {
+        const m = read(join("src", "host", "video.ts")).match(/model: \{ type: "string", description: "((?:[^"\\]|\\.)*)"/);
+        return m?.[1] ?? "";
+      })()
+    },
+    { name: "this suite's header", text: headerOf(read(join("test", "video.test.mjs"))) }
+  ];
+
+  for (const site of PROSE) {
+    // A site that yields no text is a broken extraction, not a passing rule —
+    // say so, rather than letting an empty string read as "names no family".
+    const verdict = site.text.trim() === ""
+      ? { ok: false, why: "could not extract this site's text (has the declaration moved?)" }
+      : statesRule(site.text);
+    check(`${site.name} states the auto-pick rule (prefers ${preferred}, ${fallback} as fallback)`,
+      verdict.ok, verdict.why);
+  }
+
+  const options = [...read(join("src", "client", "i18n.ts"))
+    .matchAll(/"video\.autoOption":\s*"([^"]*)"/g)].map((m) => m[1]);
+  check("both dictionaries carry a video.autoOption line", options.length === 2, JSON.stringify(options));
+  for (const [i, text] of options.entries()) {
+    const verdict = statesRule(text);
+    check(`video.autoOption [${i === 0 ? "zh" : "en"}] states the auto-pick rule`,
+      verdict.ok, verdict.why || text);
+  }
 }
 
 // --- 3b. 2.5 helpers: seconds conversion, size resolution, aspect match -----
