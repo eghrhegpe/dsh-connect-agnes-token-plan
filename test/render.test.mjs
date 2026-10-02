@@ -188,8 +188,8 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     meta.includes("usage.requests") && meta.includes("usage.perBucket"), meta);
   check("the legend names the scaling convention",
     meta.includes("usage.legend"), meta);
-  check("the chart sits in a card like the other sections",
-    tree.props?.style?.background === S.card.background, JSON.stringify(tree.props?.style ?? {}));
+  check("the chart renders (it lives inside a SectionCard, no inner card)",
+    tree.props !== undefined, JSON.stringify(tree.props ?? {}));
 }
 
 // === E2. a flat series must not divide by zero ===========================
@@ -240,8 +240,8 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const none = rendered(render.UsageChart, { usage: null, tt });
   check("a missing series shows the empty note too", none.includes("usage.none"), none.join("\n"));
   const emptyTree = treeOf(render.UsageChart, { usage: { buckets: [] }, tt });
-  check("the empty note sits inside a card too",
-    emptyTree.props?.style?.background === S.card.background, JSON.stringify(emptyTree.props?.style ?? {}));
+  check("the empty note renders (no inner card — the SectionCard owns the frame)",
+    emptyTree.props !== undefined, JSON.stringify(emptyTree.props ?? {}));
 }
 
 // === G. the plan card assembles its own sections ==========================

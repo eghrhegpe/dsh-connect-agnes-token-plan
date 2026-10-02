@@ -231,11 +231,11 @@ export function PlanCard({ quota, tt }: { quota?: QuotaData | null; tt: Tt }): u
   const plan: PlanData | null = quota?.plan ?? null;
   const windows = Array.isArray(quota?.windows) ? quota.windows : [];
   if (plan === null && windows.length === 0) {
-    return h("div", { style: S.card }, h("div", { style: S.empty }, tt("quota.none")));
+    return h("div", { style: S.empty }, tt("quota.none"));
   }
   return h(
     "div",
-    { style: S.card },
+    null,
     plan === null
       ? h("div", { style: S.empty }, tt("quota.planUnknown"))
       : h(
@@ -374,7 +374,7 @@ export function UsageTotals({ totals, label, tt }: { totals?: UsageTotalsData | 
 export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }): unknown {
   const buckets = Array.isArray(usage?.buckets) ? usage.buckets : [];
   if (buckets.length === 0) {
-    return h("div", { style: S.card }, h("div", { style: S.empty }, tt("usage.none")));
+    return h("div", { style: S.empty }, tt("usage.none"));
   }
   const values = buckets.map((bucket) => Math.max(0, Number(bucket?.requestCount) || 0));
   const max = Math.max(0, ...values);
@@ -382,7 +382,7 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
   const last = String(buckets[buckets.length - 1]?.bucket ?? "");
   return h(
     "div",
-    { style: S.card },
+    null,
     h(
       "div",
       { style: S.trendHead },
