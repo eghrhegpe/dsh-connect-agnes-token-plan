@@ -98,3 +98,11 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 
 **视频没有 30s 冷却门**（draw 有）：这是决策不是遗漏。一次视频尝试耗时分钟级、与出图共用同一视频限频池，协议自身延迟已远宽于 30 秒。
 
+---
+
+> **结构沿革注记**：本节两张改动表是 0.4.x 各增量落地时的定格记录，表中「新增」文件此后又经历过收敛与拆分。查现行结构以 [ARCHITECTURE.md](./ARCHITECTURE.md) §2 为准；与上表直接相关的三处：
+>
+> - **video 逻辑层已拆分**：表中的单文件 `video.ts` 现在只保留 `agnes_video_generate` 工具定义与兼容 barrel；建任务/轮询状态机在 `video-client.ts`，V2.0 与 2.5 两套请求体分别在 `video-protocol.ts` / `video-protocol-25.ts`，目录花名册在 `video-models.ts`。
+> - **两个开关 store 不再逐字镜像**：重复体已收敛到 `switch-store.ts`（provider / draw / video / AgnesCode 共用一层），`draw-store.ts` 与 `video-store.ts` 只剩各自的文件名、形状版本、model wire key 与报错措辞。事故与收敛过程见 [PITFALLS.md](./PITFALLS.md) §34。
+> - **draw / video 共用的路由处理器**现在落在 `routes/tool-switch.ts`，由 `routes.ts` 门面统一注册。
+
