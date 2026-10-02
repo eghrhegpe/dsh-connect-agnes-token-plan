@@ -351,7 +351,7 @@ const CHECK_IDS = new Map([
 //      （候选存在判定天然放过 hosts / attempts 这类正常英文词）；
 //   b) 反引号里的 `X.ts` 式正引用必须能解析到真实文件，否则断链。
 // 两个白名单名词是架构事实而非源码引用，跳过但留痕：
-//   - `client.js`        根构建产物（tsdown 从 src/client 构建，gitignore，干净检出不在）
+//   - `client.js`        根构建产物（tsdown 从 src/client 构建，随库提交，干净检出即在）
 //   - `client-surface.js` loader 的模块面（仓库外约定名，见 src/client/runtime.ts 头注释）
 {
   const tsFiles = [];

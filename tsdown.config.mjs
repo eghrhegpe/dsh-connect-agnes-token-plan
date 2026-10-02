@@ -1,9 +1,11 @@
 // @ts-check
 /**
- * Build configuration. `src/` holds ALL sources (host + client); `lib/` is a
- * pure build artifact, git-ignored, and fully rebuildable from `src/` — the
- * workbuddy layout: source in `src/`, runtime in `lib/`, nothing hand-edited
- * in `lib/`.
+ * Build configuration. `src/` holds ALL sources (host + client); `lib/` and
+ * the root `client.js` are pure build artifacts, fully rebuildable from
+ * `src/`, and are TRACKED in git (committed so a git/marketplace install
+ * clones them ready to load — pnpm's `packageShouldBeBuilt` skips the build
+ * pipeline when the main file is present). Nothing hand-edited in `lib/`:
+ * rebuild after every src change and commit the artifacts with it.
  *
  * Two entries:
  *
