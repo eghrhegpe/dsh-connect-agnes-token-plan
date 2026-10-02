@@ -229,23 +229,48 @@ const CHECK_IDS = new Map([
       bad(`API.md 快照示例不是合法 JSON：${e.message}`);
     }
     if (parsed) {
-      // 契约：快照成功响应的 13 个顶层键（含条件性 visionModels）
-      const canonical = ["auth", "cacheSeconds", "catalogAvailable", "catalogModels", "consoleBase", "llm", "now", "ok", "pollSeconds", "quota", "shapeWarnings", "usage", "visionModels"].sort().join(",");
-      const docKeys = Object.keys(parsed).sort().join(",");
-      if (docKeys !== canonical) bad(`API.md 快照示例顶层键与契约不符：\n  文档：${docKeys}\n  契约：${canonical}`);
-      else note("API.md 快照示例顶层键与契约一致（13 键）");
-      // The contract keys must appear in the code that BUILDS the snapshot
-      // body. That is `snapshot-aggregate.js` (the extracted aggregation half)
-      // plus `index.js` (which still assembles the error-path bodies and
-      // carries the key names through its route handlers). Either file may
-      // carry a key; both are required to be import-reachable from index.js.
-      const indexSrc = readFileSync(join(ROOT, "src", "host", "index.ts"), "utf8");
-      const aggregateSrc = existsSync(join(ROOT, "src", "host", "snapshot-aggregate.ts"))
-        ? readFileSync(join(ROOT, "src", "host", "snapshot-aggregate.ts"), "utf8")
-        : "";
-      const sourceText = `${indexSrc}\n${aggregateSrc}`;
-      const missing = canonical.split(",").filter((k) => !new RegExp(`\\b${k}\\b`).test(sourceText));
-      if (missing.length) bad(`契约键在快照构建源码中未出现：${missing.join(", ")}`);
+      // 契约：快照成功响应的顶层键，**从 Host 的构建函数派生**，不在这里手写。
+      //
+      // 这里原本是一行手写字面量（13 个键）。它让本检查自己成了 API.md 与代码
+      // 之外的「第三个事实源」：断言是 `docKeys === canonical`，于是「Host 加了
+      // 第 14 个键、wire.ts 也声明了、只有 API.md 没跟」这一类漂移它看不见——
+      // 文档仍然等于 canonical，照样绿。而那恰恰是 API.md 会过期的方式。
+      //
+      // 现在两端都从同一个源读：键集从 `buildSnapshotBody` 的返回字面量按花括号
+      // 深度取（与 contract.test.mjs §10 同一套锚点和缩进规则），文档示例必须与它
+      // 逐键相等。任何一侧加了键而另一侧没跟，都会红在其中一条上。
+      const hostSrc = readFileSync(join(ROOT, "src", "host", "snapshot-aggregate.ts"), "utf8");
+      const lines = hostSrc.split(/\r?\n/);
+      const at = lines.findIndex((l) => /^export async function buildSnapshotBody\b/.test(l));
+      const open = at < 0 ? -1 : lines.findIndex((l, i) => i > at && /^ {2}return \{$/.test(l));
+      const derived = new Set();
+      if (open >= 0) {
+        for (let i = open + 1; i < lines.length; i++) {
+          const line = lines[i];
+          if (/^ {2}\};/.test(line)) break;
+          // `...(cond ? { key } : {})` —— 条件字段同样是服务出去的键。
+          let m = line.match(/^ {4}\.\.\..*\{\s*(\w+)\s*\}/);
+          // 普通键以 `:` 或 `,` 结尾，也可以什么都没有——那是字面量最后一个字段
+          // 的写法。要求分隔符会漏掉 `shapeWarnings`，把它变成幽灵「客户端声明了
+          // Host 从不服务的键」（contract.test.mjs 记录过这个解析器 bug）。
+          if (!m) m = line.match(/^ {4}(\w+)\s*(?::|,|$)/);
+          if (m) derived.add(m[1]);
+        }
+      }
+
+      // 解析器判活优先：正则一旦因重排/改名失效，derived 会缩水成空集，而
+      // 「集合相等」在两边同时缩水时**可能仍然成立**（空 === 空）。锚点是面板
+      // 没有就渲染不出来的块，外加 `shapeWarnings`——字面量的最后一个键，所以
+      // 只读「有分隔符的行」的解析器也会被抓住。
+      const ANCHORS = ["ok", "now", "quota", "usage", "llm", "shapeWarnings"];
+      const parserLive = ANCHORS.every((k) => derived.has(k));
+      if (!parserLive) bad(`快照键解析器失效（锚点缺失）：得到 [${[...derived].join(", ")}]`);
+      else {
+        const canonical = [...derived].sort().join(",");
+        const docKeys = Object.keys(parsed).sort().join(",");
+        if (docKeys !== canonical) bad(`API.md 快照示例顶层键与 Host 派生的契约不符：\n  文档：${docKeys}\n  契约：${canonical}`);
+        else note(`API.md 快照示例顶层键与 Host 派生的契约一致（${derived.size} 键）`);
+      }
     }
   }
 }
