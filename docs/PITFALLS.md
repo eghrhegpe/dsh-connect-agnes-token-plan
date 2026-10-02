@@ -5,7 +5,7 @@
 > **范围说明**：本插件 2026-10 从商汤 SenseNova 控制台迁到 **Agnes 控制台**，登录线由 OIDC 授权码 + JWE 密码封包换成**一跳账号密码 POST**（见 [AUTH.md](./AUTH.md)）。于是下面分三类：
 > - 标了「**商汤时代，代码已删除**」的条目（第 1、2、3、5、14 条）描述的是**已经不存在的文件**。保留它们是为了记住这类坑的**形状**——**不要按字面去找这些函数**。
 > - 标了「**商汤时代实测**」的条目（第 20、21 条）是在已退役的推理网关上量的数据；**现行推理契约以 [AGNES-API.md](./AGNES-API.md) §7 为准**。
-> - 其余条目（第 4、6–13、15–19、22–37 条）对**当前代码全部有效**。
+> - 其余条目（第 4、6–13、15–19、22–38 条）对**当前代码全部有效**。
 
 ---
 
@@ -22,6 +22,7 @@
 | 测试 / CI / 环境 | 17、32 |
 | 文档 / 检测 | 25、26 |
 | 仓库卫生 | 9、10 |
+| 收敛 / 死件清理 | 38 |
 | 浏览器 / UI | 27 |
 
 ---
@@ -403,3 +404,16 @@
 - **修法**：抽 `src/host/switch-precedence.ts` 作为唯一裁决处，三个函数承载全部语义：`resolveSwitchEnabled(panelValue, configDefault?)`（**不传** `configDefault` ⇒ 未设置的面板值解析为关，正是 AgnesCode 语义）、`resolveSwitchValue<T>(panelValue, configDefault)`、`readPanelValue<T>(read)`（store 缺席 / 读不到一律返回 `null`，一并消掉 `.catch` 陷阱）；三函数都连 `source`（panel / config / off）一起返回。11 个调用点改为走它，`test/switch-precedence.test.mjs`（23 条）钉住两种语义分界 + 四类缺陷 + 一条接线钉（任何 host 文件仍自己拼 `?? settings.x` 或 `=== null ?` 即红）。
 - **验证**：改动前后 `routes 190 / provider 204 / agnescode 119 / doctor 39 / switch-store 84 / admission-audit 27` 逐项计数一致；新增套件 23 条全绿。
 - **教训**：**「差不多对」的多份手抄必然在某处分叉**，而分叉点往往正是边界情形。凡是一条判定规则出现在 N 个地方，就该抽成「返回结论 + 返回结论来源」的单一函数——来源和结论一起返回，才能杜绝「同一条规则被算两遍、中间状态变了」这类漂移（与 §34 同理：抽到一层不够，要抽到「所有 N 者共用的裁决入口」）。
+
+---
+
+## 38. 「看起来有的东西」：fork 与复制之后，共享层留下的零读者件
+
+- **现象**：三次彼此独立的清理，根因是同一个——`CODE.JWKS` / `jwksEndpoint` / `encKeyId` / `JwksOptions`（Agnes 侧没有 JWE 封包端点）、AgnesCode 的 `state.signature`（只写不读）、`HostDeps` 的 12 个零读取字段。三者都不报错、不改变任何行为，却让读者以为存在一条路径或一个注入点。
+- **根因**：本插件从兄弟插件 `dsh-connect-sensenova-token-plan` 起家，其后三件事各自改了实现层、漏了共享层：
+  1. **fork 换实现**：登录流由「OIDC + JWE 封包」换成一跳账号密码，`agnes-auth.ts` 明说无 JWKS，但 `codes.ts` 的码表与 `types.ts` 的类型还留着那条线的名字——`host-config.ts` 甚至写着这些旋钮「are gone」，**文档说没了、类型说还在**。
+  2. **复制机制**：Provider 侧的 `state.signature` 是活件（`snapshot-aggregate.ts` 读它做目录去抖，因为那边的调用方**轮询**、目录变化不请自来）；抄到 AgnesCode 侧后没有对应机制（每次 publish 都是显式调用、花名册随调用送达），于是只写不读。
+  3. **借道取参**：publisher 起初没有自己的 deps 类型，就从 `apply()` 的宽包 `HostDeps` 里读六个字段。专用类型一落地，这六个连同六个 auth/transport 遗留一起失去读者。
+- **修法**：删。判定只看**全仓有没有读者**，且必须**符号与字面量双查**——码是 wire value，可能不走 `CODE.X` 而写字面量。删除时要处理**连带件**，它们往往才是真正的误导源：一条名不副实的测试（`the signature covers the base, so a base change rebuilds` 实际只测纯函数性质）、一段自相矛盾的注释、以及一条会把 client 映射判红的**既有不变式**（`panel.test.mjs` 的「every code the panel branches on is declared in codes.js」）。
+- **验证**：`panel.test.mjs` 先把 client 侧那四行映射判红——说明这**不是审美问题**，而是与既有不变式冲突；删除后 typecheck + 全量套件零漂移。`HostDeps` 收窄用负向验证钉住：把 `settings.registerProvider` 拼成 `registerProviders`，tsc 报 TS2551（改前是 `any`，拼错零反馈）。
+- **教训**：**「看起来有的东西」比「缺东西」更贵**——缺东西会报错，看起来有的东西只会误导，而且专门误导不熟悉这份历史的读者（包括下一个 AI 会话）。两个动作可以制度化：每次**改实现**后问「共享层里还有谁在提这条旧路」，每次**复制一份机制**后问「它依赖的调用方形态，这边也一样吗」——AgnesCode 侧那两处 `state.built` 残留，就是没问第二句的代价。
