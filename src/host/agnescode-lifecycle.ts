@@ -131,7 +131,14 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
             });
             const pub = holder.current;
             if (pub && walk.session.bffBase !== pub.state.bffBase) {
-              await pub.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), walk.session.bffBase).catch(() => {});
+              // The re-harvest found a DIFFERENT per-account base, so the
+              // registered adapter is stale and must be rebuilt. A failure here
+              // is non-fatal (the harvest itself succeeded and is stored), but
+              // it must not vanish: the picker would keep pointing at the old
+              // base with no trace of why.
+              await pub.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), walk.session.bffBase).catch((why: unknown) => {
+                logger?.warn?.(`agnescode: re-harvest moved the BFF base to ${walk.session.bffBase} but republishing the adapter failed (the picker still points at the previous base): ${str((why as { message?: unknown })?.message ?? why, "unknown")}`);
+              });
             }
             return walk;
           })
@@ -193,7 +200,13 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
           // registered at this point in the mount. Keep trying inside the
           // window rather than giving up on the first read.
           if (!credential?.accessToken || !credential?.bffBase) return false;
-          await publisher.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), credential.bffBase).catch(() => {});
+          await publisher.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), credential.bffBase).catch((why: unknown) => {
+            // Not fatal — `state.registered` is checked on the next line and the
+            // loop retries — but a publish that keeps failing leaves the picker
+            // empty for the whole session while the tab says "logged in", which
+            // is exactly the state this seed exists to prevent. Leave a trace.
+            logger?.warn?.(`agnescode: mount seed could not publish the provider; the picker stays empty until another trigger: ${str((why as { message?: unknown })?.message ?? why, "unknown")}`);
+          });
           if (publisher.state.registered === true) return true;
           if (publisher.isDisposed()) return true;
           // Still unregistered: the `llm` service may not be resolvable yet, or
