@@ -23,6 +23,7 @@
  */
 
 import { name } from "../host-config.ts";
+import { CODE } from "../codes.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { redactSecrets } from "../util.ts";
@@ -189,7 +190,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // the adapter every 60 s.
         if (
           state.enabled === true && state.loggedIn === true
-          && state.providerError === "not_configured"
+          && state.providerError === CODE.NOT_CONFIGURED
           && Date.now() - agnescodeSelfHealAt > AGNESCODE_SELF_HEAL_COOLDOWN_MS
         ) {
           agnescodeSelfHealAt = Date.now();

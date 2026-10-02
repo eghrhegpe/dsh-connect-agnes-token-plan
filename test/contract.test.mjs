@@ -44,6 +44,7 @@ import {
 import { countOf, timestampSeconds, checkShape, identifyVisionModel } from "../src/host/parsers.ts";
 import { retryableCodes, QUOTA_CODES } from "../src/host/llm-retry.ts";
 import { isCredentialRefusal, CODE } from "../src/host/codes.ts";
+import { AGNESCODE_HARVEST_TIER } from "../src/host/agnescode.ts";
 import { CONFIG_DEFAULTS, name } from "../src/host/host-config.ts";
 import { API_KEY_REF } from "../src/host/api-key-store.ts";
 
@@ -493,14 +494,18 @@ function clientFields(text, name) {
  *    literals. A `${x}` inside a template in the scanned block would push the
  *    depth one that never closes, so the scan would run off the block's end
  *    and read the rest of the file — anchors at the block's head would still
- *    pass, which is the UNSAFE direction. Neither scanned block currently
- *    holds a template literal; keep it that way.
+ *    pass, which is the UNSAFE direction. That hazard is no longer a standing
+ *    discipline: `template` reports the scanned-region lines that hold a
+ *    backtick, and every caller asserts it EMPTY, so a block that gains a
+ *    template literal fails loudly instead of silently reading on.
  * @param {string} text - the source.
  * @param {RegExp} opener - matches the line that opens the literal.
  * @param {RegExp} [after] - a line that must have been seen first.
- * @returns {Set<string>} the key names, empty if the opener is not found.
+ * @returns {{keys: Set<string>, template: number[]}} the key names (empty if
+ *   the opener is not found) and the 1-based line numbers of scanned-region
+ *   lines holding a backtick.
  */
-function literalKeys(text, opener, after) {
+function literalScan(text, opener, after) {
   // Comments first: a `//` line inside a literal (e.g. the quota block's
   // prose) would otherwise contribute its words as bogus keys. The `(^|[^:])`
   // guard keeps `://` in a URL from cutting a line in half.
@@ -508,36 +513,42 @@ function literalKeys(text, opener, after) {
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/(^|[^:])\/\/.*$/gm, "$1")
     .split(/\r?\n/);
+  const scan = { keys: new Set(), template: [] };
   let from = 0;
   if (after) {
     const anchor = lines.findIndex((l) => after.test(l));
-    if (anchor < 0) return new Set();
+    if (anchor < 0) return scan;
     from = anchor + 1;
   }
   const start = lines.findIndex((l, i) => i >= from && opener.test(l));
-  const keys = new Set();
-  if (start < 0) return keys;
+  if (start < 0) return scan;
   let depth = 0;
   let opened = false;
   for (let i = start; i < lines.length; i++) {
     const line = lines[i];
+    // A backtick anywhere in the scanned region is the blind spot above: a
+    // `${…}` substitution opens a brace the scan never closes, and a bare
+    // `{`/`}` in a template body miscounts the same way. Comments are already
+    // stripped, so this sees CODE only — prose that quotes a template stays
+    // free. Recorded, not thrown here, so the caller owns the assertion.
+    if (line.includes("`")) scan.template.push(i + 1);
     for (const ch of line) {
       if (ch === "{") { depth++; opened = true; } else if (ch === "}") { depth--; }
     }
     if (!opened) continue;
     // A conditional spread's own key, written mid-line: `...(cond ? { key } : {})`.
-    for (const m of line.matchAll(/\.\.\..*\{\s*(\w+)\s*:/g)) keys.add(m[1]);
+    for (const m of line.matchAll(/\.\.\..*\{\s*(\w+)\s*:/g)) scan.keys.add(m[1]);
     // A plain entry — one per line, so ALL of them are read: `return { days: x, buckets: y }`
     // carries three keys on a single line. The key must open the entry itself
     // (line start, `,` or `{`) — a space is not enough, or `? null : plan`
     // reads `null` as a key. `(?!:)` keeps `?:` type annotations out.
-    for (const m of line.matchAll(/(?:^\s*|[,{]\s*)(\w+)\s*:(?!:)/g)) keys.add(m[1]);
+    for (const m of line.matchAll(/(?:^\s*|[,{]\s*)(\w+)\s*:(?!:)/g)) scan.keys.add(m[1]);
     // A shorthand entry: `balance,` on its own line.
     const shorthand = line.match(/^\s*(\w+)\s*,$/);
-    if (shorthand) keys.add(shorthand[1]);
+    if (shorthand) scan.keys.add(shorthand[1]);
     if (depth <= 0) break;
   }
-  return keys;
+  return scan;
 }
 
 // --- 10b. the nested blocks, where §10 stopped ----------------------------
@@ -556,19 +567,19 @@ function literalKeys(text, opener, after) {
 
   const NESTED = [
     {
-      host: literalKeys(hostSrc, /^ {2}const quota = \{$/),
+      scan: literalScan(hostSrc, /^ {2}const quota = \{$/),
       client: clientFields(wireSrc, "QuotaData"),
       anchors: ["plan", "windows", "totals", "plans", "consoleConnected", "error"],
       label: "quota"
     },
     {
-      host: literalKeys(hostSrc, /^ {2,}return \{ days: parsed\.days,/),
+      scan: literalScan(hostSrc, /^ {2,}return \{ days: parsed\.days,/),
       client: clientFields(wireSrc, "UsageData"),
       anchors: ["days", "windowTotals", "buckets"],
       label: "usage"
     },
     {
-      host: literalKeys(hostSrc, /^ {2}const llmStatus = \{$/),
+      scan: literalScan(hostSrc, /^ {2}const llmStatus = \{$/),
       client: clientFields(wireSrc, "LlmData"),
       anchors: ["registerProvider", "providerRegistered", "modelCount", "models", "enabledModelIds", "drawModel", "videoModel"],
       label: "llm"
@@ -576,11 +587,20 @@ function literalKeys(text, opener, after) {
   ];
 
   for (const block of NESTED) {
-    const anchored = block.anchors.every((k) => block.host.has(k) && block.client.has(k));
+    const host = block.scan.keys;
+    // The depth scan's documented blind spot, ASSERTED rather than trusted: a
+    // template literal inside the scanned block pushes its depth past the
+    // block's end, so the scan reads the rest of the file while the head
+    // anchors keep passing — the unsafe direction the comment used to leave as
+    // standing discipline. Red here means: move the template out of the block,
+    // or give this block a real parser.
+    check(`no template literal inside the scanned ${block.label} block (the depth scan cannot cross one)`,
+      block.scan.template.length === 0, `backtick lines: ${block.scan.template.join(", ") || "(none)"}`);
+    const anchored = block.anchors.every((k) => host.has(k) && block.client.has(k));
     check(`both halves' ${block.label} parsers are live (nested anchors found on each side)`,
-      anchored, JSON.stringify({ host: [...block.host], client: [...block.client] }));
+      anchored, JSON.stringify({ host: [...host], client: [...block.client] }));
     if (anchored) {
-      const missing = [...block.host].filter((k) => !block.client.has(k));
+      const missing = [...host].filter((k) => !block.client.has(k));
       check(`every key the Host serves in ${block.label} is declared in the client`,
         missing.length === 0, `${block.label} is missing: ${missing.join(", ") || "(none)"}`);
     }
@@ -627,8 +647,14 @@ function literalKeys(text, opener, after) {
   const readSource = (rel) => readFileSync(join(ROOT, rel), "utf8");
   const hostSrc = readSource(join("src", "host", "routes", "agnescode.ts"));
   const wireSrc = readSource(join("src", "client", "wire.ts"));
-  const host = literalKeys(hostSrc, /^ {2,}return \{$/, /const agnescodeState = async \(\) => \{/);
+  const hostScan = literalScan(hostSrc, /^ {2,}return \{$/, /const agnescodeState = async \(\) => \{/);
+  const host = hostScan.keys;
   const client = clientFields(wireSrc, "AgnescodeStateData");
+  // Same assertion as §10b: this block's IIFE spreads are brace-heavy, so a
+  // template literal inside it is exactly the shape that would mislead the
+  // depth scan.
+  check("no template literal inside the scanned /agnescode GET block (the depth scan cannot cross one)",
+    hostScan.template.length === 0, `backtick lines: ${hostScan.template.join(", ") || "(none)"}`);
   const anchors = ["ok", "enabled", "loggedIn", "nickname", "models", "enabledModelIds", "balance"];
   const anchored = anchors.every((k) => host.has(k) && client.has(k));
   check("both halves' agnescode parsers are live (GET-body anchors found on each side)",
@@ -637,6 +663,46 @@ function literalKeys(text, opener, after) {
     const missing = [...host].filter((k) => !client.has(k));
     check("every key the /agnescode GET serves is declared in the client",
       missing.length === 0, `AgnescodeStateData is missing: ${missing.join(", ") || "(none)"}`);
+  }
+}
+
+// --- 11c. the client's pinned wire constants are the Host's declarations ----
+//
+// Two constants in `client/wire.ts` are copies of a Host value, and each is
+// compared at a call site that renders NOTHING when the two drift:
+//
+//   `AGNESCODE_TIER_OK`        = `AGNESCODE_HARVEST_TIER.OK`. The tier
+//     VOCABULARY is pinned both ways against the i18n labels
+//     (`test/agnescode.test.mjs`), but the labels keep working through the
+//     dynamic `agnescode.tier.${tier}` key, so a Host rename would leave this
+//     one comparison stale (the successful row drops to the muted colour) with
+//     nothing red anywhere.
+//   `AGNESCODE_ERROR_NOT_CONFIGURED` = `CODE.NOT_CONFIGURED` — deliberately the
+//     SAME code the quota line reports (`codes.ts`: an auth failure a sign-in
+//     fixes, and not a credential refusal), reused by the AgnesCode publish
+//     gate. Both halves branch on it, so a value change on either side would
+//     silently stop the panel recognising the expected "switch on, no token
+//     yet" state — which is how a red error alert once flashed on the tab.
+//
+// Pinned here, next to the other cross-half wire facts. The host call sites
+// that spell this code (`agnescode-publish.ts`, `routes/agnescode.ts`) now go
+// through `CODE`, so this comparison is the last place the two spellings meet.
+{
+  const wireSrc = readFileSync(join(ROOT, "src", "client", "wire.ts"), "utf8");
+  const PINS = [
+    { name: "AGNESCODE_TIER_OK", host: AGNESCODE_HARVEST_TIER.OK, hostLabel: "AGNESCODE_HARVEST_TIER.OK" },
+    { name: "AGNESCODE_ERROR_NOT_CONFIGURED", host: CODE.NOT_CONFIGURED, hostLabel: "CODE.NOT_CONFIGURED" }
+  ];
+  for (const pin of PINS) {
+    const found = wireSrc.match(new RegExp(`export const ${pin.name} = "([^"]*)"`));
+    // Liveness first: a renamed or reformatted constant must fail THIS check
+    // loudly rather than skipping the comparison below.
+    check(`the client's ${pin.name} is still spelled as this pin expects`,
+      found !== null, "wire.ts no longer matches — update this pin");
+    if (found) {
+      check(`the client's ${pin.name} equals the Host's ${pin.hostLabel}`,
+        found[1] === pin.host, `client="${found[1]}" host="${pin.host}"`);
+    }
   }
 }
 

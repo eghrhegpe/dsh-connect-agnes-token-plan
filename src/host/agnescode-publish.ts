@@ -31,6 +31,7 @@
  */
 
 import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME } from "./agnescode-models.ts";
+import { CODE } from "./codes.ts";
 import { str } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import {
@@ -136,7 +137,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
    *
    * The publish decision is a three-way gate:
    *   - switch OFF              → release, no registration (opt-in default);
-   *   - switch ON, no token     → release, `error: not_configured` (the
+   *   - switch ON, no token     → release, `error: CODE.NOT_CONFIGURED` (the
    *                               panel's「重新检测」affordance says so);
    *   - switch ON, token + base → build + register the roster.
    * On a failed registration the PREVIOUS pair is restored.
@@ -162,7 +163,11 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
 
     const token = await effectiveResolveToken().catch(() => "");
     if (token === null || token === "" || state.bffBase === "") {
-      return unregister({ state, release, error: "not_configured" });
+      // The taxonomy's own spelling, not a literal: this is the same code the
+      // quota line reports for "nothing has been entered yet", and the panel's
+      // AgnesCode tab compares against it. See `codes.ts` — it is an auth
+      // failure (a sign-in fixes it) but deliberately not a credential refusal.
+      return unregister({ state, release, error: CODE.NOT_CONFIGURED });
     }
 
     let createAgnescodeAdapter;
