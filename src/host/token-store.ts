@@ -2,7 +2,10 @@
  * Agnes console token store — the seam between the credentials service and
  * the panel's console calls.
  *
- * The console JWT lives 180 minutes; this store keeps it renewed, so the
+ * The console token's lifetime is read from the JWT's own `exp`; when the token
+ * is not a readable JWT the login falls back to `fallbackExpiresInSeconds`
+ * (7 days — see `agnes-auth.ts`, and `docs/AUTH.md` §4 for why the estimate
+ * deliberately errs long). Either way this store keeps the token renewed, so the
  * panel never needs the pre-store ritual of copying a fresh token out of
  * devtools into `$DSH_HOME/.env` and restarting.
  *
