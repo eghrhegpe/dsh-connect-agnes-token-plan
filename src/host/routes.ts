@@ -39,7 +39,7 @@ import { registerDrawRoute, registerVideoRoute } from "./routes/tool-switch.ts";
 import { registerAgnescodeRoute } from "./routes/agnescode.ts";
 
 /**
- * Register the eight routes on the Host's web server.
+ * Register the routes on the Host's web server.
  *
  * The handlers close over `wiring` only — every service they touch is listed
  * there, so `apply()` is the single place that decides what a route can do.
@@ -71,7 +71,7 @@ import { registerAgnescodeRoute } from "./routes/agnescode.ts";
  * @param {object} [wiring.agnescodeSwitch] - the AgnesCode panel switch.
  * @param {object} [wiring.agnescodePublisher] - the AgnesCode provider
  *   publisher (a SEPARATE provider from the main one; same route discipline).
- * @returns {Function[]} the eight `off()` unregister callbacks, in registration
+ * @returns {Function[]} the `off()` unregister callbacks, in registration
  *   order — `teardown` runs them last.
  */
 export function registerRoutes(ctx, wiring) {

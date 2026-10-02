@@ -47,7 +47,7 @@
 - `console-client.ts`：控制台与模型目录的网络请求，带信封解包（`{code,message,data}`）、短生命周期缓存与 single-flight（并发轮询只发一次请求）。
 - `parsers.ts`：响应解析层——字符串数值 / epoch / ISO 归一、`checkShape` 漂移检测、`parseUsageSeries` 分桶求和、`quotaWindows` 四窗口、`matchCurrentPlan` 套餐匹配、`identifyVisionModel` 视觉模型识别。
 - `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 四窗口与累计用量组装 / vision 识别 / `llm` 状态块组装。HTTP 面在 `routes/` 家族（见下条），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
-- `routes.ts` + `routes/`：八条路由的门面与分册（2026-10 拆分，照 token-store 术式先冻结再搬——`routes.test.mjs` / `agnescode.test.mjs` / `wiring.test.mjs` 拆分前后计数一致零漂移）。`routes.ts` 只保留 `registerRoutes` 门面（wiring 注入、注册顺序、八个 `off()` 回执）；子目录按域拆成 `http`（`writeJson`、同源闸拒答、限额 body 读取等共享原语）/ `snapshot` / `account` / `api-key` / `provider` / `models` / `tool-switch`（draw 与 video 共用一份 handler 体）/ `agnescode`（switch / harvest / logout，route 作用域状态）八块。
+- `routes.ts` + `routes/`：路由的门面与分册（2026-10 拆分，照 token-store 术式先冻结再搬——`routes.test.mjs` / `agnescode.test.mjs` / `wiring.test.mjs` 拆分前后计数一致零漂移）。`routes.ts` 只保留 `registerRoutes` 门面（wiring 注入、注册顺序、每个路由一个 `off()` 回执）；子目录按域拆成 `http`（`writeJson`、同源闸拒答、限额 body 读取等共享原语）/ `snapshot` / `account` / `api-key` / `provider` / `models` / `tool-switch`（draw 与 video 共用一份 handler 体）/ `agnescode`（switch / harvest / logout，route 作用域状态）八块。
 - `trace.ts`：登录 trace 落盘（成功/失败，值级脱敏，仅留最近 20 个，权限 0600）。
 - `util.ts`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
 - `admission-audit.ts`：同源闸的旁路审计——「不带 `Origin` 的写请求」记一笔（次数/时间/归一化方法名，不含任何头值），供 `doctor` 事后可见；放行结论不受它影响（见 [PITFALLS.md](./PITFALLS.md) §35）。

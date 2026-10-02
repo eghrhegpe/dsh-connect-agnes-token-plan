@@ -9,7 +9,7 @@
  * readable orchestrator:
  *
  *   - `host-config.ts`    config contract + the `isAdmitted` trust fence
- *   - `routes.ts`         the six HTTP route handlers (peer-free, wiring-injected)
+ *   - `routes.ts`         the HTTP route handlers (peer-free, wiring-injected)
  *   - `lifecycle.ts`      mount seed / draw tool / vision step two / teardown
  *   - `console-client.ts` console/catalog fetch with cache + single-flight
  *   - `parsers.ts`        response normalization + shape-drift detection
@@ -82,7 +82,7 @@ export const credentialKey = (scope: string, id: string) => `${scope}/${id}`;
 export { catalogSignature } from "./provider-publish.ts";
 
 /**
- * Host body: assemble the wiring, register the six routes, run the mount
+ * Host body: assemble the wiring, register the routes, run the mount
  * side effects, and hang the unmount effect. The route handlers live in
  * `routes.ts`, the side effects in `lifecycle.ts` — this function only
  * decides what they may touch.

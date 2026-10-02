@@ -577,8 +577,19 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
   ]);
   // 这两篇活文档保留「上游/历史行数」叙述，只对它们豁免 N 行 子检查
   const LINE_COUNT_OK = new Set(["ARCHITECTURE.md", "ROADMAP.md"]);
+  // 路由条数同样随代码漂移（每加一条路由就陈旧一次）。ROADMAP 是历史重构记录，
+  // 它的「N 条路由」是那次重构的范围快照而非现行断言——与 N 行 同理豁免。
+  const ROUTE_COUNT_OK = new Set(["ROADMAP.md"]);
   const moduleRe = /\d+\s*个(?:Host |Client |前端|服务端)?模块/g;
   const wanRe = /\d+(?:\.\d+)?\s*万行/g;
+  // 中文「N 条路由」在汉语里既可能是计数断言（「六条写路由改接审计版」），也可能是
+  // 泛指（「两条路由共用一份处理器实现」）——两者同形，正则无法区分。所以这里只锚定
+  // 无歧义的断言写法：阿拉伯数字、`N 条写路由`、括号夹注式计数（「（六条，都在…」）。第三个
+  // 分支的「条」后必须是「路由」或紧跟「，、都、均」，否则会把「（37 条）」（PITFALLS
+  // 条目数，另有专门检查兜着）误伤——那正是本护栏第一版踩过的坑。
+  // 已知边界（故意不拦，靠 review）：无括号的无歧义中文计数（「七条路由都经过…」）、
+  // 以及括号内只有数字的「路由（六条）」（与「（37 条）」同形，无法区分）。
+  const routeCountRe = /(?:\d+\s*条(?:写)?路由)|(?:[二两三四五六七八九十百]+\s*条写路由)|(?:（\s*[0-9二两三四五六七八九十百]+\s*条(?:写)?路由)|(?:（\s*[0-9二两三四五六七八九十百]+\s*条(?=[，、都均]))/g;
   // 行数声明：排除「第 N 行」这类引用定位（如「见第 3 行」），只钉裸「N 行」
   const lineRe = /(?<!第)\d{1,}\s*行/g;
   let scanned = 0;
@@ -590,6 +601,7 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
     scanned++;
     const lines = readFileSync(f, "utf8").split(/\r?\n/);
     const allowLine = !LINE_COUNT_OK.has(basename(f));
+    const allowRoute = !ROUTE_COUNT_OK.has(basename(f));
     lines.forEach((line, i) => {
       let m;
       if ((m = line.match(moduleRe))) {
@@ -604,9 +616,13 @@ console.log(`docs.test.mjs —— 检查 ${mdFiles.length} 个 markdown 文件`)
         hits++;
         bad(`${f}:${i + 1} 写死行数「${m[0].trim()}」——行数随代码漂移，活文档不在此钉死（历史/上游对照档豁免）`);
       }
+      if (allowRoute && (m = line.match(routeCountRe))) {
+        hits++;
+        bad(`${f}:${i + 1} 写死路由条数「${m[0].trim()}」——路由数随代码漂移，改以 \`registerRoutes\` 为准（历史档豁免）`);
+      }
     });
   }
-  if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档零写死模块数/规模/行数（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
+  if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档零写死模块数/规模/行数/路由条数（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
 }
 
 if (fails.length) {
