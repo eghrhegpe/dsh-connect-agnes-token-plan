@@ -77,3 +77,14 @@
 - **理由**：旧文曾写 `usage/overview` 是唯一致命源（[SETUP.md](./SETUP.md):117、[AGNES-API.md](./AGNES-API.md):66-69 旧表述），与代码实现相反。代码与测试（`test/routes.test.mjs:466-471`、`test/e2e.mjs:396-404`）早已钉死新行为。为避免读者按旧文档排查误判代码回归，需把旧裁决入账本，并在正文统一为新表述。此裁定已在 [ARCHITECTURE.md](./ARCHITECTURE.md):76-77/102-104、[API.md](./API.md):220-225 体现，现补入账本以方便后续追溯。
 - **受影响的文档**：`docs/SETUP.md:117`、`docs/AGNES-API.md:66-69` 已同步为新表述；`docs/AGENTS.md` 红线 6 仍保留旧裁决，需在修订时改为现行表述。
 - **与既有条目的关系**：继承 ADR-004「一个模块缺席不许埋掉别的模块」，将之具体化为五个额度源的软失败策略。
+
+## ADR-008 构建产物入库：取消忽略 lib/ 与根 client.js
+
+- **日期**：2026-10-03
+- **状态**：现行（取代 ROADMAP §6.2 的「产物彻底不入库」，即 2026-09-30 当晚裁定）
+- **裁定**：`lib/`（Host ESM bundle + 切分 chunk）与根 `client.js`（Client IIFE）由 `npm run build`（tsdown）从 `src/` 重建，**随库提交**——`.gitignore` 不再忽略它们。改 `src/` 后必须重建，并把产物与源码放进**同一个 commit**；CI 新增 `artifacts` job：`npm run build` + `git diff --exit-code -- lib client.js`（双跑验可复现），拦「改了 src 没重建」。`prepack` 保留（registry 发布 tarball 新鲜度不变）；**不加 `prepare`**。
+- **理由**：DSH 市场 / `dsh plugin add` 的 git 直装走 pnpm git-dep 管线，pnpm 11 的 `packageShouldBeBuilt` 按「`main`（`./lib/index.js`）在克隆里是否存在」决定是否跑构建脚本——产物在库则克隆即可用（零构建、零 devDeps、零 `allowBuilds` 审批）；产物缺失则翻回「需要构建」，而 pnpm 未经 `allowBuilds` 批准不跑构建脚本，直接 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，装出来的插件没有宿主入口、卡片失效。2026-10-03 实测：`pnpm add git+https://github.com/eghrhegpe/dsh-connect-agnes-token-plan`（全新工作区、无 `allowBuilds`）在入库前撞该错、入库后 `exit 0` 且 `lib/index.js` + `client.js` 齐备。兄弟插件 `dsh-connect-qoder` 同款做法（`.gitignore` 不忽略 `lib/`，并留警告别加回）。
+- **为什么不是别的修法**：加 `prepare` 会让 `packageShouldBeBuilt` 翻回 true，零配置作废（`prepare` 本身还要 `allowBuilds` 批准）；建 `pnpm-workspace.yaml` 只影响本机、改不了市场用户侧 pnpm 的行为；只修文档不解决问题。唯一可靠解是产物入库。
+- **受影响的文档**：`.gitignore`（取消 `/lib/` `/client.js`，加 qoder 同款警告块）；`AGENTS.md` 验证段；`test/build-gate.mjs` 措辞（freshness 语义不变，但现在它就是「入库产物 vs 重建」的比对）；`docs/ARCHITECTURE.md:18`、`docs/DSH-PLUGIN.md:30/143`、`tsdown.config.mjs` 头注释、`test/docs.test.mjs:354` 注释已改为现行表述。
+- **历史条目不改写**：`docs/ROADMAP.md:217/224-227`、`docs/PITFALLS.md:353` 保留 2026-09-30 / 2026-10-01 当时的记录——按考古纪律不在原文盖内联修订补丁，现行规则以本条为准。
+- **与既有条目的关系**：恢复并强化 ROADMAP §6.2「新纪律」（2026-09-30 当晚被自己取代的那条「产物与源码同 commit」，见 ROADMAP.md:221-223），但动机从「build-gate 红」扩展为「git/市场直装零构建」；不改变 ADR-001~007 任何裁定。
