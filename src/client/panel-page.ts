@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The `main`-slot page: polling, the decision gate, and the whole panel
  * layout. Verbatim logic from the pre-split `client.js`.
  */
@@ -152,9 +152,9 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       const body = await response.json();
       if (!isCurrent()) return;
       // The Host answers 200 with `ok:false` for every expected failure, so
-      // the code is kept to pick the guidance rather than the message. The
-      // reading is a named module-scope function, so the tests exercise
-      // exactly what the panel does instead of a copy of it.
+      // the code — not the message — picks the guidance; the reading is a
+      // named module-scope function, so the tests exercise exactly what the
+      // panel does instead of a copy of it.
       const read = interpretSnapshot(body);
       if (read.data === null) {
         setData(null);
@@ -518,4 +518,3 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     )
   );
 }
-

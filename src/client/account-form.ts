@@ -249,7 +249,6 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
           : null,
       formError ? h("p", { style: S.formError, role: "alert" }, formError) : null,
       formError && formDetail ? h("p", { style: S.formNote }, formDetail) : null,
-      // The wait is stated with the platform's own number, so the reason
       // the button is greyed out is never a mystery.
       cooling
         ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } },
