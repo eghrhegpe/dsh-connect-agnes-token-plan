@@ -100,6 +100,7 @@ jobs:
           node test/switch-precedence.test.mjs
           node test/admission-audit.test.mjs
           node test/agnescode.test.mjs
+          node test/publish-core.test.mjs
           # The build gate is not a *.test.mjs, so it stays outside the
           # three-way roster pin; it is listed here because CI is exactly
           # where the build must be proven (artifacts are gitignored, so a
