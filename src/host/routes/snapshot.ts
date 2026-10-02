@@ -13,6 +13,7 @@ import { isAdmitted, name } from "../host-config.ts";
 import { buildSnapshotBody } from "../snapshot-aggregate.ts";
 import { CODE, isAuthFailure } from "../codes.ts";
 import { writeJson, refuseOrigin, refuseMethod } from "./http.ts";
+import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The one read-only route the Client panel polls. */
 export const SNAPSHOT_PATH = `/api/${name}/snapshot`;
@@ -44,7 +45,7 @@ function failureCode(error) {
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerSnapshotRoute(ctx, wiring) {
+export function registerSnapshotRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, drawStore, videoStore, publisher, visionPublish, logger } = wiring;
 
   return ctx.webServer.register({
@@ -85,10 +86,10 @@ export function registerSnapshotRoute(ctx, wiring) {
           publisher,
           catalogStore,
           panelSwitch: () => providerStore.enabled().catch(() => null),
-          drawSwitch: () => (drawStore ? drawStore.enabled().catch(() => null) : null),
-          drawModelId: () => (drawStore ? drawStore.modelId().catch(() => null) : null),
-          videoSwitch: () => (videoStore ? videoStore.enabled().catch(() => null) : null),
-          videoModelId: () => (videoStore ? videoStore.modelId().catch(() => null) : null)
+          drawSwitch: async () => (drawStore ? await drawStore.enabled().catch(() => null) : null),
+          drawModelId: async () => (drawStore ? await drawStore.modelId().catch(() => null) : null),
+          videoSwitch: async () => (videoStore ? await videoStore.enabled().catch(() => null) : null),
+          videoModelId: async () => (videoStore ? await videoStore.modelId().catch(() => null) : null)
         });
         if (body.visionModels !== undefined) {
           // A write failure here is silent otherwise: the vision list fails to

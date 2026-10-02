@@ -13,6 +13,7 @@
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The inference API-key route (`sk-…`), step three of the one-stop plan. */
 export const API_KEY_PATH = `/api/${name}/api-key`;
@@ -24,7 +25,7 @@ export const API_KEY_PATH = `/api/${name}/api-key`;
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerApiKeyRoute(ctx, wiring) {
+export function registerApiKeyRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, apiKeyStore, catalogStore, cache, providerState, publishProvider, logger } = wiring;
 
   return ctx.webServer.register({

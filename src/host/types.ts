@@ -68,6 +68,36 @@ export interface HostDeps {
   requestTimeoutMs?: number;
 }
 
+/**
+ * The host root context the Host modules read: the Cordis service bag.
+ *
+ * Loose on `get` because the matching `@deepseek-ai/*` packages ship no
+ * declarations in this repo; the members the Host actually touches are named.
+ * Declared here rather than per-module so `lifecycle.ts` and the routes family
+ * share one shape — an untyped `ctx` is how a renamed service escapes the
+ * compiler.
+ */
+export interface HostCtx {
+  get(service: string): any;
+  tools?: { register(definition: unknown): unknown } | null;
+  effect?(callback: () => () => void, label?: string): void;
+  /**
+   * The Host web server every route registers on. REQUIRED (not optional like
+   * the probes above): a route module cannot do anything without it, and a
+   * `webServer?` would force a null-check that duplicates the fact that the
+   * Host always provides it. Loose on the route shape — the peer ships no
+   * declarations — but the member the routes actually touch is named, and
+   * `register` is declared to return the `off()` callback it really returns.
+   */
+  webServer: {
+    register(route: {
+      kind: string;
+      path: string;
+      handler: (request: any, response: any) => unknown;
+    }): () => void;
+  };
+}
+
 /** Options every file-backed store accepts. */
 export interface StoreOptions {
   /** Profile key; stores are segmented per profile. */
@@ -206,14 +236,25 @@ export type CacheMap = Map<string, CacheEntry>;
 export type InflightMap = Map<string, Promise<unknown>>;
 
 /**
- * A panel-saved switch store (`draw-store` / `video-store` / `provider-store`):
- * the panel's live value always beats the config default, and an untouched
- * state file reports `null` so the caller falls back to it.
+ * A panel-saved switch store's FULL surface, as `createSwitchStore` returns it
+ * (`draw-store` / `video-store`): the panel's live value always beats the
+ * config default, and an untouched state file reports `null` so the caller
+ * falls back to it.
+ *
+ * The write half (`save` / `saveModel`) is part of the interface because the
+ * switch routes call it; leaving it out only pushed that fact into an implicit
+ * `any`. `createFileProviderStore` deliberately exposes a SUBSET (on/off only,
+ * no model preference) and is typed by its own factory — do not widen either
+ * one to fit the other.
  */
 export interface SwitchStore {
   enabled(): Promise<boolean | null>;
   modelId(): Promise<string | null>;
+  isSet(): Promise<boolean>;
+  save(value: unknown): Promise<void>;
   forget(): Promise<void>;
+  saveModel(value: string | null): Promise<void>;
+  forgetModel(): Promise<void>;
 }
 
 /**
@@ -273,7 +314,11 @@ export interface HostWiring {
   releaseProvider: () => unknown;
   resolveApiKey: () => Promise<string | undefined>;
   visionPublish: { current: ((visionEntries: unknown[], ids: string[]) => Promise<void>) | null };
-  logger?: { warn?: (message: string) => void; error?: (message: string) => void; info?: (message: string) => void };
+  logger?: {
+    warn?: (message: string, ...rest: unknown[]) => void;
+    error?: (message: string, ...rest: unknown[]) => void;
+    info?: (message: string, ...rest: unknown[]) => void;
+  };
   agnescodeStore: ReturnType<typeof createAgnescodeStore>;
   agnescodeSwitch: ReturnType<typeof createFileAgnescodeStore>;
   agnescodePublisher: ReturnType<typeof wireAgnescodePublisher>["publisher"];

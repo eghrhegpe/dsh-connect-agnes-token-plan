@@ -34,6 +34,7 @@ import {
   AGNESCODE_FALLBACK_MODELS
 } from "../agnescode.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBody } from "./http.ts";
+import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The AgnesCode provider route (ROADMAP §6.3 "third upstream provider"). */
 export const AGNESCODE_PATH = `/api/${name}/agnescode`;
@@ -51,7 +52,7 @@ const AGNESCODE_SELF_HEAL_COOLDOWN_MS = 60_000;
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerAgnescodeRoute(ctx, wiring) {
+export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, agnescodeStore, agnescodeSwitch, agnescodePublisher } = wiring;
 
   // ── The AgnesCode route: the desktop-app upstream provider (ROADMAP §6.3) ──

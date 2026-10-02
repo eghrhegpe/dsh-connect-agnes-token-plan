@@ -37,6 +37,7 @@ import { registerProviderRoute } from "./routes/provider.ts";
 import { registerModelsRoute } from "./routes/models.ts";
 import { registerDrawRoute, registerVideoRoute } from "./routes/tool-switch.ts";
 import { registerAgnescodeRoute } from "./routes/agnescode.ts";
+import type { HostCtx, HostWiring } from "./types.ts";
 
 /**
  * Register the routes on the Host's web server.
@@ -74,7 +75,7 @@ import { registerAgnescodeRoute } from "./routes/agnescode.ts";
  * @returns {Function[]} the `off()` unregister callbacks, in registration
  *   order — `teardown` runs them last.
  */
-export function registerRoutes(ctx, wiring) {
+export function registerRoutes(ctx: HostCtx, wiring: HostWiring) {
   const offRoute = registerSnapshotRoute(ctx, wiring);
   const offAccount = registerAccountRoute(ctx, wiring);
   const offApiKey = registerApiKeyRoute(ctx, wiring);

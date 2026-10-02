@@ -16,6 +16,7 @@ import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { normalizeEnabledIds } from "../catalog-store.ts";
 import { catalogSignature } from "../provider-publish.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The model-roster route (docs/API.md). */
 export const MODELS_PATH = `/api/${name}/models`;
@@ -30,7 +31,7 @@ export const MAX_ENABLED_MODEL_IDS = 500;
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerModelsRoute(ctx, wiring) {
+export function registerModelsRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, catalogStore, providerStore, providerState, publishProvider } = wiring;
 
   return ctx.webServer.register({

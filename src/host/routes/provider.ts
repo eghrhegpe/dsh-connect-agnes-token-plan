@@ -14,6 +14,7 @@ import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
 export const PROVIDER_PATH = `/api/${name}/provider`;
@@ -25,7 +26,7 @@ export const PROVIDER_PATH = `/api/${name}/provider`;
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerProviderRoute(ctx, wiring) {
+export function registerProviderRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, providerStore, providerState, publishProvider } = wiring;
 
   return ctx.webServer.register({

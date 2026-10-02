@@ -16,6 +16,21 @@ import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled, resolveSwitchValue } from "../switch-precedence.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import type { HostCtx, HostWiring, SwitchStore } from "../types.ts";
+
+/** One tool switch's route wiring: the two tools differ only in these. */
+interface ToolSwitchRouteOptions {
+  path: string;
+  label: string;
+  store?: SwitchStore | null;
+  enabledKey: string;
+  enabledSourceKey: string;
+  configEnabled: boolean;
+  modelKey: string;
+  modelSourceKey: string;
+  configModelId: string;
+  allowedHosts: Set<string>;
+}
 
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
 export const DRAW_PATH = `/api/${name}/draw`;
@@ -51,7 +66,10 @@ export const VIDEO_PATH = `/api/${name}/video`;
  * @param {Set<string>} options.allowedHosts - the trust fence.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerToolSwitchRoute(ctx, { path, label, store, enabledKey, enabledSourceKey, configEnabled, modelKey, modelSourceKey, configModelId, allowedHosts }) {
+export function registerToolSwitchRoute(
+  ctx: HostCtx,
+  { path, label, store, enabledKey, enabledSourceKey, configEnabled, modelKey, modelSourceKey, configModelId, allowedHosts }: ToolSwitchRouteOptions
+) {
   return ctx.webServer.register({
     kind: "exact",
     path,
@@ -158,7 +176,7 @@ export function registerToolSwitchRoute(ctx, { path, label, store, enabledKey, e
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerDrawRoute(ctx, wiring) {
+export function registerDrawRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, drawStore } = wiring;
   return registerToolSwitchRoute(ctx, {
     path: DRAW_PATH,
@@ -180,7 +198,7 @@ export function registerDrawRoute(ctx, wiring) {
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerVideoRoute(ctx, wiring) {
+export function registerVideoRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, videoStore } = wiring;
   return registerToolSwitchRoute(ctx, {
     path: VIDEO_PATH,

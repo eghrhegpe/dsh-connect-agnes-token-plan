@@ -17,6 +17,7 @@ import { CODE } from "../codes.ts";
 import { writeLoginTrace } from "../trace.ts";
 import { str } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The account route: the panel configures itself without editing `.env`. */
 export const ACCOUNT_PATH = `/api/${name}/account`;
@@ -27,7 +28,7 @@ export const ACCOUNT_PATH = `/api/${name}/account`;
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
-export function registerAccountRoute(ctx, wiring) {
+export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, cache, tokenStore } = wiring;
 
   return ctx.webServer.register({

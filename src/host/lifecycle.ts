@@ -24,18 +24,7 @@ import { defineVideoTool } from "./video.ts";
 import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.ts";
 import { name } from "./host-config.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
-import type { HostWiring, ToolSide, ToolWiring, SwitchStore, Settings } from "./types.ts";
-
-/**
- * The host root context this module reads: the Cordis service bag. Loose on
- * `get` because the matching `@deepseek-ai/*` packages ship no declarations in
- * this repo (see types.ts); the members this module actually touches are named.
- */
-interface HostCtx {
-  get(service: string): any;
-  tools?: { register(definition: unknown): unknown } | null;
-  effect?(callback: () => () => void, label?: string): void;
-}
+import type { HostCtx, HostWiring, ToolSide, ToolWiring, SwitchStore, Settings } from "./types.ts";
 
 /**
  * Mount one opt-in agent tool, through the shared degradation ladder.
