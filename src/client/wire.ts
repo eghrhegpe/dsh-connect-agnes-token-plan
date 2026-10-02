@@ -213,6 +213,73 @@ export interface ShapeWarningData {
 }
 
 /**
+ * One AgnesCode model row, as the `/agnescode` route reports it.
+ *
+ * Declared HERE rather than in the tab that renders it: the tab owns no wire
+ * contract of its own, and `test/contract.test.mjs` §11 holds this
+ * declaration and the Host's route body together the way §10 holds
+ * `SnapshotData`.
+ */
+export interface AgnescodeModelData {
+  id?: string;
+  name?: string;
+  vision?: boolean;
+  memberOnly?: boolean;
+  contextWindow?: number;
+  maxOutputLength?: number;
+}
+
+/** One harvest-diagnosis row: a tier code and shape facts, never a value. */
+export interface AgnescodeHarvestAttemptData {
+  file?: string | null;
+  tier?: string;
+  detail?: string;
+}
+
+/**
+ * The publish gate's "switch ON, no token yet" answer.
+ *
+ * It is the EXPECTED state between ticking the switch and running the
+ * harvest, so the tab renders it as a quiet instruction rather than an alert
+ * — a distinction that is a wire fact, not a UI opinion, hence a constant
+ * here.
+ */
+export const AGNESCODE_ERROR_NOT_CONFIGURED = "not_configured";
+
+/** The harvest tier for a session that decrypted and carried a token. */
+export const AGNESCODE_TIER_OK = "ok";
+
+/**
+ * The secret-free state the `/agnescode` route answers, as the tab reads it.
+ *
+ * `ok`, `enabled`, `switchSource` and the harvest diagnosis are the route's
+ * own answers; the credential half (`loggedIn` / `nickname` / `bffBase` /
+ * `expiresAtMs`) is what the harvested session file contained, and
+ * `balance` / `models` / `enabledModelIds` are the credit pool and roster.
+ * Nothing here is a value worth protecting — the route never sends the token.
+ */
+export interface AgnescodeStateData {
+  ok?: boolean;
+  enabled?: boolean;
+  switchSource?: string;
+  loggedIn?: boolean;
+  nickname?: string;
+  bffBase?: string;
+  expiresAtMs?: number | null;
+  balance?: {
+    totalBalance?: number;
+    timeSensitiveBalance?: number;
+    permanentBalance?: number;
+  } | null;
+  models?: AgnescodeModelData[];
+  enabledModelIds?: string[];
+  providerRegistered?: boolean;
+  providerError?: string;
+  harvest?: { ok?: boolean; attempts?: AgnescodeHarvestAttemptData[] };
+  error?: string;
+}
+
+/**
  * The whole snapshot body `buildSnapshotBody` returns, as the panel reads it.
  *
  * `pollSeconds`/`cacheSeconds` are quoted into the header and footnote;

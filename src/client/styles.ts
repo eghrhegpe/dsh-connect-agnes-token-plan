@@ -30,6 +30,10 @@ export const S = {
   spacer: { flex: 1 },
   button: BUTTON,
   sectionTitle: { margin: "22px 0 10px", fontSize: 13, fontWeight: 600, color: "var(--dsw-alias-label-secondary)" },
+  // The console / product-page link every form and card carries at its foot.
+  // One skin, one place: the two forms used to paste this object and the copy
+  // drifted once the styles table was rewritten.
+  externalLink: { color: "var(--dsw-alias-label-primary)", fontSize: 12, marginTop: 10, display: "inline-block", textDecoration: "underline", cursor: "pointer" },
   // Content sections are workbuddy-style collapsible cards: a bordered
   // card whose header is a full-width button (title + rotating chevron).
   // `PanelPage` starts both sections expanded; the reader can tuck one

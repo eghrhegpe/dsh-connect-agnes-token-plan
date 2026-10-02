@@ -140,7 +140,7 @@ export function ApiKeyForm({ llm, onDone, tt }: {
         href: AGNES_SIGNUP_URL,
         target: "_blank",
         rel: "noreferrer",
-        style: { color: "var(--dsw-alias-label-primary)", fontSize: 12, marginTop: 10, display: "inline-block", textDecoration: "underline", cursor: "pointer" }
+        style: S.externalLink
       },
       llm?.hasApiKey === true ? tt("llm.keyConsoleHint") : tt("llm.keyRegisterHint")
     )

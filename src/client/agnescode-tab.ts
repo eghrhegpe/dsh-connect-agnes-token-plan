@@ -27,27 +27,17 @@
 import { AGNESCODE_PATH, AGNESCODE_SITE_URL } from "./const.ts";
 import { clockLong, count, format, tokenSize } from "./format.ts";
 import { postJson, postJsonOrThrow } from "./http.ts";
-import { modelIsOn, toggleModelIn, bulkModelsIn } from "./models.ts";
+import { modelIsOn, rosterMatches, toggleModelIn, bulkModelsIn } from "./models.ts";
 import { h, useCallback, useEffect, useMemo, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
-
-/** One model row as the /agnescode route reports it. */
-interface AgnescodeModel {
-  id?: string;
-  name?: string;
-  vision?: boolean;
-  memberOnly?: boolean;
-  contextWindow?: number;
-  maxOutputLength?: number;
-}
-
-/** One harvest-diagnosis row: a tier code and shape facts, never a value. */
-interface AgnescodeHarvestAttempt {
-  file?: string | null;
-  tier?: string;
-  detail?: string;
-}
+import {
+  AGNESCODE_ERROR_NOT_CONFIGURED,
+  AGNESCODE_TIER_OK,
+  type AgnescodeHarvestAttemptData,
+  type AgnescodeModelData,
+  type AgnescodeStateData
+} from "./wire.ts";
 
 /**
  * The freshness + reload a tab hands to the shell's pinned bar.
@@ -67,26 +57,7 @@ export interface TabStatus {
 }
 
 /** The secret-free state the /agnescode route answers. */
-interface AgnescodeState {
-  ok?: boolean;
-  enabled?: boolean;
-  switchSource?: string;
-  loggedIn?: boolean;
-  nickname?: string;
-  bffBase?: string;
-  expiresAtMs?: number | null;
-  balance?: {
-    totalBalance?: number;
-    timeSensitiveBalance?: number;
-    permanentBalance?: number;
-  } | null;
-  models?: AgnescodeModel[];
-  enabledModelIds?: string[];
-  providerRegistered?: boolean;
-  providerError?: string;
-  harvest?: { ok?: boolean; attempts?: AgnescodeHarvestAttempt[] };
-  error?: string;
-}
+type AgnescodeState = AgnescodeStateData;
 
 /** The cadence the tab polls at while open (balance + roster drift slowly). */
 const AGNESCODE_POLL_MS = 60_000;
@@ -187,8 +158,8 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       const body = await postJson(AGNESCODE_PATH, { action: "harvest" });
       if (alive.current) {
         const harvestBlock = body?.harvest;
-        const attempts: AgnescodeHarvestAttempt[] = Array.isArray((harvestBlock as { attempts?: unknown })?.attempts)
-          ? (harvestBlock as { attempts: AgnescodeHarvestAttempt[] }).attempts
+        const attempts: AgnescodeHarvestAttemptData[] = Array.isArray((harvestBlock as { attempts?: unknown })?.attempts)
+          ? (harvestBlock as { attempts: AgnescodeHarvestAttemptData[] }).attempts
           : [];
         setState((current) => (current ? { ...current, harvest: { ok: body?.ok === true, attempts } } : current));
         if (body?.ok === true) {
@@ -256,16 +227,17 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     // lines here — a successful registration needs no sentence of its own
     // competing with the roster it describes.
     //
-    // `not_configured` is the publish gate's word for "switch ON, no token
-    // yet" — the EXPECTED state between ticking the switch and running the
-    // harvest. Rendered raw it looked like a failure that appeared and then
-    // vanished ("开关一下启用又消失"), so: before linking it is suppressed —
-    // the awaiting-harvest line below already says exactly that; after
-    // linking it becomes one quiet instruction, not a red alert.
+    // `AGNESCODE_ERROR_NOT_CONFIGURED` is the publish gate's word for
+    // "switch ON, no token yet" — the EXPECTED state between ticking the
+    // switch and running the harvest. Rendered raw it looked like a failure
+    // that appeared and then vanished ("开关一下启用又消失"), so: before
+    // linking it is suppressed — the awaiting-harvest line below already says
+    // exactly that; after linking it becomes one quiet instruction, not a red
+    // alert.
     state !== null
-      ? state.providerError === "not_configured" && loggedIn
+      ? state.providerError === AGNESCODE_ERROR_NOT_CONFIGURED && loggedIn
         ? h("div", { style: { ...S.muted, fontSize: 12 }, role: "status" }, tt("agnescode.errNotConfigured"))
-        : state.providerError !== undefined && state.providerError !== "" && state.providerError !== "not_configured"
+        : state.providerError !== undefined && state.providerError !== "" && state.providerError !== AGNESCODE_ERROR_NOT_CONFIGURED
           ? h("div", { style: S.formError, role: "alert" }, state.providerError)
           : enabled && !loggedIn
             ? h("div", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.awaitingHarvest"))
@@ -336,7 +308,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
             h(
               "div",
               { key: `${String(attempt?.file ?? index)}-${index}`, role: "listitem", style: { marginBottom: 2 } },
-              h("span", { style: { color: attempt?.tier === "ok" ? "inherit" : "var(--dsw-alias-label-secondary)" } },
+              h("span", { style: { color: attempt?.tier === AGNESCODE_TIER_OK ? "inherit" : "var(--dsw-alias-label-secondary)" } },
                 `[${tt(`agnescode.tier.${attempt?.tier}`)}] ${String(attempt?.file ?? "")}${attempt?.detail ? ` — ${attempt.detail}` : ""}`)
             )
           )
@@ -403,7 +375,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
  * The checkbox is hook-free like the sibling rows: `onToggle` is handed in, so
  * without it the box is display-only and the roster cannot be edited at all.
  * @param {object} props
- * @param {AgnescodeModel[]} props.models - the rows the route reported.
+ * @param {AgnescodeModelData[]} props.models - the rows the route reported.
  * @param {boolean} [props.registered] - whether the provider is registered.
  * @param {unknown} [props.enabledIds] - the curated ids (empty = all on).
  * @param {boolean} [props.busy] - disable the rows while a save is in flight.
@@ -415,7 +387,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
  * @returns {unknown} the roster list element.
  */
 export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, tools, emptyNote, tt, onToggle }: {
-  models: AgnescodeModel[];
+  models: AgnescodeModelData[];
   registered?: boolean;
   enabledIds?: unknown;
   busy?: boolean;
@@ -511,7 +483,7 @@ export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, to
  * shape as `ModelPicker`, and the row contract is unchanged — the search is a
  * filter over what is rendered, never over what is saved.
  * @param {object} props
- * @param {AgnescodeModel[]} props.models - the rows the route reported.
+ * @param {AgnescodeModelData[]} props.models - the rows the route reported.
  * @param {unknown} [props.hostIds] - the Host's curated ids.
  * @param {boolean} [props.registered] - whether the provider is registered.
  * @param {Tt} props.tt - the dictionary.
@@ -519,7 +491,7 @@ export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, to
  * @returns {unknown} the roster card plus its edit affordances.
  */
 export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }: {
-  models: AgnescodeModel[];
+  models: AgnescodeModelData[];
   hostIds?: unknown;
   registered?: boolean;
   tt: Tt;
@@ -558,11 +530,7 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
   // blind shot. One row is still toggled against the WHOLE roster, so an edit
   // survives a later change of the search box.
   const needle = query.trim().toLowerCase();
-  const visible = useMemo(() => rows.filter((row) => {
-    if (needle === "") return true;
-    return String(row?.id ?? "").toLowerCase().includes(needle)
-      || String(row?.name ?? "").toLowerCase().includes(needle);
-  }), [needle, rows]);
+  const visible = useMemo(() => rows.filter((row) => rosterMatches(row, needle)), [needle, rows]);
   const tickedCount = visible.filter((row) => modelIsOn(ids, String(row?.id ?? ""))).length;
 
   /** Apply "tick all" / "untick all" to the VISIBLE rows only. */

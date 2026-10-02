@@ -4,7 +4,6 @@
  * section card. The render suite drives every one of these in Node, so
  * behavior may not drift by a hair.
  */
-import { PANEL_ID } from "./const.ts";
 import { clockLong, count, format, money } from "./format.ts";
 import { h } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
@@ -20,27 +19,6 @@ import type { PlanData, QuotaData, QuotaWindowData, UsageData, UsageTotalsData }
  * well-formed case, so this narrows the same shape instead of redeclaring it.
  */
 type QuotaWindow = QuotaWindowData;
-
-/** The sidebar row glyph: the shell owns the button, this draws the coin. */
-export function PanelIcon({ size }: { size?: number }): unknown {
-  return h(
-    "svg",
-    {
-      "data-dsh-panel-entry": PANEL_ID,
-      viewBox: "0 0 16 16",
-      width: size,
-      height: size,
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: "1.3",
-      strokeLinecap: "round",
-      strokeLinejoin: "round",
-      "aria-hidden": "true"
-    },
-    h("circle", { cx: 8, cy: 8, r: 6 }),
-    h("path", { d: "M8 5.2v5.6M6.2 6.6h3.6M6.2 9.4h3.6" })
-  );
-}
 
 /** The bar fill and figure tone for a usage percentage: 70 warn / 90 danger. */
 export function usageTone(pct: number): { fill: Record<string, unknown>; color: string } {
@@ -304,8 +282,16 @@ export function CatalogueCard({ plans, tt }: { plans?: PlanData[] | null; tt: Tt
     null,
     catalogue.map((entry) => {
       const limits = entry.limits ?? {};
+      // The window length rides along ONLY when the Host stated one: the
+      // catalogue's 5-hour window is a platform fact (`concurrency_window_h`),
+      // and writing a default here would turn an unread figure into a number
+      // the panel asserts on its own — the same rule that keeps `totals` from
+      // being zeroed.
+      const windowHours = Number(limits.requestsWindowH);
       const parts = [
-        limits.requests5h !== undefined && limits.requests5h > 0 ? `${count(limits.requests5h)}${tt("quota.unit.requests")} / ${limits.requestsWindowH || 5}h` : "",
+        limits.requests5h !== undefined && limits.requests5h > 0
+          ? `${count(limits.requests5h)}${tt("quota.unit.requests")}${windowHours > 0 ? ` / ${windowHours}h` : ""}`
+          : "",
         limits.requestsWeekly !== undefined && limits.requestsWeekly > 0 ? `${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}` : "",
         limits.imagesDaily !== undefined && limits.imagesDaily > 0 ? `${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}` : ""
       ].filter((part) => part !== "");

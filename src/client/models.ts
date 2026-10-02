@@ -87,3 +87,17 @@ export function bulkModelsIn(enabledIds: unknown, roster: unknown, targets: unkn
   else on.delete(id as string);
   return allowListFor(on, roster);
 }
+
+/**
+ * The roster search filter, shared by both pickers.
+ *
+ * The rows differ in shape (`ModelData` vs `AgnescodeModelData`) but both
+ * carry `id` and `name`, and the match rule is the same — one predicate
+ * instead of two copies, so a filter tweaked in one picker cannot silently
+ * leave the other searching differently.
+ */
+export function rosterMatches(row: { id?: unknown; name?: unknown } | null | undefined, needle: string): boolean {
+  if (needle === "") return true;
+  return String(row?.id ?? "").toLowerCase().includes(needle)
+    || String(row?.name ?? "").toLowerCase().includes(needle);
+}

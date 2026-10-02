@@ -17,7 +17,7 @@ import { format } from "./format.ts";
 import { postJson } from "./http.ts";
 import { h, useCallback, useEffect, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
-import { REFUSAL_TEXT } from "./snapshot.ts";
+import { CLIENT_CODE, COOLDOWN_TEXT, REFUSAL_TEXT } from "./snapshot.ts";
 import { S } from "./styles.ts";
 import type { AuthData } from "./wire.ts";
 
@@ -115,7 +115,7 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
       const waitMs = typeof body?.retryAfterMs === "number" ? body.retryAfterMs : null;
       if (waitMs !== null && waitMs > 0) {
         setCooldown(waitMs);
-        setFormError(tt(code === "account_locked" ? "auth.locked" : "auth.rateLimited"));
+        setFormError(tt(COOLDOWN_TEXT[code] ?? "auth.rateLimited"));
         return;
       }
       // Only say "wrong password" when the platform said so. Every other
@@ -126,7 +126,7 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
         setFormDetail(typeof body?.detail === "string" && body.detail !== "" ? body.detail : null);
         return;
       }
-      setFormError(code === "login_failed"
+      setFormError(code === CLIENT_CODE.LOGIN_FAILED
         ? format(tt("auth.failed"), { reason: body?.error ?? "" })
         : (body?.error ?? tt("auth.network")));
     } catch {
@@ -173,9 +173,9 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
       href: AGNES_SIGNUP_URL,
       target: "_blank",
       rel: "noreferrer",
-      // Inline: the shared `styles.ts` is under a concurrent rewrite
-      // (roster/model-row restyle), so this one-off link skin lives here.
-      style: { color: "var(--dsw-alias-label-primary)", fontSize: 12, marginTop: 10, display: "inline-block", textDecoration: "underline", cursor: "pointer" }
+      // The one link skin every form shares — `styles.ts`, so a reskin
+      // lands everywhere at once instead of here.
+      style: S.externalLink
     }, tt(auth?.hasAccount ? "auth.portalHint" : "auth.registerHint")),
     h(
       "form",

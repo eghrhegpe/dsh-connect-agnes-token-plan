@@ -6,7 +6,7 @@ import {
   AccountForm
 } from "./account-form.ts";
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
-import { SNAPSHOT_PATH } from "./const.ts";
+import { PANEL_ID, SNAPSHOT_PATH } from "./const.ts";
 import { clock, format } from "./format.ts";
 import { errorOfStatus, interpretSnapshot, viewOf } from "./snapshot.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
@@ -406,7 +406,10 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                 // the four window cards.
                 h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 12 } }, tt("quota.windowNote")),
                 h(UsageTotals, { totals: quota?.totals, label: tt("quota.accountTotals"), tt }),
-                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 16, marginBottom: 8 } }, format(tt("usage.period"), { days: usage?.days ?? 30 })),
+                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 16, marginBottom: 8 } },
+                  typeof usage?.days === "number" && usage.days > 0
+                    ? format(tt("usage.period"), { days: usage.days })
+                    : tt("usage.periodUnknown")),
                 h(UsageChart, { usage, tt })
               ),
               // The cache age is quoted from the snapshot, not written down here:
@@ -491,7 +494,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
 
   return h(
     "div",
-    { style: S.page, "data-dsh-plugin": "dsh-connect-agnes-token-plan" },
+    { style: S.page, "data-dsh-plugin": PANEL_ID },
     // The bar is pinned (flex:none); everything below scrolls inside
     // `S.scroll` instead of being clipped by the shell's center column. It no
     // longer carries a title: the Plugins page already renders this bundle's

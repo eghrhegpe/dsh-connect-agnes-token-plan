@@ -70,7 +70,7 @@ export function interpretSnapshot(body: unknown): SnapshotRead {
  * Node-side tests drive this mapping instead of a copy of it.
  */
 export function errorOfStatus(status: number): SnapshotFailure | string {
-  if (status === 401 || status === 403) return { message: `HTTP ${status}`, code: "jwt_expired", auth: null };
+  if (status === 401 || status === 403) return { message: `HTTP ${status}`, code: CLIENT_CODE.JWT_EXPIRED, auth: null };
   return `HTTP ${status}`;
 }
 
@@ -142,6 +142,41 @@ export const GUIDANCE_BY_CODE: Readonly<Record<string, string>> = Object.freeze(
  * test: this set is the copy, that one is the declaration.
  */
 export const FORM_EXCLUDED_CODES: ReadonlySet<string> = Object.freeze(new Set(["config_error", "console_error"]));
+
+/**
+ * The wire codes the client branches on OUTSIDE the guidance tables.
+ *
+ * `GUIDANCE_BY_CODE` and `REFUSAL_TEXT` map code → dictionary line, but the
+ * form and the reader also branch on a code where the answer is behaviour
+ * rather than text: which refusal starts the cooldown, which one the platform
+ * refused without naming a reason this table knows, and which status means
+ * "the token is gone". Those comparisons used to spell the code out a fourth
+ * time — a copy `test/panel.test.mjs` F2b never looked at, because it reads
+ * the tables, not the branches. Named here and pinned by that same check:
+ * every value must be a member of `CODE` in `codes.ts`.
+ */
+export const CLIENT_CODE = Object.freeze({
+  /** A stored token the console refused; the reader's move is to sign in. */
+  JWT_EXPIRED: "jwt_expired",
+  /** The platform refused without naming a reason this table knows. */
+  LOGIN_FAILED: "login_failed",
+  /** The platform locked the account after repeated failures. */
+  ACCOUNT_LOCKED: "account_locked"
+});
+
+/**
+ * The dictionary line for a served cooldown, keyed by wire code.
+ *
+ * `rate_limited` is the fallback: a wait the platform served is by definition
+ * a rate-limit-shaped refusal, and it is what the form showed for every code
+ * that was not `account_locked`. The branch used to spell the locked code out
+ * at the call site; here the mapping lives next to `REFUSAL_TEXT`, where the
+ * same bidirectional pin can reach it.
+ */
+export const COOLDOWN_TEXT: Readonly<Record<string, string>> = Object.freeze({
+  [CLIENT_CODE.ACCOUNT_LOCKED]: "auth.locked",
+  rate_limited: "auth.rateLimited"
+});
 
 /**
  * The platform's classified refusals, keyed by wire code, mapped to the

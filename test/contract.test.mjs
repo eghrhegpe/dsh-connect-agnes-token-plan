@@ -27,7 +27,7 @@
  * not that the platform changed — the platform side is `test/live-contract.mjs`
  * (manual, `npm run test:live:contract`).
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -44,7 +44,7 @@ import {
 import { countOf, timestampSeconds, checkShape, identifyVisionModel } from "../src/host/parsers.ts";
 import { retryableCodes, QUOTA_CODES } from "../src/host/llm-retry.ts";
 import { isCredentialRefusal, CODE } from "../src/host/codes.ts";
-import { CONFIG_DEFAULTS } from "../src/host/host-config.ts";
+import { CONFIG_DEFAULTS, name } from "../src/host/host-config.ts";
 import { API_KEY_REF } from "../src/host/api-key-store.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -456,6 +456,187 @@ for (const model of contract.models) {
     } else {
       console.log(`  note - snapshot key sets match exactly (${host.size} keys)`);
     }
+  }
+}
+
+/**
+ * Fields of one client wire interface (2-space indent).
+ * @param {string} text - `wire.ts` source.
+ * @param {string} name - the interface name.
+ * @returns {Set<string>} the field names, empty if the interface is absent.
+ */
+function clientFields(text, name) {
+  const lines = text.split(/\r?\n/);
+  const at = lines.findIndex((l) => l === `export interface ${name} {`);
+  const keys = new Set();
+  if (at < 0) return keys;
+  for (let i = at + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\}/.test(line)) break;
+    const m = line.match(/^ {2}(\w+)\??:/);
+    if (m) keys.add(m[1]);
+  }
+  return keys;
+}
+
+/**
+ * Object-literal keys inside one literal, matched by BRACE DEPTH rather than
+ * indentation: the nested blocks sit at odd indents and their conditional
+ * spreads open IIFEs.
+ *
+ * Two limits to know before trusting a green result:
+ *  - `opener` (and `after`) bind THIS file's layout — the indentation, the
+ *    `return {` at the block's head, the named anchor line. A reformat makes
+ *    them miss and the caller's anchors fail LOUDLY (empty set, every anchor
+ *    gone), which is the safe direction.
+ *  - the depth scan counts `{`/`}` and does NOT skip strings or template
+ *    literals. A `${x}` inside a template in the scanned block would push the
+ *    depth one that never closes, so the scan would run off the block's end
+ *    and read the rest of the file — anchors at the block's head would still
+ *    pass, which is the UNSAFE direction. Neither scanned block currently
+ *    holds a template literal; keep it that way.
+ * @param {string} text - the source.
+ * @param {RegExp} opener - matches the line that opens the literal.
+ * @param {RegExp} [after] - a line that must have been seen first.
+ * @returns {Set<string>} the key names, empty if the opener is not found.
+ */
+function literalKeys(text, opener, after) {
+  // Comments first: a `//` line inside a literal (e.g. the quota block's
+  // prose) would otherwise contribute its words as bogus keys. The `(^|[^:])`
+  // guard keeps `://` in a URL from cutting a line in half.
+  const lines = text
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")
+    .split(/\r?\n/);
+  let from = 0;
+  if (after) {
+    const anchor = lines.findIndex((l) => after.test(l));
+    if (anchor < 0) return new Set();
+    from = anchor + 1;
+  }
+  const start = lines.findIndex((l, i) => i >= from && opener.test(l));
+  const keys = new Set();
+  if (start < 0) return keys;
+  let depth = 0;
+  let opened = false;
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i];
+    for (const ch of line) {
+      if (ch === "{") { depth++; opened = true; } else if (ch === "}") { depth--; }
+    }
+    if (!opened) continue;
+    // A conditional spread's own key, written mid-line: `...(cond ? { key } : {})`.
+    for (const m of line.matchAll(/\.\.\..*\{\s*(\w+)\s*:/g)) keys.add(m[1]);
+    // A plain entry — one per line, so ALL of them are read: `return { days: x, buckets: y }`
+    // carries three keys on a single line. The key must open the entry itself
+    // (line start, `,` or `{`) — a space is not enough, or `? null : plan`
+    // reads `null` as a key. `(?!:)` keeps `?:` type annotations out.
+    for (const m of line.matchAll(/(?:^\s*|[,{]\s*)(\w+)\s*:(?!:)/g)) keys.add(m[1]);
+    // A shorthand entry: `balance,` on its own line.
+    const shorthand = line.match(/^\s*(\w+)\s*,$/);
+    if (shorthand) keys.add(shorthand[1]);
+    if (depth <= 0) break;
+  }
+  return keys;
+}
+
+// --- 10b. the nested blocks, where §10 stopped ----------------------------
+//
+// §10 compares the TOP-LEVEL key sets only. Most of the snapshot's surface is
+// one level down — `quota`, `usage`, `llm` — and a rename there (say
+// `drawCandidateIds` → `drawCandidates`) would sail through §10 and, because
+// every client field is optional, render as a silently empty list. So the same
+// comparison runs over each nested block, with its own anchors so a parser
+// that goes quiet fails instead of passing for the wrong reason.
+{
+  const readSource = (rel) => readFileSync(join(ROOT, rel), "utf8");
+
+  const hostSrc = readSource(join("src", "host", "snapshot-aggregate.ts"));
+  const wireSrc = readSource(join("src", "client", "wire.ts"));
+
+  const NESTED = [
+    {
+      host: literalKeys(hostSrc, /^ {2}const quota = \{$/),
+      client: clientFields(wireSrc, "QuotaData"),
+      anchors: ["plan", "windows", "totals", "plans", "consoleConnected", "error"],
+      label: "quota"
+    },
+    {
+      host: literalKeys(hostSrc, /^ {2,}return \{ days: parsed\.days,/),
+      client: clientFields(wireSrc, "UsageData"),
+      anchors: ["days", "windowTotals", "buckets"],
+      label: "usage"
+    },
+    {
+      host: literalKeys(hostSrc, /^ {2}const llmStatus = \{$/),
+      client: clientFields(wireSrc, "LlmData"),
+      anchors: ["registerProvider", "providerRegistered", "modelCount", "models", "enabledModelIds", "drawModel", "videoModel"],
+      label: "llm"
+    }
+  ];
+
+  for (const block of NESTED) {
+    const anchored = block.anchors.every((k) => block.host.has(k) && block.client.has(k));
+    check(`both halves' ${block.label} parsers are live (nested anchors found on each side)`,
+      anchored, JSON.stringify({ host: [...block.host], client: [...block.client] }));
+    if (anchored) {
+      const missing = [...block.host].filter((k) => !block.client.has(k));
+      check(`every key the Host serves in ${block.label} is declared in the client`,
+        missing.length === 0, `${block.label} is missing: ${missing.join(", ") || "(none)"}`);
+    }
+  }
+}
+
+// --- 11. the route paths: the client's literals are the Host's derivation --
+//
+// The Host declares the bundle id once (`host-config.ts` `name`) and derives
+// every route from it; the client now derives the same paths from `PANEL_ID`.
+// That derivation is what makes this a real fence rather than a second hand
+// list: both sides are compared as text against a directory scan, so a renamed
+// id or a route added on either side goes red instead of the panel 404ing.
+{
+  const readSource = (rel) => readFileSync(join(ROOT, rel), "utf8");
+  const hostPaths = readdirSync(join(ROOT, "src", "host", "routes"))
+    .filter((f) => f.endsWith(".ts"))
+    .flatMap((f) => {
+      const text = readFileSync(join(ROOT, "src", "host", "routes", f), "utf8");
+      return [...text.matchAll(/`\/api\/\$\{name\}\/([a-z-]+)`/g)].map((m) => `/api/${name}/${m[1]}`);
+    });
+  const clientPaths = [...readSource(join("src", "client", "const.ts")).matchAll(/`\/api\/\$\{PANEL_ID\}\/([a-z-]+)`/g)]
+    .map((m) => `/api/${name}/${m[1]}`);
+  const host = new Set(hostPaths);
+  const client = new Set(clientPaths);
+  const anchored = host.size >= 7 && client.size >= 7;
+  check("both halves' route parsers are live (≥7 routes found on each side)",
+    anchored, JSON.stringify({ host: [...host], client: [...client] }));
+  if (anchored) {
+    const missing = [...host].filter((p) => !client.has(p));
+    const extra = [...client].filter((p) => !host.has(p));
+    check("the client spells the same routes the Host derives", missing.length === 0 && extra.length === 0,
+      `missing: ${missing.join(", ") || "(none)"}; extra: ${extra.join(", ") || "(none)"}`);
+  }
+}
+
+// --- 11b. the /agnescode wire contract, which §10 never reached ------------
+//
+// `AgnescodeStateData` now lives in `wire.ts` instead of inside the tab, and
+// its served keys are held against the route's GET body literal the same way
+// §10 holds `SnapshotData`. Before this the third data source had no fence at
+// all: a renamed field silently rendered as "no data".
+{
+  const readSource = (rel) => readFileSync(join(ROOT, rel), "utf8");
+  const hostSrc = readSource(join("src", "host", "routes", "agnescode.ts"));
+  const wireSrc = readSource(join("src", "client", "wire.ts"));
+  const host = literalKeys(hostSrc, /^ {2,}return \{$/, /const agnescodeState = async \(\) => \{/);
+  const client = clientFields(wireSrc, "AgnescodeStateData");
+  const anchors = ["ok", "enabled", "loggedIn", "nickname", "models", "enabledModelIds", "balance"];
+  const anchored = anchors.every((k) => host.has(k) && client.has(k));
+  check("both halves' agnescode parsers are live (GET-body anchors found on each side)",
+    anchored, JSON.stringify({ host: [...host], client: [...client] }));
+  if (anchored) {
+    const missing = [...host].filter((k) => !client.has(k));
+    check("every key the /agnescode GET serves is declared in the client",
+      missing.length === 0, `AgnescodeStateData is missing: ${missing.join(", ") || "(none)"}`);
   }
 }
 

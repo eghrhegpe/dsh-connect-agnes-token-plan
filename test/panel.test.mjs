@@ -228,6 +228,43 @@ const healthy = {
   // each of them is answered by signing in, which is what the form offers.
   const hidden = [...AUTH_FAILURE_CODES].filter((code) => tables.FORM_EXCLUDED_CODES.has(code));
   check("no auth-failure code is hidden from the form", hidden.length === 0, hidden.join(", "));
+
+  // The tables cover every code, but the client also BRANCHES on one outside
+  // them: which refusal starts the cooldown, which one the platform refused
+  // without a reason this table knows, which status means the token is gone.
+  // Those comparisons used to spell the code out at the call site — a fourth
+  // copy nothing above looked at, so a rename in codes.ts would have sailed
+  // through. Both are pinned here.
+  const clientCodes = Object.values(tables.CLIENT_CODE ?? {});
+  check("every code the client branches on outside the tables is declared",
+    clientCodes.length > 0 && clientCodes.every((code) => declared.has(code)),
+    clientCodes.join(", "));
+
+  // The reverse direction, source-level: no component may spell a wire code
+  // out as a string literal in a comparison. Comments are stripped first, so
+  // the doc prose that QUOTES a code as an example stays untouched while the
+  // real branches are what the check sees. Every client file is scanned, not a
+  // hand list — a branch added to a file the list forgot would otherwise be
+  // invisible to this fence — except `format.ts`, whose `code` is a CURRENCY
+  // (`cny`/`rmb`/`usd`) and not a taxonomy.
+  const stripped = (await Promise.all(
+    (await readdir(new URL("../src/client/", import.meta.url)))
+      .filter((f) => f.endsWith(".ts") && f !== "format.ts")
+      .map((f) => readFile(new URL(`../src/client/${f}`, import.meta.url), "utf8"))
+  )).join("\n")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const literals = [...stripped.matchAll(/code\s*(?:===|!==)\s*"([^"]+)"/g)].map((m) => m[1]);
+  const undeclared = literals.filter((code) => !declared.has(code));
+  // Liveness first: a scan that read nothing (a renamed directory, a missing
+  // file) would pass on the empty set — the same §39 failure the anchors guard
+  // against, so a file that must be scanned is named as the proof.
+  const scanAlive = stripped.includes("CLIENT_CODE.LOGIN_FAILED");
+  check("the wire-code scan read the client source", scanAlive, `read ${stripped.length} chars`);
+  if (scanAlive) {
+    check("no comparison spells a wire code out at the call site", undeclared.length === 0,
+      undeclared.join(", "));
+  }
 }
 
 // === F3. the two dictionaries carry the same keys ========================

@@ -32,7 +32,10 @@
  * @returns {{inject: string[], apply: Function, panel: object}}
  */
 import { inject, apply } from "./apply.ts";
+import { PANEL_ID } from "./const.ts";
 import {
+  CLIENT_CODE,
+  COOLDOWN_TEXT,
   errorOfStatus,
   FORM_EXCLUDED_CODES,
   GUIDANCE_BY_CODE,
@@ -45,6 +48,7 @@ import {
   bulkModelsIn,
   HIDE_ALL_MODELS,
   modelIsOn,
+  rosterMatches,
   setAllModelsIn,
   toggleModelIn
 } from "./models.ts";
@@ -95,7 +99,7 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
     // function instead of scraping the layout for it.
     barPlan,
     dictionaries: Object.freeze({ zh, en }),
-    tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT }),
+    tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT, CLIENT_CODE, COOLDOWN_TEXT }),
     styles: S,
     helpers: Object.freeze({
       clock,
@@ -105,6 +109,7 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       tokenSize,
       HIDE_ALL_MODELS,
       modelIsOn,
+      rosterMatches,
       allowListFor,
       toggleModelIn,
       setAllModelsIn,
@@ -137,7 +142,7 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
 }
 
 /** The registration the Host loads: id plus the factory the Host materializes. */
-const REGISTRATION = { id: "dsh-connect-agnes-token-plan", factory: clientFactory };
+const REGISTRATION = { id: PANEL_ID, factory: clientFactory };
 
 // The bundle must load in three module worlds (the IIFE wrapper keeps the
 // top level free of import/export, so all three see the same statements):

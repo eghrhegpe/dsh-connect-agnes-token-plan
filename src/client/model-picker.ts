@@ -5,7 +5,7 @@
 import { MODELS_PATH } from "./const.ts";
 import { format, tokenSize } from "./format.ts";
 import { postJsonOrThrow } from "./http.ts";
-import { bulkModelsIn, modelIsOn, toggleModelIn } from "./models.ts";
+import { bulkModelsIn, modelIsOn, rosterMatches, toggleModelIn } from "./models.ts";
 import { h, useCallback, useEffect, useMemo, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
@@ -178,11 +178,7 @@ export function ModelPicker({ llm, onDone, tt }: {
   // snapshot object), so memoising on it and the search text gives `bulk`
   // dependency values that are stable by REFERENCE — the earlier
   // `JSON.stringify(...)` deps existed only to fake that stability.
-  const visible = useMemo(() => models.filter((model) => {
-    if (needle === "") return true;
-    return String(model?.id ?? "").toLowerCase().includes(needle)
-      || String(model?.name ?? "").toLowerCase().includes(needle);
-  }), [needle, models]);
+  const visible = useMemo(() => models.filter((model) => rosterMatches(model, needle)), [needle, models]);
   const tickedCount = visible.filter((model) => modelIsOn(ids, String(model?.id ?? ""))).length;
 
   /** Apply "tick all" / "untick all" to the VISIBLE rows only. */
