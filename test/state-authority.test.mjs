@@ -73,7 +73,9 @@ const WRITE_ACTION = /catalogStore\.(replace|setEnabledIds|clear)\s*\(|writeStat
 
 const found = [];
 for (const file of files) {
-  const rel = relative(ROOT, file).split("\\").join("/");
+  // 仓库相对路径一律正斜杠，供 SANCTIONED 白名单比对——但归一化必须**跨平台**：
+  // `relative()` 在 Windows 给 `\`、在 Linux 给 `/`，只换 `\` 在两边都成立。
+  const rel = relative(ROOT, file).split(/[\\/]/).join("/");
   const lines = readFileSync(file, "utf8").split(/\r?\n/);
   lines.forEach((line, i) => {
     if (!PREDICTIVE_ASSIGN.test(line)) return;
@@ -144,7 +146,12 @@ for (const file of files) {
 {
   check("扫描面非空（护栏自身存活）", files.length > 10, `扫到 ${files.length} 个 .ts`);
   check("预测判据命中数非零（正则未失配）", found.length > 0, `命中 ${found.length} 处`);
-  const scannedDirs = new Set(files.map((f) => relative(SRC, f).split("\\")[0]));
+  // 分隔符归一化：本仓在 Windows 开发、在 Linux runner 上跑 CI，`relative()`
+  // 给出的分隔符随平台变（`\` vs `/`）。第一版硬切 `"\\"`，于是 Linux 上
+  // 整条 `routes/account.ts` 不被切开、集合里没有 `routes` 这一项，这条存活
+  // 守卫在**本机绿、CI 红**——正是 PITFALLS §32 说「本机全绿不算门禁」的活体。
+  const topOf = (abs) => relative(SRC, abs).split(/[\\/]/)[0];
+  const scannedDirs = new Set(files.map(topOf));
   check(
     "递归覆盖子目录（routes/ 等未被漏掉）",
     scannedDirs.has("routes"),
