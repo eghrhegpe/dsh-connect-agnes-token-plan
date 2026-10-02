@@ -19,6 +19,11 @@ import { surface } from "./client-surface.js";
 import { THINKING_LADDER } from "../src/host/llm-models.ts";
 import { API_KEY_SOURCES } from "../src/host/api-key-store.ts";
 import { AGNES_SIGNUP_URL } from "../src/client/const.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -973,6 +978,94 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const searchBox = inputsOf(trees.ModelPicker).find((props) => props.type === "search");
   check("the model search box opts out of autofill",
     searchBox?.autoComplete === "off", JSON.stringify(searchBox ?? {}));
+}
+
+// === G8c. the two roster pickers share ONE draft machine ==================
+// `ModelPicker` (Token Plan) and `AgnescodeModelPicker` (AgnesCode) present the
+// same edit affordances over different routes, and used to spell the whole
+// draft/dirty/saved machine out twice — including two effects, one of which
+// carries a fixed bug in its comment ("clearing it on every hostKey change made
+// the success line unreachable"). A repair applied to one picker and not the
+// other would restore that bug silently, which is the failure mode this section
+// exists to prevent.
+//
+// Two halves, because neither alone is enough:
+//  * STRUCTURAL — the effects live in `roster-draft.ts` and nowhere else. The
+//    stand-in React returns `useState`'s initial value and no-ops every effect,
+//    so a suite cannot DRIVE this machine; what it can do is refuse to let a
+//    second copy exist. That is a source check by necessity, and it is anchored
+//    on the effect BODIES rather than on `useEffect(` counts (agnescode-tab.ts
+//    legitimately holds two other effects, for its own polling).
+//  * BEHAVIOURAL — both pickers are mounted so a broken hook shows up as a
+//    wrong first frame. The AgnesCode picker was previously exported by nobody
+//    and asserted by nothing: it could have been broken in any way at all.
+{
+  const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
+  const pickerSrc = read(join("src", "client", "model-picker.ts"));
+  const tabSrc = read(join("src", "client", "agnescode-tab.ts"));
+  const draftSrc = read(join("src", "client", "roster-draft.ts"));
+
+  // The clearing effect's body and the follow-the-Host effect's guard. These are
+  // the two statements that must exist exactly once.
+  const CLEAR = "setSavedKey(null)";
+  const FOLLOW = "setIds(hostIds)";
+
+  check("the draft machine's notice-clearing effect lives in roster-draft.ts",
+    draftSrc.includes(CLEAR), draftSrc.includes(CLEAR) ? "" : "roster-draft.ts lost the clearing effect");
+  check("the draft machine's follow-the-Host effect lives in roster-draft.ts",
+    draftSrc.includes(FOLLOW), draftSrc.includes(FOLLOW) ? "" : "roster-draft.ts lost the follow effect");
+  check("ModelPicker does not re-implement the draft machine",
+    pickerSrc.includes(CLEAR) === false && pickerSrc.includes("useRosterDraft(") === true,
+    `clears-notice=${pickerSrc.includes(CLEAR)} uses-hook=${pickerSrc.includes("useRosterDraft(")}`);
+  check("AgnescodeModelPicker does not re-implement the draft machine",
+    tabSrc.includes(CLEAR) === false && tabSrc.includes("useRosterDraft(") === true,
+    `clears-notice=${tabSrc.includes(CLEAR)} uses-hook=${tabSrc.includes("useRosterDraft(")}`);
+
+  // Both must be mounted, not merely exported: the sharing above is only safe
+  // while both halves are actually drawn somewhere.
+  const models = [{ id: "m1", name: "One" }, { id: "m2", name: "Two" }];
+  const both = [
+    { name: "ModelPicker", fn: render.ModelPicker, props: { llm: { models, enabledModelIds: [] }, onDone: () => {}, tt } },
+    { name: "AgnescodeModelPicker", fn: render.AgnescodeModelPicker, props: { models, hostIds: [], registered: true, tt, onSave: async () => {} } }
+  ];
+
+  for (const picker of both) {
+    check(`${picker.name} is on the shipped surface`, typeof picker.fn === "function", String(typeof picker.fn));
+    if (typeof picker.fn !== "function") continue;
+
+    const tree = treeOf(picker.fn, picker.props);
+    const text = texts(tree).join("\n");
+    const boxes = findAll(tree, (props) => props.type === "search");
+
+    check(`${picker.name} draws the shared search affordance`,
+      boxes.length === 1 && boxes[0]?.props?.autoComplete === "off",
+      JSON.stringify(boxes.map((b) => b.props?.autoComplete ?? "(unset)")));
+    // The count is what makes the bulk buttons more than a blind shot, and it
+    // comes off the shared `tickedCount`/`visible`.
+    check(`${picker.name} quotes the ticked/visible count`,
+      text.includes("llm.rosterCount"), text);
+    check(`${picker.name} offers tick-all and untick-all`,
+      text.includes("llm.rosterAll") && text.includes("llm.rosterNone"), text);
+
+    // The rows reach the screen through `visible`, which the hook computes. The
+    // walkers expand function components, so the roster's own `li` rows ARE in
+    // this tree and its labels are in `texts` — assert on those. Asserting the
+    // count TEXT alone would be near-vacuous: `tt` is the identity here, so the
+    // rendered string is the same whatever the numbers behind it are.
+    const rows = findAll(tree, (props) => props.key !== undefined);
+    check(`${picker.name} draws a labelled row per visible model`,
+      rows.length === 2 && models.every((model) => text.includes(model.name)),
+      `rows=${rows.length} | text=${text}`);
+
+    // `dirty` is DERIVED: the draft starts equal to the Host's value, so the
+    // first frame must offer no save/discard and claim no success. A hook that
+    // got the comparison wrong shows buttons here on a fresh mount.
+    const footKeys = ["llm.rosterSave", "llm.rosterDiscard", "llm.rosterUnsaved", "llm.rosterSaved",
+      "agnescode.rosterSave", "agnescode.rosterDiscard", "agnescode.rosterUnsaved", "agnescode.rosterSaved"];
+    const shown = footKeys.filter((key) => text.includes(key));
+    check(`${picker.name} claims no unsaved edit while the draft equals the Host`,
+      shown.length === 0, shown.join(", "));
+  }
 }
 
 // === G8b. the official-site link is ALWAYS in the API-key card ============

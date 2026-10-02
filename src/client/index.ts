@@ -71,7 +71,7 @@ import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch, VideoSwi
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage, barPlan } from "./panel-page.ts";
-import { AgnescodeRoster, AgnescodeTab } from "./agnescode-tab.ts";
+import { AgnescodeModelPicker, AgnescodeRoster, AgnescodeTab } from "./agnescode-tab.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
   inject: string[];
@@ -134,7 +134,11 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       ModelPicker,
       PanelPage,
       AgnescodeTab,
-      AgnescodeRoster
+      AgnescodeRoster,
+      // The AgnesCode roster's edit affordances. Exported so the render suite
+      // can mount them: both pickers now share `roster-draft.ts`, and that
+      // sharing is only safe while both halves are actually drawn somewhere.
+      AgnescodeModelPicker
     })
   });
 

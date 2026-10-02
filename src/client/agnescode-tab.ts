@@ -27,8 +27,9 @@
 import { AGNESCODE_PATH, AGNESCODE_SITE_URL } from "./const.ts";
 import { clockLong, count, format, tokenSize } from "./format.ts";
 import { postJson, postJsonOrThrow } from "./http.ts";
-import { modelIsOn, rosterMatches, toggleModelIn, bulkModelsIn } from "./models.ts";
-import { h, useCallback, useEffect, useMemo, useRef, useState } from "./runtime.ts";
+import { modelIsOn } from "./models.ts";
+import { useRosterDraft } from "./roster-draft.ts";
+import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
 import {
@@ -498,47 +499,27 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
   onSave?: (ids: string[]) => Promise<void>;
 }): unknown {
   const rows = Array.isArray(models) ? models : [];
+  // Normalised HERE rather than inside the hook: `ModelPicker` passes its
+  // snapshot array as-is, and folding the two together would change one of
+  // them. See `roster-draft.ts`.
   const host = Array.isArray(hostIds) ? hostIds.filter((id): id is string => typeof id === "string") : [];
-  const [ids, setIds] = useState<string[]>(() => host.slice());
-  const [saving, setSaving] = useState(false);
-  const [savedKey, setSavedKey] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  const {
+    ids, busy: saving, setBusy: setSaving, query, setQuery, setSavedKey, notice, setNotice,
+    idsKey, dirty, justSaved, visible, tickedCount, bulk, toggle, discard
+  } = useRosterDraft(rows, host);
 
-  // Serialising the allow-list is the picker's only cost that scales with the
-  // roster, so it is memoised on the arrays rather than per render.
-  const hostKey = JSON.stringify(host);
-  const idsKey = JSON.stringify(ids);
-  const dirty = idsKey !== hostKey;
-  const justSaved = savedKey !== null && savedKey === hostKey;
-
-  // Follow the Host while the picker is untouched: a save from another client
-  // clears the draft, and `dirty` keeps an edit in flight from being clobbered.
-  useEffect(() => {
-    if (dirty === false) setIds(host);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostKey]);
-
-  // The "已保存" notice ends when the picker is edited again (or the Host's
-  // value moves on) — but NOT on the poll that echoes our own write.
-  useEffect(() => {
-    if (dirty === true) setSavedKey(null);
-  }, [dirty]);
-
-  // The full版 affordance the sibling rosters carry: search + tick all/none
-  // over the VISIBLE rows, with the count quoted so the bulk buttons are not a
-  // blind shot. One row is still toggled against the WHOLE roster, so an edit
-  // survives a later change of the search box.
-  const needle = query.trim().toLowerCase();
-  const visible = useMemo(() => rows.filter((row) => rosterMatches(row, needle)), [needle, rows]);
-  const tickedCount = visible.filter((row) => modelIsOn(ids, String(row?.id ?? ""))).length;
-
-  /** Apply "tick all" / "untick all" to the VISIBLE rows only. */
-  const bulk = (allOn: boolean) => {
-    const roster = rows.map((row) => String(row?.id ?? ""));
-    const targets = visible.map((row) => String(row?.id ?? ""));
-    setIds(bulkModelsIn(ids, roster, targets, allOn));
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
     setNotice(null);
+    try {
+      await onSave?.(ids.slice());
+      setSavedKey(idsKey);
+    } catch (error) {
+      setNotice(format(tt("agnescode.rosterError"), { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const tools = h(
@@ -576,20 +557,6 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
     }, tt("llm.rosterNone"))
   );
 
-  const save = async () => {
-    if (saving) return;
-    setSaving(true);
-    setNotice(null);
-    try {
-      await onSave?.(ids.slice());
-      setSavedKey(idsKey);
-    } catch (error) {
-      setNotice(format(tt("agnescode.rosterError"), { error: error instanceof Error ? error.message : String(error) }));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return h(
     "div",
     null,
@@ -604,10 +571,7 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
       tt,
       // One row is toggled against the WHOLE roster, so an edit survives a
       // later change of the roster the Host reports.
-      onToggle: (id: string) => {
-        setIds(toggleModelIn(ids, rows.map((row) => String(row?.id ?? "")), id));
-        setNotice(null);
-      }
+      onToggle: toggle
     }),
     dirty
       ? h(
@@ -623,10 +587,7 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
             type: "button",
             style: S.button,
             disabled: saving === true,
-            onClick: () => {
-              setIds(host);
-              setNotice(null);
-            }
+            onClick: discard
           }, tt("agnescode.rosterDiscard")),
           h("span", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.rosterUnsaved"))
         )
