@@ -495,3 +495,61 @@ no-op 兼容层，**不删**——老 peer 仍需要它）。**不删补丁**是
 验证钉：`render` G4（1M/×N/额度耗尽/档位列表本地化/默认值不逐行重复 + `tokenSize` 直测）、
 `routes` Q2（行含 `maxOutputLength`/`multiplier`/`thinkingLevels` 与 `llm.thinkingDefault`）、
 `retry` §5（投影层 0=未声明 + 档位过滤与 pi-ai 规则一致）。
+
+---
+
+## 8. SenseNova 姊妹插件反向核实（2026-10-02）
+
+姊妹插件 `dsh-connect-sensenova-token-plan`（同一作者，SenseNova 线，本文写作时 0.4.7 vs
+本插件 0.8.0）的一次横向对比结论**已在别处成文**，其「本插件」指 SenseNova、「Agnes 插件」
+指本仓。本节**不重做全景对比**——两仓同源同蓝图，差距只是「同一套架构家族，各走到哪一步」，
+再出一份对称表只会重复劳动、并易犯那种「谁是谁插件」的方向错。本节只做一件事：**站在 Agnes
+视角，把那张表里标注「SenseNova 领先、Agnes 欠着」的行逐条回到本仓代码里坐实**，纠一处误记、
+留两条真借鉴、并把「已领先 / 平台决定」的方向摆正。
+
+### 8.1 误记纠正：strictNullChecks 不是落后
+
+原表把「SenseNova 全仓 strictNullChecks 翻转」对立「Agnes 只做到 tsc 真跑层级」，读起来像
+本仓欠一刀。实测 `tsconfig.json`：`strict: true` + `strictNullChecks: true` +
+`noUncheckedIndexedAccess: true` + `exactOptionalPropertyTypes: true` 全部**已全局开启**，
+并由 `test/tsc-gate.mjs` 保证 `npm test` 真跑 tsc。两仓都已全局 strictNullChecks；差别只在
+SenseNova 另留 `tsconfig.strict-null.json` 作冗余双查、本仓直接全局开。**殊途同归，不是差距，
+不列为借鉴项。**（原表作者看到的是「翻转叙事」这一动作，误当成对手侧的缺口。）
+
+### 8.2 真借鉴（本仓确实欠、SenseNova 已落地）
+
+- **单一 wire 契约**。本仓快照 wire 类型落在 `src/client/wire.ts`，文件头自己写明「client 不能
+  import Host 的 types」，靠 `test/contract.test.mjs` §10 正则对账两镜像——而 §10 只比**顶层
+  字段**，嵌套结构漂移抓不到。SenseNova 把契约收敛成 `src/shared/` 单一声明、client 侧仅再导出，
+  由 `tsc` 守**全嵌套**。**方向**：值得把 §10 升级为类型级对账或直接建单一声明源；代价是要处理
+  host/client 的 bundle 装载边界（那正是当初拆成镜像的原因），列 **P2**。
+- **重复代码与提交规范两道护栏**。`package.json` 的 `devDependencies` 无 `jscpd`、无
+  `commitlint`/`husky`，scripts 里也没有对应闸门；SenseNova 有。这两道与本仓的
+  `docs`/`build`/`tsc` 三个 gate 正交、成本低，列 **P0-lite**，可直接加。
+
+### 8.3 方向摆正：这些 Agnes 已领先，是 SenseNova 该反抄
+
+原表标给 SenseNova 的「routes/ 拆分、switch-store + switch-precedence、modality 单函数」三条，
+实测本仓**都已落地**：`src/host/routes/` 已按资源拆成 8 模块 + `src/host/routes.ts` 薄 facade；
+`src/host/switch-store.ts` 与 `src/host/switch-precedence.ts`（面板值 vs 配置默认的唯一裁决、
+带来源标签）在册；`src/host/modality.ts` 单函数三级判定服务两方向。**这三条不是本仓欠账，
+反而是 SenseNova（仍 `routes.ts` 单文件、三份 switch store 手抄优先级、`isImageGenModel`/`isChatModel`
+两方向分置）应借鉴本仓的**——本节把它归位，不进本仓待办。
+
+### 8.4 平台决定，不可照搬
+
+- **refresh_token 静默续期 / 密码可删**：SenseNova 平台给 refresh，Agnes 一跳登录**没有** refresh
+  端点（AGENTS.md 事实①），令牌死了只能存密码重登——这是平台契约差异，不是工程可抄的东西。
+- **面板内扫码登录**：SenseNova 的第二上游小浣熊在面板内走微信 QR；本仓第二上游 AgnesCode 是
+  **桌面 App 登录态采集**（os_crypt+DPAPI，AGENTS.md 事实③），交互模型不同，无对应物可搬。
+- **maxTokens 钉值（65536）**：本仓 `src/host/llm-models.ts` 已按「catalog 值是线索不是契约、
+  须经 live-contract 探针实测才翻」的纪律处理，与本仓 PITFALLS §20 同源；SenseNova 是否吃
+  harness 32768 兜底属**它侧**待核，不是本仓动作。
+
+### 8.5 验证与出处
+
+本节所有断言基于 2026-10-02 对 `tsconfig.json`、`package.json`（scripts/devDeps）、
+`src/client/wire.ts`、`src/host/{routes/,routes.ts,switch-store.ts,switch-precedence.ts,
+modality.ts}`、`test/contract.test.mjs` §10 的**本仓实测**；对照侧结论来自姊妹插件的
+0.4.7 形态，未在本机复核，仅作**方向**参照，不作本仓事实。落地状态随实现漂移，
+当前执行进度一律以 [ROADMAP.md](./ROADMAP.md) 为准（开篇约定）。
