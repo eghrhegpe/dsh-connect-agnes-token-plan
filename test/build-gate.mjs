@@ -132,6 +132,37 @@ if (captured.length === 1) {
   const surfaceKeys = ["interpretSnapshot", "viewOf", "errorOfStatus", "dictionaries", "tables", "styles", "helpers", "components"];
   check("panel surface exposes every documented key", surface !== null && surfaceKeys.every((key) => key in surface),
     surface === null ? "panel missing" : surfaceKeys.filter((key) => !(key in surface)).join(","));
+
+  // The keys being present is only a mount smoke test. Drive a few of the REAL
+  // definitions through the artifact, so it is proven to carry working logic —
+  // not just a shape. The behaviour suites already exercise these definitions
+  // against the SOURCES (test/client-surface.js); this pair of checks is the
+  // artefact's own half: the same logic, shipped.
+  if (surface !== null) {
+    // `tt` is an identity translator: the decision returns dictionary KEYS
+    // (see `viewOf`), so a real dictionary is not needed to assert it.
+    const tt = (key) => key;
+    const healthy = { ok: true, quota: { consoleConnected: true } };
+    const read = surface.interpretSnapshot(healthy);
+    check("artifact reads a healthy body as data",
+      read.data === healthy && read.error === null, JSON.stringify(read.error));
+    const refused = surface.interpretSnapshot({ ok: false, code: "login_rejected" });
+    check("artifact reads a refused body as a structured error",
+      refused.data === null && refused.error?.code === "login_rejected",
+      JSON.stringify(refused.error));
+    const view = surface.viewOf(null, { code: "not_configured" }, tt);
+    check("artifact resolves the setup decision",
+      view.needsSetup === true && view.guidanceKey === "panel.jwtMissing",
+      JSON.stringify({ needsSetup: view.needsSetup, guidanceKey: view.guidanceKey }));
+    const zhKeys = Object.keys(surface.dictionaries.zh ?? {});
+    const enKeys = Object.keys(surface.dictionaries.en ?? {});
+    check("artifact carries both dictionaries with content",
+      zhKeys.length > 20 && enKeys.length > 20 && "tab.quota" in (surface.dictionaries.zh ?? {}),
+      `zh=${zhKeys.length} en=${enKeys.length}`);
+    const named = Object.keys(surface.components ?? {});
+    check("artifact exposes the panel components",
+      named.includes("PanelPage") && named.includes("PlanCard"), named.join(","));
+  }
 }
 
 console.log(JSON.stringify(results, null, 2));

@@ -10,8 +10,19 @@
  * the Client folds no session events of its own.
  *
  * The sources live in `src/client/*.ts` and are bundled into the root
- * `client.js` artifact by tsdown (IIFE, see `tsdown.config.mjs`); the tests
- * load the ARTIFACT, so what they exercise is what the browser runs.
+ * `client.js` artifact by tsdown (IIFE, see `tsdown.config.mjs`). This code is
+ * exercised two different ways, and they are not the same thing:
+ *
+ *   - the behaviour suites import THIS MODULE (the sources) through
+ *     `test/client-surface.js`, so they run the real definitions the browser
+ *     runs — but they do not load the shipped bundle;
+ *   - the shipped bundle is executed by `test/build-gate.mjs`, which mounts it
+ *     through a capturing `window.__ModuleLoader__` and asserts it registers,
+ *     materializes, and exposes the panel surface. That is a mount smoke test,
+ *     not a behaviour suite: no panel decision is driven from the artifact.
+ *
+ * So the behaviour suites prove the code is right; the build gate proves the
+ * bundle carries it.
  * @module dsh-connect-agnes-token-plan/client
  */
 

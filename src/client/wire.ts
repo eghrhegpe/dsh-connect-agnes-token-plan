@@ -42,8 +42,6 @@ export interface QuotaWindowData {
   resetAt?: number | null;
   /** Seconds until the window resets, as the platform counts them down. */
   resetInSeconds?: number | null;
-  /** Unused; kept for wire compatibility. */
-  remaining?: number | null;
 }
 
 /** One plan, as the quota screen reads it. */

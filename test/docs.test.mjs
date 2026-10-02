@@ -682,7 +682,14 @@ const CHECK_IDS = new Map([
   // 与测试无关（本护栏靠这个合取避开它）。同理只认「项」/「checks」，不认
   // 「N/N 通过」这种分数式实跑结果（那是定格记录，且探针结果本就随真机而变）；
   // 也只用阿拉伯数字，避开「四条路由套件全绿」这种**指定**某几个套件的写法。
-  const suiteCountRe = /(?:\d+\s*项|\d+\s*checks?\b|\d+\s*套件)/g;
+  //
+  // `N checks` 曾漏过带形容词的形式：token-store 两处注释里的「N live checks」因此
+  // 从护栏眼皮底下漂成了假数（`live` 夹在数字与 `checks` 之间，原正则只认紧邻的
+  // `N checks`）。这里把形容词设为可选，让任何「N <adj> checks」都被点名——它是
+  // 活文档/注释里会漂的计数，被点名正是本护栏的目的。
+  // 已知边界（故意不拦）：被换行拆开的计数（如 `N live` 在行尾、`checks` 在下一行）
+  // 因逐行匹配而漏检——修法不是把护栏改成跨行，而是别把这种数写进活文档。
+  const suiteCountRe = /(?<![A-Za-z0-9])(?:\d+\s*项|\d+\s*(?:[A-Za-z]+\s+)?checks?\b|\d+\s*套件)/g;
   const testCtxRe = /(?:\.test\.mjs|\.mjs|\bchecks?\b|套件|离线|门禁|全绿|npm test|单测|测试)/;
   let scanned = 0;
   let hits = 0;

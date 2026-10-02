@@ -1,12 +1,19 @@
 // @ts-check
 /**
- * The shipped client bundle, loaded as a module instead of scraped as text.
+ * The client's behaviour surface, loaded as a module instead of scraped as text.
  *
- * `client.js` is a browser artifact: it registers a lazy factory through
+ * The client is a browser bundle: it registers a lazy factory through
  * `window.__ModuleLoader__.load({ id, factory })` and touches nothing else at
- * module scope. That is exactly enough to run it in Node: this module installs
- * a capturing `__ModuleLoader__`, imports the real `client.js`, materializes
- * its factory with a minimal React stand-in, and exports what comes back.
+ * module scope. That is exactly enough to run it in Node — so this module
+ * installs a capturing `__ModuleLoader__` and materializes the factory with a
+ * minimal React stand-in.
+ *
+ * NOTE on what is imported: this loader imports `../src/client/index.ts`, the
+ * SOURCES, not the shipped `client.js` artifact. The two run the same factory
+ * (`clientFactory`), so the behaviour suites drive the browser's real
+ * definitions; what they do not prove is that the artifact builds and mounts,
+ * which is `test/build-gate.mjs`'s job. Keep that split honest — see the same
+ * note at the top of `src/client/index.ts`.
  *
  * This replaces the previous approach — cutting functions out of the source
  * with balanced-brace walks and evaluating the snippets with `new Function`.
@@ -80,8 +87,8 @@ await import("../src/client/index.ts");
 const registration = registrations.find((entry) => entry.id === CLIENT_ID);
 if (registration === undefined) {
   throw new Error(
-    `client-surface: client.js did not register "${CLIENT_ID}"; ` +
-      "the bundle's entry structure changed, update this loader to match."
+    `client-surface: the client sources did not register "${CLIENT_ID}"; ` +
+      "the entry structure changed, update this loader to match."
   );
 }
 

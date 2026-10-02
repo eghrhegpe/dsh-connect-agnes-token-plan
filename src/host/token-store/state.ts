@@ -19,8 +19,8 @@
  * Step 1 of the split: `createStoreContext()` is the one new piece of code in
  * this move. `token-store.ts`'s `createTokenStore` now builds this context and
  * keeps its bodies verbatim against it, so the behavior baseline
- * (`test/store-baseline.test.mjs`) and the 131 live checks stay green —
- * no semantics moved, only the names did.
+ * (`test/store-baseline.test.mjs`) stays green — no semantics moved, only the
+ * names did.
  *
  * @module dsh-connect-agnes-token-plan/token-store/state
  */

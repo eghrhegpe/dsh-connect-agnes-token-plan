@@ -82,7 +82,11 @@ export default defineConfig([
     deps: { neverBundle: ["react"] },
     outputOptions: {
       entryFileNames: "client.js",
-      name: "dsh_connect_sensenova_token_plan_client",
+      // The IIFE's global variable name. Nothing reads it back — the artifact
+      // registers through `window.__ModuleLoader__` and `module.exports`, and
+      // the ESM branch touches no global — so it is inert; named after the
+      // plugin for greppability (it was a stale SenseNova-era identifier).
+      name: "dsh_connect_agnes_token_plan_client",
     },
     // outDir is the repo root (the artifact lives at the package root by
     // contract), so tsdown's clean must never run here.
