@@ -839,12 +839,32 @@ const GOOD_SESSION = {
     check("the roster renders the count header", json.includes("2"));
     check("the roster carries both model names", json.includes("Agnes 3.0 Flash") && json.includes("Kimi K3"));
 
+    // The full版 affordances the picker hands in: a search/bulk tools row and a
+    // no-match note. Both are SLOTS (string nodes here) — the roster draws them
+    // as given, so the picker owns the behaviour and the row stays hook-free.
+    const withTools = AgnescodeRoster({ models: [{ id: "a", name: "A" }], tt, tools: "TOOLS-ROW" });
+    check("the roster renders the search/bulk row when handed tools",
+      JSON.stringify(withTools).includes("TOOLS-ROW"));
+    const emptyTree = AgnescodeRoster({ models: [], tt, emptyNote: "NO-MATCH" });
+    check("the roster renders the no-match note when nothing is visible",
+      JSON.stringify(emptyTree).includes("NO-MATCH"));
+
     // The tab covers the fourth dictionary key set: every agnescode.* key the
     // tab can render exists in BOTH dictionaries (panel.test pins parity
     // globally; this pins the tab's own consumption).
     const needed = ["tab.agnescode", "agnescode.title", "agnescode.desc", "agnescode.notLogged", "agnescode.harvestFail"];
     check("the zh dictionary covers the tab's keys",
       needed.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""));
+
+    // The picker's own keys plus the shared `llm.roster*` ones it reuses must
+    // exist in BOTH languages — a missing one renders as a bare key.
+    const rosterKeys = ["agnescode.rosterHint", "agnescode.rosterSave", "agnescode.rosterSaving",
+      "agnescode.rosterDiscard", "agnescode.rosterUnsaved", "agnescode.rosterSaved", "agnescode.rosterError",
+      "llm.rosterSearchPlaceholder", "llm.rosterCount", "llm.rosterAll", "llm.rosterNone", "llm.rosterNoMatch"];
+    check("the picker's dictionary keys exist in both languages",
+      rosterKeys.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""
+        && typeof dictionaries.en[key] === "string" && dictionaries.en[key] !== ""),
+      rosterKeys.filter((key) => typeof dictionaries.zh[key] !== "string" || typeof dictionaries.en[key] !== "string").join(","));
 
     // The tier values the harvest emits must map onto real dictionary keys in
     // BOTH languages: the tab renders `agnescode.tier.${tier}`, and without

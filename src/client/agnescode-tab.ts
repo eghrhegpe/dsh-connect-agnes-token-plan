@@ -27,8 +27,8 @@
 import { AGNESCODE_PATH, AGNESCODE_SITE_URL } from "./const.ts";
 import { clockLong, count, format, tokenSize } from "./format.ts";
 import { postJson, postJsonOrThrow } from "./http.ts";
-import { modelIsOn, toggleModelIn } from "./models.ts";
-import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
+import { modelIsOn, toggleModelIn, bulkModelsIn } from "./models.ts";
+import { h, useCallback, useEffect, useMemo, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
 
@@ -408,16 +408,20 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
  * @param {unknown} [props.enabledIds] - the curated ids (empty = all on).
  * @param {boolean} [props.busy] - disable the rows while a save is in flight.
  * @param {string} [props.hint] - one quiet rule line under the header.
+ * @param {unknown} [props.tools] - the search / bulk row the picker owns.
+ * @param {string} [props.emptyNote] - the note shown when nothing is visible.
  * @param {(id: string) => void} [props.onToggle] - the toggle handler.
  * @param {import("./runtime.ts").Tt} props.tt - the dictionary.
  * @returns {unknown} the roster list element.
  */
-export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, tt, onToggle }: {
+export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, tools, emptyNote, tt, onToggle }: {
   models: AgnescodeModel[];
   registered?: boolean;
   enabledIds?: unknown;
   busy?: boolean;
   hint?: string;
+  tools?: unknown;
+  emptyNote?: string;
   tt: Tt;
   onToggle?: (id: string) => void;
 }): unknown {
@@ -441,10 +445,13 @@ export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, tt
     typeof hint === "string" && hint !== ""
       ? h("div", { style: { ...S.muted, fontSize: 11, marginBottom: 6 } }, hint)
       : null,
-    h(
-      "ul",
-      { style: S.modelList, role: "list" },
-      rows.map((row) => {
+    tools !== undefined ? tools : null,
+    rows.length === 0 && typeof emptyNote === "string" && emptyNote !== ""
+      ? h("p", { style: S.empty }, emptyNote)
+      : h(
+          "ul",
+          { style: S.modelList, role: "list" },
+          rows.map((row) => {
         const id = String(row?.id ?? "");
         const label = String(row?.name ?? id);
         const on = modelIsOn(enabledIds, id);
@@ -498,11 +505,11 @@ export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, tt
  * an "unsaved" state DERIVED by comparing it with the Host's value, and a
  * "saved" state that is the same comparison after the write echoes back.
  *
- * 精简版 deliberately: no search box, no bulk tick — the AgnesCode roster is
- * the desktop account's own, small, and the per-row checkbox plus save/discard
- * covers the whole need. The draft/derived/saved machinery is the same shape
- * as `ModelPicker`, so a fuller version (search + tick-all) can layer on later
- * without changing the row contract.
+ * 完整版: the SAME search + tick-all/untick-all + count affordances as the
+ * sibling rosters, riding the shared `llm.roster*` dictionary rather than a
+ * second copy of the wording. The draft/derived/saved machinery is the same
+ * shape as `ModelPicker`, and the row contract is unchanged — the search is a
+ * filter over what is rendered, never over what is saved.
  * @param {object} props
  * @param {AgnescodeModel[]} props.models - the rows the route reported.
  * @param {unknown} [props.hostIds] - the Host's curated ids.
@@ -524,6 +531,7 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
   const [saving, setSaving] = useState(false);
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   // Serialising the allow-list is the picker's only cost that scales with the
   // roster, so it is memoised on the arrays rather than per render.
@@ -545,6 +553,61 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
     if (dirty === true) setSavedKey(null);
   }, [dirty]);
 
+  // The full版 affordance the sibling rosters carry: search + tick all/none
+  // over the VISIBLE rows, with the count quoted so the bulk buttons are not a
+  // blind shot. One row is still toggled against the WHOLE roster, so an edit
+  // survives a later change of the search box.
+  const needle = query.trim().toLowerCase();
+  const visible = useMemo(() => rows.filter((row) => {
+    if (needle === "") return true;
+    return String(row?.id ?? "").toLowerCase().includes(needle)
+      || String(row?.name ?? "").toLowerCase().includes(needle);
+  }), [needle, rows]);
+  const tickedCount = visible.filter((row) => modelIsOn(ids, String(row?.id ?? ""))).length;
+
+  /** Apply "tick all" / "untick all" to the VISIBLE rows only. */
+  const bulk = (allOn: boolean) => {
+    const roster = rows.map((row) => String(row?.id ?? ""));
+    const targets = visible.map((row) => String(row?.id ?? ""));
+    setIds(bulkModelsIn(ids, roster, targets, allOn));
+    setNotice(null);
+  };
+
+  const tools = h(
+    "div",
+    { style: S.rosterTools },
+    h("input", {
+      type: "search",
+      style: { ...S.input, flex: "1 1 200px", width: "auto" },
+      value: query,
+      placeholder: tt("llm.rosterSearchPlaceholder"),
+      "aria-label": tt("llm.rosterSearchPlaceholder"),
+      // Same Chromium autofill hazard as the sibling picker: this is the only
+      // text input on the tab, so without `autocomplete="off"` it would be
+      // where the browser's password manager typed a saved console ACCOUNT.
+      autoComplete: "off",
+      name: "agnescode-model-search",
+      disabled: saving,
+      onChange: (event: { target: { value: string } }) => setQuery(event.target.value)
+    }),
+    h("span", {
+      style: S.rosterCount,
+      title: format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })
+    }, format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })),
+    h("button", {
+      type: "button",
+      style: S.rosterBulk,
+      disabled: saving === true || visible.length === 0,
+      onClick: () => bulk(true)
+    }, tt("llm.rosterAll")),
+    h("button", {
+      type: "button",
+      style: S.rosterBulk,
+      disabled: saving === true || visible.length === 0,
+      onClick: () => bulk(false)
+    }, tt("llm.rosterNone"))
+  );
+
   const save = async () => {
     if (saving) return;
     setSaving(true);
@@ -563,11 +626,13 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
     "div",
     null,
     h(AgnescodeRoster, {
-      models: rows,
+      models: visible,
       registered,
       enabledIds: ids,
       busy: saving,
       hint: tt("agnescode.rosterHint"),
+      tools,
+      emptyNote: tt("llm.rosterNoMatch"),
       tt,
       // One row is toggled against the WHOLE roster, so an edit survives a
       // later change of the roster the Host reports.
