@@ -642,6 +642,38 @@ const GOOD_SESSION = {
     check("a tokenless publish degrades to not_configured (the panel says so)",
       noTokenResult.skipped === true && noToken.state.error === "not_configured" && llmNoToken.calls.length === 0);
 
+    // The tokenless branch must ALSO clear the pair identity. A stale `built`
+    // survives into the NEXT publish as its rollback target, so a later failed
+    // publish would re-register an adapter whose release has already been
+    // called. Proved on the real path that triggers it: register first, then
+    // lose the credential. (This branch used to leave `built` standing — the
+    // copy-drift the shared `publish-core.ts` closed.)
+    let liveToken = "live-token";
+    const dropLlm = makeLlm();
+    const dropping = createAgnescodePublisher({
+      panelSwitch: async () => true,
+      getLlm: () => dropLlm,
+      loadAdapterModule: adapterModule(),
+      resolveToken: async () => liveToken
+    });
+    await dropping.publish(rows, base);
+    check("the pair is live before the credential is dropped",
+      dropping.state.built !== null && dropping.state.registered === true);
+    liveToken = "";
+    const dropped = await dropping.publish(rows, base);
+    check("losing the credential clears the stale built adapter",
+      dropped.skipped === true && dropping.state.error === "not_configured"
+      && dropping.state.built === null && dropping.state.registered === false,
+      JSON.stringify({ error: dropping.state.error, built: dropping.state.built, registered: dropping.state.registered }));
+    // The adapter half of the release is NOT observable through this section's
+    // fake: its `registerAdapter` is `async`, so the release it hands back is a
+    // Promise, and `createPairReleaser`'s guard swallows calling it. In the
+    // Host `registerAdapter` is synchronous. The directory release — which
+    // travels the same guarded path — proves the release actually ran.
+    check("the dropped pair was released, not left registered",
+      dropLlm.calls.some((c) => c[0] === "release-directory"),
+      JSON.stringify(dropLlm.calls));
+
     // Switch ON + token + base: register through the factory.
     const llm = makeLlm();
     const publisher = createAgnescodePublisher({ panelSwitch: async () => true, getLlm: () => llm, loadAdapterModule: adapterModule(), resolveToken: async () => "live-token" });

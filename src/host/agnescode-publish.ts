@@ -2,16 +2,16 @@
  * The AgnesCode provider's PUBLISH STATE MACHINE — the peer-free control plane
  * of the third upstream provider (ROADMAP §6.3).
  *
- * Deliberate BOUNDARY: this is an independent publisher. It shares NONE
- * of the Token Plan publisher's state (`provider-publish.ts`) — an AgnesCode
- * switch flip, re-harvest, or catalogue drift can never register, release, or
- * churn the Token Plan provider (§5.5 isolation). It carries the same three load-bearing
- * semantics, restated:
- *   - the publish chain queues a publish behind every one in flight;
- *   - the `disposed` gate stops a late publish registering into a withdrawn
- *     Host;
- *   - the single-point `registerPair` (factory-await + shape check, PITFALLS
- *     §19) serves both the publish and the rollback path.
+ * Deliberate BOUNDARY: this is an independent publisher. It shares NONE of the
+ * Token Plan publisher's STATE (`provider-publish.ts`) — an AgnesCode switch
+ * flip, re-harvest, or catalogue drift can never register, release, or churn
+ * the Token Plan provider (§5.5 isolation). What it does share is the
+ * MECHANISM: the publish chain, the `disposed` gate and the single-point
+ * `registerPair` live in `publish-core.ts`, one copy for both publishers.
+ * Isolation is about separate state instances, not about duplicated code —
+ * and this file used to say its semantics were "restated", which is the
+ * honest word for copied (and how its "no credential" branch drifted into
+ * leaving a stale `built` behind).
  *
  * The difference that shapes the publish: the offered set is driven by THREE
  * facts — "is the switch on?", "is there a (harvested) credential?", and the
@@ -26,9 +26,21 @@
  */
 
 import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME } from "./agnescode-models.ts";
-import { str, redactSecrets } from "./util.ts";
+import { str } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
-import { name as pluginName } from "./host-config.ts";
+import {
+  createPublishQueue,
+  createPairReleaser,
+  createAdapterFactoryResolver,
+  registerProviderPair,
+  isBuiltAdapter,
+  BAD_FACTORY_SHAPE_ERROR,
+  describeBuildFailure,
+  warnBuildFailure,
+  swapRegistration,
+  resolveRegistrationService,
+  unregister
+} from "./publish-core.ts";
 import type { AgnescodePublisherDeps } from "./types.ts";
 
 /**
@@ -93,53 +105,28 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     built: null as any
   };
 
-  /** Set once the plugin is disposed; a later publish is a no-op. */
-  let disposed = false;
+  /** The publish queue and the `disposed` gate — shared with the Token Plan
+   *  publisher (`publish-core.ts`), so the two cannot drift apart. */
+  const queue = createPublishQueue();
 
   /** Resolve the peer-dependent adapter factory once and memoize it. */
-  let adapterFactoryPromise: Promise<any> | undefined;
-  const resolveAdapterFactory = async () => {
-    if (adapterFactoryPromise === undefined) {
-      adapterFactoryPromise = Promise.resolve(effectiveLoadAdapterModule()).then((mod) => mod.createAgnescodeAdapter);
-    }
-    return adapterFactoryPromise;
-  };
+  const resolveAdapterFactory = createAdapterFactoryResolver(
+    effectiveLoadAdapterModule,
+    "createAgnescodeAdapter"
+  );
 
   /** Release the registered pair. Releases are idempotent in the Host. */
-  const release = () => {
-    const releaseFn = (fn: (() => void) | null | undefined) => {
-      try {
-        fn?.();
-      } catch {
-        // The service may already be gone during shutdown or rollback.
-      }
-    };
-    releaseFn(state.releaseAdapter);
-    releaseFn(state.releaseDirectory);
-    state.releaseAdapter = null;
-    state.releaseDirectory = null;
-  };
+  const release = createPairReleaser(state);
 
   /**
    * Hand one built adapter to the llm service and record its release
-   * functions onto `target` — defined ONCE, used by publish and rollback.
+   * functions onto `target` — the shared single-point registrar (PITFALLS
+   * §19), used by both the publish and the rollback path.
    */
-  const registerPair = (llm: any, built: any, target: any) => {
-    target.releaseAdapter = llm.registerAdapter(built.providerIds, built.adapter);
-    target.releaseDirectory = typeof llm.registerConfigurableProviders === "function"
-      ? llm.registerConfigurableProviders([{
-          provider: AGNESCODE_PROVIDER_ID,
-          displayName: AGNESCODE_DISPLAY_NAME,
-          settingsNs: pluginName,
-          settingsPath: [],
-          declared: false
-        }])
-      : null;
-  };
-
-  /** Publishes are serialized through this chain (no lock object; a rejected
-   *  link never poisons the ones behind it). */
-  let publishChain = Promise.resolve();
+  const registerPair = (llm: any, built: any, target: any) => registerProviderPair(llm, built, target, {
+    providerId: AGNESCODE_PROVIDER_ID,
+    displayName: AGNESCODE_DISPLAY_NAME
+  });
 
   /**
    * (Re)build and register the AgnesCode provider for one roster snapshot.
@@ -155,7 +142,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
    * @returns {Promise<{ok: boolean, skipped?: boolean, error?: unknown}>}
    */
   const publishProviderOnce = async (rows: readonly any[], bffBase = "") => {
-    if (disposed) return { ok: false, skipped: true };
+    if (queue.isDisposed()) return { ok: false, skipped: true };
     const previousBuilt = state.built;
     const previousRows = state.rows;
     const previousBase = state.bffBase;
@@ -166,29 +153,14 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     // No config default (AgnesCode has no `Settings` key), so an unset panel
     // value means off — never a fallback nobody declared.
     const registerWanted = resolveSwitchEnabled(await readPanelValue(effectivePanelSwitch)).enabled;
-    if (!registerWanted) {
-      release();
-      state.registered = false;
-      state.built = null;
-      state.error = null;
-      return { ok: true, skipped: true };
-    }
+    if (!registerWanted) return unregister({ state, release });
 
-    const llm = effectiveGetLlm("llm");
-    state.llmAvailable = llm !== null && typeof llm.registerAdapter === "function";
-    if (!state.llmAvailable) {
-      release();
-      state.registered = false;
-      state.error = "the Host exposes no llm registration service";
-      return { ok: false, error: state.error };
-    }
+    const llm = resolveRegistrationService({ state, getLlm: effectiveGetLlm, release });
+    if (llm === null) return { ok: false, error: state.error };
 
     const token = await effectiveResolveToken().catch(() => "");
     if (token === null || token === "" || state.bffBase === "") {
-      release();
-      state.registered = false;
-      state.error = "not_configured";
-      return { ok: true, skipped: true };
+      return unregister({ state, release, error: "not_configured" });
     }
 
     let createAgnescodeAdapter;
@@ -204,79 +176,46 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
         resolveToken: effectiveResolveToken,
         get: effectiveGetLlm
       });
-      if (built === null || typeof built !== "object"
-        || !Array.isArray(built.providerIds) || built.adapter === undefined) {
-        throw new Error("the adapter factory did not return { adapter, providerIds }");
-      }
+      if (!isBuiltAdapter(built)) throw new Error(BAD_FACTORY_SHAPE_ERROR);
     } catch (error) {
-      const note = redactSecrets(error instanceof Error ? error.message : String(error));
-      state.error = note;
-      effectiveLogger?.warn?.(
-        `${pluginName}: cannot build the AgnesCode adapter: ${note}`
-          + ((error as { code?: string } | null)?.code === "ERR_MODULE_NOT_FOUND"
-            ? " — the llm peer packages ship with the Host; install this plugin where they resolve"
-            : "")
-      );
-      return { ok: false, error };
+      // Shared with the Token Plan publisher: redaction and the
+      // ERR_MODULE_NOT_FOUND remedy live in `publish-core.ts`, so a fix to
+      // that diagnosis reaches both upstreams at once.
+      const described = describeBuildFailure(error);
+      state.error = described.note;
+      warnBuildFailure(effectiveLogger, "AgnesCode", described);
+      return { ok: false, error: described.error };
     }
 
-    // Build first (it can throw); only then take down the old pair.
-    release();
-    try {
-      registerPair(llm, built, state);
-    } catch (error) {
-      release();
-      state.built = null;
-      state.rows = previousRows;
-      state.bffBase = previousBase;
-      state.error = redactSecrets(error instanceof Error ? error.message : String(error));
-      if (previousBuilt !== null) {
-        try {
-          registerPair(llm, previousBuilt, state);
-          state.built = previousBuilt;
-          state.registered = true;
-        } catch {
-          state.built = null;
-          state.registered = false;
-        }
-      } else {
-        state.registered = false;
+    // The swap (and the rollback behind it) is the shared mechanism; what is
+    // restored on THIS side is the roster identity and its per-account base.
+    return swapRegistration({
+      llm,
+      built,
+      previousBuilt,
+      state,
+      release,
+      registerPair,
+      emit: effectiveEmit,
+      onRollback: () => {
+        state.rows = previousRows;
+        state.bffBase = previousBase;
       }
-      return { ok: false, error };
-    }
-    state.built = built;
-    state.registered = true;
-    state.error = null;
-    try {
-      effectiveEmit("llm/adapters-updated");
-    } catch {
-      // A Host that refuses the event still has the registration; readers
-      // refresh on their own cadence.
-    }
-    return { ok: true };
+    });
   };
 
   /** Publish, queued behind every other in-flight publish. */
-  const publish = (rows: readonly any[], bffBase: string) => {
-    const queued = publishChain.then(
-      () => publishProviderOnce(rows, bffBase),
-      () => publishProviderOnce(rows, bffBase)
-    );
-    publishChain = queued.then(() => undefined, () => undefined);
-    return queued;
-  };
+  const publish = (rows: readonly any[], bffBase: string) => queue.enqueue(() => publishProviderOnce(rows, bffBase));
 
   /** Mark the publisher disposed: any later publish is a no-op. */
-  const dispose = () => {
-    disposed = true;
-  };
+  const dispose = () => queue.dispose();
 
   return {
     state,
     publish,
     release,
     dispose,
-    isDisposed: () => disposed
+    isDisposed: () => queue.isDisposed()
   };
 }
 

@@ -10,7 +10,8 @@
 > （并发语义，PITFALLS §18）、`test/agnescode.test.mjs`（第二个 publisher 全行为）。
 > 门禁 = 这三套 + `test/store-baseline.test.mjs` + `npm run typecheck` 全绿且**零漂移**。
 >
-> **状态（2026-10-02）：蓝图已定，按下表 §4 分步落地（本提交只落蓝图本身）。**
+> **状态（2026-10-02）：三步全部落地。** 两侧 publisher 都已是薄壳，机制只剩一份，共享层由
+> `test/publish-core.test.mjs` 就地钉住。
 > 同款术式先例：[TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md)（按「块」拆 token-store）、
 > `switch-store.ts`（四个 opt-in 开关共用一层）、`state-store.ts`（四个 writer 共用一层）。
 > 这是同一份收敛清单上最后一格。
