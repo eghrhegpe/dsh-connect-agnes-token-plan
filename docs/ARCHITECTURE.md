@@ -58,7 +58,7 @@
 - `llm-models.ts` / `llm-adapter.ts` / `llm-retry.ts` / `llm-error-fix.ts`：推理侧的纯逻辑映射（无 peer，离线可测）、依赖 peer 的适配器半边、429 退避策略、以及 peer 对限频 429 的误判纠正（`isQuotaExceededError` 命中面过宽，带额度措辞的 429 被抢判成 `QUOTA` 而不重试）。
 - `draw.ts` / `draw-store.ts`：出图工具（`agnes_draw_image`）与它的面板开关。
 - `video.ts` 家族（2026-10 四刀拆分，照 token-store 术式先冻结行为再搬——`test/video.test.mjs` 拆分前后对同一 barrel 全绿零漂移）：`video.ts` 保留 `agnes_video_generate` 工具定义与兼容 barrel 全表面；`video-protocol.ts` 装端点构造（含「国际站陷阱」与 `/v1` vs `/agnesapi` 路径不对称）、V2.0 帧制请求体、任务应答解析与失败分诊；`video-protocol-25.ts` 装 2.5 秒数制请求体（与 V2.0 字段互斥，混发必 400）；`video-models.ts` 装目录花名册与家族选型；`video-client.ts` 装「建任务 → 轮询」异步状态机（含刻意不设 30s 冷却门的裁定）。
-- `agnescode*.ts`：桌面端上游（AgnesCode）——本机登录态采集（Chromium os_crypt + DPAPI，逐文件分诊）、逐账号 BFF base 钉域、独立 store / publisher / provider id / 开关，与主链路完全隔离（ROADMAP §6.3）。
+- `agnescode*.ts`：桌面端上游（AgnesCode）——本机登录态采集（Chromium os_crypt + DPAPI，逐文件分诊）、逐账号 BFF base 钉域、独立 store / publisher / provider id / 开关，与主链路完全隔离（ROADMAP §6.3）。**已知限制**：AgnesCode 无刷新端点（JWT≈28 天），续期须用户重开桌面 App 后重新采集，无自动续期路径——这是上游形态决定的限制，不是本插件能力缺口。
 - `client.js`：Plugins 页内的配置卡与三个 tab（积分额度 / 接入 API / AgnesCode）+ 账号表单（React，纯主题令牌样式）。内部 `interpretSnapshot` 把 Host 的响应读成 `(data, error)` 对，再交给决策块。
 - 测试基建：`client-surface.js` / `panel-decision.js` / `panel-render.js` —— 把 `src/client/` 作为模块加载后物化 `panel` 测试面，供 `panel.test.mjs` / `render.test.mjs` 直接调用。不进运行时、不进 `files` 打包清单。
 

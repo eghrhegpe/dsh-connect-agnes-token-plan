@@ -74,6 +74,10 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 >
 > **登录覆盖项是 patch 行的顶层键**（`loginPath`、`loginTimeoutMs`、`fallbackExpiresInSeconds`），**不是嵌套的 `auth:` 块**。嵌套块会被 loader 接受、被插件静默忽略，面板于是拿着出厂默认值打到**真平台**——这条已经锁过一次号，`resolveAuthOverrides` 现在对嵌套块直接抛错，别放宽它。
 
+### AgnesCode 续期限制（已知，非特性）
+
+AgnesCode tab 走的是桌面端登录态采集，**没有刷新端点**：会话 JWT 寿命 `exp−iat ≈ 28 天`，上游的 `auth-token-refresh-reservation` 只做失效检测、无续期实现。因此**续期是用户手动仪式，不是自动能力**——每约 28 天需重开桌面 App、再在 tab 里点「检测本机登录态」重新采集；插件无法在后台自动续期。这是上游形态决定的已知限制，别把它写成「点一下就永久好」的特性向用户描述（详见 `ROADMAP.md` §6.3 与 `ARCHITECTURE.md` 的 AgnesCode 线）。
+
 ---
 
 ## 4. 改动后必须重启 Host
