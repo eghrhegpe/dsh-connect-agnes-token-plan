@@ -172,7 +172,7 @@ compat 还有一长串（thinking 相关、工具相关、cache 相关…），�
 
 1. `peerDependencies` 加齐三个 LLM peer + `@earendil-works/pi-ai`（版本区间对齐 Host 发行）。
 2. 建 **peer-free** 的 `llm-models.ts`：catalog 归一化 → `toPiDescriptor(entry)` → descriptor 数组。
-3. 建 peer 侧的 `llm-adapter.ts`：`createProvider` + `openAICompletionsApi` + `PiAiAdapter`，只做组装。
+3. 建 peer 侧的 `llm-adapter.ts`：`createProvider` + `openAICompletionsApi` + `PiAiAdapter`，只做组装。**若同时还要接第二条 provider**（如本仓的 AgnesCode 桌面端上游），把两份组装里**相同**的部分（惰性 auth 平面、图像预算与两个图像 hook、429 纠正 Proxy）抽进一个共享核心（本仓的 `pi-ai-adapter-core.ts`），两个 shell 只留各自不同的事实：provider id、花名册构造、凭据解析器、profile 差异（如 `reasoning` 默认）。**别复制**：那层 Proxy 是打在不可改 peer 上的补丁、带到期日，两份手抄必然分叉。
 4. `registerProviderPair` 里同时调 `registerAdapter` 与 `registerConfigurableProviders`，把 release 落到 state。
 5. 写测试：descriptor 映射在离线套件里钉（`maxTokens`/`compat`/`contextWindow` 各一条）；注册对在 wiring / e2e 里钉；**opt-in 关闭时不注册**。
 6. 接 provider 前跑一轮 **live-contract 探针**，把你打算钉死的每个值都实测并留证据。

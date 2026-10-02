@@ -202,17 +202,19 @@ function fail(name, error) {
   const { readFileSync, readdirSync } = await import("node:fs");
   const { join } = await import("node:path");
 
-  // (a) 删除面：挂钩点必须始终是这两处，好让删除清单不会漏第三个。
+  // (a) 删除面：挂钩点必须始终是这一处，好让删除清单不会漏第二个。
+  // 自 adapter 机制收敛后，两个 shell 都不再直接 import 本层——它们各自把
+  // profile 交给 `pi-ai-adapter-core.ts`，纠正层的 Proxy 只在那一个文件里包一次。
+  // 这正是收敛的收益：以前是两份手抄的补丁，"改一处漏一处"就会让某条路由
+  // 带着 peer 的 429 误判继续上线。挂钩点从 2 收敛到 1，不是漏了谁。
   const hostDir = join(import.meta.dirname, "..", "src", "host");
   const hooked = readdirSync(hostDir)
     .filter((f) => f.endsWith(".ts") && f !== "llm-error-fix.ts")
     .filter((f) => /from "\.\/llm-error-fix\.ts"/.test(readFileSync(join(hostDir, f), "utf8")))
     .sort();
   check(
-    "纠正层的挂钩点恰为 llm-adapter 与 agnescode-llm-adapter 两处",
-    hooked.length === 2 &&
-      hooked[0] === "agnescode-llm-adapter.ts" &&
-      hooked[1] === "llm-adapter.ts",
+    "纠正层的挂钩点恰为共享 adapter 核心一处（两条路由共用同一份补丁）",
+    hooked.length === 1 && hooked[0] === "pi-ai-adapter-core.ts",
     `实到 [${hooked.join(", ")}]。若新增了挂钩点，同步更新 test/peer-contract.test.mjs §E 的删除清单`
   );
 
@@ -233,7 +235,7 @@ function fail(name, error) {
           `实到下界 ${PEER_LLMS.map((n, i) => `${n}=${ranges[i]}`).join(" / ")}。`,
           "下界已抬高：老 Host 不再被支持，本层失去存在理由 —— 现在可以整层删除：",
           "  1. src/host/llm-error-fix.ts",
-          "  2. 挂钩点两处：src/host/llm-adapter.ts 与 src/host/agnescode-llm-adapter.ts",
+          "  2. 挂钩点一处：src/host/pi-ai-adapter-core.ts（两条路由共用的组装核心）",
           "  3. 本套件与 test/peer-contract.test.mjs 的 A/B/C/E 段（随之作废）",
           "  4. docs/IMPROVEMENTS.md §3.3、§5 表格与 docs/AGNES-API.md §7.3.1 改为「上游已修复」"
         ].join("\n")

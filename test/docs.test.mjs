@@ -610,8 +610,9 @@ const CHECK_IDS = new Map([
   // 不变量 1）只有在内核不**静态**依赖 peer 时才成立：任何内核文件一碰静态 import，
   // peer 解析失败炸的就是整个 bundle 的装载——缺席降级当场变成缺席全机。动态
   // `import()` 恰是惰性机制本体，不在打击面；这里只钉静态边。豁免名单就是机制：
-  // 两个 llm adapter 壳（它们缺席才是「该模块缺席」的那个「该模块」）。
-  const ALLOW_STATIC_PEER = new Set(["llm-adapter.ts", "agnescode-llm-adapter.ts"]);
+  // 两个 llm adapter 壳（它们缺席才是「该模块缺席」的那个「该模块」）加上两者共用
+  // 的组装核心——核心同样只经动态 `import()` 抵达，且由壳静态引入，缺席面与壳一致。
+  const ALLOW_STATIC_PEER = new Set(["llm-adapter.ts", "agnescode-llm-adapter.ts", "pi-ai-adapter-core.ts"]);
   const collectTs = (dir) => {
     const out = [];
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -635,7 +636,7 @@ const CHECK_IDS = new Map([
       bad(`peer 静态边界：${relative(ROOT, f)} 静态 import 了 "${hit[1]}"——内核不得静态依赖 Host peer（缺席降级只允许发生在 llm adapter 壳；惰性接入请走动态 import()`);
     }
   }
-  if (offenders === 0) note(`peer 边界：${scanned} 个内核文件零静态 peer import（adapter 壳 2 个豁免）`);
+  if (offenders === 0) note(`peer 边界：${scanned} 个内核文件零静态 peer import（adapter 壳与共享组装核心共 ${ALLOW_STATIC_PEER.size} 个豁免）`);
 }
 
 // 14) 活文档硬编码计数护栏：现行文档不得断言会随代码漂移的模块数/规模/行数/路由条数/套件规模

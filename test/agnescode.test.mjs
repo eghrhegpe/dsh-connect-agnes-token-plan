@@ -624,10 +624,15 @@ const GOOD_SESSION = {
 // and the wiring (peer-dependent, so NOT importable in this suite) live in two
 // files with nothing between them; this is that something.
 //
+// The hooks now live in the shared `pi-ai-adapter-core.ts`, so the fence reads
+// BOTH halves: the core must wire them, and the AgnesCode shell must delegate to
+// the core. Checking only the core would pass even if this route stopped using
+// it; checking only the shell would pass with the hooks deleted from the core.
+//
 // The requirement is DERIVED, not hardcoded: ask the models layer whether ANY
-// descriptor claims image input, and only then require the adapter to wire both
-// hooks. If the claim ever goes away, the wiring requirement relaxes with it —
-// the fence tracks the real invariant ("claim ⟺ wiring"), not a frozen snapshot.
+// descriptor claims image input, and only then require the wiring. If the claim
+// ever goes away, the wiring requirement relaxes with it — the fence tracks the
+// real invariant ("claim ⟺ wiring"), not a frozen snapshot.
 {
   section("vision claim ⟺ adapter image wiring (cross-file)");
   try {
@@ -638,11 +643,10 @@ const GOOD_SESSION = {
       anyClaimsVision === true);
 
     if (anyClaimsVision) {
-      // Read the adapter SOURCE (it imports Host peers, so this suite cannot
-      // load it as a module). Strip comments first: the fix's own prose names
-      // these hooks, and a fence satisfiable by a comment guards nothing.
-      const adapterSrc = readFileSync(join(ROOT, "src", "host", "agnescode-llm-adapter.ts"), "utf8");
-      const code = adapterSrc
+      // Read the SOURCE of both halves (they import Host peers, so this suite
+      // cannot load them as modules). Strip comments first: the fix's own prose
+      // names these hooks, and a fence satisfiable by a comment guards nothing.
+      const stripComments = (src) => src
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .split("\n")
         .map((line) => {
@@ -652,19 +656,25 @@ const GOOD_SESSION = {
           return i > 0 && line[i - 1] !== ":" ? line.slice(0, i) : line;
         })
         .join("\n");
-      // Both hooks wired: `resolveAttachments` reaches the store, and
-      // `resolveImageAccess` maps a reference to a readable path. Wiring one
-      // without the other is precisely the state that shipped broken.
-      check("the adapter wires resolveImageAccess to a function, not undefined",
-        /resolveImageAccess:\s*\(/.test(code) && !/resolveImageAccess:\s*undefined/.test(code));
-      check("the adapter wires resolveAttachments",
-        /resolveAttachments:\s*\(/.test(code));
-      check("the adapter imports the shared image-access resolver",
-        /resolveImageAttachmentAccess/.test(code));
+      // The hooks live in the SHARED assembly core (both routes use one copy),
+      // so that is where the wiring is asserted...
+      const coreSrc = stripComments(readFileSync(join(ROOT, "src", "host", "pi-ai-adapter-core.ts"), "utf8"));
+      // ...and the AgnesCode shell must actually DELEGATE to it, or the claim
+      // above would be honored by a file this route never reaches.
+      const shellSrc = stripComments(readFileSync(join(ROOT, "src", "host", "agnescode-llm-adapter.ts"), "utf8"));
+
+      check("the AgnesCode shell assembles through the shared adapter core",
+        /createWrappedPiAiAdapter\s*\(/.test(shellSrc));
+      check("the shared core wires resolveImageAccess to a function, not undefined",
+        /resolveImageAccess:\s*\(/.test(coreSrc) && !/resolveImageAccess:\s*undefined/.test(coreSrc));
+      check("the shared core wires resolveAttachments",
+        /resolveAttachments:\s*\(/.test(coreSrc));
+      check("the shared core imports the shared image-access resolver",
+        /resolveImageAttachmentAccess/.test(coreSrc));
       // The budgets the Token Plan route pins; without them the profile still
       // defaults, but the two Agnes upstreams would resize images differently.
-      check("the adapter pins the same image budgets as the Token Plan route",
-        /requestImagePixelBudget/.test(code) && /maxRequestImageBytes/.test(code));
+      check("the shared core pins the same image budgets as the Token Plan route",
+        /requestImagePixelBudget/.test(coreSrc) && /maxRequestImageBytes/.test(coreSrc));
     }
   } catch (error) {
     fail("vision-claim/wiring", error);

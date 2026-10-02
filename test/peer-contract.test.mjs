@@ -316,7 +316,7 @@ for (const message of misjudgedMessages) {
             "此刻的动作（不是删除 —— 老 Host 仍需它）：",
             "  1. 确认 reclassifyFinish 对新 peer 是 no-op（failure.code 已是 RATE_LIMIT，引用相等）",
             "  2. 走 §3.3③ 把 @deepseek-ai/dsh-llm / dsh-llm-pi-ai 的下界收紧到修后版本，README 注明所需 Host",
-            "  3. 下界收紧之后才删：src/host/llm-error-fix.ts + 挂钩点两处（llm-adapter.ts、agnescode-llm-adapter.ts）",
+            "  3. 下界收紧之后才删：src/host/llm-error-fix.ts + 挂钩点一处（pi-ai-adapter-core.ts，两条路由共用的组装核心）",
             "     —— 删除闹钟由 test/error-fix.test.mjs §5 在下界变化时敲响"
           ].join("\n")
         : stillWrong

@@ -7,79 +7,26 @@
  * offline unit suite, so it holds only assembly against the runtime and is
  * exercised in wiring/e2e checks.
  *
- * The shape mirrors the qoder adapter that is known to work:
+ * This file is the CONFIGURATION half; the shared assembly mechanism (inert
+ * auth plane, image budgets/hooks, 429 correction Proxy) lives in
+ * `pi-ai-adapter-core.ts`, because the AgnesCode route needs the identical
+ * mechanism and a second hand-maintained copy of a patch is how one route keeps
+ * a bug the other already fixed. What stays HERE is everything that differs:
  *
- * - ONE `PiAiAdapter` carrying one profile (this provider has one region —
- *   `https://api.agnes-ai.cn/v1`);
- * - an INERT pi-ai auth plane — the key is resolved per request from the
- *   plugin's own store, pi-ai must never manufacture a credential;
- * - both IMAGE hooks wired, or an image-accepting model answers
- *   `UNSUPPORTED_CONTENT` the moment a message carries an image;
- * - no API key baked into the profile: the picker advertises models without
- *   one and a request fails at resolve time, where the panel status is visible.
+ * - the provider id / display name and the model builder;
+ * - the profile's `reasoning` default, which this route pins and AgnesCode must
+ *   NOT (see the note at the profile below);
+ * - the credential resolver (a stored `sk-` key, read per request).
  *
  * @module dsh-connect-agnes-token-plan/llm-adapter
  */
 import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
-import { resolveRetryPolicy, resolveImageAttachmentAccess } from "@deepseek-ai/dsh-llm";
+import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
 import { name } from "./host-config.ts";
 import { buildDescriptors, LLM_PROVIDER_ID, LLM_DISPLAY_NAME, DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
 import { buildRetryPolicyConfig } from "./llm-retry.ts";
-import { reclassifyStream } from "./llm-error-fix.ts";
-
-/** Idle ceiling while one stream read is outstanding (dsh-llm-pi-ai default). */
-const STREAM_IDLE_TIMEOUT_MS = 300_000;
-
-/**
- * Image budgets at the `dsh-llm-pi-ai` defaults. They bound requests to models
- * whose catalog descriptor declares image input; text-only models never see
- * images.
- */
-const REQUEST_IMAGE_BUDGETS = {
-  maxRequestImageBytes: 20_971_520,
-  requestImagePixelBudget: 4_194_304,
-  requestImageMaxBytes: 1_048_576
-};
-
-/**
- * Inert pi-ai auth plane.
- *
- * Authentication goes through `resolveApiKey` (the stored `AGNES_TOKEN_PLAN_API_KEY`
- * reference) per request. pi-ai's own credential lifecycle must never
- * manufacture a credential for this route, so every ambient question answers
- * "nothing stored, nothing set".
- */
-const INERT_AUTH = {
-  credentials: {
-    async read() {},
-    async list() {
-      return [];
-    },
-    // Deliberately a no-op, not a throw: pi-ai may call `modify` as an
-    // optional "persist the latest credential" hook during a normal request,
-    // and an exception there would 500 a conversation that is otherwise
-    // working. The credential lifecycle for this route lives in
-    // `api-key-store.ts`, not here.
-    async modify() {},
-    async delete() {}
-  },
-  authContext: {
-    async env() {},
-    async fileExists() {
-      return false;
-    }
-  }
-};
-
-/**
- * The `fs` service face the image hook reads — a single host-path mapper, and
- * only that. Resolved lazily through `get("fs")` because the service may be
- * registered after this adapter is built.
- * @typedef {object} FsService
- * @property {(hostPath: string) => unknown} [processPathFromHostPath]
- */
+import { createWrappedPiAiAdapter, STREAM_IDLE_TIMEOUT_MS, REQUEST_IMAGE_BUDGETS } from "./pi-ai-adapter-core.ts";
 
 /**
  * Assemble the adapter instance for one catalog snapshot.
@@ -162,6 +109,10 @@ export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveA
         // `map.off` and silently turn thinking off. Pinning the profile default
         // keeps the platform default; the snapshot quotes this same constant to
         // the panel roster, so the displayed default cannot drift from it.
+        //
+        // AgnesCode deliberately does NOT pin this (its thinking wire channel is
+        // unverified), which is one reason the two profiles stay hand-built
+        // while the adapter mechanism below is shared.
         reasoning: DEFAULT_REASONING_EFFORT,
         ...REQUEST_IMAGE_BUDGETS,
         piProvider: provider
@@ -169,53 +120,12 @@ export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveA
     ]
   ]);
 
-  const inner = new PiAiAdapter({
-    profiles: () => profiles,
-    auth: INERT_AUTH,
-    // The stored API-key reference is the only credential this route presents;
-    // it is read per request, so rotating the key needs no re-registration.
+  // The stored API-key reference is the only credential this route presents; it
+  // is read per request, so rotating the key needs no re-registration.
+  const adapter = createWrappedPiAiAdapter({
+    profiles,
     resolveApiKey: async () => resolveApiKey(),
-    // Image input is a hard requirement of pi-ai, not an optional extra:
-    // `streamWithSnapshot` throws UNSUPPORTED_CONTENT whenever a message
-    // carries an image and `resolveAttachments()` yields undefined. Both hooks
-    // are wired the same way the official `llm-pi-ai` plugin wires them.
-    resolveAttachments: () => get?.("attachments"),
-    resolveImageAccess: (attachments: any, ref: any) =>
-      resolveImageAttachmentAccess(
-        attachments,
-        (hostPath: string) =>
-          /** @type {FsService | undefined} */ (get?.("fs"))?.processPathFromHostPath?.(hostPath),
-        ref
-      )
-  });
-
-  // 429 误判纠正层：peer 的 `classifyPiAiError` 会把带 "budget/credits" 字眼的
-  // 限频 429 抢判成 QUOTA（不重试），本 Proxy 把这类误判体在出流前纠正回
-  // RATE_LIMIT，使 `llm-retry.ts` 的退避重试真正生效。只拦截流出口，不触碰
-  // peer 内部逻辑，也不影响任何正常数据 chunk。详见 `llm-error-fix.ts`。
-  const adapter = new Proxy(inner, {
-    get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
-      // `stream(...)` 与 `prepareCall(...).stream` 都返回一个 async iterable；
-      // 二者据此包裹重判流。其它成员（含 image/resolveApiKey 等）原样放行。
-      if (prop === "stream") {
-        return (options: any) => reclassifyStream(target.stream(options));
-      }
-      if (typeof value === "function" && prop === "prepareCall") {
-        return (...args: any[]) => {
-          const prepared = value.apply(target, args);
-          if (prepared && typeof prepared.then === "function") {
-            return prepared.then((p: any) => p && typeof p.stream === "function"
-              ? { ...p, stream: (o: any) => reclassifyStream(p.stream(o)) }
-              : p);
-          }
-          return prepared && typeof prepared.stream === "function"
-            ? { ...prepared, stream: (o: any) => reclassifyStream(prepared.stream(o)) }
-            : prepared;
-        };
-      }
-      return value;
-    }
+    get
   });
 
   return { adapter, providerIds: [LLM_PROVIDER_ID] };
