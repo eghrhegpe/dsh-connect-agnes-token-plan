@@ -13,6 +13,60 @@
 - 仓库：`https://github.com/eghrhegpe/dsh-connect-agnes-token-plan`（默认分支 `main`）。
 - 本地 `main` 与远端同步，且**工作树处于干净、可发布状态**（见下方「并行会话纪律」）。
 
+## 0. 发版前的状态核对（先做这三件事，再动手）
+
+发布提交会**同时**改版本号、文档快照与 tag，错一个都会污染 tag 指向。以下三项是
+2026-10-02 发布 0.7.0 时各自踩过的坑，现在作为**发版前硬前置**列在这里。
+
+### 0.1 当前分支必须是 `main`
+
+```bash
+git rev-parse --abbrev-ref HEAD      # 应输出 main
+git rev-parse --short HEAD           # 当前提交
+git rev-parse --short origin/main    # 远端 main
+git log --oneline origin/main..HEAD  # 应为空（HEAD 不领先）
+```
+
+- **`HEAD` 不是 `main` 时，不要直接 `git push origin main`**——那条命令推的是本地
+  `main` 分支，与你正在工作的分支无关；本地 `main` 若已与远端同步，你会得到一个
+  毫无提示的 `Everything up-to-date`，而你刚打的 tag 却落在**非 main** 的提交上，
+  用户拿到的是一个「main 上根本不存在」的版本。
+- **把工作分支并进 main 的正解**：`git push origin <当前分支>:main`。前提是
+  `origin/main` 是该分支的祖先（否则是非快进，远端拒推；这时先合并再推）。
+- **tag 必须打在「最终会成为 main 的那个提交」上**：先让分支进 main，再
+  `git rev-list -n1 vX.Y.Z` 核对 tag 指向的提交。tag 推出去就跟那个提交走了，
+  分支上打完再推会让 tag 与 main 脱节。
+- **更省事的做法**：本插件单机使用、历史是一条直线，**日常开发就在 `main` 上做**，
+  不需要为它保留长期分支。若已在本地集成分支上做完、且它已快进进 main，用
+  `git branch -d <分支>` 删掉（`-d` 只在完全合并时才肯删，是安全的删法）。
+
+### 0.2 改版本号必须同步教学快照
+
+```bash
+grep -n '"version"' package.json docs/DSH-PLUGIN.md
+```
+
+`test/docs.test.mjs` 检查 4 会核对 `docs/DSH-PLUGIN.md` §2 那段 bundle 教学快照的
+`name` / `version` / `main` / `files` 是否与真实 `package.json` 一致。**只改
+`package.json` 会让 docs.test 红**——它只在 `npm test` 时才告诉你，发版前才发现很
+尴尬。第 2 步升版本号时把这两个文件一起改。
+
+### 0.3 npm 必须先验证登录
+
+```bash
+npm whoami --registry=https://registry.npmjs.org   # 401 说明没登录，先去登录
+```
+
+- **未登录时的表象会误导你**：`npm whoami` 报 `401 Unauthorized`，而 `npm publish`
+  报的却是 `404 Not Found - PUT ... - you do not have permission to access it`——
+  那**不是「包不存在」**，是「你没有发布权限」。别去查包名、别去重建 tarball，去登录。
+- 登录：`npm login --registry=https://registry.npmjs.org`（必须带同样的 `--registry`；
+  本机默认是 npmmirror 镜像，不带会登到镜像或读到镜像缓存旧版）。
+- **`npm publish` 卡住 ≠ 发布失败**：只要版本号、提交与 tag 都已就位，可以先建
+  GitHub Release（第 6 步），登录后补 publish，用 `npm view ... version` 确认
+  `latest` 翻到新版本即闭环。**但 tag 一旦推出去就别回移**——它已经钉在 npm 与
+  Release 上（见下方 FAQ）。
+
 ## 每次发布的完整步骤
 
 ### 1. 确认测试与代码
@@ -39,7 +93,8 @@ git commit -m "chore: 版本升级至 X.Y.Z"
 
 ### 2. 更新版本号
 
-手动改 `package.json` 的 `version` 字段（语义化版本 `X.Y.Z`）。
+手动改 `package.json` 的 `version` 字段（语义化版本 `X.Y.Z`），**同时**改
+`docs/DSH-PLUGIN.md` §2 教学快照里的 `version`（见 0.2，漏改会让 docs.test 红）。
 
 > 后续步骤以目标版本号 `X.Y.Z` 指代。
 
@@ -61,10 +116,11 @@ git commit -m "chore: 版本升级至 X.Y.Z"
 ### 4. 提交并打 git tag
 
 ```bash
-git add package.json CHANGELOG.md
+git add package.json CHANGELOG.md docs/DSH-PLUGIN.md   # 版本号 + 更新日志 + 教学快照
 git commit -m "chore: 版本升级至 X.Y.Z"
 git tag -a vX.Y.Z -m "vX.Y.Z: <一句话说明>"
-git push origin main
+# 当前分支就是 main：   git push origin main
+# 当前分支不是 main：  git push origin <当前分支>:main   （快进，见 0.1）
 git push origin vX.Y.Z
 ```
 
@@ -153,6 +209,8 @@ gh release view vX.Y.Z --json name,tagName,isDraft,isPrerelease,assets
 
 - **GitHub 上没有本次 Release / `gh release list` 看不到新版本**：第 6 步漏了。`gh release create` 与 tag 推送是两条独立通道，**tag 推送成功不会自动创建 Release**。补做即可：版本、tag、正文都还在仓库里，事后补建与当时创建完全等效，只是 GitHub 上的时间戳会晚。
 - **`gh release create` 报 `tag not found`**：tag 还没推。先完成第 4 步的 `git push origin vX.Y.Z`。**不要**为了让它通过就去掉 `--verify-tag`——那会让 gh 新建一个指向当前 HEAD 的 tag，可能偏离你实际发布的提交。
+- **`git push origin main` 说 `Everything up-to-date`，但 Release 里没有本次改动**：你在别的分支上（见 0.1），推 main 推的是本地 `main`，与你的工作无关。用 `git push origin <当前分支>:main` 快进 main；若该 tag 已经推出去、且 npm / Release 也都指向那个非 main 提交，**唯一正解是发新版本**，不要回移 tag。
+- **`npm publish` 报 `404 Not Found - you do not have permission`**：那是**未登录**，不是包不存在（见 0.3）。`npm login --registry=https://registry.npmjs.org` 后原版本号直接重发 `npm publish` 即可（版本未发布时重发不冲突）。
 - **`gh` 报 `HTTP 403` / `Resource not accessible`**：token 缺 `repo` scope。`gh auth status` 确认 scopes；需要时 `gh auth refresh -s repo`。
 - **发布后才发现 tag 落后于 HEAD**（`git log --oneline vX.Y.Z..HEAD` 有输出）：**不要**动 tag。既然该版本已在 npm / Release 上，正确动作是**开下一个版本**（升 `package.json` → 新 CHANGELOG 节 → 提交 → 打新 tag → publish → 建 Release），让漏掉的提交随新版到达用户。已发布版本的内容是既成事实，改 tag 只会制造「tag 说什么 ≠ npm 装到什么」的错位。
 - **修好的文档用户看不到**：README / `cordis.patch.yml` 都在 `files` 白名单里，随包发布。改完仓库里的 README **不代表**用户读到的是新版——验证方式：
