@@ -71,7 +71,7 @@ import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch, VideoSwi
 import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage, barPlan } from "./panel-page.ts";
-import { AgnescodeModelPicker, AgnescodeRoster, AgnescodeTab } from "./agnescode-tab.ts";
+import { AgnescodeModelPicker, AgnescodeRoster, AgnescodeTab, agnescodeView } from "./agnescode-tab.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
   inject: string[];
@@ -98,6 +98,11 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
     // exposed for the same reason as the others — the suite drives the real
     // function instead of scraping the layout for it.
     barPlan,
+    // The AgnesCode tab's rendering decisions (error line / credential card /
+    // linked). Three real repairs live in it and each is explained at the
+    // function; exposed here so the suite drives them instead of trusting that
+    // nobody simplifies them away.
+    agnescodeView,
     dictionaries: Object.freeze({ zh, en }),
     tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT, CLIENT_CODE, COOLDOWN_TEXT }),
     styles: S,

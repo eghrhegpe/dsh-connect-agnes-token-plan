@@ -64,6 +64,46 @@ type AgnescodeState = AgnescodeStateData;
 const AGNESCODE_POLL_MS = 60_000;
 
 /**
+ * The tab's rendering decisions, lifted out of the JSX so they can be nailed.
+ *
+ * Three decisions here were each a REAL repair, and each is explained in a
+ * comment at its old site — but none of them had a test, so the next person to
+ * "simplify" the JSX could undo any of them silently. Same shape as `barPlan`
+ * in `panel-page.ts`: the decision is a pure function of (state, error), so the
+ * suite drives it directly instead of scraping a layout.
+ *
+ * The three, in the order they were learned:
+ *
+ *  1. `showError` — a route that ANSWERS with a failure is not "no local login
+ *     state". Naming the status is what stops a broken Host route from looking
+ *     exactly like a signed-out desktop App.
+ *  2. `credentialCard` — withheld ONLY while a failed read leaves us knowing
+ *     NOTHING (`state === null`). Then `linked` is false and the unlinked copy
+ *     would accuse the reader's desktop App of not being signed in — a claim
+ *     this tab has no evidence for. Once ANY reading has landed, the card stays
+ *     up through a later failed poll: the honest statement is the error line
+ *     plus the LAST KNOWN account, not a blank. (`load` therefore never calls
+ *     `setState(null)` — clearing on failure is exactly the regression this
+ *     pins.)
+ *  3. `linked` — reads `loggedIn` off the state, never inferred from the
+ *     absence of an error.
+ *
+ * @param {AgnescodeState|null} state - the last body the route answered, if any.
+ * @param {string|null} error - the last read failure, if any.
+ * @returns {{showError: boolean, credentialCard: boolean, linked: boolean}}
+ */
+export function agnescodeView(
+  state: AgnescodeState | null,
+  error: string | null
+): { showError: boolean; credentialCard: boolean; linked: boolean } {
+  return {
+    showError: error !== null,
+    credentialCard: !(state === null && error !== null),
+    linked: state?.loggedIn === true
+  };
+}
+
+/**
  * The AgnesCode tab body.
  * @param {object} props
  * @param {Tt} props.tt - the dictionary.
@@ -195,7 +235,8 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   }, [load]);
 
   const enabled = state?.enabled === true;
-  const loggedIn = state?.loggedIn === true;
+  const view = agnescodeView(state, error);
+  const loggedIn = view.linked;
   const models = Array.isArray(state?.models) ? state.models : [];
   const attempts = Array.isArray(state?.harvest?.attempts) ? state.harvest.attempts : [];
   const balance = state?.balance ?? null;
@@ -212,7 +253,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     // never rendered, so a failed read left `state === null` and the tab below
     // accused the reader's desktop App of not being signed in — the one
     // reading the panel had no evidence for.
-    error !== null
+    view.showError
       ? h("div", { style: S.formError, role: "alert" }, format(tt("agnescode.error"), { error }))
       : null,
     // The provider switch (opt-in, default off). It decides whether the
@@ -248,12 +289,14 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       : null,
     // The credential half: the linked account (or the harvest affordance).
     // Withheld while a failed read leaves us knowing NOTHING: `state` is null,
-    // so `loggedIn` is false, and the unlinked copy below would accuse the
+    // so `linked` is false, and the unlinked copy below would accuse the
     // reader's desktop App of not being signed in — a claim this tab has no
     // evidence for. The `agnescode.error` line above is the honest statement.
-    state === null && error !== null
-      ? null
-      : h(
+    // Note the asymmetry (`agnescodeView`): once ANY reading has landed, a later
+    // failed poll keeps the card up — error line PLUS last known account,
+    // never a blank.
+    view.credentialCard
+      ? h(
           "div",
           { style: { ...S.card, marginTop: 4 } },
           loggedIn
@@ -296,7 +339,8 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                   disabled: harvestBusy
                 }, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
               )
-        ),
+        )
+      : null,
     // The last harvest walk's diagnosis rows: one line per probed file, tier
     // first (it is the advice), then the path (it is the evidence). Rendered
     // whenever a walk has run — also after a SUCCESS, so a user who ran it

@@ -123,6 +123,8 @@ if (registration === undefined) {
  * @typedef {{
  *   interpretSnapshot: (body: unknown) => {data: SnapshotLike|null, error: object|string|null},
  *   viewOf: (data: SnapshotLike|null, error: object|string|null, tt: Function) => PanelView,
+ *   agnescodeView: (state: object|null, error: string|null) =>
+ *     {showError: boolean, credentialCard: boolean, linked: boolean},
  *   dictionaries: object, tables: object, styles: object,
  *   components: Record<string, Function>
  * }} PanelSurface

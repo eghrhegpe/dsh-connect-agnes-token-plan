@@ -58,6 +58,18 @@ export const interpretSnapshot = surface.interpretSnapshot;
 export const viewOf = surface.viewOf;
 
 /**
+ * The AgnesCode tab's own rendering decision, as the browser defines it.
+ *
+ * That tab reads its own route on its own cadence, so it does not go through
+ * `decidePanelView` — but its decision is the same kind of thing: a pure
+ * function of (last body, last error) that says what the tab shows. Exposed
+ * here rather than driven through a rendered tree because the three answers it
+ * gives were each a real repair (see the function), and a repair that is only
+ * described in a comment is one refactor away from being undone.
+ */
+export const agnescodeView = surface.agnescodeView;
+
+/**
  * The panel's dictionaries, as the browser defines them.
  *
  * Exposed rather than re-declared for the same reason as the decision: a key

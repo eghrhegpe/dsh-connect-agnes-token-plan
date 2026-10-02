@@ -10,7 +10,7 @@
  * becoming a lockout was, as a consequence, entirely uncovered.
  */
 import { readFile, readdir } from "node:fs/promises";
-import { decidePanelView, dictionaries, interpretSnapshot, tables, RENDER } from "./panel-decision.js";
+import { decidePanelView, agnescodeView, dictionaries, interpretSnapshot, tables, RENDER } from "./panel-decision.js";
 import { AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS, NO_LOGIN_CODES } from "../src/host/codes.ts";
 
 const results = [];
@@ -460,6 +460,63 @@ const healthy = {
   check("the reader was read from the shipped client", typeof interpretSnapshot === "function");
   check("a successful body is read as data", interpretSnapshot(healthy).data === healthy);
   check("a failed body is read as an error", interpretSnapshot({ ok: false, code: "x" }).data === null);
+}
+
+// === The AgnesCode tab's own rendering decision =============================
+//
+// That tab reads its own route on its own cadence, so it never goes through
+// `decidePanelView` — but what it SHOWS is the same kind of decision: a pure
+// function of (last body, last error). Three of its answers were each a real
+// repair, each explained at the function, and none of them had a test — so the
+// next person to simplify the JSX could undo any of them silently.
+//
+// The load-bearing case is the middle one: a failed read leaves `state` at its
+// LAST GOOD value (the tab never calls `setState(null)`), so the interesting
+// input is not "never read" but "read once, then failed". Get that wrong in
+// either direction and the tab either accuses a signed-in desktop App of being
+// signed out, or hides an account that is still there.
+{
+  check("the AgnesCode view decision was read from the shipped client",
+    typeof agnescodeView === "function", String(typeof agnescodeView));
+
+  // 1. Never read, and the read failed: we know NOTHING. Withhold the card —
+  //    `linked` is false, so the unlinked copy would accuse the reader's
+  //    desktop App of not being signed in, the one reading we have no evidence
+  //    for. The error line above is the honest statement.
+  const coldFail = agnescodeView(null, "unable to reach the Host");
+  check("a failed read with no prior reading withholds the credential card",
+    coldFail.showError === true && coldFail.credentialCard === false && coldFail.linked === false,
+    JSON.stringify(coldFail));
+
+  // 2. Never read, no failure: the ordinary first frame. The card IS shown —
+  //    the harvest affordance has to be reachable — and it says "not linked",
+  //    which we DO have evidence for: the route answered.
+  const cold = agnescodeView(null, null);
+  check("no reading and no failure shows the card, unlinked",
+    cold.showError === false && cold.credentialCard === true && cold.linked === false,
+    JSON.stringify(cold));
+
+  // 3. THE case: a reading landed, then a later poll failed. The card stays UP
+  //    carrying the last known account, with the error line above it. Blanking
+  //    here is exactly the regression that was repaired once already, so it is
+  //    pinned rather than trusted.
+  const stale = agnescodeView({ loggedIn: true, nickname: "小浣" }, "HTTP 500");
+  check("a later failed poll keeps the last known account on screen",
+    stale.showError === true && stale.credentialCard === true && stale.linked === true,
+    JSON.stringify(stale));
+
+  // 4. A successful read carries no error line — `load` sets the two together.
+  const ok = agnescodeView({ loggedIn: true, nickname: "小浣" }, null);
+  check("a successful read shows the account and no error",
+    ok.showError === false && ok.credentialCard === true && ok.linked === true, JSON.stringify(ok));
+
+  // 5. `linked` is read off the state, never inferred from the ABSENCE of an
+  //    error. A route answering `loggedIn: false` is a real reading saying
+  //    "signed out" — no error, and still unlinked.
+  const signedOut = agnescodeView({ loggedIn: false }, null);
+  check("an answered 'not logged in' is unlinked without being an error",
+    signedOut.showError === false && signedOut.credentialCard === true && signedOut.linked === false,
+    JSON.stringify(signedOut));
 }
 
 console.log(JSON.stringify(results, null, 2));
