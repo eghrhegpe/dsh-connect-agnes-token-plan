@@ -23,8 +23,69 @@ import { defineDrawTool } from "./draw.ts";
 import { defineVideoTool } from "./video.ts";
 import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.ts";
 import { name } from "./host-config.ts";
+import { retryBounded } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import type { HostCtx, HostWiring, ToolSide, ToolWiring, SwitchStore, Settings } from "./types.ts";
+
+/** How many times a mount-time optional-service read is retried. */
+const SERVICE_RETRY_ATTEMPTS = 3;
+/** Base backoff between service-read attempts (× attempt index). */
+const SERVICE_RETRY_DELAY_MS = 300;
+
+/**
+ * Read an optional Host service with a bounded retry.
+ *
+ * A service may register AFTER this plugin mounts, and a mount-time read is
+ * the only window for a capability the Host cannot later remove: the tools
+ * registry has no unregister call. A one-shot read therefore misses a service
+ * that arrives a moment late for the WHOLE session, silently — the draw tool
+ * would be absent with the switch visibly on, and no line on any panel naming
+ * the reason. The AgnesCode mount seed uses the same retry for its publish.
+ *
+ * This retries the READ ONLY. Whatever it returns is used exactly once by the
+ * caller: retrying a call that mutates (a tool registration) would register the
+ * same tool twice, and the tools registry cannot tell.
+ * @param {object} ctx - the host root context.
+ * @param {string} service - the service name for `ctx.get`.
+ * @param {object} [options]
+ * @param {() => boolean} [options.isDisposed] - stop early when the plugin is
+ *   withdrawing; a late registration into a withdrawing Host is worse than
+ *   absence.
+ * @param {number} [options.attempts] - test seam for the attempt count.
+ * @param {number} [options.delayMs] - test seam for the backoff base.
+ * @returns {Promise<unknown|null>} the service, or `null` when it never
+ *   appeared inside the window.
+ */
+export async function resolveServiceWithRetry(
+  ctx: HostCtx,
+  service: string,
+  options: { isDisposed?: () => boolean; attempts?: number; delayMs?: number } = {}
+): Promise<unknown | null> {
+  const {
+    isDisposed = () => false,
+    attempts = SERVICE_RETRY_ATTEMPTS,
+    delayMs = SERVICE_RETRY_DELAY_MS
+  } = options;
+  let found: unknown | null = null;
+  await retryBounded({
+    attempts,
+    delayMs,
+    run: () => {
+      if (isDisposed()) return true;
+      try {
+        const value = ctx.get?.(service) ?? (ctx as unknown as Record<string, unknown>)[service] ?? null;
+        if (value !== null && value !== undefined) {
+          found = value;
+          return true;
+        }
+      } catch {
+        // A resolver that refuses a read is treated like an absent service.
+      }
+      return false;
+    }
+  });
+  return found;
+}
 
 /**
  * Mount one opt-in agent tool, through the shared degradation ladder.
@@ -83,8 +144,12 @@ async function mountAgentTool({
   // patch's value (empty string = auto-pick from the catalog).
   const panelModelId = await readPanelValue(async () => (await store?.modelId()) ?? null);
   const effectiveSettings = panelModelId !== null ? { ...settings, [modelKey]: panelModelId } : settings;
-  const tools = ctx.get("tools") ?? ctx.tools ?? null;
-  if (tools === null || typeof tools.register !== "function") return;
+  // The tools service is optional and may register a moment AFTER this plugin
+  // mounts; retry the read, never the registration — a tool cannot be
+  // unregistered, so registering it twice would be a worse failure than
+  // missing it.
+  const tools = await resolveServiceWithRetry(ctx, "tools", { isDisposed: () => publisher.isDisposed() });
+  if (tools === null || typeof (tools as { register?: unknown }).register !== "function") return;
   let defineTool;
   try {
     const mod = await Promise.resolve(side.loadToolsModule?.());
@@ -95,7 +160,7 @@ async function mountAgentTool({
   }
   if (typeof defineTool !== "function") return;
   try {
-    tools.register(
+    (tools as { register: (entry: unknown) => unknown }).register(
       factory({
         defineTool,
         resolveApiKey,

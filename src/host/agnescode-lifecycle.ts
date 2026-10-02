@@ -27,11 +27,16 @@ import {
 } from "./agnescode.ts";
 import { createAgnescodePublisher } from "./agnescode-publish.ts";
 import { filterAgnescodeRows } from "./agnescode-models.ts";
-import { str } from "./util.ts";
+import { str, retryBounded } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 
 /** How long a failed re-harvest blocks further re-harvest attempts. */
 export const AGNESCODE_REHARVEST_BACKOFF_MS = 60_000;
+
+/** How many times the mount seed retries before giving up. */
+export const AGNESCODE_SEED_ATTEMPTS = 6;
+/** Backoff base for the mount seed (linear: delayMs × attempt index). */
+export const AGNESCODE_SEED_DELAY_MS = 300;
 
 /**
  * Wire the AgnesCode publisher with its full single-flight + backoff +
@@ -62,10 +67,12 @@ export const AGNESCODE_REHARVEST_BACKOFF_MS = 60_000;
  * @param {(event: string) => void} [options.emit] - `ctx.emit` for adapter
  *   update events.
  * @param {object} [options.logger] - `ctx.logger`.
+ * @param {{attempts?: number, delayMs?: number}} [options.seedOptions] - the
+ *   mount seed's retry window; overridable so a test can shrink it.
  * @returns {{publisher: object, seed: () => Promise<void>}} the publisher and
  *   its mount-seed function.
  */
-export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm, loadAdapterModule, emit, logger }: {
+export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm, loadAdapterModule, emit, logger, seedOptions = {} }: {
   store: {
     resolve: () => Promise<{ credential: { accessToken: string; bffBase?: string } | null }>;
     isExpired: () => Promise<boolean>;
@@ -77,6 +84,7 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
   loadAdapterModule?: () => Promise<{ createAgnescodeAdapter: (...args: any[]) => any }>;
   emit?: (event: string) => void;
   logger?: any;
+  seedOptions?: { attempts?: number; delayMs?: number };
 }) {
   // Single-flight + backoff state shared across all resolveToken calls for
   // this wiring instance (the equivalent of the closure variables the old
@@ -151,18 +159,50 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
 
   /**
    * The mount seed: if the switch survived a restart, re-register from the
-   * fallback roster + the stored credential's per-account base. Fire-and-
-   * forget safe: a state dir that cannot be read just waits for the first
-   * switch/harvest action.
+   * fallback roster + the stored credential's per-account base.
+   *
+   * It retries INSIDE a bounded window rather than running once, because the
+   * two things it needs can register AFTER this plugin mounts: the
+   * `credentials` service (the credential is read through it, and a Host early
+   * in its boot resolves nothing) and the `llm` registration service (without
+   * it the publish gates off with `no llm registration service`). A one-shot
+   * seed that missed either left the picker empty for the whole session while
+   * the tab said "logged in" — nothing elsewhere re-ran the publish, so the
+   * panel's entry GET was the only repair. Every attempt re-reads both, and
+   * the loop stops as soon as `state.registered` flips.
+   *
+   * Fire-and-forget safe: a state dir that cannot be read just waits for the
+   * first switch/harvest action, and a deployment that never enabled the
+   * switch stays pristine (the switch is re-read each attempt, so a concurrent
+   * panel flip to OFF is honoured instead of being raced).
    * @returns {Promise<void>}
    */
   const seed = async () => {
+    const attempts = seedOptions.attempts ?? AGNESCODE_SEED_ATTEMPTS;
+    const delayMs = seedOptions.delayMs ?? AGNESCODE_SEED_DELAY_MS;
     try {
-      // Panel-only switch: no config default, so "unset" is off.
-      if (resolveSwitchEnabled(await readPanelValue(panelSwitch)).enabled) {
-        const { credential } = await store.resolve().catch(() => ({ credential: null }));
-        await publisher.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), credential?.bffBase ?? "");
-      }
+      await retryBounded({
+        attempts,
+        delayMs,
+        run: async () => {
+          if (publisher.isDisposed()) return true;
+          // Panel-only switch: no config default, so "unset" is off.
+          if (!resolveSwitchEnabled(await readPanelValue(panelSwitch)).enabled) return true;
+          const { credential } = await store.resolve().catch(() => ({ credential: null }));
+          // No credential yet — most likely the credentials service has not
+          // registered at this point in the mount. Keep trying inside the
+          // window rather than giving up on the first read.
+          if (!credential?.accessToken || !credential?.bffBase) return false;
+          await publisher.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), credential.bffBase).catch(() => {});
+          if (publisher.state.registered === true) return true;
+          if (publisher.isDisposed()) return true;
+          // Still unregistered: the `llm` service may not be resolvable yet, or
+          // a peer module is still loading. Back off and try the whole build
+          // again — publish is idempotent. A permanent failure fails fast after
+          // the window and stays visible on the tab.
+          return false;
+        }
+      });
     } catch {
       // No seed: the first switch/harvest publishes.
     }

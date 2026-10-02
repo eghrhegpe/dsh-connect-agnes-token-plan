@@ -1212,6 +1212,228 @@ const GOOD_SESSION = {
   }
 }
 
+// --- 11. the mount seed converges inside a bounded window --------------------
+// The bug this fences: the seed used to run ONCE at mount. The two things it
+// needs — the `credentials` service the credential is read through, and the
+// `llm` registration service — can register AFTER this plugin mounts, so a
+// single pass hit `not_configured` (no credential read yet) or
+// `no llm registration service` and gave up silently. Nothing else re-ran the
+// publish, so the picker stayed empty for the whole session while the tab said
+// "logged in"; only the panel's entry GET could repair it. The seed now
+// re-reads both inside a bounded window and stops as soon as `registered`
+// flips.
+{
+  section("mount seed (wireAgnescodePublisher + retryBounded)");
+  try {
+    const { wireAgnescodePublisher } = await import("../src/host/agnescode-lifecycle.ts");
+    const base = "https://api-agnes-code.agnes-ai.cn/v1";
+    const credential = { accessToken: "tok", bffBase: base };
+
+    const makeLlm = () => {
+      const calls = [];
+      return {
+        calls,
+        async registerAdapter(ids, adapter) { calls.push(["adapter", ...ids]); return () => calls.push(["release-adapter"]); },
+        registerConfigurableProviders(list) { calls.push(["directory", list[0].provider]); return () => calls.push(["release-directory"]); }
+      };
+    };
+    const makeFactory = () => async (options) => ({
+      adapter: { token: options.resolveToken, base: options.bffBase },
+      providerIds: [AGNESCODE_PROVIDER_ID]
+    });
+    const adapterModule = () => async () => ({ createAgnescodeAdapter: makeFactory() });
+
+    // Credential arrives LATE (the credentials service registers after this
+    // plugin mounted). The seed must keep trying and converge, not give up on
+    // the first empty read.
+    {
+      let reads = 0;
+      const store = {
+        async resolve() {
+          reads += 1;
+          return { credential: reads >= 2 ? credential : null };
+        },
+        async isExpired() { return false; },
+        async save() {}
+      };
+      const llm = makeLlm();
+      const { publisher, seed } = wireAgnescodePublisher({
+        store,
+        panelSwitch: async () => true,
+        getLlm: () => llm,
+        loadAdapterModule: adapterModule(),
+        logger: { warn() {} },
+        seedOptions: { attempts: 6, delayMs: 1 }
+      });
+      await seed();
+      check("a late credential is picked up inside the seed window",
+        publisher.state.registered === true, JSON.stringify(publisher.state));
+      check("the seed stops as soon as the registration lands (window not exhausted)",
+        reads < 6, `reads=${reads}`);
+    }
+
+    // `llm` service arrives LATE (a Host whose llm registers after the plugin).
+    // The publish gates off with `no llm registration service` until it appears,
+    // so the seed must retry the whole build.
+    {
+      let reads = 0;
+      const store = {
+        async resolve() { return { credential }; },
+        async isExpired() { return false; },
+        async save() {}
+      };
+      let llm = null;
+      const llmCalls = [];
+      const lateLlm = () => {
+        if (reads < 2) return null;
+        if (llm === null) {
+          llm = makeLlm();
+          llm.calls = llmCalls;
+        }
+        return llm;
+      };
+      const { publisher, seed } = wireAgnescodePublisher({
+        store,
+        panelSwitch: async () => true,
+        getLlm: () => { reads += 1; return lateLlm(); },
+        loadAdapterModule: adapterModule(),
+        logger: { warn() {} },
+        seedOptions: { attempts: 6, delayMs: 1 }
+      });
+      await seed();
+      check("a late llm service is waited for and the provider registers",
+        publisher.state.registered === true, JSON.stringify(publisher.state));
+      check("the llm service was not probed after registration (loop stopped)",
+        reads < 6, `reads=${reads}`);
+    }
+
+    // A credential that NEVER arrives exhausts the window and fails fast,
+    // leaving the panel's "switch on — detect login state" state intact.
+    {
+      let reads = 0;
+      const store = {
+        async resolve() { reads += 1; return { credential: null }; },
+        async isExpired() { return false; },
+        async save() {}
+      };
+      const { publisher, seed } = wireAgnescodePublisher({
+        store,
+        panelSwitch: async () => true,
+        getLlm: () => makeLlm(),
+        loadAdapterModule: adapterModule(),
+        logger: { warn() {} },
+        seedOptions: { attempts: 6, delayMs: 1 }
+      });
+      await seed();
+      check("a credential that never appears leaves the provider unregistered after the window",
+        publisher.state.registered === false && reads === 6,
+        JSON.stringify({ registered: publisher.state.registered, reads }));
+    }
+
+    // Switch OFF (or a concurrent panel flip) must stop the seed immediately,
+    // never register behind the tab's back.
+    {
+      let publishes = 0;
+      const store = {
+        async resolve() { return { credential }; },
+        async isExpired() { return false; },
+        async save() {}
+      };
+      const { publisher, seed } = wireAgnescodePublisher({
+        store,
+        panelSwitch: async () => false,
+        getLlm: () => makeLlm(),
+        loadAdapterModule: adapterModule(),
+        logger: { warn() {} },
+        seedOptions: { attempts: 6, delayMs: 1 }
+      });
+      await seed();
+      check("an off switch leaves the provider pristine (no publish at mount)",
+        publisher.state.registered === false && publishes === 0,
+        JSON.stringify({ registered: publisher.state.registered, publishes }));
+    }
+  } catch (error) {
+    fail("mount seed", error);
+  }
+}
+
+// --- 11b. GET self-heal covers a stale no-llm-service too --------------------
+// The mount seed may have exhausted its window with the `llm` service still
+// absent, leaving `no llm registration service` (NOT `not_configured`). The
+// self-heal used to repair only `not_configured`, so that stale state survived
+// until the reader clicked something. Any unregistered state alongside a
+// linked credential is now repaired (one publish per cooldown).
+{
+  section("route surface (the GET self-heals a stale no-llm-service)");
+  try {
+    const { registerRoutes } = await import("../src/host/routes.ts");
+    const routes = new Map();
+    const ctx = {
+      webServer: {
+        register({ path, handler }) {
+          routes.set(path, handler);
+          return () => routes.delete(path);
+        }
+      }
+    };
+    const unused = new Proxy({}, { get: () => async () => null });
+    const publisherState = { registered: false, error: "the Host exposes no llm registration service" };
+    let publishes = 0;
+    registerRoutes(ctx, {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused,
+      apiKeyStore: unused,
+      catalogStore: unused,
+      providerStore: unused,
+      drawStore: unused,
+      videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      agnescodeStore: {
+        async state() {
+          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
+        },
+        async resolve() {
+          return { credential: { accessToken: "x".repeat(40), bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }, source: "credentials" };
+        },
+        async save() {},
+        async forget() {}
+      },
+      agnescodeSwitch: { async enabled() { return true; }, async save() {} },
+      agnescodePublisher: {
+        get state() { return publisherState; },
+        isDisposed() { return false; },
+        async publish() {
+          publishes += 1;
+          publisherState.registered = true;
+          publisherState.error = null;
+        }
+      }
+    });
+    const handler = routes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    const response = {
+      status: 0,
+      body: "",
+      writeHead(status) { this.status = status; },
+      end(payload) { this.body = payload; }
+    };
+    await handler({ method: "GET", headers: { host: "127.0.0.1" } }, response);
+    const body = JSON.parse(response.body);
+    check("a stale no-llm-service is repaired within the same GET",
+      body.providerRegistered === true && body.providerError === undefined,
+      JSON.stringify({ registered: body.providerRegistered, error: body.providerError }));
+    check("the repair publish ran exactly once", publishes === 1, String(publishes));
+  } catch (error) {
+    fail("route surface (self-heal, no-llm-service)", error);
+  }
+}
+
 // --- report ------------------------------------------------------------------
 releaseNetworkGuard();
 const passed = results.filter((result) => result.pass).length;

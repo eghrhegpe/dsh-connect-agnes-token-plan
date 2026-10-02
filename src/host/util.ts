@@ -90,6 +90,42 @@ export function numOrNull(value: unknown) {
 }
 
 /**
+ * Run one attempt loop inside a bounded window.
+ *
+ * The shared backoff shape for every "a service or a seed may be late" case
+ * in this plugin: a Host service can register AFTER this plugin mounts, and a
+ * one-shot mount-time read then misses it for the WHOLE session, silently. The
+ * caller owns the attempt count and the delay base (a single service read
+ * settles in a few hundred ms; a seed that must wait for two services and then
+ * fetch a catalogue needs a longer budget).
+ *
+ * The backoff is LINEAR (`delayMs * attempt`), so a slow Host is not hammered
+ * while an early success returns at once.
+ * @param {object} job
+ * @param {number} job.attempts - how many attempts the window holds.
+ * @param {number} job.delayMs - backoff base; the wait before attempt N is
+ *   `delayMs * N`.
+ * @param {(attempt: number) => boolean|Promise<boolean>} job.run - one
+ *   attempt; returns true to stop (succeeded, or gave up deliberately), false
+ *   to keep trying inside the window.
+ * @returns {Promise<boolean>} true when an attempt stopped the loop, false
+ *   when the window ran out.
+ */
+export async function retryBounded({ attempts, delayMs, run }: {
+  attempts: number;
+  delayMs: number;
+  run: (attempt: number) => boolean | Promise<boolean>;
+}): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await run(attempt)) return true;
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+    }
+  }
+  return false;
+}
+
+/**
  * An error carrying a stable code the panel can branch on.
  *
  * The single constructor for every failure this plugin produces. `extra`

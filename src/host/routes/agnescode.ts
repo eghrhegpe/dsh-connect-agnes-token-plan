@@ -23,7 +23,6 @@
  */
 
 import { name } from "../host-config.ts";
-import { CODE } from "../codes.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { redactSecrets } from "../util.ts";
@@ -180,17 +179,20 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
       const method = request.method === undefined ? "GET" : request.method;
       if (method === "GET") {
         let state = await agnescodeState();
-        // Self-heal: `not_configured` alongside a stored credential is a STALE
-        // publish (the switch was toggled before the harvest, and nothing
-        // after that failure re-ran the publish — GET used to only read). One
-        // queued publish per cooldown lets any poll repair it, so the reader
-        // never has to click anything to converge; a publish that fails again
-        // stops holding this exact condition only if it reports differently,
-        // so the cooldown keeps a persistently failing publish from rebuilding
-        // the adapter every 60 s.
+        // Self-heal: an UNREGISTERED state alongside a stored credential is a
+        // STALE publish — the switch was toggled before the harvest (leaving
+        // `not_configured`), or the mount seed ran before the `llm`/credentials
+        // services were resolvable (leaving `no llm registration service`), and
+        // nothing after that failure re-ran the publish. GET used to only read.
+        // One queued publish per cooldown lets any poll repair it, so the
+        // reader never has to click anything to converge; a publish that fails
+        // again stops holding this exact condition only if it reports
+        // differently, so the cooldown keeps a persistently failing publish
+        // from rebuilding the adapter every 60 s.
+        const staleRegistration = state.providerRegistered !== true
+          && state.providerError !== null && state.providerError !== undefined && state.providerError !== "";
         if (
-          state.enabled === true && state.loggedIn === true
-          && state.providerError === CODE.NOT_CONFIGURED
+          state.enabled === true && state.loggedIn === true && staleRegistration
           && Date.now() - agnescodeSelfHealAt > AGNESCODE_SELF_HEAL_COOLDOWN_MS
         ) {
           agnescodeSelfHealAt = Date.now();

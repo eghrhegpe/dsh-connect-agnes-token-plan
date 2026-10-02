@@ -2,6 +2,19 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## 未发布（0.7.0 之后）
+
+### 修复：AgnesCode provider 必须进 tab 才启用（mount seed 竞态）
+
+- **现象**：插件更新后重启 DSH，AgnesCode provider 不注册；凭据没变、桌面 App 没开过，但只要**进一次插件页的 AgnesCode tab** 就自动完成启用 + 热重载。
+- **根因**：mount seed 只跑一次。它需要两个可能**晚于本插件**注册的服务——读凭据的 `credentials` 服务、注册用的 `llm` 服务。Host 启动早期两者未就位时，seed 撞上 `not_configured`（凭据读不到）或 `no llm registration service`，随即静默放弃，没有重试；唯一能救它的是 tab GET 的自愈，而 GET 只在打开 tab 时才发——于是「进 tab 才启用」。
+- **修法**（对齐小浣熊线 `seedRaccoonOnMount` 的既有做法）：
+  - `util.ts` 移植 `retryBounded`（线性退避）。
+  - `agnescode-lifecycle.ts` 的 mount seed 改为有界重试（6 次 × 300ms，`AGNESCODE_SEED_ATTEMPTS`/`AGNESCODE_SEED_DELAY_MS`）：每轮重读开关 + 凭据 + 注册状态，`registered===true` 或 `isDisposed()` 即停；开关每轮重读，并发关掉也被尊重。
+  - `routes/agnescode.ts` 的 GET 自愈从「只修 `not_configured`」放宽为「开关 on + 已关联 + 任何未注册错误」——覆盖 seed 窗口耗尽但 llm 仍未就位的残局。
+  - `lifecycle.ts` 的 draw/video 工具读 `tools` 服务改为 `resolveServiceWithRetry`（与工具线同款防护：只重试读、绝不重试注册）。
+- 影响面：`src/host/{util, agnescode-lifecycle, lifecycle, routes/agnescode}.ts`、`test/agnescode.test.mjs`。
+
 ## [0.7.0] — 2026-10-02
 
 **AgnesCode 面板从「只读花名册」升级为「可勾选的模型推送给」**：每个模型一行勾选框，决定哪些模型注册进 DSH 模型列表，改动即时生效；配套搜索 + 全部勾选/取消 + 已勾选计数，与 Token Plan 那套同一形状。勾选存在独立的 profile 级状态文件，**空 = 不筛选 = 全推**，所以没勾过的安装行为完全不变。面板信息架构另有一刀（额度 / 累计 / 套餐拆成三个 section）。另修掉一个「删注释时误删三元条件行、构建失败、插件无法加载」的问题。
