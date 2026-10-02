@@ -17,8 +17,13 @@ name: CI
 #                  the loader, routes, and trust fence assemble correctly — the class
 #                  of bug the offline suites cannot see. It needs the dsh CLI and a
 #                  host that can bind loopback ports, which a generic runner may not
-#                  provide, so it is best-effort: it reports its result without
-#                  turning the build red when the environment cannot support it.
+#                  provide. It always runs through test/e2e-gate.mjs, never the bare
+#                  suite: the gate prints a loud SKIP and exits 0 when the CLI is
+#                  absent, so an unsupported runner does not fail the build — but when
+#                  the CLI IS present the suite really runs and a red really blocks.
+#                  The bare e2e.mjs carries no CLI check of its own, so running it
+#                  directly in CI (as this job once did) turned the gate into a
+#                  formality that nobody noticed.
 #   live-contract— replays the frozen Agnes inference contract against the LIVE
 #                  platform (`test/live-contract.mjs`), so a platform dialect drift
 #                  (a renamed field, a flipped 400, a new modality spelling) shows
@@ -30,9 +35,9 @@ name: CI
 #                  layer, docs/AGNES-API.md §7), which is why it is best-effort
 #                  too and never gates the offline job.
 #
-# The e2e suite also runs inside `npm test` locally via test/e2e-gate.mjs, which
-# SKIPs cleanly when the CLI is absent; this workflow keeps a separate, explicit
-# signal for it rather than hiding it behind a green offline run.
+# The e2e suite runs through the SAME test/e2e-gate.mjs locally (`npm test`) and
+# here, so both share one skip shape and one verdict. A suite that passes only in
+# one of the two is not a gate.
 
 on:
   push:
@@ -116,17 +121,18 @@ jobs:
           node test/tsc-gate.mjs
 
   e2e:
-    name: End-to-end (best effort)
+    name: End-to-end (hard gate)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
       # The e2e harness spawns `dsh web`; without the CLI the gate prints SKIP
-      # and exits 0. Install it if a registry source is configured, otherwise
-      # let the gate skip — the offline job above is the actual gate.
+      # and exits 0, so a runner without it stays green — but a runner WITH it
+      # really runs the suite and a red fails the job. Install the CLI when a
+      # registry source is configured; when it is not, let the gate skip rather
+      # than failing the build on an environment the suite cannot support.
       - name: Provide the dsh CLI (if available)
         run: npm install -g @deepseek-ai/dsh || echo "dsh CLI not installable here; e2e will SKIP"
       # The Host loads the plugin's BUILT entry (`main: ./lib/index.js`, plus the
@@ -138,8 +144,12 @@ jobs:
         run: |
           npm install --legacy-peer-deps --no-audit --no-fund
           npm run build
+      # Run through the GATE, not the bare suite. `e2e.mjs` has no CLI check;
+      # `e2e-gate.mjs` does, and it is the only thing that makes the missing-CLI
+      # skip safe. package.test.mjs pins this — a gate file present but bypassed
+      # is a red.
       - name: Run the end-to-end suite
-        run: node test/e2e.mjs
+        run: node test/e2e-gate.mjs
 
   live-contract:
     name: Live platform contract (best effort)

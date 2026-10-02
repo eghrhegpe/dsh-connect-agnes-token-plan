@@ -221,9 +221,28 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
   check("every live tier is a plain .mjs (never swept into the default gate)",
     liveFiles.length > 0 && liveFiles.every((name) => !name.endsWith(".test.mjs")),
     liveFiles.join(", "));
+  // "Default run" must mean the OFFLINE hard gate and nothing else. The check
+  // this replaces was vacuous: `ci` only ever matches `*.test.mjs`, so
+  // `ci.has("live-contract.mjs")` is ALWAYS false and the assertion could never
+  // fail — the live tier was being pinned by a tautology. Resolve the offline
+  // job's step block specifically and assert against that instead.
+  const offlineStart = ciText.indexOf("\n  offline:");
+  const offlineEnd = offlineStart >= 0 ? ciText.indexOf("\n  e2e:", offlineStart) : -1;
+  check("ci.yml declares an offline job to pin", offlineStart >= 0 && offlineEnd > offlineStart,
+    offlineStart < 0 ? "no `  offline:` job found" : "no job block follows `  offline:`");
+  const offlineRuns = offlineStart >= 0 && offlineEnd > offlineStart
+    ? [...ciText.slice(offlineStart, offlineEnd).matchAll(/node test\/([\w.-]+\.mjs)/g)].map((m) => m[1])
+    : [];
+  // A counter-check that the read actually landed: an empty run list would make
+  // every "not swept in" assertion below pass for the wrong reason.
+  check("the offline job actually names suites", offlineRuns.some((n) => n.endsWith(".test.mjs")),
+    `offline run names = ${offlineRuns.length}`);
+  check("no live-* suite is swept into the offline job",
+    !offlineRuns.some((n) => n.startsWith("live-")),
+    offlineRuns.filter((n) => n.startsWith("live-")).join(", "));
   check("the manual live contract is not a default-run check",
-    !npmTest.has("live-contract.mjs") && !ci.has("live-contract.mjs"),
-    "the live tier must not be a default-run check");
+    !offlineRuns.includes("live-contract.mjs"),
+    offlineRuns.includes("live-contract.mjs") ? "live-contract is in the offline job's run list" : "");
 
   // The roster pin above matches only `*.test.mjs`, because that suffix is the
   // line between "a default-run check" and "a tier with its own CI job". But
@@ -242,6 +261,25 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
     check(`CI runs test/${name} which exists on disk`, onDisk.has(name),
       onDisk.has(name) ? "" : "ci.yml names a file not in test/");
   }
+
+  // A suite that HAS a gate file must be reached THROUGH that gate. The gate
+  // exists precisely to own the "cannot run here" verdict (missing dsh CLI, a
+  // key, a build) and to SKIP with exit 0 instead of lying about a green run.
+  // Running the bare suite instead bypasses that guard — e2e did exactly this:
+  // `e2e.mjs` has no CLI check of its own, so CI ran it directly, the job was
+  // `continue-on-error: true`, and the whole tier quietly stopped guarding. A
+  // gate present but bypassed is the same "runs for nobody" drift class as the
+  // roster pin above, and it must be a red, not a comment.
+  const bypassed = [...ciRuns]
+    .filter((name) => !name.endsWith(".test.mjs"))
+    .filter((name) => {
+      const gate = name.replace(/\.mjs$/, "-gate.mjs");
+      return onDisk.has(gate) && !ciRuns.has(gate);
+    })
+    .map((name) => name.replace(/\.mjs$/, ""));
+  check("no CI run bypasses a gate file that exists",
+    bypassed.length === 0,
+    bypassed.length ? `runs the bare suite past its gate: ${bypassed.join(", ")}` : "");
 }
 
 // --- 7. the plugin-meta resource chain is exported and shipped ---------------
