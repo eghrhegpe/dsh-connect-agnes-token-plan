@@ -88,3 +88,16 @@
 - **受影响的文档**：`.gitignore`（取消 `/lib/` `/client.js`，加 qoder 同款警告块）；`AGENTS.md` 验证段；`test/build-gate.mjs` 措辞（freshness 语义不变，但现在它就是「入库产物 vs 重建」的比对）；`docs/ARCHITECTURE.md:18`、`docs/DSH-PLUGIN.md:30/143`、`tsdown.config.mjs` 头注释、`test/docs.test.mjs:354` 注释已改为现行表述。
 - **历史条目不改写**：`docs/ROADMAP.md:217/224-227`、`docs/PITFALLS.md:353` 保留 2026-09-30 / 2026-10-01 当时的记录——按考古纪律不在原文盖内联修订补丁，现行规则以本条为准。
 - **与既有条目的关系**：恢复并强化 ROADMAP §6.2「新纪律」（2026-09-30 当晚被自己取代的那条「产物与源码同 commit」，见 ROADMAP.md:221-223），但动机从「build-gate 红」扩展为「git/市场直装零构建」；不改变 ADR-001~007 任何裁定。
+
+## ADR-009 AgnesCode 思考契约：档位可用、`off` 诚实不提供
+
+- **日期**：2026-10-03
+- **状态**：现行（取代旧裁决「AgnesCode 思考 wire 通道未验证，descriptor 钉 `reasoning:false`」）
+- **裁定**：AgnesCode provider 补全思考契约——descriptor 翻 `reasoning:true` 并挂 BFF 专属 `agnescodeThinkingLevelMap()`：`off:null`、`minimal:null`、`low:"low"`、`medium:"medium"`、`high:"high"`、`xhigh:null`、`max:null`；adapter profile 钉 `reasoning: DEFAULT_REASONING_EFFORT`（high），与 Token Plan 侧一致。**不提供「关思考」**——`off` 留 `null`，DSH 选择器不显示该档位。
+- **理由（真机探针，2026-10-03，`agnes-3.0-flash`，`{bffBase}/v1/chat/completions`，7 发全 HTTP 200）**：推翻 v1 的两条假设——
+  1. **默认即思考开**：连思考字段都不发，`message.reasoning_content` 照常返回（406 字 / 320 reasoning_tokens）。v1 的 `reasoning:false` 从没把思考关掉，只是把选择器藏了。
+  2. **`reasoning_effort` 阶梯可用**：`none`/`low`/`medium`/`high` 全被接受（200），`low` 425 字 / 342、`medium` 328 字 / 260、`high` 366 字 / 291。
+  - **`reasoning_effort:"none"` 关不掉思考**（仍回 257 字 / 188 reasoning_tokens）。桌面端真正关思考的开关是 `request_params.agnes_thinking_enabled:false`（非官方模型为 `thinking_enabled:false`，配 `thinking_effort:"off"`），而 pi-ai 的档位映射值是**字符串**，表达不了「在 `request_params` 里塞布尔值」。据此把 `off` 留 `null`：映射成 `"none"` 会让用户点「关思考」实际还开着——与 `PITFALLS §20` / `docs/DSH-LLM-DEVELOP.md` §4 警告的「档位映射错 = 思考被静默关」同类的静默谎言，方向相反。
+- **为什么不是别的修法**：① 走 `request_params` 需要 pi-ai 支持按档位注入 provider-specific body 字段，当前档位映射模型表达不了；② `off → "none"` 是最小改动，但会制造误导性开关；③ `xhigh`/`max` 未对 BFF 实测，按「钉死值须以 live 探针为准」的纪律保持关闭，等补探后再开。
+- **受影响的文档**：`src/host/agnescode-models.ts`（模块头决策 1 + 新 `agnescodeThinkingLevelMap`）、`src/host/agnescode-llm-adapter.ts`（profile 钉 reasoning）、`test/agnescode.test.mjs`（断言从 `reasoning===false` 改为 4 条）、`docs/ROADMAP.md` §6.3（新增 2026-10-03 探针行）、`CHANGELOG.md [0.8.1]`。历史表述 `docs/ROADMAP.md` §6.3 旧「thinking wire channel is unverified」按考古纪律保留，现行以本条为准。
+- **与既有条目的关系**：具体化 ADR-003（Agnes 线）里 AgnesCode 那条「wire 未验证」的已知限制——探针补齐后收窄为「`request_params` 级思考开关（含 `off`）未接入」，而非「思考契约整体未验证」；不改变 ADR-001~008 任何裁定，也不改变 `docs/DSH-LLM-DEVELOP.md` §4 的通用裁法（那是对 Token Plan 侧「off→`none`」的既有裁定，此处不适用，因为两个网关行为不同）。
