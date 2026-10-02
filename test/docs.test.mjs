@@ -32,6 +32,32 @@ const note = (m) => console.log(`  ok - ${m}`);
 const bad = (m) => fails.push(m);
 
 /**
+ * A check's own survival guard: "I looked at N things, and N was not zero."
+ *
+ * PITFALLS §39's lesson, applied to THIS file rather than to the code it
+ * guards: a check whose subject silently shrinks to nothing passes for the
+ * wrong reason — a link scan that resolves 0 links, a boundary scan that
+ * matches 0 files, a table scan that finds 0 tables all report "clean". Nine of
+ * the sixteen checks below had no such floor, so `fails` stayed empty for
+ * entirely mechanical reasons.
+ *
+ * `scanned` is the count the check actually examined. `floor` is the smallest
+ * value that still means the check has a subject; pass 0 only where an empty
+ * subject is legitimately expected (and say so in the message).
+ * @param {string} id - the CHECK_IDS name, so the message points at the check.
+ * @param {number} scanned - how many items this check actually examined.
+ * @param {number} [floor] - the smallest non-vacuous count; default 1.
+ * @returns {void}
+ */
+const guards = new Map();
+const guard = (id, scanned, floor = 1) => {
+  if (scanned < floor) {
+    bad(`检查 ${id} 可能已失效：本次只受检了 ${scanned} 项（下限 ${floor}）——规则失配、路径改名或扫描面收缩都会让它以完全错误的理由通过`);
+  }
+  guards.set(id, { scanned, floor });
+};
+
+/**
  * Case-SENSITIVE existence, segment by segment.
  *
  * `existsSync` is case-insensitive on Windows and macOS, so a reference written
@@ -139,6 +165,7 @@ const CHECK_IDS = new Map([
     }
   }
   note(`内部链接 ${checked} 条全部可解析`);
+  guard("LINKS", checked, 50);
 }
 
 // 2) 跨文件重复表格
@@ -172,6 +199,7 @@ const CHECK_IDS = new Map([
     }
   }
   note(`表格去重：${seen.size} 张唯一表格，${dups} 张跨文件重复`);
+  guard("TABLES", seen.size, 10);
 }
 
 // 3) 根 README 行数上限
@@ -180,6 +208,7 @@ const CHECK_IDS = new Map([
   const cap = 140;
   if (lines > cap) bad(`README.md 共 ${lines} 行，超过上限 ${cap}：根 README 只做索引与快速上手，细节下沉 docs/`);
   else note(`README.md ${lines} 行（上限 ${cap}）`);
+  guard("README_LINES", 1, 1);
 }
 
 // 4) DSH-PLUGIN.md 教学快照 ↔ package.json
@@ -308,6 +337,7 @@ const CHECK_IDS = new Map([
   else {
     const total = readdirSync(docsDir).filter((name) => !statSync(join(docsDir, name)).isDirectory()).length;
     note(`docs/ 顶层 ${total} 个文件全部被索引表引用`);
+    guard("ORPHAN_DOCS", total, 5);
   }
 }
 
@@ -342,6 +372,7 @@ const CHECK_IDS = new Map([
   }
   if (claims < 2) bad(`只找到 ${claims} 处「N 条」引用，检查本身可能已经失效`);
   else note(`PITFALLS 条目数 ${actual}，${claims} 处总数引用与 ${pointed} 处条号引用全部有效`);
+  guard("PITFALLS_REFS", actual, 20);
 }
 
 // 8) src/ 注释里的模块名引用完整性
@@ -400,6 +431,7 @@ const CHECK_IDS = new Map([
   if (pseudo === 0) note(`注释伪文件名 0 处（${tsFiles.length} 个 src 文件）`);
   else note(`注释伪文件名 ${pseudo} 处（已在上方逐条列出）`);
   note(`注释模块引用 ${checked} 条全部可解析${known ? `（含 ${known} 条架构名词白名单）` : ""}`);
+  guard("SRC_COMMENT_REFS", checked, 50);
 }
 
 // 9) README 必须覆盖面板的每一个 tab
@@ -435,6 +467,7 @@ const CHECK_IDS = new Map([
       }
       if (!missingName.length && !missingInReadme.length) {
         note(`README 覆盖全部 ${tabIds.length} 个 tab：${tabIds.map((id) => zh.get(id)).join(" / ")}`);
+        guard("README_TABS", tabIds.length, 1);
       }
     }
   }
@@ -501,6 +534,7 @@ const CHECK_IDS = new Map([
     }
   }
   if (wrong === 0) note(`自述面的面板位置与 client 槽位注册一致（受检 ${surfaces.length} 个文件：全量 docs 减 ${HISTORY_FILES.size} 个历史档）`);
+  guard("SELF_DESCRIPTION", surfaces.length, 5);
 }
 
 // 11) screenshots.json 声明的每一张图必须真实存在于磁盘
@@ -561,6 +595,7 @@ const CHECK_IDS = new Map([
           checked++;
         }
         if (missing === 0) note(`screenshots.json 的 ${checked} 张图全部存在于磁盘且为图片`);
+        guard("SCREENSHOTS", checked, 1);
       }
     }
   }
@@ -604,6 +639,7 @@ const CHECK_IDS = new Map([
       if (!/日期/.test(block) || !/状态/.test(block)) bad(`ADR 条目缺日期/状态行：${title.trim()}`);
     }
     note(`考古纪律：受检 ${scanned} 篇现行文档零内联补丁；账本 ${heads.length} 条目形状合格（日期/状态齐）`);
+    guard("ARCHAEOLOGY", scanned, 10);
   }
 }
 
@@ -640,6 +676,7 @@ const CHECK_IDS = new Map([
     }
   }
   if (offenders === 0) note(`peer 边界：${scanned} 个内核文件零静态 peer import（adapter 壳与共享组装核心共 ${ALLOW_STATIC_PEER.size} 个豁免）`);
+  guard("PEER_BOUNDARY", scanned, 20);
 }
 
 // 14) client 规则层边界（ADR-006）：能算的进纯模块，规则名不得从产物抠取
@@ -741,8 +778,31 @@ const CHECK_IDS = new Map([
     && BRACE_WALK_RE.test(FIXTURE)
     && /new Function\s*\(/.test(FIXTURE);
   if (!fixtureHit) bad("规则层边界：本检查的负向对照未命中——探测器已失效（正则改坏了），上面的全绿不算数");
-  else if (scrapes === 0 && evals === 0) {
-    note(`规则层边界：${pure.length} 个纯模块可 Node 直 import（含 ${PINNED_PURE.join("/")}），${coupled.length} 个含 runtime 耦合；${testFiles.length - 1} 个受检测试文件零「产物抠函数」、零 new Function 求值产物（读产物的 ${artifactReaders} 个仅做装载/新鲜度检查；负向对照命中）`);
+  // 上一行只证明了**指纹**认得这份 fixture；它没证明 **gate**（readsArtifact）
+  // 能在真实世界里认出读产物的测试文件。而 gate 一旦因命名漂移而失配，被审
+  // 文件集就静默缩到 0，上面两条断言随即以「没有任何文件违规」的正确理由
+  // 全绿——正是 §39 第一版那个坑（两侧集合双双缩水）。实测：把产物变量名
+  // 从 BUNDLE 改成 bundle / clientJs / text / src / code，gate 全部失配。
+  // 所以这里按**惯用法的多种合理命名**逐个喂，gate 必须都认得。
+  const GATE_NAMES = ["BUNDLE", "bundle", "clientBundle", "clientJs", "text", "code", "src"];
+  const gateMisses = GATE_NAMES.filter((n) => !readsArtifact(`const ${n} = readFileSync(u, 'utf8')\n${FIXTURE}`));
+  if (gateMisses.length > 0) {
+    bad(`规则层边界：gate（readsArtifact）只认得 ${GATE_NAMES.length - gateMisses.length}/${GATE_NAMES.length} 种产物变量命名，认不得 ${gateMisses.join(", ")}——换个变量名，被审文件集就缩到 0，本检查会以「零违规」通过（PITFALLS §39）`);
+  }
+  // 反过来也要成立：不含「读产物」的文件不得被 gate 选中，否则检查会退化成
+  // 「扫所有测试文件」，把 build-gate 之类合法读产物做新鲜度检查的用法也判红。
+  const gateFalsePositives = [
+    "const BUNDLE = 'not read from disk';",
+    "const fixture = `function ${name}(x) {`; let depth = 0; depth++; new Function('a', fixture);"
+  ].filter((t) => readsArtifact(t));
+  if (gateFalsePositives.length > 0) {
+    bad(`规则层边界：gate 误选了 ${gateFalsePositives.length} 个不读产物的样本——gate 必须要求 readFileSync 与产物名同时出现，不能只认其一`);
+  }
+  if (gateMisses.length === 0 && gateFalsePositives.length === 0) {
+    guard("RULE_LAYER_BOUNDARY", testFiles.length - 1, 20);
+  }
+  if (fixtureHit && gateMisses.length === 0 && gateFalsePositives.length === 0 && scrapes === 0 && evals === 0) {
+    note(`规则层边界：${pure.length} 个纯模块可 Node 直 import（含 ${PINNED_PURE.join("/")}），${coupled.length} 个含 runtime 耦合；${testFiles.length - 1} 个受检测试文件零「产物抠函数」、零 new Function 求值产物（读产物的 ${artifactReaders} 个仅做装载/新鲜度检查；负向对照命中，gate 7/7 命名均认得）`);
   }
 }
 
@@ -858,6 +918,7 @@ const CHECK_IDS = new Map([
     });
   }
   if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档 + ${codeFiles.length} 个代码文件零写死模块数/规模/行数/路由条数/套件规模（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
+  guard("COUNT_GUARD", scanned + codeFiles.length, 30);
 }
 
 // === REF_RESOLVABLE) 文档对「检查 <名>」的引用必须可解析 ====================
@@ -909,6 +970,26 @@ const CHECK_NAMES = new Set(CHECK_IDS.keys());
   }
   if (dangling.length) dangling.forEach(bad);
   else note(`检查引用可解析：${resolved} 处 docs.test 语境命名引用命中、数字序号 0 处（${deprecated} 处数字已全部迁移；另 ${skipped} 处指到别的套件，本检查不越权）`);
+  guard("REF_RESOLVABLE", resolved, 5);
+}
+
+// 本文件自己的存活守卫（PITFALLS §39：守护物失效时谁会喊）
+//
+// `guard()` 给每条检查配了「受检量下限」，但下限本身要有人守：一条**新增**的
+// 检查若没声明自己的受检面，就等于回到「扫到 0 条也算通过」的老形状，而
+// 「它没登记」这件事本身是可机械查的。新增检查必须同时登记受检量，或在此
+// 显式豁免并写明理由——不允许静默缺失。
+{
+  const EXEMPT = new Map([
+    ["SNAPSHOT", "锚点判活写在检查体内（snipFiles 非空 + 与 package.json 对比）"],
+    ["API_SNAPSHOT", "锚点判活由 ANCHORS + parserLive 承担（§39 第一版教训的修复处）"]
+  ]);
+  const missing = [...CHECK_IDS.keys()].filter((id) => !guards.has(id) && !EXEMPT.has(id));
+  if (missing.length > 0) {
+    bad(`新增检查未声明存活守卫：${missing.join(", ")}——请在该检查后调用 guard("<名字>", <受检量>, <下限>)，或在本段 EXEMPT 里写明理由（PITFALLS §39）`);
+  }
+  const declared = [...guards.entries()].map(([id, g]) => `${id}:${g.scanned}/${g.floor}`);
+  note(`存活守卫覆盖 ${guards.size}/${CHECK_IDS.size} 条检查（${declared.join(" ")}）；另 ${EXEMPT.size} 条由各自锚点断言承担`);
 }
 
 if (fails.length) {

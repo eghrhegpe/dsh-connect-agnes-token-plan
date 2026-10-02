@@ -29,42 +29,15 @@
  */
 import {
   createSwitchStore,
-  createSwitchParser,
-  normalizeSwitchEnabled,
-  normalizeSwitchModelId
+  createSwitchParser
 } from "./switch-store.ts";
-import { name } from "./host-config.ts";
-import { profileStateDir } from "./state-store.ts";
 import type { StoreOptions } from "./types.ts";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const VIDEO_STORE_VERSION = 1;
 
-/**
- * The directory this plugin's state lives in — per-profile when the Host names
- * one, shared otherwise (PITFALLS §23). Same reasoning as the draw switch:
- * "does THIS profile route videos through Agnes" is a per-profile opt-in.
- * @param {string|null} [profile] - the profile name; `null` means shared.
- * @returns {string} the directory.
- */
-export function videoStoreDir(profile: string | null) {
-  return profileStateDir(name, profile);
-}
 
-/**
- * Normalize an on/off switch: only booleans are real answers.
- * @param {unknown} raw - the persisted or posted value.
- * @returns {boolean|null} `true`/`false`, or `null` when nothing usable.
- */
-export const normalizeVideoEnabled = normalizeSwitchEnabled;
 
-/**
- * Normalize a panel-saved video-model preference: a non-empty string id, or
- * `null` when nothing usable (absent / wrong type / blank).
- * @param {unknown} raw - the persisted or posted value.
- * @returns {string|null}
- */
-export const normalizeVideoModelId = normalizeSwitchModelId;
 
 /**
  * The parser `doctor.ts` reuses, so its read-only survey can never disagree

@@ -30,26 +30,13 @@
 import {
   createSwitchStore,
   createSwitchParser,
-  normalizeSwitchEnabled,
-  normalizeSwitchModelId
+  normalizeSwitchEnabled
 } from "./switch-store.ts";
-import { name } from "./host-config.ts";
-import { profileStateDir } from "./state-store.ts";
 import type { StoreOptions } from "./types.ts";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const DRAW_STORE_VERSION = 1;
 
-/**
- * The directory this plugin's state lives in — per-profile when the Host names
- * one, shared otherwise (PITFALLS §23). Same reasoning as the provider switch:
- * "does THIS profile route images through Agnes" is a per-profile opt-in.
- * @param {string|null} [profile] - the profile name; `null` means shared.
- * @returns {string} the directory.
- */
-export function drawStoreDir(profile: string | null) {
-  return profileStateDir(name, profile);
-}
 
 /**
  * Normalize an on/off switch: only booleans are real answers.
@@ -58,13 +45,6 @@ export function drawStoreDir(profile: string | null) {
  */
 export const normalizeDrawEnabled = normalizeSwitchEnabled;
 
-/**
- * Normalize a panel-saved draw-model preference: a non-empty string id, or
- * `null` when nothing usable (absent / wrong type / blank).
- * @param {unknown} raw - the persisted or posted value.
- * @returns {string|null}
- */
-export const normalizeDrawModelId = normalizeSwitchModelId;
 
 /**
  * The parser `doctor.ts` reuses, so its read-only survey can never disagree

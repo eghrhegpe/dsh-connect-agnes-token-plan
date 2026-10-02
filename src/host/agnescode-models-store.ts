@@ -36,14 +36,6 @@ export const AGNESCODE_MODELS_VERSION = 1;
 /** Ceiling on a curated AgnesCode list (the Token Plan side caps at 500). */
 export const MAX_AGNESCODE_ENABLED_MODELS = 200;
 
-/**
- * The directory this store lives in — per-profile when the Host names one.
- * @param {string|null} [profile] - the profile name; `null` means shared.
- * @returns {string} the directory.
- */
-export function agnescodeModelsDir(profile: string | null) {
-  return profileStateDir(name, profile);
-}
 
 /**
  * Parse a persisted AgnesCode allow-list payload.

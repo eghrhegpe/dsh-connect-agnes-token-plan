@@ -922,6 +922,91 @@ async function withNetwork(stub, body) {
     `${serialized.slice(0, 100)} keys=${keys.join(",")}`);
 }
 
+// --- 20. a throttle that cannot be persisted SAYS SO ----------------------
+// The cross-process lock is the whole point of the throttle: if the file
+// cannot be written, the next Host process walks straight into a lock this one
+// is waiting out. That failure was invisible — the store swallowed it and the
+// caller's `.catch()` sat on a promise that could never reject, so the warning
+// was unreachable code on the one path PITFALLS §6 calls load-bearing.
+//
+// The store now RETURNS whether it persisted, and these check the warning is
+// reachable at all: a stub that reports failure must produce a line, and one
+// that reports success must not.
+{
+  const accountEnv = { AGNES_USERNAME: "u", AGNES_PASSWORD: "wrong" };
+  const credentials = fakeCredentials(null);
+  const realWarn = console.warn;
+  const lines = [];
+  console.warn = (...args) => { lines.push(args.join(" ")); };
+  try {
+    const stub = await makeTokenStub(async () => new Response(JSON.stringify({
+      code: 9, message: "The account has been locked, please try again after 8 minutes",
+      details: [{ reason: "accountLocked" }]
+    }), { status: 400, headers: { "content-type": "application/json" } }));
+
+    // A store that swallows everything and reports failure — the shape the
+    // real file store has on a read-only Home.
+    const failing = {
+      read: async () => null,
+      write: async () => false,
+      clear: async () => false
+    };
+    await withNetwork(stub, async () => {
+      const store = createTokenStore({
+        credentials, credentialKey: credentialKeyFn, env: accountEnv, throttleStore: failing
+      });
+      try { await store.getToken(); } catch { /* the expected refusal */ }
+    });
+    check("a throttle that failed to persist is reported, not swallowed",
+      lines.some((l) => l.includes("throttle write failed")),
+      JSON.stringify(lines));
+    check("the report carries no credential material",
+      !lines.join(" ").includes("wrong") && !lines.join(" ").match(/sk-[A-Za-z0-9]/),
+      JSON.stringify(lines).slice(0, 160));
+
+    // The clear side: a surviving file re-parks the next sign-in, which reads
+    // to the user as the plugin ignoring them. `saveAccount` is the ONE path
+    // that clears a throttle (a deliberate resubmit after the panel asked for
+    // a retyped account) — `forgetAccount` does not, and must not.
+    lines.length = 0;
+    const clearStub = await makeTokenStub(async () => new Response(JSON.stringify({
+      code: 9, message: "locked", details: [{ reason: "accountLocked" }]
+    }), { status: 400, headers: { "content-type": "application/json" } }));
+    const clearCredentials = fakeCredentials(null);
+    await withNetwork(clearStub, async () => {
+      const store = createTokenStore({
+        credentials: clearCredentials, credentialKey: credentialKeyFn, env: accountEnv, throttleStore: failing
+      });
+      try { await store.getToken(); } catch { /* refused, throttle written (and failing) */ }
+      lines.length = 0;
+      try { await store.saveAccount({ username: "u", password: "corrected" }); } catch { /* still locked upstream */ }
+    });
+    check("a throttle clear that failed is reported too",
+      lines.some((l) => l.includes("throttle clear failed")),
+      JSON.stringify(lines));
+
+    // And the honest positive: a store that persists must stay quiet, or the
+    // warning trains the reader to skip the line that matters.
+    lines.length = 0;
+    const okStub = await makeTokenStub(async () => new Response(JSON.stringify({
+      code: 9, message: "locked", details: [{ reason: "accountLocked" }]
+    }), { status: 400, headers: { "content-type": "application/json" } }));
+    const okCredentials = fakeCredentials(null);
+    await withNetwork(okStub, async () => {
+      const store = createTokenStore({
+        credentials: okCredentials, credentialKey: credentialKeyFn, env: accountEnv,
+        throttleStore: createMemoryThrottleStore()
+      });
+      try { await store.getToken(); } catch { /* refused */ }
+      await store.forgetAccount();
+    });
+    check("a throttle that persisted says nothing (the warning stays rare)",
+      lines.length === 0, JSON.stringify(lines));
+  } finally {
+    console.warn = realWarn;
+  }
+}
+
 // The store is exercised against stubbed platform responses; nothing here may
 // reach the real one. See the same guard in test/auth.test.mjs.
 const unstubbed = releaseNetworkGuard();

@@ -254,13 +254,21 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
     },
 
     /** Remove the stored catalog (used when the API key is forgotten). */
+    // Returns whether the file is gone, like `replace()` and
+    // `setEnabledIds()` do. The swallow stays — a failure here must not fail
+    // the api-key forget the user asked for — but it used to be invisible:
+    // the caller's `.catch()` sat on a promise that could never reject, so
+    // "forgot the key but the old models are still offered" had no log line
+    // at all (PITFALLS §42).
     async clear() {
       held = null;
       cache.remember(null);
       try {
         await rm(file, { force: true });
+        return true;
       } catch {
         // An absent file is already a cleared catalog.
+        return false;
       }
     }
   };

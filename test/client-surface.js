@@ -102,13 +102,22 @@ if (registration === undefined) {
  * The view model one snapshot is read into, as the browser defines it.
  * `auth` declares only what is read (with optional chaining and a shape
  * check), not the whole block.
+ *
+ * `viewOf`'s ACTUAL members are `failure / auth / needsSetup / guidanceKey /
+ * guidance / shapeWarnings` — asserted member-for-member at runtime by
+ * `VIEWOF_MEMBERS` in `panel.test.mjs`, because this typedef had drifted the
+ * other way: it listed five members that no longer exist (`render`,
+ * `consoleConnected`, `canManageAccount`, `coolingMs`, `needsUserAction` —
+ * those are `decidePanelView`'s, not `viewOf`'s) and omitted the one that
+ * does. That is the same third-copy rot this file's own note below warns
+ * about, so the roster is now checked where it can fail instead of being
+ * trusted in a comment.
  * @typedef {{
  *   failure: object|null,
  *   auth: {retryAfterMs?: number, needsUserAction?: boolean} | null,
  *   needsSetup: boolean,
- *   guidanceKey: string|null, guidance: string|null, render: string,
- *   consoleConnected: boolean|null, canManageAccount: boolean,
- *   coolingMs: number|null, needsUserAction: boolean
+ *   guidanceKey: string|null, guidance: string|null,
+ *   shapeWarnings: unknown[]
  * }} PanelView
  */
 

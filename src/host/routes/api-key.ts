@@ -70,16 +70,19 @@ export function registerApiKeyRoute(ctx: HostCtx, wiring: HostWiring) {
         try {
           await apiKeyStore.forget();
           // The key itself is already gone; a leftover cached catalog would only
-          // surface stale models on the next poll. If the clear fails we still
-          // answer success, but record it — silently losing it would make a
-          // "forgot the key but old models still offered" report undebuggable.
-          await catalogStore.clear()
-            .catch((error) => {
-              // A LOG EXIT: the redaction the panel applies to error text applies
-              // here too, so a credential can never reach a log line even if the
-              // clear path starts throwing one (util.ts).
-              logger?.warn?.(`${name}: catalog cache clear failed after api-key forget: ${redactError(error)}`);
-            });
+          // surface stale models on the next poll. `clear()` REPORTS rather than
+          // rejects (a failure must not fail the forget the user asked for), so
+          // the warning is on the returned flag — it used to hang off a
+          // `.catch()` that could never run, which made a "forgot the key but
+          // old models still offered" report undebuggable in exactly the way
+          // this comment says it must not be (PITFALLS §42).
+          const cleared = await catalogStore.clear().catch(() => false);
+          if (cleared === false) {
+            // A LOG EXIT: the redaction the panel applies to error text applies
+            // here too, so a credential can never reach a log line even if the
+            // clear path starts throwing one (util.ts).
+            logger?.warn?.(`${name}: catalog cache clear failed after api-key forget; the next poll may still offer the old models`);
+          }
           cache.clear();
           providerState.signature = "";
           providerState.quotaSignature = "";

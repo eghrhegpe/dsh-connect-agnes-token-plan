@@ -11,7 +11,9 @@
  * - `agnescode-store.ts`: the DSH-credentials reference store (save / forget /
  *   resolve, the base-without-token refusal, the secret-free state);
  * - `agnescode-models.ts`: roster → pi-ai descriptor mapping (the per-account
- *   base rides the descriptor, `reasoning:false`, the memberOnly badge, the
+ *   base rides the descriptor, the thinking contract (ADR-009: `reasoning:true`
+ *   plus a BFF-specific level map — it was `reasoning:false` until the
+ *   2026-10-03 live probe showed that only hid the selector), the memberOnly badge, the
  *   no-multiplier honesty);
  * - `agnescode-publish.ts`: the third, independent publisher (the switch-off /
  *   no-token / register path, the per-account base, the `disposed` gate,
@@ -798,6 +800,54 @@ const GOOD_SESSION = {
     check("a failed build keeps the previous registration live (rollback)",
       failedResult.ok === false && failing.state.registered === true && failing.state.built?.adapter?.v === 1,
       JSON.stringify({ error: failing.state.error }));
+
+    // The IDENTITY half of the same rollback — and the assertion above cannot
+    // see it, because it publishes the same rows twice, so "restored" and
+    // "left advanced" look identical. That is the whole reason this bug
+    // survived: the check above was green while `state.rows` named a roster
+    // the Host had never been handed. So publish a DIFFERENT roster on a
+    // DIFFERENT base, let the build throw, and read the identity back
+    // (PITFALLS §42).
+    const identityLlm = makeLlm();
+    let identityCalls = 0;
+    const identity = createAgnescodePublisher({
+      panelSwitch: async () => true,
+      getLlm: () => identityLlm,
+      loadAdapterModule: async () => ({
+        createAgnescodeAdapter: async () => {
+          identityCalls += 1;
+          if (identityCalls === 1) return { adapter: { v: 1 }, providerIds: [AGNESCODE_PROVIDER_ID] };
+          throw new Error("boom");
+        }
+      }),
+      resolveToken: async () => "t"
+    });
+    await identity.publish(rows, base);
+    const servedRows = identity.state.rows;
+    const servedBase = identity.state.bffBase;
+    check("the live registration is the one a rebuild would have to beat",
+      identity.state.registered === true && servedBase === base && servedRows.length === rows.length);
+    const nextRows = rows.map((r) => ({ ...r, id: `${r.id}-v2` }));
+    const nextBase = "https://bff-other.agnes-ai.cn/v1";
+    const identityFailed = await identity.publish(nextRows, nextBase);
+    check("a failed build restores the roster identity (not just the pair)",
+      identityFailed.ok === false
+      && identity.state.rows === servedRows
+      && identity.state.bffBase === servedBase,
+      JSON.stringify({
+        error: identityFailed.ok === false ? "build failed as designed" : identityFailed,
+        rowsRestored: identity.state.rows === servedRows,
+        baseRestored: identity.state.bffBase === servedBase,
+        baseNow: identity.state.bffBase
+      }));
+    check("the restored identity is the SERVING one, not the failed one",
+      identity.state.built?.adapter?.v === 1 && identity.state.registered === true
+      && identity.state.rows.every((r) => !String(r.id).endsWith("-v2")),
+      JSON.stringify({
+        built: identity.state.built?.adapter?.v,
+        registered: identity.state.registered,
+        ids: identity.state.rows.slice(0, 3).map((r) => r.id)
+      }));
 
     // The disposed gate: a late publish never registers.
     const disposedLlm = makeLlm();

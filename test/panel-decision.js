@@ -25,6 +25,12 @@
  */
 
 import { surface } from "./client-surface.js";
+// The rule itself, taken from the module the browser runs. `snapshot.ts` is a
+// PURE module under ADR-006 (it imports only the `runtime.ts` TYPE, erased at
+// compile time), so Node imports and calls it directly — no bundle scraping,
+// no re-declaration. When `panel-page.ts` stops calling this function, the
+// change is one edit in one place and the next check below says so.
+import { shouldShowAccountManagement } from "../src/client/snapshot.ts";
 
 /** What the panel can render in its empty state. */
 export const RENDER = {
@@ -107,9 +113,14 @@ const identity = (value) => value;
  */
 export function decidePanelView(data, error) {
   const view = viewOf(data, error, identity);
-  // Import the single-source decision from snapshot.ts to avoid duplicate derivation
-  const shouldShowAccountManagement = (auth) => auth !== null;
-  
+  // The single source is IMPORTED, not restated. This line used to read
+  // "Import the single-source decision from snapshot.ts to avoid duplicate
+  // derivation" and then declare `(auth) => auth !== null` right underneath —
+  // a comment claiming exactly the opposite of what the next line does, while
+  // `snapshot.ts`'s own doc said callers must use the exported function rather
+  // than duplicating that expression. ADR-006 records this residue; the fix is
+  // the import, because ADR-006's judgement 1 is that a pure rule module must
+  // be callable from Node directly (PITFALLS §42).
   return {
     failure: view.failure,
     auth: view.auth,

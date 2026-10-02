@@ -178,6 +178,23 @@ export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
     const previousEntries = state.entries;
     const previousEnabledIds = state.enabledIds;
     const previousUnavailable = state.unavailableIds;
+    // The catalog identity the LIVE registration was built from, and the one
+    // thing every "no new registration came into being" path must restore.
+    //
+    // It used to be restored on exactly one path — a failed re-registration,
+    // via `onRollback` — while the identity itself was advanced as early as
+    // possible below. A BUILD failure therefore left `state.entries` naming a
+    // catalogue that was never registered: the old adapter kept serving, and
+    // the snapshot's `offered` set (read straight off `state.entries`) quoted
+    // the new one. The file's own comment on `onRollback` says the identity
+    // "must not keep pointing at a set we failed to publish" — true, and it
+    // was only half-implemented. One function, called from every such path
+    // (PITFALLS §42).
+    const restoreIdentity = () => {
+      state.entries = previousEntries;
+      state.enabledIds = previousEnabledIds;
+      state.unavailableIds = previousUnavailable;
+    };
     state.entries = Array.isArray(entries) ? entries : [];
     state.enabledIds = Array.isArray(enabledIds) ? enabledIds : [];
     state.unavailableIds = Array.isArray(unavailableModelIds) ? unavailableModelIds : [];
@@ -221,6 +238,12 @@ export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
       // thrown value (which may not be a plugin Error at all) — the shared
       // describer reads it, redacts the message, and appends the remedy.
       const described = describeBuildFailure(error);
+      // No adapter was built, so no registration was attempted: the previous
+      // pair is still the one serving, and the identity must go back to
+      // describing IT. Restoring only the error while leaving the freshly
+      // advanced `entries` in place is what made the snapshot quote a
+      // catalogue the Host never received.
+      restoreIdentity();
       state.error = described.note;
       warnBuildFailure(effectiveLogger, "Agnes", described);
       return { ok: false, error: described.error };
@@ -228,8 +251,8 @@ export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
     // The swap (and the rollback behind it) is the shared mechanism: a failed
     // re-registration must restore the pair that was serving. What is restored
     // on THIS side is the catalog identity — entries, allow-list, and the
-    // quota-exhausted set (which must not keep pointing at a set we failed to
-    // publish).
+    // quota-exhausted set — through the same `restoreIdentity` the build
+    // failure path uses, so the two can never drift.
     return swapRegistration({
       llm,
       built,
@@ -238,11 +261,7 @@ export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
       release,
       registerPair,
       emit: effectiveEmit,
-      onRollback: () => {
-        state.entries = previousEntries;
-        state.enabledIds = previousEnabledIds;
-        state.unavailableIds = previousUnavailable;
-      }
+      onRollback: restoreIdentity
     });
   };
 

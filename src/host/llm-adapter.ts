@@ -14,8 +14,9 @@
  * a bug the other already fixed. What stays HERE is everything that differs:
  *
  * - the provider id / display name and the model builder;
- * - the profile's `reasoning` default, which this route pins and AgnesCode must
- *   NOT (see the note at the profile below);
+ * - the profile's `reasoning` default — which BOTH routes now pin to the same
+ *   constant (AgnesCode included, since ADR-009's live probe retired the "its
+ *   thinking wire channel is unverified" note that used to say otherwise);
  * - the credential resolver (a stored `sk-` key, read per request).
  *
  * @module dsh-connect-agnes-token-plan/llm-adapter
@@ -110,9 +111,14 @@ export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveA
         // keeps the platform default; the snapshot quotes this same constant to
         // the panel roster, so the displayed default cannot drift from it.
         //
-        // AgnesCode deliberately does NOT pin this (its thinking wire channel is
-        // unverified), which is one reason the two profiles stay hand-built
-        // while the adapter mechanism below is shared.
+        // AgnesCode pins this too, and deliberately so. It used NOT to, on the
+        // grounds that its "thinking wire channel is unverified" — but the
+        // 2026-10-03 live probe (ADR-009) found the BFF answers `low`/`medium`/
+        // `high` with 200 and returns `reasoning_content` even when the field is
+        // not sent at all, so `reasoning:false` was never turning thinking off,
+        // only hiding the selector. The two profiles still stay hand-built —
+        // provider id, model builder and credential resolver genuinely differ —
+        // but that difference is no longer "one of them has no default".
         reasoning: DEFAULT_REASONING_EFFORT,
         ...REQUEST_IMAGE_BUDGETS,
         piProvider: provider

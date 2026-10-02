@@ -31,6 +31,8 @@ import {
   swapRegistration,
   emitAdaptersUpdated
 } from "../src/host/publish-core.ts";
+import { createProviderPublisher } from "../src/host/provider-publish.ts";
+import { createAgnescodePublisher } from "../src/host/agnescode-publish.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -317,7 +319,87 @@ const makeLlm = () => {
   check("emitAdaptersUpdated swallows a refusing emitter", emitThrew === false);
 }
 
-// ── 4. 工厂解析、形状校验、失败描述 ────────────────────────────────────────
+// ── 5. 两个 publisher 薄壳：同一份身份回滚清单 ─────────────────────────────
+// `swapRegistration`'s own comment says the identity "must not keep pointing at
+// a set we failed to publish" — and that promise is only kept on the ONE path
+// its `onRollback` runs on. A BUILD failure returns before the swap is even
+// attempted, so for years both publishers advanced their identity early and
+// left it there: the previous adapter kept serving while the snapshot quoted a
+// catalogue the Host had never been handed (PITFALLS §42).
+//
+// Both thin shells get the SAME list, because the bug was a copy that drifted
+// — the assertion that would have caught it existed on neither side, and the
+// one rollback assertion that did exist published identical inputs twice, so
+// "restored" and "left advanced" were indistinguishable. Each case below
+// therefore publishes a DIFFERENT second payload and reads the identity back.
+{
+  section("both publishers: a failed build restores the identity (not just the pair)");
+
+  /** The two publishers differ in payload shape; this is the only adapter. */
+  const SHELLS = [
+    {
+      label: "Token Plan",
+      create: (deps) => createProviderPublisher({
+        settings: { registerProvider: true, apiBase: "https://api.agnes-ai.cn/v1" },
+        ...deps
+      }),
+      first: [[{ id: "agnes-3.0-flash", vision: false }], []],
+      second: [[{ id: "agnes-2.5-pro", vision: true }], ["agnes-2.5-pro"]],
+      identityOf: (s) => ({ a: s.entries, b: s.enabledIds })
+    },
+    {
+      label: "AgnesCode",
+      create: (deps) => createAgnescodePublisher(deps),
+      first: [[{ id: "agnes-3.0-flash" }], "https://bff-one.agnes-ai.cn/v1"],
+      second: [[{ id: "agnes-2.5-pro" }], "https://bff-two.agnes-ai.cn/v1"],
+      identityOf: (s) => ({ a: s.rows, b: s.bffBase })
+    }
+  ];
+
+  for (const shell of SHELLS) {
+    const calls = [];
+    const llm = {
+      registerAdapter(ids, adapter) { calls.push(["adapter", ...ids]); return () => calls.push(["release-adapter"]); },
+      registerConfigurableProviders(list) { calls.push(["directory", list[0].provider]); return () => calls.push(["release-directory"]); }
+    };
+    const publisher = shell.create({
+      panelSwitch: async () => true,
+      getLlm: () => llm,
+      resolveApiKey: async () => "sk-test",
+      resolveToken: async () => "token",
+      loadAdapterModule: async () => ({
+        createAgnesAdapter: async () => {
+          if ((calls.length === 0) === false && shell.__armed) throw new Error("boom");
+          shell.__armed = true;
+          return { adapter: { v: 1 }, providerIds: ["p"] };
+        },
+        createAgnescodeAdapter: async () => {
+          if (shell.__armed) throw new Error("boom");
+          shell.__armed = true;
+          return { adapter: { v: 1 }, providerIds: ["p"] };
+        }
+      })
+    });
+    await publisher.publish(...shell.first);
+    const served = shell.identityOf(publisher.state);
+    check(`${shell.label}: the first publish is the one serving`,
+      publisher.state.registered === true && publisher.state.built?.adapter?.v === 1,
+      JSON.stringify({ registered: publisher.state.registered }));
+
+    const failed = await publisher.publish(...shell.second);
+    const after = shell.identityOf(publisher.state);
+    check(`${shell.label}: a failed build keeps the previous pair live`,
+      failed.ok === false && publisher.state.registered === true && publisher.state.built?.adapter?.v === 1,
+      JSON.stringify({ ok: failed.ok, error: publisher.state.error }));
+    check(`${shell.label}: a failed build restores the identity too`,
+      after.a === served.a && after.b === served.b,
+      JSON.stringify({ payloadRestored: after.a === served.a, baseRestored: after.b === served.b, now: after.b }));
+    check(`${shell.label}: the restored identity is the SERVING one, not the failed one`,
+      !JSON.stringify(after.a).includes("agnes-2.5-pro"),
+      JSON.stringify({ ids: JSON.stringify(after.a).slice(0, 90) }));
+  }
+}
+
 {
   section("factory + shape + failure description");
   let loads = 0;

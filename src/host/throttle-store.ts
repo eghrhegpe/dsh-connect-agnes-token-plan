@@ -94,6 +94,14 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
       // returns null): the safe direction for a time window.
       return parse(await readStateJson(file), now);
     },
+    // `write` / `clear` REPORT whether they reached the disk instead of
+    // rejecting. The swallow stays — a read-only Home must not break the panel,
+    // and the caller still honours the wait in this process — but it used to be
+    // invisible: `writeThrottle`'s `.catch()` was attached to a promise that
+    // could never reject, so the cross-process "don't knock during the lock"
+    // protection could fail with nothing logged anywhere (PITFALLS §42).
+    // Returning a boolean is the same contract `catalog-store.replace()`
+    // already uses, so the caller can warn on `false` without a try/catch.
     async write(state: Record<string, unknown>) {
       const temporary = temporaryOf(dir, "throttle.json");
       try {
@@ -106,16 +114,20 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
           attempt: state.attempt
         });
         await writeStateFile(file, body, { temporary });
+        return true;
       } catch {
         // A read-only Home must not break the panel: the caller still honours
         // the wait for this process, it just will not outlive it.
+        return false;
       }
     },
     async clear() {
       try {
         await rm(file, { force: true });
+        return true;
       } catch {
         // Nothing to do: an absent file is already a cleared throttle.
+        return false;
       }
       // The pre-rename file is deliberately left alone: it belongs to the
       // SenseNova plugin, and deleting it would clear an account lock that
@@ -136,15 +148,20 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
  */
 export function createMemoryThrottleStore(now = Date.now) {
   let held: { version: number; [key: string]: unknown } | null = null;
+  // Same contract as the file store: report, never reject. An in-memory write
+  // cannot fail, so these say so truthfully rather than returning a value the
+  // caller would have to special-case.
   return {
     async read() {
       return parse(held, now);
     },
     async write(state: Record<string, unknown>) {
       held = { version: THROTTLE_VERSION, ...state };
+      return true;
     },
     async clear() {
       held = null;
+      return true;
     }
   };
 }

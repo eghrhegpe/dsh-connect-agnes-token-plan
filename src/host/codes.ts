@@ -4,7 +4,10 @@
  * Before this module the same codes were spelled out in three places, and the
  * three copies disagreed:
  *
- * - `agnes-auth.ts` PRODUCED them (its `IAM_REASON_CODES` table);
+ * - `agnes-auth.ts` PRODUCED them (it used to carry its own `IAM_REASON_CODES`
+ *   table, back when the login line was SenseNova's OIDC + JWE and the platform
+ *   answered with a `google.rpc.Status` envelope whose real cause sat in
+ *   `details[].reason`);
  * - `token-store.ts` kept its own list of the ones that describe a bad
  *   credential (`CREDENTIAL_REFUSALS`);
  * - `index.ts` kept a third list of the ones that mean "we never got a token"
@@ -64,34 +67,21 @@ export const CODE = Object.freeze({
   CONFIG_ERROR: "config_error"
 });
 
+
 /**
- * What the platform's own machine reasons mean, keyed by their folded form.
+ * A note on where "the platform's machine reasons" went.
  *
- * IAM answers with a `google.rpc.Status` envelope whose real cause sits in
- * `details[].reason` (`invalidAccountOrPassword`, `accountLocked`,
- * `tooManyAttempts`, …). Matching that code exactly — and treating the
- * substring scan in `agnes-auth.ts` as a fallback for a reason this table
- * has not learned yet — is the difference between a reworded message and a
- * silently reclassified lockout.
+ * There is no such table here any more, and that is not an oversight: Agnes
+ * answers a refused sign-in with a plain message, so the only thing left to
+ * classify on is substring matching, and it lives in `classifyLoginFailure()`
+ * (`agnes-auth.ts`) — which PITFALLS §3 requires to prefer the platform's own
+ * wording over a local guess, and which splits credential refusals (never
+ * retried) from time-shaped ones (wait out the stated window).
  *
- * Keys are lowercased with separators removed, because the platform writes
- * camelCase while other responses spell the same reason snake_case.
+ * A future reason that DOES arrive as a machine code gets its exact match
+ * added there, not here: a table with no reader is the §38 kind of thing that
+ * reads like a hook and reaches nothing.
  */
-export const IAM_REASON_CODES = Object.freeze({
-  invalidaccountorpassword: CODE.LOGIN_REJECTED,
-  incorrectusernameorpassword: CODE.LOGIN_REJECTED,
-  wrongusernameorpassword: CODE.LOGIN_REJECTED,
-  invalidcredentials: CODE.LOGIN_REJECTED,
-  incorrectpassword: CODE.LOGIN_REJECTED,
-  accountlocked: CODE.ACCOUNT_LOCKED,
-  accountdisabled: CODE.ACCOUNT_LOCKED,
-  userlocked: CODE.ACCOUNT_LOCKED,
-  toomanyattempts: CODE.RATE_LIMITED,
-  ratelimitexceeded: CODE.RATE_LIMITED,
-  toomanyrequests: CODE.RATE_LIMITED,
-  verificationrequired: CODE.VERIFICATION_REQUIRED,
-  captcharequired: CODE.VERIFICATION_REQUIRED
-});
 
 /**
  * Refusals that describe the CREDENTIAL rather than the moment.

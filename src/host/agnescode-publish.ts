@@ -150,6 +150,14 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     const previousBuilt = state.built;
     const previousRows = state.rows;
     const previousBase = state.bffBase;
+    // The roster identity the LIVE registration was built from. Restored on
+    // every path where no new registration came into being — the build
+    // failure below included, which is where the Token Plan publisher had the
+    // same gap (PITFALLS §42).
+    const restoreIdentity = () => {
+      state.rows = previousRows;
+      state.bffBase = previousBase;
+    };
     state.rows = Array.isArray(rows) ? rows : [];
     state.bffBase = str(bffBase, "");
 
@@ -189,13 +197,19 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
       // ERR_MODULE_NOT_FOUND remedy live in `publish-core.ts`, so a fix to
       // that diagnosis reaches both upstreams at once.
       const described = describeBuildFailure(error);
+      // Nothing was registered, so the previous pair is still serving and the
+      // identity must go back to describing it — the `bffBase` included, which
+      // is per-account: leaving the new base in place would have the panel
+      // quote a roster pinned to a base the running adapter never used.
+      restoreIdentity();
       state.error = described.note;
       warnBuildFailure(effectiveLogger, "AgnesCode", described);
       return { ok: false, error: described.error };
     }
 
     // The swap (and the rollback behind it) is the shared mechanism; what is
-    // restored on THIS side is the roster identity and its per-account base.
+    // restored on THIS side is the roster identity and its per-account base,
+    // through the same `restoreIdentity` the build failure path uses.
     return swapRegistration({
       llm,
       built,
@@ -204,10 +218,7 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
       release,
       registerPair,
       emit: effectiveEmit,
-      onRollback: () => {
-        state.rows = previousRows;
-        state.bffBase = previousBase;
-      }
+      onRollback: restoreIdentity
     });
   };
 

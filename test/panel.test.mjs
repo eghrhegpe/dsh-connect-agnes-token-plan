@@ -10,7 +10,7 @@
  * becoming a lockout was, as a consequence, entirely uncovered.
  */
 import { readFile, readdir } from "node:fs/promises";
-import { decidePanelView, agnescodeView, dictionaries, interpretSnapshot, tables, RENDER } from "./panel-decision.js";
+import { decidePanelView, agnescodeView, dictionaries, interpretSnapshot, tables, RENDER, viewOf as clientSurfaceViewOf } from "./panel-decision.js";
 import { AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS, NO_LOGIN_CODES } from "../src/host/codes.ts";
 
 const results = [];
@@ -517,6 +517,53 @@ const healthy = {
   check("an answered 'not logged in' is unlinked without being an error",
     signedOut.showError === false && signedOut.credentialCard === true && signedOut.linked === false,
     JSON.stringify(signedOut));
+}
+
+// === Z. the decision is the CLIENT'S, and its roster is checked ============
+// `decidePanelView` used to re-declare `(auth) => auth !== null` behind a
+// comment claiming it imported the single source. ADR-006 records the residue;
+// nobody noticed because no check could see it — the duplicate was textually
+// identical to the original, so the whole panel suite said nothing.
+//
+// These two are the guard PITFALLS §39 asks for: the guard must be able to fail
+// on the real module, not on a copy. `shouldShowAccountManagement` is imported
+// from the same pure module `panel-page.ts` imports, and `viewOf`'s roster is
+// asserted member-for-member so the `PanelView` typedef in `client-surface.js`
+// (which had drifted to five members that no longer exist) cannot rot quietly
+// again.
+{
+  const clientAuth = await import("../src/client/snapshot.ts");
+  const canManage = clientAuth.shouldShowAccountManagement;
+
+  check("the single-source decision is the client's own export",
+    typeof canManage === "function" && canManage.length === 1,
+    `type=${typeof canManage} arity=${canManage?.length}`);
+
+  // Same answers as the decision layer, for the two cases that matter: an
+  // absent auth block (nobody signed in) and a present one.
+  for (const [label, auth] of [["null", null], ["an auth block", { configured: true }]]) {
+    const viaClient = canManage(auth);
+    const viaPanel = decidePanelView({ ok: true, auth: auth ?? undefined, quota: { consoleConnected: true } }, null).canManageAccount;
+    check(`canManageAccount agrees with the client for ${label}`,
+      viaClient === viaPanel, `client=${viaClient} panel=${viaPanel}`);
+  }
+  // And the direction that once had to be asserted by proxy: no auth → no
+  // account management. If the client ever inverts this, the panel follows it
+  // automatically — which is the whole point of importing rather than copying.
+  check("the client's rule still refuses management without an auth block",
+    canManage(null) === false && canManage({ configured: true }) === true);
+
+  // The typedef's roster, asserted against the real return value.
+  const roster = Object.keys(viewOfKeysProbe()).sort();
+  const EXPECTED_VIEWOF = ["auth", "failure", "guidance", "guidanceKey", "needsSetup", "shapeWarnings"];
+  check("viewOf's roster matches the documented PanelView",
+    JSON.stringify(roster) === JSON.stringify(EXPECTED_VIEWOF),
+    `actual=${roster.join(",")} documented=${EXPECTED_VIEWOF.join(",")}`);
+}
+
+/** The client's own `viewOf`, called on a healthy body, for the roster check. */
+function viewOfKeysProbe() {
+  return clientSurfaceViewOf({ ok: true, auth: { configured: true }, quota: { consoleConnected: true } }, null, (k) => k);
 }
 
 console.log(JSON.stringify(results, null, 2));

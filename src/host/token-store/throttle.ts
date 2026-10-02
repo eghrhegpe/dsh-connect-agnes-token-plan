@@ -117,7 +117,13 @@ export async function writeThrottle(
   state.throttle = { code, parked, until, attempt };
   // This plugin's own file, not the credentials service: a throttle is not a
   // credential, and the only two record kinds that service admits are.
-  await throttleStore.write(state.throttle).catch(() => {
+  //
+  // `write` REPORTS rather than rejects (a read-only Home must not break the
+  // panel), so the check is on the returned flag. It used to be a `.catch()` on
+  // a promise that could never reject — the warning was unreachable code, and
+  // losing cross-process lock protection was silent (PITFALLS §42).
+  const persisted = await throttleStore.write(state.throttle).catch(() => false);
+  if (persisted === false) {
     // A store that cannot be written must not break the panel: this process
     // still honours the wait in memory. Log a redacted warning for observability:
     // cross-process "防撞锁" protection may have failed; next Host will retry
@@ -126,7 +132,7 @@ export async function writeThrottle(
       const msg = `throttle write failed: ${JSON.stringify(state.throttle, null, 2)}`;
       console.warn(`[dsh-connect-agnes-token-plan] ${msg}`); // 简单输出，避免引入 logger；message 不含凭据形状
     } catch {}
-  });
+  }
   return state.throttle;
 }
 
@@ -140,9 +146,19 @@ export async function clearThrottle(
 ) {
   const { throttleStore, backend, THROTTLE_KEY } = wiring;
   state.throttle = null;
-  await throttleStore.clear().catch(() => {
-    // Nothing to do: the in-memory clear above already took effect.
-  });
+  // Reported, not rejected — and the report is not optional. A throttle file
+  // that survives "I signed in again" parks the NEXT Host start on a lock the
+  // user believes they cleared, which reads as the plugin ignoring them. The
+  // in-memory clear above already took effect, so this is a log line and
+  // nothing more (PITFALLS §42).
+  const cleared = await throttleStore.clear().catch(() => false);
+  if (cleared === false) {
+    try {
+      console.warn(
+        "[dsh-connect-agnes-token-plan] throttle clear failed: the file may survive and re-park the next sign-in"
+      );
+    } catch {}
+  }
   // A record left at the credentials-service address by an earlier version of
   // THIS plugin is swept here. The equivalent sweep of the SenseNova plugin's
   // own legacy address is deliberately NOT performed: that record belongs to a

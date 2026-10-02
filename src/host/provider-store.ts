@@ -26,24 +26,11 @@
  * @module dsh-connect-agnes-token-plan/provider-store
  */
 import { createSwitchStore, createSwitchParser, normalizeSwitchEnabled } from "./switch-store.ts";
-import { name } from "./host-config.ts";
-import { profileStateDir } from "./state-store.ts";
 import type { StoreOptions } from "./types.ts";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const PROVIDER_VERSION = 1;
 
-/**
- * The directory this plugin's state lives in — per-profile when the Host names
- * one, shared otherwise (PITFALLS §23). Unlike the THROTTLE, which is
- * deliberately shared across profiles, this answers "does THIS profile want the
- * provider registered" and must not be overwritten by the other profile's Host.
- * @param {string|null} [profile] - the profile name; `null` means shared.
- * @returns {string} the directory.
- */
-export function providerDir(profile: string | null) {
-  return profileStateDir(name, profile);
-}
 
 /**
  * Normalize an on/off switch: only booleans are real answers.

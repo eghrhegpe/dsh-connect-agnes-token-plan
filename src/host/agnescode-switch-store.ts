@@ -15,21 +15,11 @@
  * @module dsh-connect-agnes-token-plan/agnescode-switch-store
  */
 import { createSwitchStore, createSwitchParser, normalizeSwitchEnabled } from "./switch-store.ts";
-import { name } from "./host-config.ts";
-import { profileStateDir } from "./state-store.ts";
 import type { StoreOptions } from "./types.ts";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const AGNESCODE_SWITCH_VERSION = 1;
 
-/**
- * The directory this switch lives in — per-profile when the Host names one.
- * @param {string|null} [profile] - the profile name; `null` means shared.
- * @returns {string} the directory.
- */
-export function agnescodeSwitchDir(profile: string | null) {
-  return profileStateDir(name, profile);
-}
 
 /**
  * Normalize an on/off switch: only booleans are real answers.

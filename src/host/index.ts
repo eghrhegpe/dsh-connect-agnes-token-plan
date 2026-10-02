@@ -40,6 +40,7 @@ import { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
 import { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
 import { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 import { createProviderPublisher } from "./provider-publish.ts";
+import { emitAdaptersUpdated } from "./publish-core.ts";
 import { registerRoutes } from "./routes.ts";
 import { startSideEffects, teardown } from "./lifecycle.ts";
 import { CODE } from "./codes.ts";
@@ -190,14 +191,16 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     loadAdapterModule,
     getLlm: (service: string) => getService(service),
     resolveApiKey,
-    emit: (event) => {
-      try {
-        ctx.emit?.(event);
-      } catch {
-        // A Host that refuses the event still has the registration; readers
-        // refresh on their own cadence.
-      }
-    },
+    // The shared, tested emitter — not a third hand-written copy. It was two
+    // (PITFALLS §42), each with the same try/catch and the same comment, while
+    // `publish-core.ts` had already exported this function and
+    // `publish-core.test.mjs` already pinned it. A guard that exists, is
+    // tested, and is bypassed at its own call sites is worse than one that
+    // does not: it reads as coverage the wiring does not have.
+    // The event name is `ADAPTERS_UPDATED_EVENT`, fixed inside the shared
+    // function — the dep contract stays `(event) => void` so a caller cannot
+    // drift onto a different event than the one the registration announces.
+    emit: () => emitAdaptersUpdated((name) => ctx.emit?.(name)),
     logger: ctx.logger
   });
   const providerState = publisher.state;
@@ -229,14 +232,16 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     enabledIds: () => agnescodeModels.listEnabledIds().catch(() => []),
     getLlm: (service) => getService(service),
     loadAdapterModule: deps.loadAgnescodeAdapterModule,
-    emit: (event) => {
-      try {
-        ctx.emit?.(event);
-      } catch {
-        // A Host that refuses the event still has the registration; readers
-        // refresh on their own cadence.
-      }
-    },
+    // The shared, tested emitter — not a third hand-written copy. It was two
+    // (PITFALLS §42), each with the same try/catch and the same comment, while
+    // `publish-core.ts` had already exported this function and
+    // `publish-core.test.mjs` already pinned it. A guard that exists, is
+    // tested, and is bypassed at its own call sites is worse than one that
+    // does not: it reads as coverage the wiring does not have.
+    // The event name is `ADAPTERS_UPDATED_EVENT`, fixed inside the shared
+    // function — the dep contract stays `(event) => void` so a caller cannot
+    // drift onto a different event than the one the registration announces.
+    emit: () => emitAdaptersUpdated((name) => ctx.emit?.(name)),
     logger: ctx.logger
   });
   // Mount seed: if the switch survived a restart, re-register from the
