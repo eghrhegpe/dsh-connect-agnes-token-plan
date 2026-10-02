@@ -58,7 +58,7 @@ interface AgnescodeHarvestAttempt {
  * "reload the data behind the tab you are NOT looking at".
  */
 export interface TabStatus {
-  /** When this tab last read its own route successfully (epoch ms; 0 = never). */
+  /** Epoch ms of last successful read; 0 = never. */
   updatedAt: number;
   /** Reload THIS tab's data. */
   refresh: () => void;

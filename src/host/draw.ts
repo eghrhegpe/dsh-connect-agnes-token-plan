@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Agnes image-generation module ("draw absorption", ARCHITECTURE §5.4
  * route B) — the PEER-FREE half.
  *
@@ -51,7 +51,7 @@ export const DRAW_DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
  * The platform currently accepts only `n: 1` for image generation
- * (live-verified 2026-10-01: `n 必须为 1` — any larger value is a 400).
+ * .
  * `buildDrawBody` hard-codes 1, so this constant is retained only as the
  * documented ceiling for the tool's parameter description.
  */
@@ -141,7 +141,7 @@ export function buildDrawBody(options: Partial<DrawRequest> = {}) {
   const body: Record<string, unknown> = {
     model: str(model, ""),
     prompt: str(prompt, ""),
-    // The platform hard-requires n=1 (live-verified 2026-10-01: `n 必须为 1`);
+    // The platform hard-requires n=1 ;
     // a larger value is a 400, so only 1 is ever forwarded.
     n: 1,
     response_format: str(responseFormat, "url") || "url"
@@ -405,3 +405,4 @@ export function defineDrawTool({
     }
   });
 }
+

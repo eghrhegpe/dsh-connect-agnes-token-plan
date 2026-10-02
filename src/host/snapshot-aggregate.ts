@@ -305,10 +305,7 @@ export async function buildSnapshotBody({
   // --- the quota block -----------------------------------------------------
   const catalogue = parsePlans(plans.value);
   const currentPlan = matchCurrentPlan(subscription.value, catalogue);
-  // The platform's own per-window consumption, keyed by window. It rides on the
-  // SAME subscription fetch the plan identity came from, so a window that shows
-  // a bar is quoting the console's figure verbatim — never a `limit - total`
-  // this plugin computed (the two cover different periods).
+  // Per-window consumption from the console's own subscription.usage report.
   const windowUsage = parseSubscriptionUsage(subscription.value);
   // The limit stays the PLAN's fact (`quotaWindows`); only the consumed side
   // is overlaid. A window the subscription did not report keeps no `used` at

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Console response parsing and shape-drift detection.
  *
  * The parsers stay forgiving so a poll never throws because a field moved;
@@ -92,10 +92,8 @@ export function checkShape(body: unknown, kind: string): { ok: boolean; missing:
  * Normalize `GET /api/usage/overview` into the panel's totals row.
  *
  * These are CUMULATIVE figures for whatever period the platform reports — the
- * parser does not claim which. They are therefore shown as their own facts and
- * are never subtracted from a plan limit: a rolling 5-hour window cannot be
- * derived from a running total, and inventing `limit - total` would print a
- * remaining figure that is simply wrong.
+ * parser does not claim which. Shown as their own facts alongside the
+ * per-window bars.
  * @param {unknown} body - the unwrapped `data` object.
  * @returns {{totalRequests: number, totalTokens: number, totalImages: number, totalVideoSeconds: number, activeDays: number}}
  */
@@ -540,3 +538,4 @@ const VISION_NAME_PATTERNS = Object.freeze([
   /qwen.*vl/i,
   /glm-4v/i
 ]);
+

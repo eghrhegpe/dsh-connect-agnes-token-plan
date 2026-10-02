@@ -2,44 +2,19 @@
  * Catalog entry -> pi-ai model descriptor mapping — the pure half of the
  * directly-registered Agnes LLM provider ("one-stop service", step three).
  *
- * This module deliberately imports NO runtime peer (`@earendil-works/pi-ai`,
- * `@deepseek-ai/dsh-llm-pi-ai`): it builds plain objects only, so the mapping
- * decisions are testable on a clean checkout the same way the qoder fork keeps
- * its own pi-ai model mapping peer-free. `llm-adapter.ts` is the peer-dependent half
- * that hands these descriptors to `createProvider`.
+ * Deliberately imports NO runtime peer so the mapping decisions are testable
+ * on a clean checkout. `llm-adapter.ts` is the peer-dependent half.
  *
- * Two decisions carried here are load-bearing rather than cosmetic:
- *
- * 1. `compat.supportsDeveloperRole: false`. pi-ai picks the system-prompt role
- *    as `reasoning && supportsDeveloperRole ? "developer" : "system"`, and when
- *    the flag is unset it AUTO-DETECTS, returning true for anything that does
- *    not look like a known non-standard provider. Agnes's direct endpoint
- *    does not speak the developer role, so an unset flag makes every request
- *    403 forever. Setting it false is the fix the qoder route proved necessary.
- * 2. `maxTokens` IS declared, pinned to the probed platform cap
- *    (`PROBED_MAX_TOKENS`, 65536 — the constant carries the probe evidence).
- *    The original decision here was "no value": a declared value becomes the
- *    output ceiling and pi-ai sends it as `max_tokens`, truncating long
- *    replies with `finish: max-tokens`. But "no value" never meant "no
- *    ceiling" — the harness registration (`dsh-llm-pi-ai` `resolveEntry`)
- *    requires a positive integer and fills undeclared models with its own
- *    `DEFAULT_MAX_TOKENS = 32768`, HALF the platform's ceiling, with the
- *    thinking phase sharing that same budget. Declaring the cap can only lift
- *    the truncation point, never lower it. The compat pin stays the field
- *    NAME (`max_tokens`) only.
- * 3. `reasoning: true` + a `thinkingLevelMap`. Agnes chat models think by
- *    default (verified 2026-09-29: default reasoning_effort high, thinking
- *    text returned as `reasoning` on flash-lite and `reasoning_content` on
- *    deepseek/glm/kimi — pi-ai reads both spellings). `reasoning: true` is
- *    what makes DSH offer the 思考强度 selector and what makes pi-ai surface
- *    the thinking. Note this is set UNCONDITIONALLY rather than read off a
- *    capability flag: the Agnes catalog carries no `supported_features` field
- *    at all (live-verified 2026-10-01), so there is nothing to read. The map
- *    pins picker levels to platform-valid wire values:
- *    `off: "none"` (the platform's off spelling — "off" itself 400s),
- *    `minimal: null` (unverified on this gateway), and the extended levels
- *    strictly per the live ladder (2026-10-01: `max` on every Agnes chat
- *    model, `xhigh` on agnes-3.0-flash only — see PROBED_EFFORT).
+ * Three load-bearing decisions:
+ * 1. `supportsDeveloperRole: false` — Agnes doesn't speak the developer role;
+ *    an unset flag would AUTO-DETECT true and return 403 on every request.
+ * 2. `maxTokens` pinned to `PROBED_MAX_TOKENS` (65536) — the harness fills
+ *    undeclared models with its own DEFAULT_MAX_TOKENS=32768, declaring the
+ *    cap lifts the truncation point instead of halving it.
+ * 3. `reasoning: true` + `thinkingLevelMap` unconditionally — Agnes chat
+ *    models always reason; the catalog carries no `supported_features` field,
+ *    so there is nothing to read. Extended levels follow the live ladder:
+ *    `max` on every chat model, `xhigh` on agnes-3.0-flash only (see PROBED_EFFORT).
  *
  * @module dsh-connect-agnes-token-plan/llm-models
  */
@@ -652,3 +627,4 @@ export function summarizeCatalog(entries: any[]) {
     visionIds
   };
 }
+

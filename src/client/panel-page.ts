@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The `main`-slot page: polling, the decision gate, and the whole panel
  * layout. Verbatim logic from the pre-split `client.js`.
  */
@@ -93,21 +93,10 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // editor stays closed — it holds a secret field, and it is a prerequisite
   // the three cards above point at rather than the thing being configured.
   const [openSections, setOpenSections] = useState({ quota: true, usage: true, account: false, provider: true, draw: true, video: true, llm: false });
-  // Three fixed perspectives: "quota" is the daily reading (plan, windows,
-  // account totals), "api" is the Token Plan wiring (key, provider push,
-  // draw, video), and "agnescode" is the desktop-app upstream (ROADMAP
-  // §6.3) — each an independent credential + switch sharing no pool
-  // semantics with the others.
-  //
-  // The tab bar renders from the FIRST FRAME, whatever the snapshot says. It
-  // used to appear only once a body had landed, which meant a console nobody
-  // had signed in to replaced the whole page with a form — including the two
-  // tabs that never read the console.
-  //
-  // The union is written out INLINE on purpose: `docs.test.mjs` check 9
-  // derives the tab set (and therefore what README must mention) from this
-  // exact annotation. Naming it `TabName` here would leave that check with no
-  // tab ids to read — and it would read that as a pass, not as a failure.
+  // Three fixed perspectives: "quota" (daily reading), "api" (Token Plan
+  // wiring), and "agnescode" (desktop-app upstream, ROADMAP §6.3).
+  // Inline union literal so `docs.test.mjs` check 9 can derive the tab set
+  // from the AST; naming it `TabName` would hide the strings.
   const [activeTab, setActiveTab] = useState<"quota" | "api" | "agnescode">("quota");
 
   // The freshness a tab that owns its OWN route publishes for the pinned bar
@@ -529,3 +518,4 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     )
   );
 }
+

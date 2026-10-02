@@ -1,34 +1,14 @@
-/**
+﻿/**
  * The single source of truth for "what can this catalog entry produce?".
  *
  * WHY THIS MODULE EXISTS — a design premise that did not survive contact with
  * the live gateway.
  *
- * ARCHITECTURE §5.4 decided model identification would be STRUCTURED rather
- * than name-regex, to fix `dsh-draw-router` missing `Agnes-u1.5-lite`. That
- * decision was taken against the SenseNova catalog, whose `/v1/models` entries
- * carry `output_modalities` / `input_modalities` / `context_length` /
- * `supported_features`. The Agnes gateway (new-api lineage — its `success` and
- * `supported_endpoint_types` fields are the tell) returns NONE of them
- * (live-verified 2026-10-01):
- *
- *   {"id":"agnes-image-2.5-flash","object":"model","created":1626777600,
- *    "owned_by":"custom","supported_endpoint_types":["openai"]}
- *
- * On Agnes the structured premise is therefore void, and BOTH readers of the
- * absent field silently went wrong in OPPOSITE directions — exactly the
- * disagreement §5.4 promised could never happen:
- *
- *   - `isImageGenModel` was strict ("missing = unknown = not an image model"),
- *     so the draw tool could never pick a model at all — it reported "catalog
- *     中没有出图模型" while the catalog was full of them;
- *   - `isChatModel` was permissive ("missing = chat"), so every image and video
- *     model landed in the chat picker, and each one 400s on first use
- *     ("模型 agnes-video-v2.0 是 video 模型，请使用 /v1/videos").
- *
- * Both predicates now resolve through {@link outputModalitiesOf}, so the two
- * lists cannot disagree by construction — the §5.4 intent, restored on a
- * catalog that has no field to be structured about.
+ * ARCHITECTURE §5.4 chose STRUCTURED over regex-based identification, but
+ * the Agnes gateway (new-api lineage) returns NONE of the fields SenseNova
+ * carries (`output_modalities` / `input_modalities` / `supported_features`).
+ * Both predicates (`isImageGenModel`, `isChatModel`) now resolve through
+ * {@link outputModalitiesOf} so the two lists cannot disagree.
  *
  * THREE RESOLUTION LEVELS, in precedence order:
  *
@@ -173,3 +153,4 @@ export function isChatModel(entry: Record<string, unknown>) {
   const { modalities } = outputModalitiesOf(entry);
   return !modalities.includes(IMAGE_MODALITY) && !modalities.includes(VIDEO_MODALITY);
 }
+
