@@ -1,6 +1,6 @@
 name: CI
 
-# Three tiers, on purpose.
+# Four tiers, on purpose.
 #
 #   offline      — the full offline suite list (see package.json's `test` script,
 #                  plus the build-gate tail: a real tsdown build of src/ into
@@ -34,6 +34,15 @@ name: CI
 #                  INFORMATION, not a regression (the fix belongs in the comment
 #                  layer, docs/AGNES-API.md §7), which is why it is best-effort
 #                  too and never gates the offline job.
+#   artifacts    — rebuilds src/ and proves the COMMITTED lib/ + client.js equal
+#                  a fresh rebuild (`git diff --exit-code` after the build; a
+#                  second build must change nothing — reproducible, content-hash
+#                  chunks). Since the artifacts are tracked in git (a
+#                  git/marketplace install clones them ready to load — pnpm's
+#                  packageShouldBeBuilt skips the build pipeline when the main
+#                  file is present), this is the fence that keeps a "src changed
+#                  but nobody rebuilt + committed" commit from shipping a stale
+#                  plugin to every git-install user.
 #
 # The e2e suite runs through the SAME test/e2e-gate.mjs locally (`npm test`) and
 # here, so both share one skip shape and one verdict. A suite that passes only in
@@ -110,8 +119,10 @@ jobs:
           node test/platform-assumptions.test.mjs
           # The build gate is not a *.test.mjs, so it stays outside the
           # three-way roster pin; it is listed here because CI is exactly
-          # where the build must be proven (artifacts are gitignored, so a
-          # fresh checkout has none until this build produces them).
+          # where the build must be proven. The artifacts are committed with
+          # the repo, so a fresh checkout already loads; this rebuild proves
+          # the current src/ still builds (the artifacts job below pins the
+          # committed artifacts to that rebuild).
           node test/build-gate.mjs
           # The type gate: i18n's `en: typeof zh`, the wire.ts mirror and the
           # strict tsconfig flags are compile-time fences, so they need a
@@ -124,6 +135,38 @@ jobs:
           # large copy fails the build. Same non-roster exemption as build-gate
           # / tsc-gate; SKIPs loudly when jscpd is absent.
           node test/dup-gate.mjs
+
+  artifacts:
+    name: Committed artifacts in sync with src/ (hard gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          # No lockfile by design (the peerDependencies cannot resolve from any
+          # registry), so the npm cache keys off package.json instead.
+          cache: npm
+          cache-dependency-path: package.json
+      # tsdown for the rebuild; --legacy-peer-deps because the peerDependencies
+      # are Host-runtime packages that no registry serves (same shape as the
+      # offline job's install).
+      - name: Install dev dependencies (tsdown, for the rebuild)
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+      # lib/ and the root client.js are TRACKED in git: a git/marketplace install
+      # clones them ready to load — pnpm's `packageShouldBeBuilt` sees the main
+      # file present and skips the whole build pipeline. So "src changed but
+      # nobody rebuilt + committed" would ship a stale plugin to every
+      # git-install user; this gate is the fence. A second build must change
+      # nothing — the artifacts are reproducible (deterministic content-hash
+      # chunks: same src in, byte-identical out).
+      - name: Freshness gate — committed artifacts equal a rebuild of src/
+        run: |
+          set -e
+          npm run build
+          git diff --exit-code -- lib client.js
+          npm run build
+          git diff --exit-code -- lib client.js
 
   e2e:
     name: End-to-end (hard gate)
@@ -141,10 +184,11 @@ jobs:
       - name: Provide the dsh CLI (if available)
         run: npm install -g @deepseek-ai/dsh || echo "dsh CLI not installable here; e2e will SKIP"
       # The Host loads the plugin's BUILT entry (`main: ./lib/index.js`, plus the
-      # client `client.js`), and both are gitignored — a fresh checkout has
-      # neither. Booting without this step makes the bundle fail to activate
-      # ("dsh: warning: 1 entry did not activate") and 50 of 61 checks cascade
-      # from there: that was this job's shape on 2026-10-01 (PITFALLS §32).
+      # client `client.js`). Both are committed with the repo, so a fresh
+      # checkout already loads — but e2e must exercise the CURRENT src/, not
+      # whatever the committed artifacts hold, so this build step stays. On
+      # 2026-10-01 a missing build here cascaded 50 of 61 checks from "dsh:
+      # warning: 1 entry did not activate" (PITFALLS §32).
       - name: Build the artifacts the Host loads
         run: |
           npm install --legacy-peer-deps --no-audit --no-fund

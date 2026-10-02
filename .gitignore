@@ -23,10 +23,17 @@ build/
 # 「未跟踪也未忽略、一次 git add -A 卷进历史」那条纪律描述的裸区形状。
 package-lock.json
 
-# 构建产物：源码在 src/，lib/ 与根 client.js 由 `npm run build` 从 src 重建，
-# 纯产物、可删可重建、绝不进版本库（workbuddy 同款约定）。
-/lib/
-/client.js
+# 构建产物：lib/ 与根 client.js 由 `npm run build`（tsdown）从 src/ 重建，**随库提交**
+# （不忽略；qoder 同款裁定，本仓 2026-10-03 起生效，推翻上面旧的「绝不进版本库」）。
+# 为什么版本化 lib：DSH 市场 / `dsh plugin add` 的 git 直装走 pnpm git-dep 管线，
+# pnpm 的 packageShouldBeBuilt 按「main（./lib/index.js）在克隆里是否存在」决定是否跑
+# 构建脚本——产物入库则克隆即可用：零构建、零 devDeps、零 allowBuilds 审批；
+# 一旦把 /lib/ 加回 ignore，main 缺失会翻回「需要构建」，装出的插件没有宿主入口，
+# 卡片直接失效。
+# ⚠️ 不要把 /lib/ 或 /client.js 加回本文件。
+# 纪律：产物只由构建生成、禁止手改——改 src/ 后必跑 `npm run build`，把 lib/ 与
+# client.js 和 src/ 同一 commit 提交；CI 新鲜度门禁（.github/workflows/ci.yml 的
+# artifacts job）以 `git diff --exit-code -- lib client.js` 拦「改了 src 没重建」。
 
 # 编辑器与系统
 .DS_Store

@@ -3,8 +3,10 @@
  * Gate for the build (docs/ARCHITECTURE.md / ROADMAP §6.2).
  *
  * `src/` holds ALL sources (host + client); `lib/` and the root `client.js`
- * are GENERATED artifacts — git-ignored, fully rebuildable from `src/` (the
- * workbuddy layout: source in `src/`, runtime in `lib/`). This gate owns the
+ * are GENERATED artifacts — TRACKED in git (committed so a git/marketplace
+ * install clones them ready to load: pnpm's `packageShouldBeBuilt` skips the
+ * build pipeline when the main file is present), fully rebuildable from `src/`.
+ * This gate owns the
  * properties the offline suites (which import the SOURCES directly) cannot see:
  *
  * 1. BUILD — `npm run build` (host bundle + client artifact) must succeed.
@@ -74,8 +76,10 @@ check("host bundle is non-empty", existsSync(HOST_BUNDLE) && readFileSync(HOST_B
   "");
 
 // 3. freshness: the working-tree artifact must equal a rebuild of the sources.
-//    `before` is null on a clean checkout (no artifact yet) — a fresh build is
-//    then trivially fresh. A STALE artifact is a real failure, as ROADMAP §6.2
+//    `before` is null only when the artifact is absent (deleted); on a clean
+//    checkout it is the COMMITTED artifact, so this same check doubles as the
+//    CI freshness gate: a `src/` commit without a rebuilt + committed artifact
+//    drifts here. A STALE artifact is a real failure, as ROADMAP §6.2
 //    documents ("过期即红"): it means `src/client/` changed without a rebuild,
 //    so the panel would have shipped yesterday's client. The gate has already
 //    rebuilt above, so the working tree is fresh again — the red just makes the
@@ -83,12 +87,13 @@ check("host bundle is non-empty", existsSync(HOST_BUNDLE) && readFileSync(HOST_B
 const after = normalized(ARTIFACT);
 const drifted = before !== null && before !== after;
 check("client.js is fresh (rebuild reproduces it byte-for-byte)", !drifted,
-  drifted ? "the artifact did not match a rebuild of src/client/ — it was rebuilt above; run `npm run build:client` and keep it in sync with src/ (the artifact is gitignored, not committed)" : "");
+  drifted ? "the artifact did not match a rebuild of src/client/ — it was rebuilt above; run `npm run build` and commit the rebuilt client.js / lib/ together with the src change (the artifact is tracked in git)" : "");
 if (drifted) {
   process.stderr.write(
     `\n[build-gate] WARNING: client.js did not match a rebuild of src/client/.\n` +
     `[build-gate]   A fresh build is already in the working tree. If you edited src/client,\n` +
-    `[build-gate]   keep the artifact in sync; it is gitignored, so nothing needs committing.\n\n`
+    `[build-gate]   commit the rebuilt artifact together with the src change — it is\n` +
+    `[build-gate]   tracked in git, not gitignored.\n\n`
   );
 }
 
