@@ -112,6 +112,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
 | 拍/改裁定、回溯边界与定位沿革（现行表述 vs 历史依据） | `docs/ADR.md`（决策账本；取代关系与举证链在此，现行规则见 `docs/ARCHITECTURE.md` §5）；**现行正文禁内联「修订（日期）」补丁**，`docs.test.mjs` 检查 `ARCHAEOLOGY` 把关 |
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
+| 接/改 LLM provider（descriptor、`maxTokens`、注册三件套、adapter 组装） | `docs/DSH-LLM-DEVELOP.md`（peer 分工 → 注册 → descriptor 契约 → 探针纪律 → 排查速查） |
 | 改测试前 | `docs/TESTING.md` |
 | 改任何代码前扫一眼 | `docs/PITFALLS.md`（41 条现象→根因→修法） |
 | 查某条事实「当初从哪来」 / 要落盘新参照件 | `docs/REFERENCES.md`（`upstream/` 容器清单：来源 / 版本 / 许可 / 承重在哪） |

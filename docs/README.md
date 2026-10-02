@@ -11,6 +11,7 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 与 `upstream/` 参照容器的关系、Host/Client 分流、数据流、生态定位与大统一路线（§5，同类插件核实见 §5.3、出图对接点源码对照见 §5.4）、与历史上游 Python 工具的差异 | 理解结构、接手、做架构决策、定吸收边界 |
 | [ROADMAP.md](./ROADMAP.md) | 战略执行路线图（2026-09-29 起）：P0 解耦与契约回归（§2，`index.js` 控制面拆模块 + 推理契约自动化回归）、429 全局自愈、§5「多 Key 池」纠偏、文档精炼、明确不做的边界 | 定吸收顺序 / 优先级、拍板侵入性、防范围漂移 |
 | [DSH-PLUGIN.md](./DSH-PLUGIN.md) | DSH 插件机制总览（bundle 结构、Loader 条目、cordis.patch.yml、安装重启、peer 依赖、与兄弟插件关系） | 理解「这是一个 DSH 插件」、对照 dsh-connect-qoder 范本 |
+| [DSH-LLM-DEVELOP.md](./DSH-LLM-DEVELOP.md) | **LLM / provider 接入开发指南**：三个 peer 分工、注册三件套、adapter 组装、descriptor 契约（含 maxTokens 兜底坑）、live-contract 探针纪律、排查速查 | 把某平台接成 DSH provider、排查模型路由故障、定钉值策略 |
 | [SETUP.md](./SETUP.md) | 安装、配置字段表、改动后必须重启 Host、首次使用、常见信号处置 | 装环境、改配置、排「跑的是旧代码」、查面板报错信号 |
 | [AUTH.md](./AUTH.md) | 一跳账号密码登录、无 refresh token（重登即续期）、密码明文过 TLS 与不落盘纪律、登录 trace、防锁号节流 | 改登录/重登、排查登录失败 |
 | [API.md](./API.md) | 本地路由（`snapshot`/`account`）、控制台端点、配置端点清单 | 对接路由、看返回结构、调端点 |
