@@ -93,6 +93,16 @@ function check(name, condition, detail = "") {
   check("a foreign catalog version reads as unset", parseCatalogPayload({ version: 99, fetchedAt: 1, entries: [] }) === null);
   check("a catalog with no fetchedAt and no entries reads as unset",
     parseCatalogPayload({ version: 1, entries: [] }) === null);
+  // The store's `fetchedAt` gate is a WHOLE-record verdict, not a per-field
+  // default: `catalog-store.parse` returns null the moment the stamp is unusable,
+  // so the next snapshot re-fetches. Before this re-export the doctor's copy
+  // only fell back to 0 and then asked "is the entry list empty?", which let it
+  // call a file the store had rejected ("there is no usable catalog here") a
+  // healthy one ("1 model") — a report that names a catalogue the panel will
+  // never use. One parser, one answer.
+  check("a catalog the store rejects (fetchedAt<=0) is rejected here too, even with entries",
+    parseCatalogPayload({ version: 1, fetchedAt: 0, entries: [{ id: "m1" }] }) === null,
+    JSON.stringify(parseCatalogPayload({ version: 1, fetchedAt: 0, entries: [{ id: "m1" }] })));
 }
 
 // --- 4. diagnose over an on-disk layout -------------------------------------
@@ -118,6 +128,15 @@ function check(name, condition, detail = "") {
   await writeFile(join(profileDir, "catalog.json"), JSON.stringify({
     version: 1, fetchedAt: 2000, entries: [{ id: "c" }], enabledModelIds: ["c"]
   }));
+  // The AgnesCode roster curation — the sixth state file. It was the one the
+  // survey did not read, so this file used to be invisible to the report even
+  // though the panel writes it and the picker obeys it.
+  await writeFile(join(sharedDir, "agnescode-models.json"), JSON.stringify({
+    version: 1, enabledModelIds: ["agnes-3.0-flash"]
+  }));
+  await writeFile(join(profileDir, "agnescode-models.json"), JSON.stringify({
+    version: 1, enabledModelIds: []
+  }));
 
   const report = await diagnose({ dshHome: home });
   check("diagnose sees the profile-scoped scope",
@@ -128,6 +147,14 @@ function check(name, condition, detail = "") {
     web.providerPanel === false && web.drawPanel === null && web.catalogEntries.length === 1,
     JSON.stringify({ provider: web.providerPanel, draw: web.drawPanel, entries: web.catalogEntries.length }));
   check("the profile scope reads its own allow-list", JSON.stringify(web.catalogEnabledIds) === JSON.stringify(["c"]));
+  // The AgnesCode curation is scoped like everything else. This profile's own
+  // file curates nothing, so it must NOT inherit the shared copy's one model —
+  // and "nothing curated" is the load-bearing default ("push everything"), not
+  // "nothing available". (The shared scope is not reported while profiles exist;
+  // the per-profile layout is what this assertion is about.)
+  check("the AgnesCode roster curation is read and stays per-profile",
+    JSON.stringify(web.agnescodeEnabledIds) === JSON.stringify([]),
+    JSON.stringify({ web: web.agnescodeEnabledIds, shared: report.shared && report.shared.agnescodeEnabledIds }));
   // The video file is scoped exactly like the others: this profile saved its
   // own switch and no model, so it must NOT inherit the shared scope's model.
   check("the profile scope reads its own video switch, not the shared one",
@@ -153,11 +180,20 @@ function check(name, condition, detail = "") {
   const sharedDir = join(stateRoot, PLUGIN_NAME);
   await mkdir(sharedDir, { recursive: true });
   await writeFile(join(sharedDir, "provider.json"), JSON.stringify({ version: 1, enabled: true }));
+  await writeFile(join(sharedDir, "agnescode-models.json"), JSON.stringify({
+    version: 1, enabledModelIds: ["agnes-3.0-flash", "agnes-3.0-flash", 7]
+  }));
 
   const report = await diagnose({ dshHome: home });
   check("a machine with only the shared layout reports it as `shared`",
     report.shared !== null && report.shared.providerPanel === true && report.profiled === false,
     JSON.stringify({ profiled: report.profiled, provider: report.shared?.providerPanel }));
+  // The shared scope reads the shared roster file, with the same normalization
+  // (dedupe / junk dropped) the store applies — the report must not answer a
+  // different question about the same bytes.
+  check("the shared scope reads and normalizes the AgnesCode roster curation",
+    JSON.stringify(report.shared?.agnescodeEnabledIds) === JSON.stringify(["agnes-3.0-flash"]),
+    JSON.stringify(report.shared?.agnescodeEnabledIds));
   await rm(home, { recursive: true, force: true });
 }
 
@@ -171,6 +207,10 @@ function check(name, condition, detail = "") {
   // A second file that parses as JSON but is not THIS plugin's payload (a
   // foreign version): also named, also read as unset.
   await writeFile(join(dir, "video.json"), JSON.stringify({ version: 99, enabled: true }));
+  // And the file that used to be skipped entirely: a foreign version here
+  // must be NAMED, not merely unread — the point of the list is that no state
+  // file this plugin owns can fail silently now that the survey reads all six.
+  await writeFile(join(dir, "agnescode-models.json"), JSON.stringify({ version: 99, enabledModelIds: ["x"] }));
   const report = await diagnose({ dshHome: home });
   check("a corrupt provider.json is named in the scope's unreadable list",
     report.shared.unreadable.includes("provider.json"),
@@ -180,8 +220,13 @@ function check(name, condition, detail = "") {
     JSON.stringify({ unreadable: report.shared.unreadable, panel: report.shared.videoPanel }));
   check("the unreadable file still reads the switch as null (fall back to config)",
     report.shared.providerPanel === null);
+  check("a foreign-version agnescode-models.json is named like the others",
+    report.shared.unreadable.includes("agnescode-models.json"),
+    JSON.stringify(report.shared.unreadable));
   const lines = renderReport(report);
   check("the human report names the unreadable file", lines.includes("provider.json"), lines);
+  check("the human report quotes the AgnesCode roster curation",
+    /agnescode-models=\(no filter\)/.test(lines), lines);
   check("the human report carries the video switch beside the draw one",
     /video=unset/.test(lines), lines);
   await rm(home, { recursive: true, force: true });

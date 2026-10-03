@@ -113,7 +113,6 @@ export function agnescodeView(
  */
 export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: TabStatus) => void }): unknown {
   const [state, setState] = useState<AgnescodeState | null>(null);
-  const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // When this tab last read its route successfully. The bar quotes it instead
   // of the snapshot's stamp: two different routes, two different cadences.
@@ -124,25 +123,42 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   const [harvestBusy, setHarvestBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const alive = useRef(true);
+  // The same two guards `panel-page` uses, for the same reason — an `alive`
+  // flag alone cannot tell a LIVE read from a SUPERSEDED one. This tab is
+  // remounted every time the user opens it, and the effect sets `alive` back to
+  // `true`, so a request issued before the close can return after the reopen
+  // and be treated as current: the panel then shows an account state from a
+  // read taken before the tab was even opened. The generation counter is
+  // bumped when a load STARTS, so only the newest read may write state; the
+  // abort cancels the superseded one instead of leaving it on the wire.
+  const generation = useRef(0);
+  const inFlight = useRef<{ abort?: () => void } | null>(null);
 
   const load = useCallback(async () => {
+    generation.current += 1;
+    const mine = generation.current;
+    const isCurrent = () => generation.current === mine && alive.current;
+    inFlight.current?.abort?.();
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    inFlight.current = controller;
     try {
-      const response = await fetch(AGNESCODE_PATH, { headers: { accept: "application/json" }, cache: "no-store" });
+      const response = await fetch(AGNESCODE_PATH, {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+        signal: controller ? controller.signal : null
+      });
       // A route that ANSWERS with a failure is not "no local login state".
       // Returning here silently left `state === null` AND `error === null`, and
       // the credential card then rendered「未关联——请先在桌面端登录」— an
       // accusation this tab has no evidence for. A broken Host route looked
       // exactly like a signed-out desktop App. Name the status instead.
+      if (!isCurrent()) return;
       if (!response.ok) {
-        if (alive.current) {
-          setError(`HTTP ${response.status}`);
-          setLoading(false);
-        }
+        setError(`HTTP ${response.status}`);
         return;
       }
-      if (!alive.current) return;
       const body = (await response.json().catch(() => null)) as AgnescodeState | null;
-      if (!alive.current) return;
+      if (!isCurrent()) return;
       if (body === null || body.ok === false) {
         setError(typeof body?.error === "string" && body.error !== "" ? body.error : "no answer");
         return;
@@ -151,9 +167,11 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       setError(null);
       setUpdatedAt(Date.now());
     } catch {
-      if (alive.current) setError("unable to reach the Host");
-    } finally {
-      if (alive.current) setLoading(false);
+      // An aborted read is this loop superseding itself, not a failure to
+      // report: without this the tab would paint "unable to reach the Host"
+      // every time the user refreshes.
+      if (!isCurrent()) return;
+      setError("unable to reach the Host");
     }
   }, []);
 
@@ -167,6 +185,10 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     }, AGNESCODE_POLL_MS);
     return () => {
       alive.current = false;
+      // Bump once more so an in-flight read that resolves after the unmount
+      // cannot pass a later remount's generation check.
+      generation.current += 1;
+      inFlight.current?.abort?.();
       clearInterval(timer);
     };
   }, [load]);

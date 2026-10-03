@@ -25,19 +25,12 @@
  *
  * @module dsh-connect-agnes-token-plan/provider-store
  */
-import { createSwitchStore, createSwitchParser, normalizeSwitchEnabled } from "./switch-store.ts";
+import { createSwitchStore, createSwitchParser } from "./switch-store.ts";
 import type { StoreOptions } from "./types.ts";
 
 /** Shape version, bumped when the persisted form changes incompatibly. */
 export const PROVIDER_VERSION = 1;
 
-
-/**
- * Normalize an on/off switch: only booleans are real answers.
- * @param {unknown} raw - the persisted or posted value.
- * @returns {boolean|null} `true`/`false`, or `null` when nothing usable.
- */
-export const normalizeEnabled = normalizeSwitchEnabled;
 
 /**
  * The parser `doctor.ts` reuses, so its read-only survey can never disagree

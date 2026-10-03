@@ -85,10 +85,18 @@ export function normalizeEntries(raw: unknown) {
  * Parse a persisted catalog, or `null` when it is absent, stale, or foreign.
  *
  * The safe direction for a cache is "absent": the next snapshot re-fetches.
+ *
+ * **Exported so there is exactly one reader of this file's meaning.** The
+ * doctor survey used to keep a second copy (PITFALLS §34's "extract the
+ * primitive is not extracting it to this layer": the four switch stores were
+ * re-exported, this one was missed because `parse` was private). The two
+ * copies disagreed — this gate is a whole-record verdict, while the doctor's
+ * fell back to `fetchedAt:0` and asked only whether the entry list was empty,
+ * so a record this function rejects could be reported as a healthy catalogue.
  * @param {unknown} raw - the parsed file contents.
  * @returns {{version: number, fetchedAt: number, entries: object[], enabledModelIds: string[]}|null}
  */
-function parse(raw: Record<string, unknown> | null) {
+export function parse(raw: Record<string, unknown> | null) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const body = /** @type {{ version?: unknown, fetchedAt?: unknown, entries?: unknown, enabledModelIds?: unknown }} */ (raw);
   if (num(body.version, 0) !== CATALOG_VERSION) return null;

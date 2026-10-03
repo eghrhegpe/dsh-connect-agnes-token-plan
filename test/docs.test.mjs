@@ -102,8 +102,16 @@ const OFFICIAL_DOCS_DIR = "AGNES-API-docs";
  *   当场判红，而它审的是一份**不进版本库的草稿**。纪律上 `tmp/` 本就是
  *   「探针产物可以落」的地方（见 PITFALLS §10），在这里统一排除，与那条纪律对齐。
  *   判据：**凡是 gitignored 的目录，都不该进任何「活文档一致性」检查的扫描面。**
+ * - **`.zcode/`**：同一条判据的第二个实例，而且是**实测漏网**的——它是本机
+ *   代理会话自动写的计划区，`.gitignore:13` 明写「绝不进版本库」，却有一个
+ *   文件被一次 `git add -A` 卷进了历史（与 `.gitignore:47-48` 记载的
+ *   `probe-asar/` 是同一类事故）。它此前不在本清单里，于是这份本机草稿进了
+ *   断链/表格/考古/计数的扫描面：现在全绿只因它碰巧没有链接、没有表格、没有
+ *   写死数字，而那是运气不是护栏——代理下次重写这份计划就能让全量门禁判红。
+ *   更要紧的是它记的是**已废弃的技术栈**（SenseNova 时代的 `section.pools`
+ *   与「连接商汤控制台」，代码早已按 §1/§2/§5 删除），躺在仓库里会被读成现行方案。
  */
-const SKIP_DIRS = new Set(["upstream", ".git", "node_modules", OFFICIAL_DOCS_DIR, "tmp"]);
+const SKIP_DIRS = new Set(["upstream", ".git", "node_modules", OFFICIAL_DOCS_DIR, "tmp", ".zcode"]);
 
 function collectMd(dir) {
   const out = [];
@@ -145,6 +153,7 @@ const CHECK_IDS = new Map([
   ["PEER_BOUNDARY", "内核零静态 `@deepseek-ai/*` import"],
   ["RULE_LAYER_BOUNDARY", "client 规则层 Node 可直 import，规则不得从产物抠取（ADR-006）"],
   ["COUNT_GUARD", "活文档计数护栏：不得写死会漂移的规模"],
+  ["PUBLISHED_VERSION", "发布版本陈述不得低于 package.json（CONTRIBUTING.md）"],
   ["REF_RESOLVABLE", "检查引用可解析（本条自己）"]
 ]);
 
@@ -919,6 +928,41 @@ const CHECK_IDS = new Map([
   }
   if (hits === 0) note(`活文档计数护栏：受检 ${scanned} 篇现行文档 + ${codeFiles.length} 个代码文件零写死模块数/规模/行数/路由条数/套件规模（历史·账本·研究档 ${COUNT_EXEMPT.size} 篇豁免；ARCHITECTURE/ROADMAP 的 N 行 子检查豁免）`);
   guard("COUNT_GUARD", scanned + codeFiles.length, 30);
+}
+
+// === PUBLISHED_VERSION) 发布版本陈述不得低于 package.json ====================
+// CONTRIBUTING.md 记着「registry 上最新为 0.4.3」，而 registry 早已是 0.8.1——
+// 漂了四个版本，16 条检查一条都不报。它正好落在两条门禁的缝里：`SNAPSHOT` 只读
+// docs/DSH-PLUGIN.md 的教学快照，`COUNT_GUARD` 只管「N 行/N 条」这类规模数字、
+// 不管版本号。同源病（PITFALLS §39「点名守护物而不校验守护物」）：文档点名了一个
+// 每次发版都会变的量，却没有任何东西校验它。
+//
+// 这里刻意**只做单向判定**：文档声称的版本不得**低于** package.json。理由有两条——
+//   - 高于是合法的：0.4.1/0.4.2 打了 tag 未发布、0.8.1 已在 registry 而源码正在
+//     往 0.9.0 走，两个方向都有真实的合法情形，双向比对会产生误报；
+//   - **npm 上的真实版本必须联网查**，离线门禁不能依赖 registry（CI 也未必有网）。
+//     本检查因此不是「registry 的镜像」，它只兜住「文档忘了更新」这一种真实漂移，
+//     权威仍然是 registry 本身——CONTRIBUTING.md 已改成让人自己 `npm view` 去查。
+{
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const doc = readFileSync(join(ROOT, "docs", "CONTRIBUTING.md"), "utf8");
+  const claimed = [...doc.matchAll(/registry 上最新为\s*\*\*(\d+)\.(\d+)\.(\d+)\*\*/g)];
+  if (claimed.length === 0) {
+    bad("docs/CONTRIBUTING.md 找不到「registry 上最新为 X.Y.Z」陈述——本检查靠它兜底，该陈述消失时必须同步处理本检查");
+  } else {
+    const [maj, min, pat] = String(pkg.version).split(".").map(Number);
+    let stale = 0;
+    for (const m of claimed) {
+      const [cmaj, cmin, cpat] = [Number(m[1]), Number(m[2]), Number(m[3])];
+      const behind = cmaj < maj || (cmaj === maj && cmin < min) || (cmaj === maj && cmin === min && cpat < pat);
+      if (behind) {
+        stale += 1;
+        bad(`docs/CONTRIBUTING.md 称 registry 最新为 ${cmaj}.${cmin}.${cpat}，低于 package.json 的 ${pkg.version}——发版后忘了同步。以 \`npm view dsh-connect-agnes-token-plan version --registry=https://registry.npmjs.org\` 为权威`);
+      }
+    }
+    if (stale === 0) note(`发布版本陈述 ${claimed.map((m) => `${m[1]}.${m[2]}.${m[3]}`).join("、")} 不低于 package.json ${pkg.version}（registry 真相仍以 npm view 为准）`);
+  }
+  guard("PUBLISHED_VERSION", claimed.length, 1);
 }
 
 // === REF_RESOLVABLE) 文档对「检查 <名>」的引用必须可解析 ====================

@@ -2717,28 +2717,33 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	*/
 	function AgnescodeTab({ tt, onStatus }) {
 		const [state, setState] = useState(null);
-		const [, setLoading] = useState(true);
 		const [error, setError] = useState(null);
 		const [updatedAt, setUpdatedAt] = useState(0);
 		const [harvestBusy, setHarvestBusy] = useState(false);
 		const [note, setNote] = useState(null);
 		const alive = useRef(true);
+		const generation = useRef(0);
+		const inFlight = useRef(null);
 		const load = useCallback(async () => {
+			generation.current += 1;
+			const mine = generation.current;
+			const isCurrent = () => generation.current === mine && alive.current;
+			inFlight.current?.abort?.();
+			const controller = typeof AbortController === "function" ? new AbortController() : null;
+			inFlight.current = controller;
 			try {
 				const response = await fetch(AGNESCODE_PATH, {
 					headers: { accept: "application/json" },
-					cache: "no-store"
+					cache: "no-store",
+					signal: controller ? controller.signal : null
 				});
+				if (!isCurrent()) return;
 				if (!response.ok) {
-					if (alive.current) {
-						setError(`HTTP ${response.status}`);
-						setLoading(false);
-					}
+					setError(`HTTP ${response.status}`);
 					return;
 				}
-				if (!alive.current) return;
 				const body = await response.json().catch(() => null);
-				if (!alive.current) return;
+				if (!isCurrent()) return;
 				if (body === null || body.ok === false) {
 					setError(typeof body?.error === "string" && body.error !== "" ? body.error : "no answer");
 					return;
@@ -2747,9 +2752,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				setError(null);
 				setUpdatedAt(Date.now());
 			} catch {
-				if (alive.current) setError("unable to reach the Host");
-			} finally {
-				if (alive.current) setLoading(false);
+				if (!isCurrent()) return;
+				setError("unable to reach the Host");
 			}
 		}, []);
 		useEffect(() => {
@@ -2760,6 +2764,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}, AGNESCODE_POLL_MS);
 			return () => {
 				alive.current = false;
+				generation.current += 1;
+				inFlight.current?.abort?.();
 				clearInterval(timer);
 			};
 		}, [load]);

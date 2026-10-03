@@ -14,7 +14,6 @@ import { readdir, stat, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { name } from "./host-config.ts";
 import { isProfileSegment, dshHome as defaultDshHome } from "./state-store.ts";
-import { CATALOG_VERSION, normalizeEntries, normalizeEnabledIds } from "./catalog-store.ts";
 import { parseAgnescodePayload } from "./agnescode-switch-store.ts";
 
 /**
@@ -26,12 +25,19 @@ import { parseAgnescodePayload } from "./agnescode-switch-store.ts";
  * (see `switch-store.ts`). The doctor reads through the store's own parser, so
  * "the file is not ours" and "the file is ours but empty" mean the same thing
  * to the survey and to the store.
+ *
+ * The catalog parser belongs to that set for the same reason and was added last:
+ * it had its own copy until the store exported `parse`, and the copies had
+ * already drifted into disagreeing about a record with an unusable
+ * `fetchedAt` (see the note on `parse` in `catalog-store.ts`).
  */
 import { parseProviderPayload } from "./provider-store.ts";
 import { parseDrawPayload } from "./draw-store.ts";
 import { parseVideoPayload } from "./video-store.ts";
+import { parse as parseCatalogPayload } from "./catalog-store.ts";
+import { parseAgnescodeModelsPayload } from "./agnescode-models-store.ts";
 
-export { parseProviderPayload, parseDrawPayload, parseVideoPayload };
+export { parseProviderPayload, parseDrawPayload, parseVideoPayload, parseCatalogPayload };
 import { surveyAgnescodeStorage } from "./agnescode.ts";
 import { ADMISSION_AUDIT_FILE, parseAdmissionAudit } from "./admission-audit.ts";
 
@@ -57,6 +63,16 @@ export interface DoctorScope {
   catalogEnabledIds: string[];
   /** When the catalog was fetched (ms), or 0 when unknown. */
   catalogFetchedAt: number;
+  /**
+   * The AgnesCode roster curation, `[]` when nothing is curated.
+   *
+   * Read for the same reason as the allow-list above, and added for the same
+   * reason it was missing: the panel writes the file (`saveModels` is its only
+   * writer), so "the ticks I made do not reach the picker" is a question this
+   * report must be able to answer. It reported nothing for that file before —
+   * the gap was invisible rather than fixed.
+   */
+  agnescodeEnabledIds: string[];
   /** The state file could not be read as this plugin's payload. */
   unreadable: string[];
   /**
@@ -155,18 +171,6 @@ export async function probeStateWritable(stateDir: string) {
   return verdict;
 }
 
-/** Parse one stored catalog record, or `null` when absent / corrupt / foreign version. */
-export function parseCatalogPayload(raw: Record<string, unknown> | null) {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const source = /** @type {Record<string, unknown>} */ (raw);
-  if (typeof source.version !== "number" || source.version !== CATALOG_VERSION) return null;
-  const fetchedAt = typeof source.fetchedAt === "number" && source.fetchedAt > 0 ? source.fetchedAt : 0;
-  const entries = normalizeEntries(source.entries);
-  const enabledModelIds = normalizeEnabledIds(source.enabledModelIds);
-  if (fetchedAt <= 0 && entries.length === 0) return null;
-  return { fetchedAt, entries, enabledModelIds };
-}
-
 /**
  * Read one state directory into a scope, tolerant of a missing directory.
  * A directory that is absent or unreadable yields an all-empty scope; a file
@@ -188,6 +192,7 @@ async function readScope(stateDir: string, profile: string | null) {
     catalogEntries: [],
     catalogEnabledIds: [],
     catalogFetchedAt: 0,
+    agnescodeEnabledIds: [],
     writable: null,
     unreadable: []
   };
@@ -242,6 +247,15 @@ async function readScope(stateDir: string, profile: string | null) {
       scope.catalogEnabledIds = parsed.enabledModelIds;
       scope.catalogFetchedAt = parsed.fetchedAt;
     } else scope.unreadable.push("catalog.json");
+  }
+  // The AgnesCode roster curation, through its own store's parser like every
+  // other file above — the sixth state file, and the one this survey skipped
+  // until now.
+  const agnescodeModelsFile = join(stateDir, "agnescode-models.json");
+  if (await present(agnescodeModelsFile)) {
+    const parsed = parseAgnescodeModelsPayload(await readJson(agnescodeModelsFile));
+    if (parsed !== null) scope.agnescodeEnabledIds = parsed.enabledModelIds;
+    else scope.unreadable.push("agnescode-models.json");
   }
   // Asked LAST, and after every read above: a probe that creates the directory
   // would otherwise turn "no state here" into "state here" for this very report.
@@ -360,9 +374,17 @@ export function renderReport(report: any) {
     const video = scope.videoPanel === null ? "unset (deployment default rules)" : String(scope.videoPanel);
     const videoModelPart = scope.videoModelPanel !== null ? ` model=${scope.videoModelPanel}` : "";
     const enabledPart = scope.catalogEnabledIds.length === 0 ? "(no filter)" : String(scope.catalogEnabledIds.length);
+    // Same wording for the AgnesCode roster: an empty curation is "push
+    // everything", NOT "nothing selected" — reporting it as 0 would train the
+    // reader to expect a filter that is deliberately off by default.
+    // Read through `?.` / `?? []` so a scope literal assembled by a caller (or
+    // an older report shape) renders as "(no filter)" instead of throwing: a
+    // diagnostic must not be the thing that breaks.
+    const agnescodeModels = scope.agnescodeEnabledIds ?? [];
+    const agnescodeModelsPart = agnescodeModels.length === 0 ? "(no filter)" : String(agnescodeModels.length);
     const agnescode = scope.agnescodePanel === null ? "unset (off)" : String(scope.agnescodePanel);
     lines.push(
-      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} catalog=${scope.catalogEntries.length} enabled=${enabledPart}`
+      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} catalog=${scope.catalogEntries.length} enabled=${enabledPart} agnescode-models=${agnescodeModelsPart}`
     );
     if (scope.unreadable.length > 0) lines.push(`${label}: unreadable state: ${scope.unreadable.join(", ")}`);
     // Only the failure is worth a line. `true` is the ordinary case and `null`

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The Agnes image-generation module ("draw absorption", ARCHITECTURE §5.4
  * route B) — the PEER-FREE half.
  *
@@ -48,14 +48,6 @@ export const DRAW_COOLDOWN_MS = 30_000;
 
 /** Default deadline for one image request; image models are slow, chat deadlines do not apply. */
 export const DRAW_DEFAULT_TIMEOUT_MS = 120_000;
-
-/**
- * The platform currently accepts only `n: 1` for image generation
- * .
- * `buildDrawBody` hard-codes 1, so this constant is retained only as the
- * documented ceiling for the tool's parameter description.
- */
-export const DRAW_MAX_IMAGES = 1;
 
 /**
  * Build the `images/generations` endpoint from the OpenAI-compatible base.
@@ -325,6 +317,12 @@ export function defineDrawTool({
       ratio: { type: "string", description: "Aspect ratio: 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2 (default 1:1); forwarded as extra_body.ratio" },
       image: { type: "array", items: { type: "string" }, description: "Reference image URL(s) / Data URIs for img2img; forwarded as extra_body.image" },
       return_base64: { type: "boolean", description: "Request Base64 output instead of a URL (text2img only); forwarded as extra_body.return_base64" },
+      // The sentence states the platform's limit in words; `buildDrawBody`
+      // hard-codes `n: 1` rather than reading it from here. That used to be
+      // backed by an exported `DRAW_MAX_IMAGES` constant — which no longer had a
+      // reader, because this description had been hand-written all along
+      // (PITFALLS §38: an export kept for a consumer that does not exist). If
+      // the platform ever accepts more, change both lines together.
       n: { type: "number", description: "Image count; the platform currently requires exactly 1 (default 1)" }
     },
     output: {

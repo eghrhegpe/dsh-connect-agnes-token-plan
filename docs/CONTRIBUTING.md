@@ -121,20 +121,37 @@ description:
 - 仓库创建满 24 小时（CI 按 GitHub `created_at` 自动卡）；本仓 2026-09-28T05:03:11Z 建仓；
 - 真实可用代码、非占位——已满足；仓库需公开且处于活跃维护。
 
-已发布 npm 包 `dsh-connect-agnes-token-plan`（registry 上最新为 **0.4.3**，2026-09-30 发布；2026-09-28 首发 0.2.0；
+已发布 npm 包 `dsh-connect-agnes-token-plan`（registry 上最新为 **0.8.1**，2026-10-02 发布；2026-09-28 首发 0.2.0，
+其后 0.4.3（2026-09-30）、0.5.0 / 0.6.0（2026-10-01）、0.7.0 / 0.8.0 / 0.8.1（2026-10-02）均已发布；
 0.4.1 与 0.4.2 打了 git tag 但**未发布到 npm**，其内容随 **0.4.3** 一并发布。`repository` 指回本仓，列表会
 自动按下载量关联，yml 里无需任何 npm 字段）。注意本机默认 registry 是 npmmirror 镜像，登录与发布都
 必须显式带 `--registry=https://registry.npmjs.org`；发新版前先在 package.json 升版本号（已发布版本
 不可覆盖）。**完整发布清单见根目录 [RELEASING.md](../RELEASING.md)**——尤其第 6 步 GitHub Release
 没有任何自动化，漏掉时不会有任何东西报错。
 
+> **发布状态怎么自己核实**（别靠本文档记着的版本号——它会陈旧，且**曾经真的陈旧过**）：
+> ```bash
+> npm view dsh-connect-agnes-token-plan version --registry=https://registry.npmjs.org
+> npm view dsh-connect-agnes-token-plan time    --registry=https://registry.npmjs.org
+> ```
+> 上一版这里写着「registry 上最新为 0.4.3」，而 registry 早已是 0.8.1——漂了四个版本。
+> 教训不在于「该勤改」，而在于**这一格不该承载事实**：本文档记的是一个每次发版都会变的量，
+> 而 `docs.test.mjs` 的版本快照只钉 `docs/DSH-PLUGIN.md`，`COUNT_GUARD` 只管数字漂移不管版本号，
+> 于是这行谁也不审。**registry 是唯一权威**，本行只在与它不一致时提醒你去查。
+
 > **已发布 ⇒ tag 不可移**（2026-10-01 实测，别踩）：`v0.4.3` 已同时存在于 npm 与 GitHub Release，
 > 因此**不能**按 RELEASING §4 的告警去「删除并强制移动 tag」来补齐后来的提交——那会让 npm 上的
-> 0.4.3 与 tag 内容不符。`v0.4.3` 之后落地的改动（e2e 进程树修复、`.gitignore`、
-> 以及自述面文档追平）**只能随下一个版本（0.5.0）到达用户**。
+> 0.4.3 与 tag 内容不符。同理适用于其后每一个已发布的版本（0.5.0 起至 0.8.1）。
+> `v0.4.3` 之后落地的改动（e2e 进程树修复、`.gitignore`、以及自述面文档追平）
+> **已随 0.5.0 到达用户**。
 >
-> 实测证据：`npm view dsh-connect-agnes-token-plan readme --registry=https://registry.npmjs.org`
+> 实测证据（2026-10-01，当时 registry 上是 0.4.3）：
+> `npm view dsh-connect-agnes-token-plan readme --registry=https://registry.npmjs.org`
 > 抓下来的 README 仍含 3 处「侧边栏」、0 处「小浣熊」——**修好的 README 在发新版前对用户不存在**。
+>
+> **该结论已随 0.5.0 起的后续版本作废**（2026-10-03 实测 registry 上的 0.8.1）：
+> README 现在写的是 Plugins 页（「面板是页内的内联卡片，**不在侧边栏**」），「积分额度」与 AgnesCode
+> 都在。教训不变，只是**这条事实也会过期**——上面那段留作判例，现状请按上面那段 `npm view` 自己查。
 
 **市场收录状态（2026-10-01 实测）**：投稿 PR 已提且**仍处于 open、未合并**——
 [awesome-dsh-plugin#6139](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6139)

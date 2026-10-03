@@ -6,7 +6,9 @@
  *  （`out of ... budget`、`balance/credits exhausted`），凡是 429 体里
  *   带上一两个 "budget/credits/limit" 字眼，就被抢判成 `QUOTA`；于是
  *   `llm-retry.ts` 的 `retryableCodes()`（刻意排除 QUOTA）对这类 429 不重试，
- *   面板又把模型按 `exhaustedModelIds` 静默下线，对用户呈现"额度耗尽"。
+ *   用户侧还可能被呈现成"额度耗尽"。（当年商汤线的面板确实会按借尽模型集静默下线模型；
+ *   迁到 Agnes 后那条推导已随 per-model 配额一起删除，见 `test/retry.test.mjs` 的说明——
+ *   这里保留的是**误判本身**的根因，不是那条已不存在的下线路径。）
  *   而纯 `RATE_LIMIT` 分支（`/\b429\b|rate.?limit/`）是**死代码**——
  *   任何带 429 的体若能进 `isQuotaExceededError` 就被上一行吃了。
  *

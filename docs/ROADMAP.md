@@ -130,8 +130,17 @@ per-model 可用性标记即用户要的「清单自带识别」——但它是 
   `buildRetryPolicyConfig()`（显式 `mode:"normal"`、`retryableCodes` 排除 `QUOTA`/`ACCOUNT_QUOTA`、保留
   `RATE_LIMIT` 并略调 backoff 对共享池更温和），`llm-adapter.ts:127` 改为
   `resolveRetryPolicy(buildRetryPolicyConfig(), ...)`。peer 已默认对 `RATE_LIMIT` 退避、对 `QUOTA` 快速失败，本改动是把意图固定下来并防未来 peer 默认漂移。
-- **quota→provider 桥 — 已实现**：快照处理器用 `exhaustedModelIds(pools)`（`llm-models.ts`）算出借尽池覆盖的模型集，经 `publishProvider(entries, enabledIds, unavailableModelIds)` 透传给 `createSensenovaAdapter`，由 `buildDescriptors` 在 picker 侧排除（避免发出必 429 的请求）；另以 `quotaSignature`（`index.ts`）去抖，仅在额度跨越零点时触发一次重注册（memoize 约束下唯一生效路径）。
-- **per-model 可用性（「清单自带识别」）— 已实现**：`buildDescriptors`（`llm-models.ts`）按 `pool.remaining<=0` 在 picker 侧排除借尽模型；面板则通过 `rosterWithAvailability(entries, pools)` 列出全部 chat 模型并附 `available`/`quotaExhausted` 标记（始终可见、灰色显示原因）。不依赖 peer 钩子，随 `publishProvider` 重建即生效。
+- **quota→provider 桥 — 机制在，实现已撤**：机制仍全通（`publishProvider(entries, enabledIds, unavailableModelIds)`
+  透传给 adapter，由 `buildDescriptors` 在 picker 侧排除；`quotaSignature` 去抖，仅在额度跨越零点时触发一次
+  重注册，memoize 约束下唯一生效路径）。但**推导那一半已删除**：原 `exhaustedModelIds(pools)` 从 SenseNova 的池
+  载荷算借尽模型集，Agnes 不按模型分配配额（控制台只给账号级窗口与累计用量），该推导无对应事实，
+  `snapshot-aggregate.ts` 的 `unavailableModelIds` 因此**恒为空数组**（红线⑦：不得计算「剩余」）。
+  当前空集是**设计而非遗漏**——账号级额度不足由面板**明说**，不靠静默摘模型。留这条接线是因为第二个被吸收的
+  上游可能真有 per-model 信号。契约测试在 `test/retry.test.mjs`（该套件已按新形状改写）。
+- **per-model 可用性（「清单自带识别」）— 机制在，实现已撤**：picker 侧排除（`buildDescriptors` 收
+  `unavailableModelIds`）与面板侧标记（`rosterWithAvailability(entries, blockedIds)` 附
+  `available`/`quotaExhausted`）**两端都还在，且两端读同一份契约**，只是喂进去的集合恒为空——所以装出来的
+  效果就是「什么都不排除、全部 available」。不依赖 peer 钩子，随 `publishProvider` 重建即生效。
 
 ### 3.3 spike 结论（已查证）：memoize → 走 re-registration
 
@@ -154,7 +163,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 
 ### 3.4 测试（按域裁剪，禁全量）
 
-- `test/retry.test.mjs` 已落地（peer-free）：断言 `buildRetryPolicyConfig` 形状（排除 QUOTA/ACCOUNT_QUOTA、保留 RATE_LIMIT）、`exhaustedModelIds`、`buildDescriptors` 排除借尽模型、`rosterWithAvailability` 标记；peer 可达时额外断言 `resolveRetryPolicy` 解析结果。
+- `test/retry.test.mjs` 已落地（peer-free）：断言 `buildRetryPolicyConfig` 形状（排除 QUOTA/ACCOUNT_QUOTA、保留 RATE_LIMIT）、`buildDescriptors` 排除传入的 `unavailableModelIds`、`rosterWithAvailability` 的 `available`/`quotaExhausted` 标记与二者读同一份契约；peer 可达时额外断言 `resolveRetryPolicy` 解析结果。
 - 验证只跑 `parsers` / `provider` / `auth` 相关 + 新增 `retry`；**不跑全量**（`AGENTS.md` 并行纪律：禁连跑全量 vitest 卡死用户机）。
 
 ## 4. 官方文档保真（历史决策存档：文件已随迁移移除）
