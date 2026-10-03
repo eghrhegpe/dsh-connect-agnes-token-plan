@@ -2,6 +2,8 @@
 
 Agnes 接入的 DSH **Plugins 页**插件卡**全家桶**（三个 tab）：① **积分额度** tab——登录一次 Agnes 控制台，实时查看四类额度窗口与账号累计用量，令牌失效自动重登，之后无需再管；② **接入 API** tab——把 Agnes 模型注册为 DSH provider，参与对话与出图；③ **AgnesCode** tab（可选、默认关）——读取本机 AgnesCode 桌面端登录态接入桌面端上游。两条上游凭据相互独立。此外 429 自愈在后台生效：限频被误判为"额度耗尽"时在 Host 侧纠正回退避重试，模型不会无端消失。
 
+![积分额度 tab](assets/panel-credit.png)
+
 ## 功能
 
 Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四个维度各有上限，用超了只能等窗口滚过：
@@ -55,6 +57,8 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 
 ## 把 Agnes 模型接进 DSH（可选）
 
+![接入 API tab](assets/panel-API-provider.png)
+
 「接入 API」tab 的三张卡按"你为什么来这"排序，而不是按依赖排序：**语言模型**（注册 provider + 勾选推送哪些模型）、**出图工具**——两张都在最前且默认展开；**API Key** 收在最后（默认收起），它是前两张卡的前置条件，由它们指回来。
 
 在「API Key」卡里粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可）：Host 即以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新，还能在「语言模型」卡勾选具体要推送哪些模型。Key 只进 DSH 凭据（引用名 `AGNES_TOKEN_PLAN_API_KEY`）、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
@@ -70,6 +74,8 @@ Agnes 的 Token Plan **按窗口限流**，不是积分余额——账号级四�
 面板「视频工具」卡（在「出图工具」下方，默认展开）打开开关后，Host 给 agent 注册工具 `agnes_video_generate`（首选模型由 `videoModelId` 指定），鉴权同样走 `AGNES_TOKEN_PLAN_API_KEY`。与出图**不同**的是协议：图片一次请求同步返回，视频是**异步任务制**——建任务后轮询到完成。**V2.0 与 2.5 两个参数体系都覆盖**，工具按选中模型分派请求体：V2.0（`agnes-video-v2.0`）走 `width`/`height`/`num_frames`/`frame_rate`，2.5（`agnes-video-2.5` / `agnes-video-2.5-flash`）走 `mode`/`seconds`/`size`/`aspect_ratio`。两套字段互斥、永不同时发给同一模型，但处理是**不对称**的：V2.0 帧数字段发到 2.5 模型会被换算成最接近的整秒（`121 @ 24fps → 5s`），保留「不判断家族也能出片」的退路；反过来，2.5 专有字段发到 V2.0 模型会**当场报错并给出修法**——工具不会静默丢弃，丢弃等于让你以为拿到 10 秒 2K、实际拿到 5 秒 720P。自动选择优先 V2.0，目录里没有 V2.0 时回落第一个 2.5 模型；面板仍会把 2.5 家族单独点名。协议细节与校验规则见 [docs/AGNES-API.md](docs/AGNES-API.md) §7.5。
 
 ## 桌面端上游：AgnesCode（可选，默认关）
+
+![AgnesCode tab](assets/panel-AgnesCode.png)
 
 面板「AgnesCode」tab 接的是 **AgnesCode 桌面端**的登录态：微信扫码发生在桌面 App 里，本插件只**读取** App 留在本机的加密会话文件（Chromium os_crypt，密钥经系统 DPAPI 解封，全程内存使用、不落盘不显示；解出的凭据随后存入 DSH 凭据服务，与账号密码同一纪律），并以 provider id `agnescode`（显示名 AgnesCode）注册**独立** provider。它的接口地址写在会话文件里、**按账号跟随**（钉死在 Agnes 域名族内，地址不对就拒绝使用）；显示的积分是**订阅池**口径（时效 + 永久），模型清单带「会员」标记（会员门槛是账号状态，不是模型不存在，所以标记而不隐藏）。检测不到登录态时，面板逐条列出**探测过哪些文件、各自为什么没成**——「没装 App」「解不开密」「会话里没有令牌」是三种不同的处理方式，不会笼统叫你重新登录。JWT 有效期约 28 天，过期后开一次桌面 App 再点「检测本机登录态」即可；协议探针记录见 [docs/ROADMAP.md](docs/ROADMAP.md) §6.3。
 
