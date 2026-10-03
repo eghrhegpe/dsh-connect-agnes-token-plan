@@ -65,7 +65,7 @@
 
 登录原理一句话：Host 在后台向 `{consoleBase}/api/user/login` 发**一次**账号密码 POST 换取 access token（Agnes 没有 OIDC 跳转、没有 refresh token），令牌过期或被拒时用同一路径**重登一次**；面板打开时才轮询一个只读本地路由，关掉即停。协议细节（一跳登录、密码明文过 TLS 与「不落盘」纪律、防锁号节流）见 [docs/AUTH.md](docs/AUTH.md)，接口契约见 [docs/AGNES-API.md](docs/AGNES-API.md)。
 
-**窗口「已用」是平台报出的，面板不计算**：`/api/cn/user/subscription` 直接返回每个窗口的 `used` / `limit` / `reset_at` / `usage_pct`（控制台「当前用量」那一屏的数据源），面板逐字转写并渲染进度条。但 `overview` / `series` 是**账号累计**口径——**不能用它去减窗口上限**，那个「剩余」跨周期、没人能担保，面板把两者作为独立事实并排显示，并明说不可相减。
+**窗口「已用」是平台报出的，面板不计算**：`/api/cn/user/subscription` 直接返回每个窗口的 `used` / `limit` / `reset_at` / `usage_pct`（控制台「当前用量」那一屏的数据源），面板逐字转写、不做减法。下方的「账号累计用量」统计的是另一段周期，**不能拿来减窗口上限**——减出来的「剩余」没人能担保，所以面板在界面上明说了这一点，全链路也不产出「剩余」这个数。
 
 ## 运维诊断：这台机器现在挂没挂 provider？
 
