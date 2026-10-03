@@ -80,6 +80,11 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // `panel.loading` branch: without this gate the loading line was DEAD
   // CODE, because the null/null state always routed to the form.
   const [loadedOnce, setLoadedOnce] = useState(false);
+  // A snapshot request is on its way. The refresh button's only busy cue used
+  // to be opacity — with a 300 s Host cache the click looked ignored, and the
+  // only confirmation was spotting the「更新于」stamp change. The label says
+  // what is happening instead.
+  const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(0);
   const [, setLocaleRevision] = useState(0);
   // The content sections start expanded — the panel opens showing
@@ -139,6 +144,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     generation.current += 1;
     const mine = generation.current;
     const isCurrent = () => generation.current === mine;
+    setRefreshing(true);
     // Cancel the superseded poll, not just ignore it: a stale request keeps
     // the Host's connection open for nothing.
     inFlight.current?.abort?.();
@@ -210,6 +216,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       // an aborted, superseded attempt must not flip the gate while
       // its replacement is still in flight.
       if (isCurrent()) setLoadedOnce(true);
+      if (isCurrent()) setRefreshing(false);
       if (inFlight.current === controller) inFlight.current = null;
     }
   }, []);
@@ -575,7 +582,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
             disabled: refresh === null,
             onClick: () => refresh?.()
           },
-          tt("panel.refresh")
+          refreshing && plan.refresh === "snapshot" ? tt("panel.refreshing") : tt("panel.refresh")
         ),
         onClose ? h("button", { type: "button", style: S.button, onClick: () => onClose() }, tt("panel.back")) : null
       )

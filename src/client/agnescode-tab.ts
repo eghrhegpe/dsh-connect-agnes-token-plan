@@ -395,8 +395,8 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
           attempts.map((attempt, index) =>
             h(
               "div",
-              { key: `${String(attempt?.file ?? index)}-${index}`, role: "listitem", style: { marginBottom: 2 } },
-              h("span", { style: { color: attempt?.tier === AGNESCODE_TIER_OK ? "inherit" : "var(--dsw-alias-label-secondary)" } },
+              { key: `${String(attempt?.file ?? index)}-${index}`, role: "listitem", style: S.diagRow },
+              h("span", { style: { color: attempt?.tier === AGNESCODE_TIER_OK ? "inherit" : "var(--dsw-alias-state-warn-primary)" } },
                 `[${tt(`agnescode.tier.${attempt?.tier}`)}] ${String(attempt?.file ?? "")}${attempt?.detail ? ` — ${attempt.detail}` : ""}`)
             )
           )

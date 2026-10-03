@@ -38,6 +38,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"panel.refresh": "刷新",
 			"panel.updated": "更新于 {time}",
 			"panel.loading": "加载中…",
+			"panel.refreshing": "刷新中…",
 			"panel.error": "读取失败：{error}",
 			"panel.jwtMissing": "还没有配置控制台账号。",
 			"panel.jwtExpired": "控制台令牌已失效。Agnes 不发放 refresh 令牌，Host 会用已保存的账号重新登录一次；若仍失败，请手动重新登录。",
@@ -88,6 +89,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"quota.cycle.yearly": "按年",
 			"quota.unit.requests": "次",
 			"quota.unit.images": "张",
+			"quota.unit.seconds": "秒",
 			"quota.used": "已用",
 			"quota.resetAt": "重置 {time}",
 			"quota.resetCountdown": "约 {minutes} 分钟后重置",
@@ -102,7 +104,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"quota.total.requests": "模型请求",
 			"quota.total.tokens": "文本 Token",
 			"quota.total.images": "生图",
-			"quota.total.video": "视频秒数",
+			"quota.total.video": "视频",
 			"quota.total.activeDays": "活跃天数",
 			"quota.usageMissing": "{label}：暂未读到。",
 			"usage.none": "该区间内没有用量记录。",
@@ -256,6 +258,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"panel.refresh": "Refresh",
 			"panel.updated": "Updated {time}",
 			"panel.loading": "Loading…",
+			"panel.refreshing": "Refreshing…",
 			"panel.error": "Could not read: {error}",
 			"panel.jwtMissing": "No Agnes console account is configured yet.",
 			"panel.jwtExpired": "The console token is no longer valid. Agnes issues no refresh token, so the Host signs in again with the saved account; if that also fails, sign in manually.",
@@ -306,6 +309,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"quota.cycle.yearly": "yearly",
 			"quota.unit.requests": " times",
 			"quota.unit.images": " images",
+			"quota.unit.seconds": " s",
 			"quota.used": "Used",
 			"quota.resetAt": "resets {time}",
 			"quota.resetCountdown": "resets in ~{minutes} min",
@@ -320,7 +324,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"quota.total.requests": "Model requests",
 			"quota.total.tokens": "Text tokens",
 			"quota.total.images": "Images",
-			"quota.total.video": "Video seconds",
+			"quota.total.video": "Video",
 			"quota.total.activeDays": "Active days",
 			"quota.usageMissing": "{label}: not read yet.",
 			"usage.none": "No usage recorded in this range.",
@@ -544,11 +548,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* decimal 128 000. A flat /1000 rounding once printed "1049k" for the 1M
 	* window and it read like a placeholder bug; so figures divisible by 1000 keep
 	* the decimal reading they were written with, binary-only figures (262144 →
-	* 256K, 65536 → 64K) get the binary one, and anything ≥ 1M goes to M.
+	* 256K, 65536 → 64K) get the binary one, anything ≥ 1M goes to M and anything
+	* ≥ 1G goes to G — the account-lifetime token total (billions) must not print
+	* as a four-digit "5214M".
 	*/
 	function tokenSize(value) {
 		const number = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : 0;
 		if (number <= 0) return "";
+		if (number >= 1e9) return `${Math.round(number / 1e8) / 10}G`;
 		if (number >= 1e6) return `${Math.round(number / 1e5) / 10}M`;
 		if (number % 1e3 === 0) return `${number / 1e3}K`;
 		if (number % 1024 === 0) return `${number / 1024}K`;
@@ -983,8 +990,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				color: "var(--dsw-alias-label-secondary)"
 			},
 			quotaRemaining: {
-				fontSize: 16,
-				lineHeight: "20px",
+				fontSize: 17,
+				lineHeight: "22px",
 				fontWeight: 650,
 				letterSpacing: "-0.02em",
 				fontVariantNumeric: "tabular-nums"
@@ -1323,6 +1330,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				borderRadius: 12,
 				background: "var(--dsw-alias-bg-layer-1)",
 				padding: "12px 14px"
+			},
+			diagRow: {
+				fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+				fontSize: 11,
+				lineHeight: "16px",
+				marginBottom: 2
 			}
 		};
 	}));
@@ -1904,6 +1917,64 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			...labelStyle ?? {}
 		} }, label));
 	}
+	/**
+	* The drawn radio dot, same discipline as the pill switch above: a NATIVE
+	* radio input (transparent but focusable — keyboard focus ring and screen
+	* reader semantics stay free) over a drawn circle whose selected state is a
+	* brand-colored ring + inner dot. The bare native circle read as unstyled
+	* next to the drawn switch and checkboxes; this puts the three controls in
+	* one visual language without reimplementing the widget.
+	*
+	* The drawn span is `pointerEvents: "none"` so clicks reach the input; the
+	* input is on top so the browser's own focus ring draws around the dot.
+	* Hook-free like `Switch` — the caller owns `checked`/`onChange`, and the
+	* surrounding `<label>` (the roster row) is what makes it clickable.
+	*/
+	function Radio({ checked, disabled, onChange, name }) {
+		const size = 16;
+		return h("span", { style: {
+			position: "relative",
+			flex: "none",
+			width: size,
+			height: size,
+			display: "inline-block"
+		} }, h("input", {
+			type: "radio",
+			name,
+			checked,
+			disabled,
+			onChange,
+			style: {
+				appearance: "none",
+				WebkitAppearance: "none",
+				position: "absolute",
+				inset: 0,
+				width: size,
+				height: size,
+				margin: 0,
+				background: "transparent",
+				border: "none",
+				cursor: disabled ? "default" : "pointer"
+			}
+		}), h("span", { style: {
+			position: "absolute",
+			inset: 0,
+			borderRadius: "50%",
+			boxSizing: "border-box",
+			border: `1px solid ${checked ? "var(--agnes-brand, #1E40AF)" : "var(--dsw-alias-border-l3)"}`,
+			background: "var(--dsw-alias-bg-layer-2)",
+			pointerEvents: "none",
+			transition: "border-color 120ms ease"
+		} }, checked ? h("span", { style: {
+			position: "absolute",
+			left: 3,
+			top: 3,
+			width: 8,
+			height: 8,
+			borderRadius: "50%",
+			background: "var(--agnes-brand, #1E40AF)"
+		} }) : null));
+	}
 	var LABEL_STYLE, TRACK_STYLE, THUMB_COLOR;
 	var init_switch = __esmMin((() => {
 		init_runtime();
@@ -2160,13 +2231,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			flex: "1 1 auto",
 			minWidth: 0,
 			cursor: busy ? "default" : "pointer"
-		} }, h("input", {
-			type: "radio",
+		} }, h(Radio, {
 			name: radioName,
 			checked: preferred === null && enabled,
 			disabled: busy || !enabled,
-			onChange: () => void saveModel(null),
-			style: S.modelCheck
+			onChange: () => void saveModel(null)
 		}), h("span", { style: S.modelName }, k("autoOption"))), h("span", { style: S.modelBadge }, effective !== "" ? `${k("badge")} · ${effective}` : `${k("badge")} · ${k("badgeNone")}`))), ...candidates.map((id) => h("li", {
 			style: enabled ? S.modelRow : {
 				...S.modelRow,
@@ -2180,13 +2249,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			flex: "1 1 auto",
 			minWidth: 0,
 			cursor: busy ? "default" : "pointer"
-		} }, h("input", {
-			type: "radio",
+		} }, h(Radio, {
 			name: radioName,
 			checked: preferred === id && enabled,
 			disabled: busy || !enabled,
-			onChange: () => void saveModel(id),
-			style: S.modelCheck
+			onChange: () => void saveModel(id)
 		}), h("span", {
 			style: S.modelName,
 			title: id
@@ -2648,27 +2715,27 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			{
 				key: "requests",
 				label: tt("quota.total.requests"),
-				value: source.totalRequests
+				value: count(source.totalRequests)
 			},
 			{
 				key: "tokens",
 				label: tt("quota.total.tokens"),
-				value: source.totalTokens
+				value: tokenSize(source.totalTokens) || count(source.totalTokens)
 			},
 			{
 				key: "images",
 				label: tt("quota.total.images"),
-				value: source.totalImages
+				value: count(source.totalImages)
 			},
 			{
 				key: "video",
 				label: tt("quota.total.video"),
-				value: source.totalVideoSeconds
+				value: `${count(source.totalVideoSeconds)} ${tt("quota.unit.seconds")}`
 			},
 			...typeof source.activeDays === "number" ? [{
 				key: "days",
 				label: tt("quota.total.activeDays"),
-				value: source.activeDays
+				value: count(source.activeDays)
 			}] : []
 		];
 		return h("div", null, h("div", { style: {
@@ -2678,7 +2745,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		} }, label), h("div", { style: S.metricGrid }, cells.map((cell) => h("div", {
 			key: cell.key,
 			style: S.metric
-		}, h("span", { style: S.metricLabel }, cell.label), h("span", { style: S.metricValue }, count(cell.value))))));
+		}, h("span", { style: S.metricLabel }, cell.label), h("span", { style: S.metricValue }, cell.value)))));
 	}
 	/**
 	* Per-bucket consumption as a mini bar chart.
@@ -3023,8 +3090,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, attempts.map((attempt, index) => h("div", {
 			key: `${String(attempt?.file ?? index)}-${index}`,
 			role: "listitem",
-			style: { marginBottom: 2 }
-		}, h("span", { style: { color: attempt?.tier === "ok" ? "inherit" : "var(--dsw-alias-label-secondary)" } }, `[${tt(`agnescode.tier.${attempt?.tier}`)}] ${String(attempt?.file ?? "")}${attempt?.detail ? ` — ${attempt.detail}` : ""}`)))) : null, note !== null ? h("div", {
+			style: S.diagRow
+		}, h("span", { style: { color: attempt?.tier === "ok" ? "inherit" : "var(--dsw-alias-state-warn-primary)" } }, `[${tt(`agnescode.tier.${attempt?.tier}`)}] ${String(attempt?.file ?? "")}${attempt?.detail ? ` — ${attempt.detail}` : ""}`)))) : null, note !== null ? h("div", {
 			style: {
 				...S.formNote,
 				fontSize: 12,
@@ -3330,6 +3397,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const [data, setData] = useState(null);
 		const [error, setError] = useState(null);
 		const [loadedOnce, setLoadedOnce] = useState(false);
+		const [refreshing, setRefreshing] = useState(false);
 		const [updatedAt, setUpdatedAt] = useState(0);
 		const [, setLocaleRevision] = useState(0);
 		const [openSections, setOpenSections] = useState({
@@ -3356,6 +3424,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			generation.current += 1;
 			const mine = generation.current;
 			const isCurrent = () => generation.current === mine;
+			setRefreshing(true);
 			inFlight.current?.abort?.();
 			const controller = typeof AbortController === "function" ? new AbortController() : null;
 			inFlight.current = controller;
@@ -3396,6 +3465,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				setError(reason instanceof Error ? reason.message : String(reason));
 			} finally {
 				if (isCurrent()) setLoadedOnce(true);
+				if (isCurrent()) setRefreshing(false);
 				if (inFlight.current === controller) inFlight.current = null;
 			}
 		}, []);
@@ -3636,7 +3706,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			} : S.button,
 			disabled: refresh === null,
 			onClick: () => refresh?.()
-		}, tt("panel.refresh")), onClose ? h("button", {
+		}, refreshing && plan.refresh === "snapshot" ? tt("panel.refreshing") : tt("panel.refresh")), onClose ? h("button", {
 			type: "button",
 			style: S.button,
 			onClick: () => onClose()

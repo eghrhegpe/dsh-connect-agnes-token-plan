@@ -12,7 +12,7 @@ import { postJsonOrThrow } from "./http.ts";
 import { ModelPicker } from "./model-picker.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
-import { Switch } from "./switch.ts";
+import { Radio, Switch } from "./switch.ts";
 import type { LlmData } from "./wire.ts";
 import { S } from "./styles.ts";
 
@@ -261,10 +261,7 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
             h(
               "label",
               { style: { display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0, cursor: busy ? "default" : "pointer" } },
-              h("input", {
-                type: "radio", name: radioName, checked: preferred === null && enabled, disabled: busy || !enabled,
-                onChange: () => void saveModel(null), style: S.modelCheck
-              }),
+              h(Radio, { name: radioName, checked: preferred === null && enabled, disabled: busy || !enabled, onChange: () => void saveModel(null) }),
               h("span", { style: S.modelName }, k("autoOption"))
             ),
             // The auto badge shows WHICH model the auto-pick addresses: "image ·
@@ -288,10 +285,7 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
             h(
               "label",
               { style: { display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0, cursor: busy ? "default" : "pointer" } },
-              h("input", {
-                type: "radio", name: radioName, checked: preferred === id && enabled, disabled: busy || !enabled,
-                onChange: () => void saveModel(id), style: S.modelCheck
-              }),
+              h(Radio, { name: radioName, checked: preferred === id && enabled, disabled: busy || !enabled, onChange: () => void saveModel(id) }),
               h("span", { style: S.modelName, title: id }, id)
             ),
             h("span", { style: S.modelBadge }, effective === id && enabled ? `${k("badge")} · ${k("effective")}` : k("badge"))

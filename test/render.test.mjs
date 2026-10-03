@@ -320,8 +320,12 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("every dimension gets its own labelled cell",
     ["quota.total.requests", "quota.total.tokens", "quota.total.images", "quota.total.video", "quota.total.activeDays"]
       .every((key) => out.includes(key)), out.join("\n"));
-  check("the figures reach the screen with thousands separators",
-    out.includes("12,000") && out.includes("340,000"), out.join("\n"));
+  // The requests figure keeps its thousands separators; the token figure is
+  // deliberately NOT one of them — an account-lifetime total runs into the
+  // billions and filled the cell with 13 digits, so it goes through the same
+  // tokenSize() abbreviation as the roster's context windows (340000 → 340K).
+  check("the figures reach the screen with thousands separators — except the abbreviated token total",
+    out.includes("12,000") && out.includes("340K") && !out.includes("340,000"), out.join("\n"));
 
   const sparse = rendered(render.UsageTotals, { totals: { totalRequests: 1 }, label: "l", tt });
   check("a missing activeDays cell is not drawn as a zero",
@@ -1298,7 +1302,10 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     check("the ON track uses THIS plugin's brand blue, not the host neutral",
       track[0]?.props?.style?.background === "var(--agnes-brand, #1E40AF)",
       JSON.stringify(track[0]?.props?.style ?? {}));
-    const thumb = findAll(drawTree, (props) => props.style?.width === 16 && props.style?.height === 16);
+    // borderRadius pins it to the thumb specifically: the drawn radio
+    // (Radio in switch.ts) also renders 16×16 shells around its input, and a
+    // width/height-only match counts those as thumbs.
+    const thumb = findAll(drawTree, (props) => props.style?.width === 16 && props.style?.height === 16 && props.style?.borderRadius === "50%");
     check("the pill draws a thumb circle inside the track",
       thumb.length === 1, `thumbs=${thumb.length}`);
     check("the thumb is a fixed white (contrasts with both the blue and gray tracks)",

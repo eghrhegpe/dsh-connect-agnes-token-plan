@@ -81,11 +81,14 @@ export function money(minor: unknown, currency: unknown): string {
  * decimal 128 000. A flat /1000 rounding once printed "1049k" for the 1M
  * window and it read like a placeholder bug; so figures divisible by 1000 keep
  * the decimal reading they were written with, binary-only figures (262144 →
- * 256K, 65536 → 64K) get the binary one, and anything ≥ 1M goes to M.
+ * 256K, 65536 → 64K) get the binary one, anything ≥ 1M goes to M and anything
+ * ≥ 1G goes to G — the account-lifetime token total (billions) must not print
+ * as a four-digit "5214M".
  */
 export function tokenSize(value: unknown): string {
   const number = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : 0;
   if (number <= 0) return "";
+  if (number >= 1_000_000_000) return `${Math.round(number / 100_000_000) / 10}G`;
   if (number >= 1_000_000) return `${Math.round(number / 100_000) / 10}M`;
   if (number % 1000 === 0) return `${number / 1000}K`;
   if (number % 1024 === 0) return `${number / 1024}K`;

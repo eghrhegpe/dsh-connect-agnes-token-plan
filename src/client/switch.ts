@@ -125,3 +125,74 @@ export function Switch({ checked, disabled, onChange, label, title, rowStyle, la
     h("span", { style: { ...LABEL_STYLE, ...(labelStyle ?? {}) } }, label)
   );
 }
+
+/**
+ * The drawn radio dot, same discipline as the pill switch above: a NATIVE
+ * radio input (transparent but focusable — keyboard focus ring and screen
+ * reader semantics stay free) over a drawn circle whose selected state is a
+ * brand-colored ring + inner dot. The bare native circle read as unstyled
+ * next to the drawn switch and checkboxes; this puts the three controls in
+ * one visual language without reimplementing the widget.
+ *
+ * The drawn span is `pointerEvents: "none"` so clicks reach the input; the
+ * input is on top so the browser's own focus ring draws around the dot.
+ * Hook-free like `Switch` — the caller owns `checked`/`onChange`, and the
+ * surrounding `<label>` (the roster row) is what makes it clickable.
+ */
+export function Radio({ checked, disabled, onChange, name }: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange?: () => void;
+  /** Radio group name; rows of one picker share it. */
+  name: string;
+}): unknown {
+  const size = 16;
+  return h(
+    "span",
+    { style: { position: "relative", flex: "none", width: size, height: size, display: "inline-block" } },
+    h("input", {
+      type: "radio",
+      name,
+      checked,
+      disabled,
+      onChange,
+      style: {
+        appearance: "none",
+        WebkitAppearance: "none",
+        position: "absolute",
+        inset: 0,
+        width: size,
+        height: size,
+        margin: 0,
+        background: "transparent",
+        border: "none",
+        cursor: disabled ? "default" : "pointer"
+      }
+    }),
+    h(
+      "span",
+      {
+        style: {
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          boxSizing: "border-box",
+          border: `1px solid ${checked ? "var(--agnes-brand, #1E40AF)" : "var(--dsw-alias-border-l3)"}`,
+          background: "var(--dsw-alias-bg-layer-2)",
+          pointerEvents: "none",
+          transition: "border-color 120ms ease"
+        }
+      },
+      checked
+        ? h("span", {
+            style: {
+              position: "absolute",
+              left: 3, top: 3, width: 8, height: 8,
+              borderRadius: "50%",
+              background: "var(--agnes-brand, #1E40AF)"
+            }
+          })
+        : null
+    )
+  );
+}

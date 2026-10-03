@@ -92,13 +92,14 @@ export const S = {
   quotaLabel: { fontSize: 12, fontWeight: 500, color: "var(--dsw-alias-label-secondary)" },
   quotaReset: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
   // The remaining PERCENTAGE is the headline — tabular figures keep it
-  // still while polling. Sized against the LABEL above it (12px), not against
-  // the captions below: 16px keeps a clear 1.33x step while stopping the
-  // short "1.1%" case from reading as a display figure. lineHeight is pinned
-  // rather than inherited so the drop from 22 to 20 is what actually reclaims
-  // the vertical space — a fontSize-only edit would have left the box 22px
-  // tall and bought nothing but a smaller glyph.
-  quotaRemaining: { fontSize: 16, lineHeight: "20px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
+  // still while polling. lineHeight is pinned rather than inherited so the
+  // vertical space is actually reclaimed — a fontSize-only edit would have
+  // left the box 22px tall and bought nothing but a smaller glyph.
+  // 17px, not 16: the usage metric grid one section below leads with the same
+  // weight (S.metricValue), and two adjacent headline scales read as two
+  // unrelated decisions. The short "1.1%" case still does not read as a
+  // display figure at 17 — it is the label above (12px) that sets the step.
+  quotaRemaining: { fontSize: 17, lineHeight: "22px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
   // The fallback headline for a window with no stated consumption: the LIMIT
   // itself ("4,000 张" / "500" / "—"), which is a different kind of fact from
   // a measured percentage — a capacity ceiling, not a reading. It is rendered
@@ -213,5 +214,11 @@ export const S = {
   // leaving a whole list adrift: a roster beside a login block that already
   // wears a card reads as an unfinished half rather than a deliberate
   // hierarchy.
-  modelPanel: { border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, background: "var(--dsw-alias-bg-layer-1)", padding: "12px 14px" }
+  modelPanel: { border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, background: "var(--dsw-alias-bg-layer-1)", padding: "12px 14px" },
+  // The harvest-walk diagnosis row: monospace because a probed file path is
+  // evidence, and evidence reads in a fixed-width face — the plain proportional
+  // line read as pasted log rather than a diagnosis. The tier word carries the
+  // distinction between the non-ok tiers (each wants different advice); the
+  // color carries only ok / needs-attention.
+  diagRow: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 11, lineHeight: "16px", marginBottom: 2 }
 };
