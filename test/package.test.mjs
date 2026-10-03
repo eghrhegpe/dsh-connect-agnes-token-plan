@@ -55,6 +55,39 @@ for (const entry of entries) {
   check(`entry ${entry} is in files`, covered, covered ? "" : "entry missing from files");
 }
 
+// --- 1b. every screenshots.json entry is actually SHIPPED, not just on disk
+// `docs.test.mjs`'s SCREENSHOTS check proves each declared image exists in the
+// REPO. That is not enough: `screenshots.json` is itself a `files` member, and
+// the marketplace reads the paths out of the tarball. An image that is tracked
+// in git and present on disk but absent from `files` passes every existing gate
+// and still breaks the listing for anyone who installs from npm.
+//
+// This is the same disease as the 2026-10-01 incident (docs.test.mjs:549), one
+// step further along: that time the manifest pointed at files that no longer
+// existed; this time it points at files that were never packed.
+{
+  const manifestPath = join(root, "screenshots.json");
+  if (existsSync(manifestPath)) {
+    let list = [];
+    try {
+      list = JSON.parse(readFileSync(manifestPath, "utf8"));
+    } catch {
+      list = [];
+      check("screenshots.json parses for the files-coverage check", false, "unparseable JSON");
+    }
+    if (Array.isArray(list)) {
+      for (const rel of list) {
+        if (typeof rel !== "string" || rel.trim() === "") continue;
+        const clean = rel.trim().replace(/^\.\//, "");
+        const covered = shipped.has(clean)
+          || clean.split("/").some((_, i, parts) => shipped.has(parts.slice(0, i + 1).join("/")));
+        check(`screenshot ${clean} is shipped in files`, covered,
+          covered ? "" : "declared in screenshots.json but excluded from package.json files");
+      }
+    }
+  }
+}
+
 /**
  * Static relative imports of one module: `from "./x.ts"`, `import "./x.ts"`,
  * `import("./x.ts")`, and factory-form `require("./x.ts")`. Bare specifiers

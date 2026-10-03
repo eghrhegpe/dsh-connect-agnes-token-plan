@@ -23,6 +23,7 @@
     "lib",
     "client.js",
     "locale",
+    "assets",
     "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md",
