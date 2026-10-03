@@ -1289,17 +1289,24 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     const switchInput = findAll(drawTree, (props) => props.type === "checkbox" && props.style?.appearance === "none");
     check("the draw switch is a native checkbox styled as a pill (appearance: none)",
       switchInput.length === 1, `found ${switchInput.length}`);
-    check("the pill input is the 30×17 track-sized element",
-      switchInput[0]?.props?.style?.width === 30 && switchInput[0]?.props?.style?.height === 17,
+    check("the pill input matches the DSH capsule (36×20, same as the host Switch)",
+      switchInput[0]?.props?.style?.width === 36 && switchInput[0]?.props?.style?.height === 20,
       JSON.stringify(switchInput[0]?.props?.style ?? {}));
-    const track = findAll(drawTree, (props) => props.style?.width === 30 && props.style?.borderRadius === 999);
+    const track = findAll(drawTree, (props) => props.style?.width === 36 && props.style?.borderRadius === 999);
     check("the pill draws a track span behind the input",
       track.length === 1, `tracks=${track.length}`);
-    const thumb = findAll(drawTree, (props) => props.style?.width === 12 && props.style?.height === 12);
+    check("the ON track uses THIS plugin's brand blue, not the host neutral",
+      track[0]?.props?.style?.background === "var(--agnes-brand, #1E40AF)",
+      JSON.stringify(track[0]?.props?.style ?? {}));
+    const thumb = findAll(drawTree, (props) => props.style?.width === 16 && props.style?.height === 16);
     check("the pill draws a thumb circle inside the track",
       thumb.length === 1, `thumbs=${thumb.length}`);
-    check("the thumb sits at the checked side (left: 14px) when enabled",
-      thumb[0]?.props?.style?.left === 14, JSON.stringify(thumb[0]?.props?.style ?? {}));
+    check("the thumb is a fixed white (contrasts with both the blue and gray tracks)",
+      thumb[0]?.props?.style?.background === "#fff",
+      JSON.stringify(thumb[0]?.props?.style ?? {}));
+    check("the thumb moves with a translateX like the DSH Switch, not a left offset",
+      thumb[0]?.props?.style?.transform === "translateX(16px)",
+      JSON.stringify(thumb[0]?.props?.style ?? {}));
     const titled = findAll(drawTree, (props) => typeof props?.title === "string" && props.title !== "");
     check("the switch row carries the consequence as a tooltip, not as text",
       titled.some((el) => el.props.title === "draw.switchTip"),

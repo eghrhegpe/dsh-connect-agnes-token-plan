@@ -210,7 +210,8 @@ export const zh = {
   // quiet caption line beneath. The old single sentence buried the number in
   // gray 12px text.
   "agnescode.balanceLabel": "积分余额",
-  "agnescode.balanceSplit": "时效 {timeSensitive} · 永久 {permanent}",
+  "agnescode.balanceTimeLabel": "时效",
+  "agnescode.balancePermanentLabel": "永久",
   "agnescode.models": "模型（{count}）",
   // Gating is account state, not model truth — the badge states the limit
   // instead of the Host silently dropping the model.
@@ -435,7 +436,8 @@ export const en: typeof zh = {
   "agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
   "agnescode.downloadCta": "Download the AgnesCode desktop client and claim your limited-time credits →",
   "agnescode.balanceLabel": "Credit balance",
-  "agnescode.balanceSplit": "time-limited {timeSensitive} · permanent {permanent}",
+  "agnescode.balanceTimeLabel": "Time-limited",
+  "agnescode.balancePermanentLabel": "Permanent",
   "agnescode.models": "Models ({count})",
   "agnescode.memberOnly": "member",
   "agnescode.registeredPill": "Registered",

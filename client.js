@@ -221,7 +221,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.notLogged": "未关联——请先在 AgnesCode 桌面端登录（微信扫码），再点「检测本机登录态」。",
 			"agnescode.downloadCta": "下载 AgnesCode 桌面客户端，领取限时积分 →",
 			"agnescode.balanceLabel": "积分余额",
-			"agnescode.balanceSplit": "时效 {timeSensitive} · 永久 {permanent}",
+			"agnescode.balanceTimeLabel": "时效",
+			"agnescode.balancePermanentLabel": "永久",
 			"agnescode.models": "模型（{count}）",
 			"agnescode.memberOnly": "会员",
 			"agnescode.registeredPill": "已注册",
@@ -438,7 +439,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
 			"agnescode.downloadCta": "Download the AgnesCode desktop client and claim your limited-time credits →",
 			"agnescode.balanceLabel": "Credit balance",
-			"agnescode.balanceSplit": "time-limited {timeSensitive} · permanent {permanent}",
+			"agnescode.balanceTimeLabel": "Time-limited",
+			"agnescode.balancePermanentLabel": "Permanent",
 			"agnescode.models": "Models ({count})",
 			"agnescode.memberOnly": "member",
 			"agnescode.registeredPill": "Registered",
@@ -1879,8 +1881,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				left: 0,
 				top: "50%",
 				transform: "translateY(-50%)",
-				width: 30,
-				height: 17,
+				width: 36,
+				height: 20,
 				margin: 0,
 				border: "none",
 				background: "transparent",
@@ -1888,22 +1890,21 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}
 		}), h("span", { style: {
 			...TRACK_STYLE,
-			background: checked ? "var(--dsw-alias-state-success-primary, #12b76a)" : "var(--dsw-alias-bg-layer-2, #2a2b31)"
+			background: checked ? "var(--agnes-brand, #1E40AF)" : "var(--dsw-alias-border-l3)"
 		} }, h("span", { style: {
-			position: "absolute",
-			top: 1.5,
-			left: checked ? 14 : 1.5,
-			width: 12,
-			height: 12,
+			display: "block",
+			width: 16,
+			height: 16,
 			borderRadius: "50%",
-			background: checked ? "#fff" : "var(--dsw-alias-label-tertiary, #999)",
-			transition: "left .15s, background .15s"
+			background: THUMB_COLOR,
+			transition: "transform 120ms ease",
+			transform: checked ? "translateX(16px)" : "translateX(0)"
 		} })), h("span", { style: {
 			...LABEL_STYLE,
 			...labelStyle ?? {}
 		} }, label));
 	}
-	var LABEL_STYLE, TRACK_STYLE;
+	var LABEL_STYLE, TRACK_STYLE, THUMB_COLOR;
 	var init_switch = __esmMin((() => {
 		init_runtime();
 		LABEL_STYLE = {
@@ -1911,14 +1912,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			color: "var(--dsw-alias-label-secondary)"
 		};
 		TRACK_STYLE = {
-			width: 30,
-			height: 17,
-			borderRadius: 999,
-			flex: "none",
+			boxSizing: "border-box",
 			position: "relative",
-			border: "1px solid var(--dsw-alias-border-l2, #36373b)",
-			transition: "background .15s, border-color .15s"
+			flex: "none",
+			width: 36,
+			height: 20,
+			padding: 2,
+			border: "none",
+			borderRadius: 999,
+			transition: "background 120ms ease"
 		};
+		THUMB_COLOR = "#fff";
 	}));
 
 //#endregion
@@ -3028,18 +3032,32 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			},
 			role: "status"
 		}, note) : null, loggedIn ? h("div", { style: { marginTop: 12 } }, balance !== null ? h("div", { style: {
-			...S.pool,
+			display: "flex",
+			gap: 8,
+			flexWrap: "wrap",
 			marginBottom: 10
+		} }, h("div", { style: {
+			...S.pool,
+			flex: "1 1 160px",
+			minWidth: 120
 		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balanceLabel"))), h("div", { style: {
 			...S.quotaRemaining,
 			marginTop: 4
-		} }, count(balance.totalBalance ?? 0)), h("div", { style: {
-			...S.quotaUsed,
-			marginTop: 2
-		} }, format(tt("agnescode.balanceSplit"), {
-			timeSensitive: count(balance.timeSensitiveBalance ?? 0),
-			permanent: count(balance.permanentBalance ?? 0)
-		}))) : null, models.length > 0 ? h(AgnescodeModelPicker, {
+		} }, count(balance.totalBalance ?? 0))), h("div", { style: {
+			...S.pool,
+			flex: "1 1 160px",
+			minWidth: 120
+		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balanceTimeLabel"))), h("div", { style: {
+			...S.quotaRemaining,
+			marginTop: 4
+		} }, count(balance.timeSensitiveBalance ?? 0))), h("div", { style: {
+			...S.pool,
+			flex: "1 1 160px",
+			minWidth: 120
+		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balancePermanentLabel"))), h("div", { style: {
+			...S.quotaRemaining,
+			marginTop: 4
+		} }, count(balance.permanentBalance ?? 0)))) : null, models.length > 0 ? h(AgnescodeModelPicker, {
 			models,
 			hostIds: state?.enabledModelIds,
 			registered: state?.providerRegistered === true,

@@ -994,13 +994,15 @@ const GOOD_SESSION = {
     // halves must exist in both languages (the number itself is rendered from
     // the route, not the dictionary), and the retired single-sentence key must
     // not linger as dead weight.
-    const balanceKeys = ["agnescode.balanceLabel", "agnescode.balanceSplit"];
+    const balanceKeys = ["agnescode.balanceLabel", "agnescode.balanceTimeLabel", "agnescode.balancePermanentLabel"];
     check("the balance card's keys exist in both languages",
       balanceKeys.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""
         && typeof dictionaries.en[key] === "string" && dictionaries.en[key] !== ""),
       balanceKeys.filter((key) => typeof dictionaries.zh[key] !== "string" || typeof dictionaries.en[key] !== "string").join(","));
     check("the retired balance-line key is gone",
       !("agnescode.balanceLine" in dictionaries.zh) && !("agnescode.balanceLine" in dictionaries.en));
+    check("the retired combined-split key is gone (three cards replaced it)",
+      !("agnescode.balanceSplit" in dictionaries.zh) && !("agnescode.balanceSplit" in dictionaries.en));
 
     // The explainer sits in the tab's CLOSING block, after the state the
     // reader came to check — it used to open the tab and push the switch and

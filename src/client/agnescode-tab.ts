@@ -405,31 +405,34 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     note !== null
       ? h("div", { style: { ...S.formNote, fontSize: 12, marginTop: 8 }, role: "status" }, note)
       : null,
-    // The credit pool and the roster the adapter offers. The pool is a
-    // subscription pool and it is rendered as a HEADLINE card, not a gray
-    // caption line: the number is the one fact the reader came to see, so it
-    // carries the same weight as a quota percentage (`S.quotaRemaining`), with
-    // the platform's own time/permanent split as a quiet caption beneath. A
-    // pool the route could not read (`balance === null`) draws NOTHING — a
-    // rendered zero would present an unread figure as a measurement.
+    // The credit pool is THREE small cards in one row, not one wide card: the
+    // panel is ~860px wide and a single left-aligned balance card left two
+    // thirds of it empty, and each figure is a fact of a different kind (the
+    // total, the expiring part, the permanent part). A min-width + `flex-wrap`
+    // row keeps them on one line when there is room and stacks them when the
+    // panel is narrow. The number keeps the `S.quotaRemaining` weight — it is
+    // the fact the reader came to see. A pool the route could not read
+    // (`balance === null`) draws NOTHING: a rendered zero would present an
+    // unread figure as a measurement.
     loggedIn
-      ? h(
-          "div",
-          { style: { marginTop: 12 } },
+      ? h("div", { style: { marginTop: 12 } },
           balance !== null
-            ? h(
-                "div",
-                { style: { ...S.pool, marginBottom: 10 } },
-                h("div", { style: S.cardHead },
-                  h("span", { style: S.poolHead }, tt("agnescode.balanceLabel"))),
-                h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },
-                  count(balance.totalBalance ?? 0)),
-                h("div", { style: { ...S.quotaUsed, marginTop: 2 } },
-                  format(tt("agnescode.balanceSplit"), {
-                    timeSensitive: count(balance.timeSensitiveBalance ?? 0),
-                    permanent: count(balance.permanentBalance ?? 0)
-                  }))
-              )
+            ? h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 } },
+                h("div", { style: { ...S.pool, flex: "1 1 160px", minWidth: 120 } },
+                  h("div", { style: S.cardHead },
+                    h("span", { style: S.poolHead }, tt("agnescode.balanceLabel"))),
+                  h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },
+                    count(balance.totalBalance ?? 0))),
+                h("div", { style: { ...S.pool, flex: "1 1 160px", minWidth: 120 } },
+                  h("div", { style: S.cardHead },
+                    h("span", { style: S.poolHead }, tt("agnescode.balanceTimeLabel"))),
+                  h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },
+                    count(balance.timeSensitiveBalance ?? 0))),
+                h("div", { style: { ...S.pool, flex: "1 1 160px", minWidth: 120 } },
+                  h("div", { style: S.cardHead },
+                    h("span", { style: S.poolHead }, tt("agnescode.balancePermanentLabel"))),
+                  h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },
+                    count(balance.permanentBalance ?? 0))))
             : null,
           models.length > 0
             ? h(AgnescodeModelPicker, { models, hostIds: state?.enabledModelIds, registered: state?.providerRegistered === true, tt, onSave: saveModels })

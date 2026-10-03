@@ -24,16 +24,34 @@ import { h } from "./runtime.ts";
 /** The row text style; callers override `color` when the label is a card title. */
 const LABEL_STYLE = { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } as const;
 
-/** The track: a pill whose fill is the checked state. */
+/**
+ * The track and thumb mirror DSH's own `Switch.module.css` in GEOMETRY (the
+ * 36×20 capsule with a 2px-padded 16×16 thumb, `translateX` motion, 120ms
+ * ease), but the colour follows THIS plugin's brand token, not the host's
+ * neutral: the ON fill is `--agnes-brand` (technology blue `#1E40AF`), the
+ * same token as the active tab underline, the quota progress bar and the
+ * model checkbox `accent-color`. DSH's `--dsw-alias-brand-primary` resolves to
+ * a near-black `#0f1115` in dark mode, which reads as an empty white pill —
+ * the switch looked off. The thumb is a fixed white: it contrasts with both
+ * the blue ON track and the gray OFF track, in light and dark mode alike.
+ * The on/off appearance keys off `checked` — the same contract as DSH's
+ * `aria-checked`, because our input IS a native checkbox, so the browser
+ * already exposes `aria-checked`.
+ */
 const TRACK_STYLE = {
-  width: 30,
-  height: 17,
-  borderRadius: 999,
-  flex: "none",
+  boxSizing: "border-box",
   position: "relative",
-  border: "1px solid var(--dsw-alias-border-l2, #36373b)",
-  transition: "background .15s, border-color .15s"
+  flex: "none",
+  width: 36,
+  height: 20,
+  padding: 2,
+  border: "none",
+  borderRadius: 999,
+  transition: "background 120ms ease"
 } as const;
+
+/** The thumb is always white: high contrast on both the brand-blue and gray tracks. */
+const THUMB_COLOR = "#fff";
 
 export function Switch({ checked, disabled, onChange, label, title, rowStyle, labelStyle }: {
   checked: boolean;
@@ -74,8 +92,8 @@ export function Switch({ checked, disabled, onChange, label, title, rowStyle, la
         left: 0,
         top: "50%",
         transform: "translateY(-50%)",
-        width: 30,
-        height: 17,
+        width: 36,
+        height: 20,
         margin: 0,
         border: "none",
         background: "transparent",
@@ -88,20 +106,19 @@ export function Switch({ checked, disabled, onChange, label, title, rowStyle, la
         style: {
           ...TRACK_STYLE,
           background: checked
-            ? "var(--dsw-alias-state-success-primary, #12b76a)"
-            : "var(--dsw-alias-bg-layer-2, #2a2b31)"
+            ? "var(--agnes-brand, #1E40AF)"
+            : "var(--dsw-alias-border-l3)"
         }
       },
       h("span", {
         style: {
-          position: "absolute",
-          top: 1.5,
-          left: checked ? 14 : 1.5,
-          width: 12,
-          height: 12,
+          display: "block",
+          width: 16,
+          height: 16,
           borderRadius: "50%",
-          background: checked ? "#fff" : "var(--dsw-alias-label-tertiary, #999)",
-          transition: "left .15s, background .15s"
+          background: THUMB_COLOR,
+          transition: "transform 120ms ease",
+          transform: checked ? "translateX(16px)" : "translateX(0)"
         }
       })
     ),
