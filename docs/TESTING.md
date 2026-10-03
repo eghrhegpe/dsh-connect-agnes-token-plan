@@ -10,6 +10,7 @@
 npm test                    # 全量离线门禁：请见 `test/_roster.mjs` 与 `node test/run.mjs --list`（磁盘所有 *.test.mjs 自动构成名册）；末尾 build-gate（重建 src/ 全部源码并验证 lib/ 与 client.js 产物；无 tsdown 则 SKIP）+ e2e-gate（无 dsh CLI 则 SKIP）
 npm run test:e2e            # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
 npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PLAN_API_KEY，重放推理契约
+npm run test:live:agnescode # 仅 live-agnescode.mjs，需联网 + 凭据服务的 AGNESCODE_CREDENTIAL（或 $AGNESCODE_CREDENTIAL 环境变量），默认 2 只读请求；`--chat` 追加 2 条计费思考探针
 ```
 
 **套件名册的事实源只有一个**：`test/_roster.mjs` 的 `listSuites()`（对 `test/*.test.mjs` 逐文件扫描）。`package.json#scripts.test` = `"node test/run.mjs"`，`run.mjs` 直接 `import roster`；CI offline job 与 `package.test.mjs` 三方钉死一致性。**本行枚举不再维护第二份清单**。如需查看当前套件列表，运行：`node test/run.mjs --list`。
@@ -46,6 +47,7 @@ npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PL
 | `test/error-fix.test.mjs` | `llm-error-fix` 对 429 误判的纠正（peer 的 `isQuotaExceededError` 把带额度措辞的限频 429 抢判成 `QUOTA`，本层在出流前纠正回 `RATE_LIMIT`）；末段钉这层补丁的**离线删除闹钟**（peer 下界 + 删除面） |
 | `test/peer-contract.test.mjs` | 与真 peer 包（pi-ai / dsh-llm*）的契约：可达时逐值比对，不可达时 SKIP；§E 退出证执行 peer 未导出的 `classifyPiAiError` 判定"补丁是否已退化"（打印 `EXIT-PROBE:` 行） |
 | `test/live-contract.mjs` | （仅 `test:live:contract`）重放 `test/baselines/agnes-contract.json` 对 Agnes 推理端点：`/v1/models` 目录核对 + 少量 `reasoning_effort` 探针（限流友好，每格 1 请求不重试）；红 = 平台方言漂移，**不是回归**，修法走 `AGNES-API.md` §7 注释层。**它必须是裸 `.mjs`**（不带 `.test.` 后缀），否则会被扫进默认门禁 |
+| `test/live-agnescode.mjs` | （仅 `test:live:agnescode`，ROADMAP §6.3 的「带凭据 live 端到端探针档」）重放 AgnesCode BFF 冻结事实：凭据取 DSH 凭据服务 `AGNESCODE_CREDENTIAL`（或 `$AGNESCODE_CREDENTIAL`），缺则醒目 SKIP；BFF base 先钉回 Agnes 域名族再发 Authorization 头（mirror `trustAgnescodeBffBase`）；默认 2 只读请求（`credits-balance` 信封码字符串 `"000000"` + 五余额字段、`/models` 行字段面 + 与 `AGNESCODE_FALLBACK_MODELS` 的 id 双向核对），`--chat` 追加 2 条**计费**思考探针（ADR-009 的 ON/OFF wire，`max_tokens 32`）；`usage.reasoning_tokens` 只报 INFO 不判红（插件无运行时依赖）。节奏比照 live-contract 且更慢（只读 3s / 计费 5s 退避）；红 = 平台漂移或令牌过期（401 时提示桌面端重采集），**不是回归**，修法走 ROADMAP §6.3.1 注释层 + 兜底表刷新 |
 
 不碰真实账号的保证：网络层打桩，`routes.test.mjs` 用真实响应形状但全 stub，`e2e.mjs` 指向本机假平台。
 

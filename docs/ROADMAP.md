@@ -184,10 +184,10 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - **不做**：提炼/转述、把官方原文合并进 SENSENOVA-API.md、`git rm` 官方副本。
 - **不做**「把 `upstream/` 拉进库」的反向操作（`upstream/` 仍 gitignored、独立历史）。
 
-## 5. P1：CLI `doctor --json`
+## 5. P1：CLI `doctor --json` ✅ 已实现
 
-- 零平台依赖，降最长登录链路排障成本；workbuddy 侧独有缺口。
-- 离线可测，归入 `config` / `parsers` 套件验证。
+- 落地坐标：`src/host/doctor.ts`（只读巡检，经各 store 自己的解析器读，永不分歧）+ `tools/doctor.mjs`（`npm run doctor` / `npm run doctor:json`，零平台依赖）+ `test/doctor.test.mjs`（独立套件进 `npm test`，非 config/parsers 代管）。
+- 降低最长登录链路排障成本；workbuddy 侧独有缺口。
 
 ## 6. 明确不做（边界，写死防止漂移）
 
@@ -433,6 +433,8 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 | `POST {bffBase}/v1/chat/completions` 思考 wire（2026-10-03 真机补探） | `agnes-3.0-flash`，同一道多步算术题，7 发全 `200`：① 不发任何思考字段 → `reasoning_content` 406 字 / `reasoning_tokens` 320（v1 原形状）；② `request_params.agnes_thinking_enabled=true`+`thinking_effort=high` → 327 字 / 266；③ 同 +`auto` → 398 字 / 314；④ 通用 `reasoning_effort=high` → 366 字 / 291；⑤ `reasoning_effort=none` → **257 字 / 188，思考未关**；⑥ `low` → 425 字 / 342；⑦ `medium` → 328 字 / 260 | **「BFF 默认思考关」「档位不生效」两条假设均被推翻**：默认即思考开，`reasoning_effort` 阶梯被接受。**`reasoning_effort:"none"` 关不掉思考**（仍产 188 推理 token）——真关开关是桌面端的 `request_params.agnes_thinking_enabled=false`（或 `thinking_effort:"off"`），pi-ai 的字符串档位映射表达不了它。落地：descriptor 翻 `reasoning:true` + `agnescodeThinkingLevelMap`（`off:null`、`low/medium/high` 开、`xhigh/max` 关），profile 钉 `reasoning:DEFAULT_REASONING_EFFORT`（`agnescode-models.ts` / `agnescode-llm-adapter.ts`），`test/agnescode.test.mjs` 同步钉 |
 | 倍率候选端点 | `GET /v1/model-config`、`/v1/model-rates`、`/v1/models/rates`、`/api/v2/model-config`、`/api/v2/models` 全部 `404`；活目录（行数随 `AGNESCODE_FALLBACK_MODELS`）上也**无任何** `credit` / `rate` / `multiplier` / `price` / `cost` / `billing` 键 | **平台级事实（非「没读到」）**：AgnesCode 的计费口径是账号级积分池，不存在按模型倍率——与 workbuddy 的 `credits: "x0.79"` 字段是不同体系。AgnesCode tab 因此**无倍率可显示**（数据层缺席；与 §7 表「伪倍率折名不做」那条决议不是一回事——那条裁的是操作者手填 ×N，这里是 BFF 根本没出这个数据源） |
 
+**`usage.reasoning_tokens` 汇报漂移补记（2026-10-03，`test/live-agnescode.mjs --chat` 复探）**：`/v1/chat/completions` 响应的 `usage.reasoning_tokens` 不再出现——上表当日思考 wire 七发里它逐发非零（188–342），晚间 ON wire（`reasoning_effort:"high"`，`reasoning_content` 98 字）与 OFF wire（无任何思考字段，101 字）复探均观察为 **absent**。插件对该值无运行时依赖（grep 证实：仅 `src/host/agnescode-models.ts` 注释层引用）→ 属注释层单点漂移，不是 wire 漂移；ADR-009 的两条结论（默认即思考开、off 诚实不提供）经本次 live 复探**复核仍成立**。上表的 188–342 与各字符数是本机账号当日状态，不是平台常量。
+
 ## 7. 优先级与时间盒
 
 | 优先级 | 项 | 侵入性 | 门禁 |
@@ -442,10 +444,10 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 | **P0 ✅** | 429 spike + 配额联动（全局策略 `llm-retry.ts` + per-model 可用性 `llm-models.ts` + `index.ts` quota 重注册） | 低（1 行 peer + peer-free 分类器 + 状态文件桥） | `e2e-gate`（dsh CLI 在则实跑）；`test/retry.test.mjs` 已落地 |
 | **P0 文档** | §5 纠偏 + 本文入库 | 无（仅 doc） | `docs.test.mjs` |
 | **P1 ✅** | 出图吸收（§5.4 接法 B）：`draw.ts`（peer-free：结构化识别 / 端点拼接 / 429 分诊 / 失败冷却）+ `index.ts` opt-in 接线（`drawEnabled` 默认关，无 tools 服务即缺席）；快照契约零改动 | 低 | `test/draw.test.mjs` 已落地；离线套件全绿 |
-| **P1** | `doctor --json` | 低 | `config` / `parsers` 套件 |
+| **P1 ✅** | `doctor --json`（§5：`src/host/doctor.ts` 只读巡检 + `tools/doctor.mjs`，零平台依赖） | 低 | `test/doctor.test.mjs`（独立套件，进 `npm test`） |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
 | **P2 ✅ 已落地后移除（2026-10-01）** | 第二上游 provider（小浣熊 / `sensenova-raccoon`）：曾随 0.4.3 落地、2026-10-01 续做网关契约复测**契约成立**（§6.1.2），但已随 Agnes 线独立**整条移除**（兄弟插件保留该线）——移除即本项终态，无「剩余未做」 | 高（新上游 + 新凭据生命周期） | 移除时同删 `test/raccoon.test.mjs` 与全部接线/文档；`docs.test.mjs` 检查 `README_TABS` 改钉三 tab |
-| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第三个 tab + `test/agnescode.test.mjs`；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）、**格式漂移哨子 `format_drift`**（2026-10：walk 第 9 档直说「格式变了，升级插件」+ doctor 只读盘点三事实分点名，见上方哨子段）；**仍缺**：带凭据的 live 端到端探针档（比照 `live-contract`）、真 DPAPI 路径（`defaultDpapiUnprotect`）零自动覆盖（可加平台守卫的可选档）、会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线检查 + `docs.test.mjs` 检查 `README_TABS`（三 tab 全覆盖）+ render 首帧三 tab 断言 |
+| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第三个 tab + `test/agnescode.test.mjs`；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）、**格式漂移哨子 `format_drift`**（2026-10：walk 第 9 档直说「格式变了，升级插件」+ doctor 只读盘点三事实分点名，见上方哨子段）；**live 探针档已落地（2026-10-03）**：`test/live-agnescode.mjs`（`npm run test:live:agnescode`；凭据取 DSH 凭据服务的 `AGNESCODE_CREDENTIAL` 或 `$AGNESCODE_CREDENTIAL` 环境变量，缺则醒目 SKIP；默认 2 只读请求，`--chat` 追加 2 条计费思考探针——节奏与修法纪律比照 `live-contract`，漂移补记见 §6.3.1）；**仍缺**：真 DPAPI 路径（`defaultDpapiUnprotect`）零自动覆盖（可加平台守卫的可选档）、会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线检查 + `docs.test.mjs` 检查 `README_TABS`（三 tab 全覆盖）+ render 首帧三 tab 断言 |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 | 明确不做 | 伪倍率折进注册模型名（qoder ② 法：把倍率嵌进 DSH 原生选择器的模型名里，绕「选择器无旁路字段」限制）。2026-09-30 决议 | 低 | 现状即决议：`×N` 只作**面板侧标记**（模型花名册行尾 + 趋势图，同一匹配器、同一数值，均标「非官方」）。理由：① 倍率是操作者手填的对比数据、非平台计费事实，折进 DSH 全局模型名会把个人配置泄漏给所有会话；② qoder 嵌名是「DSH 无字段携带平台真实倍率」的 workaround，本插件的倍率本就没有平台出处，面板就是它唯一合理的位置；③ 模型名是 DSH 配置 / 选择器的稳定标识（id 匹配），加 `×N` 会破坏 id 语义 |
 
