@@ -11,8 +11,10 @@ import {
   createAuth, loginWith, resolveAuthConfig, classifyLoginFailure, readJwtExpiry,
   parseRetryAfterMs, AUTH_DEFAULTS
 } from "../src/host/agnes-auth.ts";
+import { writeLoginTrace, traceDir } from "../src/host/trace.ts";
 import { CODE } from "../src/host/codes.ts";
-import { installNetworkGuard } from "./peer-roots.mjs";
+import { installNetworkGuard, isolateStateDir } from "./peer-roots.mjs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
@@ -327,6 +329,78 @@ function jwtWithExp(expSeconds) {
       parseRetryAfterMs({ headers: { get: () => null } }, "请 30 分钟后重试") === 1_800_000,
       String(parseRetryAfterMs({ headers: { get: () => null } }, "请 30 分钟后重试")));
   } catch (error) { fail("9: stated wait", error); restore(); }
+}
+
+// --- 10. the trace actually PERSISTS (red line 5, the success leg) ---------
+// Sections 1–7 pin that `loginWith` CALLS `onTrace` on every attempt, success
+// included. This section pins the other half of the same red line: that the
+// success trace really lands on disk as an `...-ok.json` file, owner-only, in
+// `$DSH_HOME/logs/`. Without it, `index.ts`'s wiring could be dropped and only
+// the e2e tier (which needs the dsh CLI) would notice — "green ≠ ran".
+//
+// Everything here goes through the real `writeLoginTrace` against a temporary
+// DSH_HOME; no network, and the trace payloads are fabricated hop lists.
+try {
+  const restoreHome = isolateStateDir();
+  const group = "10: trace persistence";
+  try {
+    // A successful attempt's trace: the hop list `loginWith` would hand over.
+    const hops = [{ name: "login", status: 200 }, { name: "decode", status: 200 }];
+    const okFile = await writeLoginTrace(hops, "ok");
+    check(`${group}: a SUCCESS trace is written and returns its path`,
+      typeof okFile === "string" && okFile.length > 0, String(okFile));
+    check(`${group}: the success file is named ...-ok.json`,
+      typeof okFile === "string" && okFile.endsWith("-ok.json"), String(okFile));
+    check(`${group}: the file is under $DSH_HOME/logs/`,
+      typeof okFile === "string" && okFile.startsWith(traceDir()), `${okFile} not under ${traceDir()}`);
+    // The whole point of a success trace is diffing it against a failing one,
+    // so the hops must round-trip, not be an empty shell.
+    const written = JSON.parse(readFileSync(okFile, "utf8"));
+    check(`${group}: the hops round-trip through the file`,
+      Array.isArray(written) && written.length === 2 && written[0].name === "login", JSON.stringify(written));
+    // Owner-only: a trace records an account's login timeline, so it must never
+    // be group/world readable. Windows does not carry POSIX permission bits (the
+    // observed mode is 666 there whatever we ask for), so the runtime mode is
+    // asserted only where the OS honors it; everywhere we pin the INTENT -- that
+    // the writer requests 0600. Follows the existing `win32` guards in
+    // doctor/e2e.
+    const mode = statSync(okFile).mode & 0o777;
+    if (process.platform === "win32") {
+      check(`${group}: the writer requests owner-only (0600)`,
+        readFileSync(new URL("../src/host/trace.ts", import.meta.url), "utf8").includes("mode: 0o600"),
+        "trace.ts no longer requests mode 0o600");
+    } else {
+      check(`${group}: the file is owner-only (0600)`, mode === 0o600, `mode=${mode.toString(8)}`);
+    }
+
+    // A FAILING attempt writes a differently-named file next to it, so both
+    // legs of a "browser works, panel does not" report sit side by side.
+    const errFile = await writeLoginTrace([{ name: "login", status: 401 }], "invalid_credentials");
+    check(`${group}: a failure trace is named for its error code`,
+      typeof errFile === "string" && errFile.endsWith("-invalid_credentials.json"), String(errFile));
+    check(`${group}: success and failure traces coexist`,
+      typeof okFile === "string" && typeof errFile === "string" && okFile !== errFile);
+
+    // An empty/absent trace is not worth a file — and must not throw.
+    check(`${group}: an empty trace writes nothing (null)`,
+      (await writeLoginTrace([], "ok")) === null);
+    check(`${group}: a non-array trace writes nothing (null)`,
+      (await writeLoginTrace(undefined, "ok")) === null);
+
+    // Rotation: the directory is capped, so it cannot grow without bound. Write
+    // past the cap and assert the oldest are pruned and the newest survive.
+    const dir = traceDir();
+    const before = readdirSync(dir).filter((n) => n.startsWith("agnes-login-")).length;
+    for (let i = 0; i < 24; i += 1) await writeLoginTrace([{ name: "fill", status: 200, i }], "ok");
+    const kept = readdirSync(dir).filter((n) => n.startsWith("agnes-login-")).sort();
+    check(`${group}: the trace directory is capped (no unbounded growth)`, kept.length <= 20, `kept=${kept.length} (was ${before})`);
+  } catch (error) {
+    fail(group, error);
+  } finally {
+    restoreHome();
+  }
+} catch (error) {
+  fail("10: trace persistence setup", error);
 }
 
 // --- report ---------------------------------------------------------------
