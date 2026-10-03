@@ -1,10 +1,14 @@
 # dsh-connect-agnes-token-plan
 
-Agnes 接入的 DSH **Plugins 页**插件卡**全家桶**，三个 tab 自上而下就是使用顺序：① **积分额度**（纯信息，装完即用）→ ② **接入 API**（可选）→ ③ **AgnesCode**（可选、默认关）。两条上游凭据相互独立。此外 429 自愈在后台生效：限频被误判为"额度耗尽"时在 Host 侧纠正回退避重试，模型不会无端消失。
+把 Agnes 的 Token Plan 搬进 DSH 的 **Plugins 页**——一张插件卡、三个 tab，自上而下就是使用顺序。两条上游凭据相互独立；限频 429 被误判为"额度耗尽"时在 Host 侧纠正回退避重试，模型不会无端消失。
 
-## 功能
+## 三个 tab
 
-### ① 积分额度 tab：套餐即额度
+1. **积分额度**：登录一次 Agnes 控制台，实时查看四类额度窗口与账号累计用量，令牌失效自动重登，之后无需再管。
+2. **接入 API**（可选）：把 Agnes 模型注册为 DSH provider，参与对话与出图——详见[下文](#把-agnes-模型接进-dsh可选)。
+3. **AgnesCode**（可选、默认关）：读取本机 AgnesCode 桌面端登录态接入桌面端上游——详见[下文](#桌面端上游agnescode可选默认关)。
+
+## 积分额度：套餐即额度
 
 ![积分额度 tab](assets/panel-credit.png)
 
@@ -23,14 +27,7 @@ Agnes 的 Token Plan 是「**套餐即额度**」：订阅档位买到的不是�
 - **账号累计用量**：控制台口径的累计请求 / 文本 Token / 生图 / 视频秒数 / 活跃天数，以及近 N 天的分桶柱图
 - **套餐对比**：平台**公开**的套餐目录（六档：入门版 / 专业版 / 高级版 × 月付 / 年付），无需登录即可读，用来回答"升级能买到什么"
 - **模型清单**：当前 Key 实际能调哪些模型，其中哪些能看图（按平台 `input_modalities` 判定，不靠名字猜）
-### ②③ 另外两个 tab（都可选）
-
-- **② 接入 API**：把 Agnes 模型接进 DSH 对话，思考强度可选，并可注册出图 / 视频工具——见[下文](#把-agnes-模型接进-dsh可选)。
-- **③ AgnesCode**（默认关）：读取本机 AgnesCode 桌面端的登录态，独立 provider 与独立积分池——见[下文](#桌面端上游agnescode可选默认关)。
-
 面板**不代你操作账务**：不改套餐、不代扣额度、不碰 Key 明文；数据来自 Agnes 控制台自己的 API，与网页控制台口径一致。真正会「动」的四部分——注册 provider、挂出图工具、挂视频工具、接入 AgnesCode 桌面端上游——全部 opt-in 且**默认关闭**，不打开时插件退化为纯信息展示。
-
-**注册 provider 时**（面板开关打开），插件把 Agnes 模型接进 DSH 的对话模型选择器，并在 Host 侧纠正 peer 对限频 429 的误判（peer 的 `isQuotaExceededError` 命中面过宽，任何带额度措辞的 429——如 `out of rate budget`——都会被抢判成「额度耗尽」而不重试）——限频真正退避重试，模型不再无端 "消失"。
 
 ## 安装
 
@@ -66,6 +63,8 @@ Agnes 的 Token Plan 是「**套餐即额度**」：订阅档位买到的不是�
 「接入 API」tab 的三张卡按"你为什么来这"排序，而不是按依赖排序：**语言模型**（注册 provider + 勾选推送哪些模型）、**出图工具**——两张都在最前且默认展开；**API Key** 收在最后（默认收起），它是前两张卡的前置条件，由它们指回来。
 
 在「API Key」卡里粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可）：Host 即以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新，还能在「语言模型」卡勾选具体要推送哪些模型。Key 只进 DSH 凭据（引用名 `AGNES_TOKEN_PLAN_API_KEY`）、面板永不回显。开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3 与 [docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md)。
+
+**注册 provider 时**（面板开关打开），插件把 Agnes 模型接进 DSH 的对话模型选择器，并在 Host 侧纠正 peer 对限频 429 的误判（peer 的 `isQuotaExceededError` 命中面过宽，任何带额度措辞的 429——如 `out of rate budget`——都会被抢判成「额度耗尽」而不重试）——限频真正退避重试，模型不再无端 "消失"。
 
 > **免费版与付费 Token Plan 共用同一个 API Key 输入框**：`sk-`（免费版）与 `cpk-`（Token Plan）两类 Key 都走同一份 `/v1/models` 目录，本插件对前缀不做限制。**计费双轨**——`sk-` 走 API 按 token / 张 / 秒计费（`agnes-2.5-flash` / `agnes-3.0-flash` / 图片模型当前优惠价 `$0`，`agnes-2.5-pro` 按刊例价），`cpk-` 走 Token Plan 订阅配额（四窗口）。面板「积分额度」tab 只读**订阅配额**，不读 API 按量余额；两类 Key 使用**独立限制池**，换 Key 即换池。两者都能在此粘贴。
 
