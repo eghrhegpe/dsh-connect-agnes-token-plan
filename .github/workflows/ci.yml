@@ -114,6 +114,7 @@ jobs:
           node test/switch-precedence.test.mjs
           node test/admission-audit.test.mjs
           node test/agnescode.test.mjs
+          node test/agnescode-dpapi.test.mjs
           node test/publish-core.test.mjs
           node test/state-authority.test.mjs
           node test/platform-assumptions.test.mjs
