@@ -152,7 +152,23 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       });
       if (!isCurrent()) return;
       if (!response.ok) {
-        setError(errorOfStatus(response.status));
+        // A non-2xx is not necessarily bodiless: the Host's same-origin fence
+        // answers 403 with `{ok:false, error:"forbidden: origin mismatch"}`.
+        // Reading that reason is the difference between "sign in again" (which
+        // cannot help) and the actual cause. Best-effort — a body that is
+        // absent, unparseable, or shaped differently just falls back to the
+        // status-only reading inside `errorOfStatus`.
+        let reason = "";
+        try {
+          const envelope = await response.json();
+          if (envelope && typeof envelope === "object" && typeof (envelope as { error?: unknown }).error === "string") {
+            reason = (envelope as { error: string }).error;
+          }
+        } catch {
+          reason = "";
+        }
+        if (!isCurrent()) return;
+        setError(errorOfStatus(response.status, reason));
         return;
       }
       const body = await response.json();

@@ -76,16 +76,28 @@ export function interpretSnapshot(body: unknown): SnapshotRead {
 /**
  * The failure a non-2xx snapshot response becomes.
  *
- * A non-2xx carries no body, so the status is the only clue. 401/403 mean
- * the token is gone — the same story as the Host's own `jwt_expired`, and
- * the only reading that keeps the sign-in form on screen instead of leaving
+ * 401 means the token is gone — the same story as the Host's own `jwt_expired`,
+ * and the only reading that keeps the sign-in form on screen instead of leaving
  * the reader with a bare status code. Anything else is a plain transport
  * string, which keeps the form reachable too.
+ *
+ * 403 is deliberately NOT lumped in with 401. The Host's only 403 is its
+ * same-origin fence (`routes/http.ts` refuseOrigin), whose body names the real
+ * reason — "forbidden: origin mismatch". Telling a reader whose token is fine
+ * to "sign in again" sends them after a fix that cannot work. So: when the
+ * response carries a body, the Host's own words are the message and the failure
+ * stays a transport string; only a bare 403 with nothing to read falls back to
+ * the old expired-token reading, because a status with no explanation is still
+ * more likely the credential than the fence.
  *
  * Named and module-scoped for the same reason as `interpretSnapshot`: the
  * Node-side tests drive this mapping instead of a copy of it.
  */
-export function errorOfStatus(status: number): SnapshotFailure | string {
+export function errorOfStatus(status: number, bodyError?: string): SnapshotFailure | string {
+  if (status === 403) {
+    const reason = typeof bodyError === "string" ? bodyError.trim() : "";
+    if (reason !== "") return reason;
+  }
   if (status === 401 || status === 403) return { message: `HTTP ${status}`, code: CLIENT_CODE.JWT_EXPIRED, auth: null };
   return `HTTP ${status}`;
 }

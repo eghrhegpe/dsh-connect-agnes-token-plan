@@ -833,18 +833,38 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const viewOfCode = (code, message = "an error") =>
     viewOf(null, { message, code, auth: null }, tt);
 
-  // A non-2xx snapshot response carries no body, so the status code is the only
-  // clue. 401/403 must read as "the token is gone" and keep the sign-in form on
-  // screen; anything else stays a plain transport string.
-  for (const status of [401, 403]) {
-    const rejected = errorOfStatus(status);
-    check(`HTTP ${status} reads as an expired token`,
-      rejected.code === "jwt_expired" && rejected.message === `HTTP ${status}` && rejected.auth === null,
+  // 401 means the token is gone: it must read as an expired token and keep the
+  // sign-in form on screen. 403 is NOT the same story — the Host's only 403 is
+  // its same-origin fence, which carries the real reason in the body. Telling
+  // someone with a perfectly good token to "sign in again" sends them after a
+  // fix that cannot work, so a 403 WITH a body stays a transport string
+  // carrying the Host's own words. Only a bare 403 (no body to read) keeps the
+  // expired-token reading, because an unexplained status is more likely the
+  // credential than the fence.
+  {
+    const rejected = errorOfStatus(401);
+    check("HTTP 401 reads as an expired token",
+      rejected.code === "jwt_expired" && rejected.message === "HTTP 401" && rejected.auth === null,
       JSON.stringify(rejected));
     const rejectedView = viewOf(null, rejected, tt);
-    check(`HTTP ${status} still reaches the sign-in form`,
+    check("HTTP 401 still reaches the sign-in form",
       rejectedView.needsSetup === true && rejectedView.guidanceKey === "panel.jwtExpired",
       String(rejectedView.guidanceKey));
+  }
+  {
+    const fenced = errorOfStatus(403, "forbidden: origin mismatch");
+    check("a 403 with a reason does NOT read as an expired token",
+      typeof fenced === "string" && fenced === "forbidden: origin mismatch", JSON.stringify(fenced));
+    check("the fenced view names the real cause instead of a login prompt",
+      viewOf(null, fenced, tt).guidanceKey === null, String(viewOf(null, fenced, tt).guidanceKey));
+  }
+  {
+    const bare = errorOfStatus(403);
+    check("a bare 403 with nothing to read still falls back to the expired token",
+      bare.code === "jwt_expired" && bare.message === "HTTP 403", JSON.stringify(bare));
+    const blank = errorOfStatus(403, "   ");
+    check("a 403 whose body is blank is treated as bare",
+      blank.code === "jwt_expired" && blank.message === "HTTP 403", JSON.stringify(blank));
   }
   for (const status of [408, 429, 500, 503]) {
     check(`HTTP ${status} stays a plain transport string`,
