@@ -2,6 +2,17 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.9.0] — 2026-10-03
+
+### UI：开关统一为项目品牌色，积分额度拆成三张卡片
+
+- **开关改用 `--agnes-brand`（#1E40AF 科技蓝）**，不再跟着 DSH 的中性色走：DSH 的 `--dsw-alias-brand-primary` 在暗色模式下解析为近黑 `#0f1115`，开关 ON 态看起来像个空白白色胶囊（2026-10-03 实测截图确认）。项目自己的蓝色已在 tab 激活下边框、额度进度条、用量进度条、模型 checkbox accent 中使用，开关纳入同一套 token。几何仍沿用 DSH 原生 Switch（36×20 capsule、2px padding、16×16 thumb、`translateX(16px)` 运动、120ms ease），颜色用项目自己的。
+- **新增共享 `Switch` 组件**（`src/client/switch.ts`）：提供方开关、出图/视频工具开关、AgnesCode 开关统一走这一个组件，消除三份重复的胶囊样式。原生 `<input type="checkbox">` + `appearance:none`，浏览器自动暴露 `aria-checked` 与焦点环，键盘可达性免费。
+- **积分额度从一张宽卡片拆成三张小卡片**：原卡片在 861px 面板宽度内只占左边约 200px（标题「积分余额」+ 大数字 1200 + 小字「时效 1200 · 永久 0」），右侧约 660px 空白。现拆为「积分余额 / 时效 / 永久」三张 min-width 卡片（`flex: 1 1 160px` + `minWidth: 120` + `flexWrap: wrap`），面板宽时一排、窄时换行堆叠。字典 key `agnescode.balanceSplit` 退役，新增 `agnescode.balanceTimeLabel` / `agnescode.balancePermanentLabel`。
+- **模型清单头部重排**：原来一行塞了三种不同性质的信息（标题 + 机制说明 + 实时默认档位）。现标题与默认档位一行（左右分布），机制说明移到卡片底部 footnote。
+- **移除「解除关联」**：它的两个副作用（删除本地 JWT + 注销 provider）已分别由「检测本机登录态」（重新采集覆盖 JWT）与「注册 AgnesCode 提供方」开关（关闭即注销）覆盖，按钮没有独立能力，纯增加误触风险。`POST /agnescode` 的 `logout` action、host route handler、字典 key、面板按钮一并删除。
+- 影响面：`src/client/{switch.ts, provider-controls.ts, model-picker.ts, agnescode-tab.ts, i18n.ts}`、`src/host/routes/agnescode.ts`、`docs/{API.md, ARCHITECTURE.md}`、`test/{render, agnescode}.test.mjs`。
+
 ## [0.8.1] — 2026-10-03
 
 ### 修复：AgnesCode provider 补全思考契约——档位可用，`off` 诚实不提供
