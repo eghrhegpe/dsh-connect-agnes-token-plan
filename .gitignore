@@ -13,6 +13,11 @@ tmp/
 .zcode/
 .agnes/
 
+# 门禁机器产物：dup-gate 的 jscpd 把克隆报告默认写到 `report/`（test/dup-gate.mjs）。
+# 同属 PITFALLS §10「探针产物可以落、但绝不留在仓库根的未跟踪区」——与上面
+# `probe-asar/` 那次事故同一类：未被忽略的目录，一次 `git add -A` 就进历史。
+/report/
+
 # 依赖与构建（link 安装下通常没有实体目录，保险起见）
 node_modules/
 dist/
