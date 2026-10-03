@@ -1,17 +1,20 @@
 # dsh-connect-agnes-token-plan
 
-把 Agnes 接进 DSH 的 **Plugins 页**插件卡：看额度、接模型、出图与视频，一个面板全办。登录一次令牌自动重登，之后无需再管；限频 429 在 Host 侧自愈退避，模型不会无端"消失"。
+把 Agnes 接进 DSH 的 **Plugins 页**插件卡：
+
+- **积分额度**——登录一次，实时查看积分余额、额度窗口与每模型消耗，令牌自动续期，之后无需再管；
+- **接入 API**——把爱思模型注册为 DSH provider，参与对话、出图与出视频；
+- **Agnescode**——上游限流较宽松的另一条爱思办公产品线，独立账号、独立积分。
 
 面板分三个 tab，按「先看数、再接入、最后可选加桌面端上游」排序：
 
 ## 积分额度
 
-地基。Agnes 的 Token Plan 是「**套餐即额度**」：订阅档位买到的不是积分余额，而是四个维度的用量窗口——模型请求（5 小时滚动）、每周请求、生图与视频（各 24 小时），各有上限、独立滚动，用超了只能等窗口重置。这个 tab 把数字搬进 DSH，写代码时不用切网页就能盯住：
+将 Agnes 的 Token Plan 接入dsh，，用超了只能等窗口重置。这个 tab 把数字搬进 DSH，写代码时不用切网页就能盯住：
 
-- **额度窗口**：四个窗口的上限、周期与**平台报出的已用量**（含百分比与重置时间）
+- **额度窗口**：模型请求（5 小时滚动）、每周请求、生图与视频（各 24 小时），**平台报出已用量**、独立滚动，（含百分比与重置时间）
 - **账号累计用量**：控制台口径的累计请求 / 文本 Token / 生图 / 视频秒数 / 活跃天数，以及近 N 天的分桶柱图
 - **套餐对比**：平台**公开**的套餐目录（六档），无需登录即可读，用来回答"升级能买到什么"
-- **模型清单**：当前 Key 实际能调哪些模型，其中哪些能看图（按平台 `input_modalities` 判定，不靠名字猜）
 
 ![「积分额度」tab](assets/panel-credit.png)
 
@@ -19,32 +22,37 @@
 
 ## 接入 API（可选）
 
-把 Agnes 模型注册为 DSH provider，参与对话与出图。三张卡按"你为什么来这"排序，而不是按依赖排序：**语言模型**（注册 provider + 勾选推送哪些模型）与**出图工具**在最前且默认展开；**API Key** 收在最后（默认收起），它是前两张卡的前置条件，由它们指回来。
+把 Agnes 模型注册为 DSH provider，参与对话与出图。
 
-- **语言模型**：在「API Key」卡粘贴 Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可，共用同一输入框），Host 即以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新；Key 只进 DSH 凭据、面板永不回显。**计费双轨**——`sk-` 走 API 按量计费，`cpk-` 走订阅配额（本 tab 只读订阅配额），两类 Key 独立限制池，换 Key 即换池。
-- **出图 / 视频工具**：打开开关后 Host 给 agent 注册 `agnes_draw_image` / `agnes_video_generate`，鉴权走同一把 `AGNES_TOKEN_PLAN_API_KEY`；出图模型按 catalog 的 `output_modalities` 结构化判定，视频按选中模型分派 V2.0 / 2.5 两套互斥参数。工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义），开关值本身立即生效。
-- 开关与勾选都在面板热生效，无需重启。细节见 [docs/SETUP.md](docs/SETUP.md) §3、[docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md) 与 [docs/AGNES-API.md](docs/AGNES-API.md) §7.5。
+- **模型清单**：在「API Key」卡粘贴 Key 保存`AGNES_TOKEN_PLAN_API_KEY`，Host 以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新；
+- **语言模型**：显示当前 Key 实际能调哪些模型，其中哪些能看图（按平台 `input_modalities` 判定，不靠名字猜）。
+- **出图工具**：Host 给 agent 注册 `agnes_draw_image` ，出图模型按 catalog 的 `output_modalities` 结构化判定。
+- **视频工具**：Host 给 agent 注册 `agnes_video_generate`，按选中模型分派 V2.0 / 2.5 两套互斥参数。
+- 开关与勾选都在面板热生效，无需重启。但工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义）。细节见 [docs/SETUP.md](docs/SETUP.md) §3、[docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md) 与 [docs/AGNES-API.md](docs/AGNES-API.md) §7.5。
 
 ![「接入 API」tab](assets/panel-API-provider.png)
 
+注意：`sk-` 走 API 按量计费，`cpk-` 走订阅配额（本 tab 只读订阅配额），两类 Key 有独立限制池，需从官网了解实际限制。
+
 ## AgnesCode（可选，默认关）
 
-接的是 **AgnesCode 桌面端**的登录态：微信扫码发生在桌面 App 里，本插件只**读取** App 留在本机的加密会话文件，以 provider id `agnescode` 注册**独立** provider、独立积分池——两条上游凭据互不相通：
+**读取 AgnesCode 桌面端** 留在本机的加密会话文件，获取登录态，再以 provider id `agnescode` 注册**独立** provider、独立积分池——两条上游凭据互不相通：
 
-1. **凭据来源**：Chromium os_crypt 加密会话文件，密钥经系统 DPAPI 解封，全程内存使用、不落盘不显示；
-2. **接口地址**：写在会话文件里、**按账号跟随**，钉死在 Agnes 域名族内，地址不对就拒绝使用；
-3. **显示口径**：积分是**订阅池**（时效 + 永久）；模型清单带「会员」标记而不隐藏——会员门槛是账号状态，不是模型不存在；
-4. **失败可诊断**：检测不到登录态时，面板逐条列出探测过哪些文件、各自为什么没成（「没装 App」「解不开密」「会话里没有令牌」是三种不同的处理）；
-5. **约 28 天续期一次**：JWT 过期后没有自动路径，开一次桌面 App、再点「检测本机登录态」重新采集即可。
+
+1. **接口地址**：写在会话文件里、**按账号跟随**，钉死在 Agnes 域名族内，地址不对就拒绝使用；
+2. **显示口径**：积分是**订阅池**（时效 + 永久）；模型清单带「会员」标记而不隐藏——会员门槛是账号状态，不是模型不存在；
+3. **约 28 天续期一次**：JWT 过期后没有自动路径，开一次桌面 App、再点「检测本机登录态」重新采集即可。
 
 协议探针记录见 [docs/ROADMAP.md](docs/ROADMAP.md) §6.3。
 
 ![AgnesCode tab](assets/panel-AgnesCode.png)
 
+注意：检测不到登录态时，面板会逐条列出探测过哪些文件、各自为什么没成（「没装 App」「解不开密」「会话里没有令牌」是三种不同的处理）；
+
 ## 边界
 
-- **只读的部分**：面板**不代你操作账务**——不改套餐、不代扣额度、不碰 Key 明文；数据来自 Agnes 控制台自己的 API，与网页控制台口径一致。
-- **会「动」的部分**：注册 provider、挂出图工具、挂视频工具、接桌面端上游，全部 opt-in 且**默认关闭**；一个都不打开时，插件退化为纯信息展示。
+- 面板**不代你操作账务**——不改套餐、不代扣额度、不碰 Key 明文；数据来自 Agnes 控制台自己的 API，与网页控制台口径一致。
+- 注册 provider、挂出图工具、挂视频工具、接桌面端上游，全部 opt-in 且**默认关闭**；一个都不打开时，插件退化为纯信息展示。
 
 ## 安装
 
@@ -63,9 +71,11 @@
 
 ## 它是怎么工作的
 
-登录原理一句话：Host 在后台向 `{consoleBase}/api/user/login` 发**一次**账号密码 POST 换取 access token（Agnes 没有 OIDC 跳转、没有 refresh token），令牌过期或被拒时用同一路径**重登一次**；面板打开时才轮询一个只读本地路由，关掉即停。协议细节（一跳登录、密码明文过 TLS 与「不落盘」纪律、防锁号节流）见 [docs/AUTH.md](docs/AUTH.md)，接口契约见 [docs/AGNES-API.md](docs/AGNES-API.md)。
+登录原理：
+- Host 在后台向 `{consoleBase}/api/user/login` 发**一次**账号密码 POST 换取 access token（Agnes 没有 OIDC 跳转、没有 refresh token），令牌过期或被拒时用同一路径**重登一次**；
+- `/api/cn/user/subscription` 直接返回每个窗口的 `used` / `limit` / `reset_at` / `usage_pct`（控制台「当前用量」那一屏的数据源），面板逐字转写、不做减法。下方的「账号累计用量」统计同理，
+- 面板打开时才轮询一个只读本地路由，关掉即停。协议细节（一跳登录、密码明文过 TLS 与「不落盘」纪律、防锁号节流）见 [docs/AUTH.md](docs/AUTH.md)，接口契约见 [docs/AGNES-API.md](docs/AGNES-API.md)。
 
-**窗口「已用」是平台报出的，面板不计算**：`/api/cn/user/subscription` 直接返回每个窗口的 `used` / `limit` / `reset_at` / `usage_pct`（控制台「当前用量」那一屏的数据源），面板逐字转写、不做减法。下方的「账号累计用量」统计的是另一段周期，**不能拿来减窗口上限**——减出来的「剩余」没人能担保，所以面板在界面上明说了这一点，全链路也不产出「剩余」这个数。
 
 ## 运维诊断：这台机器现在挂没挂 provider？
 
