@@ -184,6 +184,108 @@ export function matchMultiplier(modelId: unknown, multipliers: Record<string, nu
 }
 
 /**
+ * Assemble the `quota` block: a PURE projection of the four soft console
+ * results. No HTTP, no side effects — the fetch-then-degrade policy upstream
+ * means every field here is either the auth probe's outcome or a degraded
+ * source, so pulling it out of `buildSnapshotBody` keeps that function to the
+ * polling orchestration and the trust-fenced `llm` block.
+ *
+ * Field-for-field identical to the inline form it replaced; `routes.test.mjs`
+ * pins the behavior, `contract.test.mjs` / `docs.test.mjs` pin the key set.
+ */
+function buildQuotaBlock(
+  overview: { value: unknown; error: Error | null },
+  series: { value: unknown; error: Error | null },
+  subscription: { value: unknown; error: Error | null },
+  plans: { value: unknown; error: Error | null }
+) {
+  const catalogue = parsePlans(plans.value);
+  const currentPlan = matchCurrentPlan(subscription.value, catalogue);
+  // Per-window consumption from the console's own subscription.usage report.
+  const windowUsage = parseSubscriptionUsage(subscription.value);
+  // The limit stays the PLAN's fact (`quotaWindows`); only the consumed side
+  // is overlaid. A window the subscription did not report keeps no `used` at
+  // all, so the card draws no bar rather than one claiming a figure nobody
+  // stated.
+  const windows = quotaWindows(currentPlan).map((window) => {
+    const usage = windowUsage?.[window.key];
+    if (usage === undefined) return window;
+    return {
+      ...window,
+      used: usage.used,
+      usagePct: usage.usagePct,
+      rangeStart: usage.rangeStart,
+      rangeEnd: usage.rangeEnd,
+      resetAt: usage.resetAt,
+      resetInSeconds: usage.resetInSeconds
+    };
+  });
+  return {
+    plan: currentPlan === null ? null : planSummary(currentPlan),
+    // The four windows the plan caps. Empty when the payload did not name a
+    // plan this plugin recognises — an empty list is honest, a guessed plan is
+    // not, and the panel says "unknown" rather than showing the entry tier.
+    // Each window that the subscription also reported consumption for carries
+    // the platform's own `used` / window bounds / reset time.
+    windows,
+    // Cumulative usage. Deliberately NOT subtracted from the limits above: the
+    // two are measured over different periods, so a difference would be a
+    // number nobody can defend.
+    //
+    // `null` when the overview did not arrive — and NOT a zeroed block. Every
+    // counter in `parseUsageOverview` defaults through `countOf`, so handing it
+    // the `{}` that `obj(null)` returns would print "0 requests / 0 tokens" for
+    // an account whose usage nobody managed to read: the failure would come out
+    // as a measurement. The panel already renders `null` as "not read yet"
+    // (`quota.usageMissing`), which is why the wire contract declares this
+    // nullable.
+    totals: overview.value === null ? null : parseUsageOverview(overview.value),
+    plans: catalogue.map(planSummary),
+    expiresAt: readSubscriptionExpiry(subscription.value),
+    // Whether the console half answered at all. `false` means every
+    // authenticated source is missing and what follows is the PUBLIC catalogue
+    // plus whatever degraded source happened to answer — the panel says so
+    // rather than letting the absence read as "you have used nothing".
+    consoleConnected: overview.value !== null,
+    // Why a source is missing, when one is. `overview` leads the list now that
+    // it degrades: its code (`not_configured` on a fresh install, `auth_error`
+    // on a dead token, `console_error` when the platform is down) is what tells
+    // the panel whether a login would fix this or patience would.
+    error: firstFailure([
+      ["usage-overview", overview],
+      ["series", series],
+      ["subscription", subscription],
+      ["plans", plans]
+    ])
+  };
+}
+
+/**
+ * The shape-drift warnings: renamed/missing fields that did NOT fail a source
+ * outright (those go through `quota.error`). A shape warning must reach the
+ * panel or a renamed field would read as "no usage" forever — but it must NOT
+ * be emitted for a source that failed on the network, or the shape would take
+ * the blame for a 401. Pure projection of the three soft results.
+ */
+function buildShapeWarnings(
+  overview: { value: unknown; error: Error | null },
+  series: { value: unknown; error: Error | null },
+  plans: { value: unknown; error: Error | null }
+) {
+  return [
+    ...(overview.value === null
+      ? []
+      : checkShape(overview.value, "usage-overview").missing.map((key) => ({ api: "usage-overview", missing: key }))),
+    ...(series.value === null
+      ? []
+      : checkShape(series.value, "usage-series").missing.map((key) => ({ api: "usage-series", missing: key }))),
+    // `checkShape` describes objects; the catalogue's `data` is an array, so
+    // its drift is checked here.
+    ...(plans.value !== null && !Array.isArray(plans.value) ? [{ api: "plans", missing: "array" }] : [])
+  ];
+}
+
+/**
  * Fetch the four console sources plus the model catalog and aggregate them
  * into the snapshot body the route writes.
  *
@@ -305,65 +407,10 @@ export async function buildSnapshotBody({
   ]);
 
   // --- the quota block -----------------------------------------------------
-  const catalogue = parsePlans(plans.value);
-  const currentPlan = matchCurrentPlan(subscription.value, catalogue);
-  // Per-window consumption from the console's own subscription.usage report.
-  const windowUsage = parseSubscriptionUsage(subscription.value);
-  // The limit stays the PLAN's fact (`quotaWindows`); only the consumed side
-  // is overlaid. A window the subscription did not report keeps no `used` at
-  // all, so the card draws no bar rather than one claiming a figure nobody
-  // stated.
-  const windows = quotaWindows(currentPlan).map((window) => {
-    const usage = windowUsage?.[window.key];
-    if (usage === undefined) return window;
-    return {
-      ...window,
-      used: usage.used,
-      usagePct: usage.usagePct,
-      rangeStart: usage.rangeStart,
-      rangeEnd: usage.rangeEnd,
-      resetAt: usage.resetAt,
-      resetInSeconds: usage.resetInSeconds
-    };
-  });
-  const quota = {
-    plan: currentPlan === null ? null : planSummary(currentPlan),
-    // The four windows the plan caps. Empty when the payload did not name a
-    // plan this plugin recognises — an empty list is honest, a guessed plan is
-    // not, and the panel says "unknown" rather than showing the entry tier.
-    // Each window that the subscription also reported consumption for carries
-    // the platform's own `used` / window bounds / reset time.
-    windows,
-    // Cumulative usage. Deliberately NOT subtracted from the limits above: the
-    // two are measured over different periods, so a difference would be a
-    // number nobody can defend.
-    //
-    // `null` when the overview did not arrive — and NOT a zeroed block. Every
-    // counter in `parseUsageOverview` defaults through `countOf`, so handing it
-    // the `{}` that `obj(null)` returns would print "0 requests / 0 tokens" for
-    // an account whose usage nobody managed to read: the failure would come out
-    // as a measurement. The panel already renders `null` as "not read yet"
-    // (`quota.usageMissing`), which is why the wire contract declares this
-    // nullable.
-    totals: overview.value === null ? null : parseUsageOverview(overview.value),
-    plans: catalogue.map(planSummary),
-    expiresAt: readSubscriptionExpiry(subscription.value),
-    // Whether the console half answered at all. `false` means every
-    // authenticated source is missing and what follows is the PUBLIC catalogue
-    // plus whatever degraded source happened to answer — the panel says so
-    // rather than letting the absence read as "you have used nothing".
-    consoleConnected: overview.value !== null,
-    // Why a source is missing, when one is. `overview` leads the list now that
-    // it degrades: its code (`not_configured` on a fresh install, `auth_error`
-    // on a dead token, `console_error` when the platform is down) is what tells
-    // the panel whether a login would fix this or patience would.
-    error: firstFailure([
-      ["usage-overview", overview],
-      ["series", series],
-      ["subscription", subscription],
-      ["plans", plans]
-    ])
-  };
+  // Assembled by `buildQuotaBlock` below: fetch-five-then-degrade means every
+  // field here is the auth probe's outcome or a degraded source, so the block
+  // is a pure projection of the four soft results (no side effects, no HTTP).
+  const quota = buildQuotaBlock(overview, series, subscription, plans);
   const usage = series.value === null
     ? null
     : (() => {
@@ -376,20 +423,7 @@ export async function buildSnapshotBody({
   // as "no usage" forever. A source that failed outright is reported through
   // `quota.error` instead, so it is skipped here: reporting both would blame
   // the shape for a network error.
-  const shapeWarnings = [
-    // Same rule as the series below: a source that failed outright is reported
-    // through `quota.error`, so checking the shape of a null body would blame a
-    // renamed field for a network error.
-    ...(overview.value === null
-      ? []
-      : checkShape(overview.value, "usage-overview").missing.map((key) => ({ api: "usage-overview", missing: key }))),
-    ...(series.value === null
-      ? []
-      : checkShape(series.value, "usage-series").missing.map((key) => ({ api: "usage-series", missing: key }))),
-    // `checkShape` describes objects; the catalogue's `data` is an array, so
-    // its drift is checked here.
-    ...(plans.value !== null && !Array.isArray(plans.value) ? [{ api: "plans", missing: "array" }] : [])
-  ];
+  const shapeWarnings = buildShapeWarnings(overview, series, plans);
 
   // --- the catalog half ----------------------------------------------------
   const catalogIds = Array.isArray(catalog) ? catalog.map((entry) => entry.id) : [];

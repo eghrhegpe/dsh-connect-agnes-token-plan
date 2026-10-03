@@ -567,7 +567,11 @@ function literalScan(text, opener, after) {
 
   const NESTED = [
     {
-      scan: literalScan(hostSrc, /^ {2}const quota = \{$/),
+      // The quota block is assembled by `buildQuotaBlock` (extracted out of
+      // `buildSnapshotBody` so the orchestration function stays focused) — its
+      // `return {` literal carries the same anchors. Bind to that helper with
+      // `after` so the scan does not grab an earlier 2-space `return {`.
+      scan: literalScan(hostSrc, /^ {2}return \{$/, /function buildQuotaBlock\b/),
       client: clientFields(wireSrc, "QuotaData"),
       anchors: ["plan", "windows", "totals", "plans", "consoleConnected", "error"],
       label: "quota"
