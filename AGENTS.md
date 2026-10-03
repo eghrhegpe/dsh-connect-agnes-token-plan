@@ -129,7 +129,11 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
 | 接/改 LLM provider（descriptor、`maxTokens`、注册三件套、adapter 组装） | `docs/DSH-LLM-DEVELOP.md`（peer 分工 → 注册 → descriptor 契约 → 探针纪律 → 排查速查） |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（43 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（47 条现象→根因→修法） |
+| 排查「面板说令牌失效 / 让你重新登录，但重登没用」 | `docs/PITFALLS.md` §46（Host 唯一的 403 是同源闸，不是凭据；客户端曾把它读成 `jwt_expired`） |
+| 排查「进度条数字和控制台对不上 / 超额窗口显示成 100%」 | `docs/PITFALLS.md` §45（进度条用平台自己的 `usage_pct`，不是 `used/limit`；钳制即改写平台口径） |
+| 排查「凭据疑似漏进 agent 对话 / 日志」 | `docs/PITFALLS.md` §44（agent 工具 execute 错误是红线①第四张脱敏表面；同族漏一条就漏凭据） |
+| 排查「市场页截图裂 / 清单指的东西不在包里」 | `docs/PITFALLS.md` §47（`files` 白名单与 `screenshots.json` 是两条独立门禁，交集处无人看） |
 | 排查「浏览器/控制台看不到插件报错」「有没有环形日志」 | `docs/PITFALLS.md` §42（两半进程 + 有意降级：Host 报错在 `dsh web` 终端 stdout 与 `$DSH_HOME/logs/`，不在浏览器 F12） |
 | 查某条事实「当初从哪来」 / 要落盘新参照件 | `docs/REFERENCES.md`（`upstream/` 容器清单：来源 / 版本 / 许可 / 承重在哪） |
 | 排查「这条配置到底生效没」 / 改了源码却没变 | `docs/PITFALLS.md` §22（bundles 装载 → patch overlay → `$DSH_HOME/state/<profile>/<name>/` 三层，desktop 是安装副本、web 是 symlink） |
