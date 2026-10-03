@@ -171,8 +171,18 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   // Built from the live clock because the formatter compares against it, and
   // rendered through the REAL zh dictionary — the identity `tt` returns the key
   // itself, which carries no `{time}` placeholder for `format` to fill.
+  //
+  // The same-day instant is constructed as **today 23:58:00 local**, not as
+  // `now + 1h`: an offset silently crosses midnight once the suite runs after
+  // 23:00, at which point the fixture stops being same-day while the assertion
+  // still demands a bare clock — a daily red gate between 23:00 and 00:00
+  // (PITFALLS §48). Anchoring to a fixed clock time is unconditionally
+  // "today" whenever the suite runs, so the premise now holds by construction.
+  // `tomorrow` keeps the offset form: it asserts a cross-day rendering, so
+  // crossing midnight is exactly what it wants.
   const now = new Date();
-  const laterToday = Math.floor(now.getTime() / 1000) + 3600;
+  const sameDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 58, 0);
+  const laterToday = Math.floor(sameDay.getTime() / 1000);
   const tomorrow = Math.floor(now.getTime() / 1000) + 48 * 3600;
   const zhDict = surface.dictionaries.zh;
   const zhTt = (key) => zhDict[key] ?? key;
