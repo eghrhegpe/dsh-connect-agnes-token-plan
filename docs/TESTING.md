@@ -75,6 +75,7 @@ npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PL
     ```powershell
     $env:npm_config_prefix="$env:APPDATA\npm"; node test/e2e.mjs
     ```
+  - **e2e 只驱动 `registerRoutes` 挂载面中的一小部分。** `test/e2e.mjs` 实际打的是 `/snapshot` / `/account` / `/api-key`；`/provider` / `/models` / `/draw` / `/video` / `/agnescode`（挂载全清单以 `registerRoutes` 为准，`wiring` 套件钉其条数）没有 e2e 驱动，由离线 `routes` / `wiring` / `provider` / `draw` / `video` / `agnescode` 套件在容器层兜底（wiring 钉「挂载期间每条路由在场」，各域套件钉 handler 语义）。缺口本身有离线覆盖、不深于此条之外的风险——登记是防「e2e 全绿 = 所有路由都验过」的误读。补驱动按上条「令牌死亡」同型权衡：e2e 时长敏感，先补价值最高的 `/provider`（并发发布门控的容器级断言），其余跟随。
 
 ---
 

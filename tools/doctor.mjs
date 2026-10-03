@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The CLI entry for `dsh-connect-sensenova-token-plan`'s doctor
+ * The CLI entry for `dsh-connect-agnes-token-plan`'s doctor
  * (docs/PITFALLS.md §22: "is the provider on or off on this machine?" had
  * exactly one answer, in a JSON file no config and no route would report).
  *

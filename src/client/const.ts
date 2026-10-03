@@ -36,7 +36,7 @@ export const MODELS_PATH = `/api/${PANEL_ID}/models`;
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
 export const DRAW_PATH = `/api/${PANEL_ID}/draw`;
 
-/** The video-tool switch route (mirrors `DRAW_PATH`; V2.0 family only). */
+/** The video-tool switch route (mirrors `DRAW_PATH`; the tool drives both video parameter families). */
 export const VIDEO_PATH = `/api/${PANEL_ID}/video`;
 
 /** The AgnesCode provider route (third upstream provider, ROADMAP §6.3). */

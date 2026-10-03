@@ -66,8 +66,11 @@ export function redactSecrets(text: string) {
       .replace(/(["']?[Aa]uthorization["']?\s*[:=]\s*["']?)(?!Bearer\s)[^"',;\s]+/g, "$1[REDACTED]")
       // 2) Bearer / Basic tokens.
       .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [REDACTED]")
-      // 3) Bare Agnes inference keys, e.g. sk-a1b2c3... (long alnum + - _ .)
-      .replace(/\bsk-[A-Za-z0-9._-]{8,}/g, "sk-[REDACTED]")
+      // 3) Bare Agnes inference keys, e.g. sk-a1b2c3... (free tier) or
+      //    cpk-a1b2c3... (Token Plan) — both are first-class key shapes
+      //    (README/AGNES-API §7, the i18n placeholder), so the prefix class
+      //    covers both, not just `sk-`.
+      .replace(/\b(sk|cpk)-[A-Za-z0-9._-]{8,}/g, "$1-[REDACTED]")
       // 4) Known secret JSON pairs, quoted: {"api_key":"..."}.
       .replace(/(["']?(?:password|access_token|refresh_token|api[_-]?key|token)["']?\s*:\s*["'])[^"']+(?=["'])/gi, "$1[REDACTED]")
       // 5) Known secret key=value pairs.

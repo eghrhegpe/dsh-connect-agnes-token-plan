@@ -416,6 +416,8 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 
 **存储格式漂移哨子（`format_drift`，2026-10 落地）。** 这条线吃的是从桌面 App 逆推的私有格式，App 升级随时可能改会话文件形状——此前严格模式全 miss 只会说「文件不存在」，与「没登录」同款，而更早采集的 JWT 还能用约 28 天，失效要按周计才暴露。现在：walk 发现 App 目录里有「像会话文件族」（`code-auth-session*`）却不认识形状的文件时，给独立档 `format_drift`，建议从「重登」翻成「升级本插件」；有可读 `.v1` 在旁则漂移不成立（未知兄弟可能只是 App 自留备份）。`doctor` 同持这条分类的**只读盘点**（列文件名，永不读内容、永不碰密钥），「没装 App / 装了没登录 / 登录了但格式变了」三个事实在命令行分开点名。
 
+**AgnesCode 路由 GET 最坏时延裁定（2026-10-03 补记）**：`loggedIn` 时 `/agnescode` GET 顺序发起 balance（`AbortSignal` 30s）+ catalog（30s）两个外呼，最坏约 60s 才应答；该量级与 tab 自己的 60s 轮询节奏同阶（客户端注释「balance + roster drift slowly」即全部依据），属**有意设计**而非缺口——余额与目录都是慢变数据，为最坏时延加并发（`Promise.all`）不改变稳态节奏。若日后 BFF 挂起导致「更新于」明显陈旧，先裁定改并发，再动节奏，别反过来。
+
 ### 6.3.1 契约复测（2026-10-01 深夜，本机凭据，只读端点）
 
 > 证据：`upstream/AgnesCode-desktop-1.0.68/probe-agnescode-credits.mjs`（与模型探针

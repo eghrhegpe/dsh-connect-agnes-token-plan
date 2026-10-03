@@ -62,7 +62,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 | `drawTimeoutMs` | `120000` | 单次出图请求超时（出图模型很慢，别用对话级超时）；下限 5000 |
 | `videoEnabled` | `false` | 视频吸收（与 §5.4 接法 B 对称）：**opt-in**，是否给 agent 注册 `agnes_video_generate` 工具（**异步任务制**——建任务 POST `{apiBase}/videos`，轮询 `GET {host}/agnesapi`，协议细节见 `AGNES-API.md` §7.5）。覆盖 **V2.0 与 2.5 两个参数家族**：工具按选中模型分派请求体（V2.0 帧制 / 2.5 秒数制，互斥字段永不同时发出，见 §7.5.1 / §7.5.1b）。与出图同理：无 tools 服务的 Host 上静默缺席；面板「接入 API」区有真开关（`POST /api/<name>/video`）。默认关 |
 | `videoModelId` | `""` | 首选视频模型 id（**V2.0 或 2.5 家族的 id 均可**）；留空 = catalog 里第一个 V2.0 视频模型，目录没有 V2.0 时回落到第一个 2.5 模型。工具调用显式传 `model` 时以调用为准 |
-| `videoTimeoutMs` | `600000` | 一次视频**整任务**的超时（建任务 + 轮询），分钟级；下限 30000 |
+| `videoTimeoutMs` | `600000` | 一次视频**轮询**预算（分钟级；下限 30000）。工具截止 = 该预算 + 建任务截止（`VIDEO_REQUEST_TIMEOUT_MS` = 120s），覆盖「建任务 + 轮询」的最坏总时长——截止早于总时长会让 agent 丢失仍在服务端跑的任务的 video_id（2026-10-03 收口，原 60s margin 小于建任务截止） |
 | `videoWidth` | `1152` | V2.0 帧宽，直传（2.5 模型只拿它做画幅就近匹配） |
 | `videoHeight` | `768` | V2.0 帧高，直传（2.5 模型只拿它做画幅就近匹配） |
 | `videoNumFrames` | `121` | V2.0 帧数，必须 ≤ 441 且 `8n+1`（81/121/161/241/441）；非法值被**拒绝**而非夹取（`AGNES-API.md` §7.5.1 解释原因）。2.5 模型未显式传 `seconds` 时用它就近换算整秒 |

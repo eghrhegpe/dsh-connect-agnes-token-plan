@@ -1042,6 +1042,16 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
     check("a bare sk- key is redacted",
       redactSecrets("cannot build: sk-a1b2c3d4e5f6g7h8") === "cannot build: sk-[REDACTED]",
       redactSecrets("cannot build: sk-a1b2c3d4e5f6g7h8"));
+    check("a bare cpk- key is redacted (the Token Plan shape)",
+      redactSecrets("invalid key cpk-a1b2c3d4e5f6g7h8") === "invalid key cpk-[REDACTED]",
+      redactSecrets("invalid key cpk-a1b2c3d4e5f6g7h8"));
+    check("a cpk- key inside a JSON refusal body is redacted",
+      redactSecrets('{"message":"cpk-xyz123456789 not found"}') === '{"message":"cpk-[REDACTED] not found"}',
+      redactSecrets('{"message":"cpk-xyz123456789 not found"}'));
+    check("an cpk- Authorization value redacts as the header value, not the bare-key shape",
+      redactSecrets("Authorization: cpk-a1b2c3d4") === "Authorization: [REDACTED]"
+        && redactSecrets("Authorization: cpk-a1b2c3d4") !== "Authorization: cpk-[REDACTED]",
+      redactSecrets("Authorization: cpk-a1b2c3d4"));
     check("a Bearer token is redacted",
       redactSecrets("Authorization: Bearer abc.def.ghi.jkl") === "Authorization: Bearer [REDACTED]",
       redactSecrets("Authorization: Bearer abc.def.ghi.jkl"));

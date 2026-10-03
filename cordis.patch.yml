@@ -112,8 +112,8 @@
         # drawEnabled: false
         #   -> the opt-in switch (strict boolean).
         # drawModelId: ""
-        #   -> preferred image model id; empty = first of the catalog
-        #      (e.g. Agnes-u1-fast).
+        #   -> preferred image model id; empty = first image-gen model of the
+        #      catalog (e.g. agnes-image-2.1-flash / agnes-image-2.5-flash).
         # drawTimeoutMs: 120000
         #   -> deadline for one image request (image models are slow).
         # ------------------------------------------------------------------
@@ -125,12 +125,15 @@
         # videoEnabled: false
         #   -> the opt-in switch (strict boolean).
         # videoModelId: ""
-        #   -> preferred video model id; empty = first V2.0-family model in the
-        #      catalog. The 2.5 family (`agnes-video-2.5`, `-2.5-flash`) is
-        #      NOT selectable: it takes `mode`/`seconds`/`size`/`aspect_ratio`
-        #      instead of `width`/`height`/`num_frames`/`frame_rate`, and
-        #      mixing the two schemas is a 400. The panel names the excluded
-        #      models so their absence is explained rather than mysterious.
+        #   -> preferred video model id; may be ANY video model of the
+        #      catalog - V2.0 family (frame-based: width/height/num_frames/
+        #      frame_rate) or 2.5 family (seconds-based: mode/seconds/size/
+        #      aspect_ratio). Empty = auto-pick: V2.0 first, falling back to
+        #      2.5 when the catalog holds no V2.0 model (pickVideoModel).
+        #      The request body is built for the selected model's family, so
+        #      the two schemas are never mixed. The panel's video25ModelIds
+        #      line names the 2.5-series models so their seconds-based
+        #      parameters are explained rather than mysterious.
         # videoTimeoutMs: 600000
         #   -> deadline for the WHOLE task (create + poll). Minutes, not
         #      seconds; floor 30000.

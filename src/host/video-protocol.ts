@@ -51,7 +51,7 @@
  * @module dsh-connect-agnes-token-plan/video-protocol
  */
 
-import { str, obj } from "./util.ts";
+import { str, obj, redactSecrets } from "./util.ts";
 
 /** How long to wait between two status queries. */
 export const VIDEO_POLL_INTERVAL_MS = 5_000;
@@ -305,13 +305,15 @@ export function isVideoTerminal(status) {
  * The 429 split mirrors the chat and draw discipline: a drained shared pool is
  * not worth retrying, a plain rate limit is. The 400 branch carries the
  * platform's own words, which for this gateway name the exact parameter that
- * was rejected.
+ * was rejected. The embedded body slice is REDACTED before it enters the
+ * message: this lands in the agent conversation, and a 4xx body may echo the
+ * API key it was sent with (PITFALLS §15, fourth surface).
  * @param {number} status - the HTTP status code.
  * @param {string} bodyText - the raw body (best effort, may be empty).
  * @returns {string} the agent-facing message.
  */
 export function describeVideoFailure(status, bodyText) {
-  const text = str(bodyText, "").slice(0, 300);
+  const text = redactSecrets(str(bodyText, "").slice(0, 300));
   if (status === 401 || status === 403) {
     return `video failed: HTTP ${status} — the AGNES_TOKEN_PLAN_API_KEY is missing, invalid or not authorized for this model. Set it in the panel's 模型接入 area${text === "" ? "" : `; body: ${text}`}`;
   }

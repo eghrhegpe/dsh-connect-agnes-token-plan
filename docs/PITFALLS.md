@@ -146,11 +146,11 @@
 
 ## 15. 凭据经错误消息漏进日志或面板
 
-- **现象**：潜在——诊断文件、日志或面板上出现明文密码、token 或 `sk-` Key。
-- **根因**：每次登录都写 trace 便于「浏览器能登、面板不能」的对照排查，写不好就泄密；另一头更隐蔽——provider / 桌面端上游 注册失败时，HTTP 错误对象的 `message` 往往**内嵌了它构造时的请求头**（axios / fetch 的错误都这样），而平台 4xx 正文也可能把 `sk-` Key 原样回显。这些字符串会顺着 `providerState.error` 与 `ctx.logger.warn` 出去。
+- **现象**：潜在——诊断文件、日志或面板上出现明文密码、token 或 `sk-` / `cpk-` Key。
+- **根因**：每次登录都写 trace 便于「浏览器能登、面板不能」的对照排查，写不好就泄密；另一头更隐蔽——provider / 桌面端上游 注册失败时，HTTP 错误对象的 `message` 往往**内嵌了它构造时的请求头**（axios / fetch 的错误都这样），而平台 4xx 正文也可能把 `sk-` / `cpk-` Key 原样回显。这些字符串会顺着 `providerState.error` 与 `ctx.logger.warn` 出去。
 - **修法**（两层，别只做一层）：
   - **登录 trace 靠「不写值」，不靠事后脱敏**：hop 记录只放形状事实（`step` / `status` / `code` / `retryAfterMs` / `tokenLength` / `tokenIsJwt` / `expiresIn`）、平台原话（截 200 字，本身不含凭据）与**掩码后的账号名**（`maskUsername`）；token 只记长度、不记值。落盘权限 `0o600`，仅留最近 20 个。**新增输出点时别改成「先写后脱敏」——这一层没有 sanitize 兜底，纪律就是「值不进 trace」。**
-  - **错误文本靠 `redactSecrets()`**（`src/host/util.ts`）：provider / 桌面端上游 / 路由三处的 error message 在进快照或日志前必须过它，覆盖五类形态——`Authorization:` 头、`Bearer` / `Basic`、裸 `sk-…`、带引号的 `{"password":"…"}` 键值对、以及 `password=…` 形式。`test/provider.test.mjs` §14 钉住这套替换。
+  - **错误文本靠 `redactSecrets()`**（`src/host/util.ts`）：provider / 桌面端上游 / 路由 / **agent 工具 execute 错误**（`describeDrawFailure` / `describeVideoFailure` 把平台 body 片段拼进 agent 可见消息，同属第四张脱敏表面）四处的 error message 在进快照、日志或对话前必须过它，覆盖六类形态——`Authorization:` 头、`Bearer` / `Basic`、裸 `sk-…`、裸 `cpk-…`（Token Plan 主力 Key 形态，2026-10-03 补齐前是规则缝隙）、带引号的 `{"password":"…"}` 键值对、以及 `password=…` 形式。`test/provider.test.mjs` §14 钉住这套替换（含 cpk- 正反样例）。
 
 ---
 
@@ -240,7 +240,7 @@
   - 叠加 `provider-publish.ts` 的 `panelValue ?? patch`：没有 patch 行时 `registerProvider` 取默认 `false`，而面板保存的值写在 state 文件里并**压过**默认值——于是「是否注册 provider」在这台机器上唯一的开关，是一个不在 git、不在 patch、CLI 也查不到的 JSON。
 - **已做**（2026-09-30）：四个 store 的读缓存统一到 `state-store.ts` 的 `createStateReadCache` —— provider / draw 早有 1s TTL，**catalog 完全没有**（进程内永不失效），同一个共享目录问题修了两个、漏了第三个。现在一个 TTL 三个调用方，只允许在一处调整。钉住这条的是：`test/provider.test.mjs` §8b 用两个共享同一个 dir 的 store 实例模拟两个进程，断言「第二个进程的写入/开关，这边不必重启就看得见」，顺带钉住 `replace` 必须保住磁盘上真实的 allow-list（旧实现里惰性 `held` 会在没读过盘时把别人存好的清单重置成 `[]`）。
 - **按期查**（三层按序，别只翻 patch）：**bundles（装载）→ patch overlay（配置）→ `$DSH_HOME/state/<name>/`（运行时热开关）**。改完源头，desktop 一侧需要重装该 bundle 才会跟上（web 的 symlink 自动跟上）。
-- **未做**（P0）：`doctor --json`，让「这台机器上 provider 到底是开是关」有处可问（唯一的答案仍在一个 CLI 查不到的 JSON 里）。状态目录的分段**已在第 23 条做掉**。
+- **已做**（原 P0，2026-10）：`tools/doctor.mjs`（`npm run doctor` / `npm run doctor:json`）——「这台机器上 provider 到底是开是关」有了可问处：按 profile 逐行点出 provider / draw / video / AgnesCode 四个开关、catalog 与模型勾选，外加 AgnesCode 本机存储盘点与同源闸审计。状态目录的分段**已在第 23 条做掉**。
 
 ---
 
@@ -262,7 +262,7 @@
   - `test/provider.test.mjs` §8c：名字的接受/拒绝表（含 `..`、`a/b`、`a\b`、超长、非字符串），以及三种 ctx 形状——没有该服务、`get()` **抛错**、普通对象桩——都不得把错误抛穿。
   - 同文件 §8d：分段目录、一次性继承（含「旧文件仍在」这条与 §16d 相反的断言）、**两个 profile 互不干扰**、显式 `dir` 不继承。
   - **`test/e2e.mjs`**：真 Host 用 `--profile web` 启动，断言 catalog 落在 `state/web/<name>/` 且共享目录**没有**新文件。只有真 Host 能回答「这个可选服务对不 inject 它的插件是否真的可见」——单测桩回答不了，而服务不可见时功能会**静默失效**、测试却全绿。
-- **未做**：文件级**版本协商**——分段只隔离了「哪个 profile 的配置」，没有解决「哪个版本的格式」。老进程仍可能把新格式覆盖回旧格式（每个 store 的 `parse` 对认不出的版本一律读作「无记录」，随后写回自己那一版）。以及 `doctor --json`（见第 22 条）。
+- **未做**：文件级**版本协商**——分段只隔离了「哪个 profile 的配置」，没有解决「哪个版本的格式」。老进程仍可能把新格式覆盖回旧格式（每个 store 的 `parse` 对认不出的版本一律读作「无记录」，随后写回自己那一版）。`doctor --json` 一项已随第 22 条落地，从此条待办移除。
 
 ---
 
@@ -389,7 +389,7 @@
 ## 36. `writeStateFile` 要的是已序列化的字符串，传对象会静默落一个 `[object Object]`
 
 - **现象**：新写的状态文件读回来永远是 `null`，插桩看文件内容是字面量 `[object Object]`——没有异常、没有告警，只是"好像从没写过"。
-- **根因**：`src/host/state-store.ts` 的 `writeStateFile(file, payload, { temporary })` 内部是 `` `${payload}` ``（模板字符串），**不做 `JSON.stringify`**。每个既有调用方（`throttle-store` / `catalog-store` / `switch-store`）都自己先 `JSON.stringify(...)` 再传，所以这个契约只存在于调用方的示范里——新调用方按"传对象"的直觉写，就会静默产出一个不可解析的文件。
+- **根因**：`src/host/state-store.ts` 的 `writeStateFile(file, payload, { temporary })` 内部曾是 `` `${payload}` ``（模板字符串），**不做 `JSON.stringify`**。每个既有调用方（`throttle-store` / `catalog-store` / `switch-store`）都自己先 `JSON.stringify(...)` 再传，所以这个契约只存在于调用方的示范里——新调用方按"传对象"的直觉写，就会静默产出一个不可解析的文件。**原语已加固（2026-10）**：`writeStateFile` 现接受 `string | object`——字符串逐字写、对象自动 `JSON.stringify`、`null`/裸原始值直接抛错，`[object Object]` 陷阱在原始层面已不可能复现；本条保留作历史记录，教训（状态文件写入必须可解析、写失败必须可观测）仍然有效。
 - **修法**：调用处序列化，并在 `admission-audit.ts` 的调用点写了注释说明原因。审计/节流这类"读不出来就当作没发生"的文件，是这个坑危害最大的地方——它的失败方向与"真的没发生"完全同形。
 - **验证**：`test/admission-audit.test.mjs` 断言落盘文件恰好四个字段（`version/count/lastAt/lastMethod`）且能被 `JSON.parse`——传错类型时这条会红。
 - **教训**：**参数类型是"字符串"却长得像"载荷"的 API，是静默失败的温床**。收敛原语时（§34 的教训）把"I/O 怎么做"收上来了，但"传进去的东西是什么形状"留在了每个调用方的示范里——跟 §34 同一个病：抽到一半。

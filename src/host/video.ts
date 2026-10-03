@@ -44,7 +44,8 @@ import {
   buildVideoEndpoint,
   buildVideoQueryEndpoint,
   buildVideoBody,
-  videoTaskIdOf
+  videoTaskIdOf,
+  VIDEO_REQUEST_TIMEOUT_MS
 } from "./video-protocol.ts";
 import {
   VIDEO25_SECONDS_MIN,
@@ -146,7 +147,13 @@ export function defineVideoTool({
       // called with the call args first and the result second.
       render: (_args, result) => [{ type: "text", text: result?.hint || "视频已生成" }]
     },
-    timeoutMs: budget + 60_000,
+    // Tool deadline = poll budget + the create call's own deadline. A fixed
+    // 60s margin undershot the worst case: create alone can run
+    // VIDEO_REQUEST_TIMEOUT_MS (120s), so `budget + 60s` let the tool die
+    // while create+poll were still legitimate — the agent then lost the
+    // video_id of a task still running server-side, with no way to re-query
+    // it. Covering the create deadline closes that gap (2026-10-03, review P2-1).
+    timeoutMs: budget + VIDEO_REQUEST_TIMEOUT_MS,
     async execute(params) {
       if (isDisposed()) throw new Error("Agnes video tool is no longer mounted");
       const prompt = str(params?.prompt, "").trim();

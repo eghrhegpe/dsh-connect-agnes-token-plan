@@ -30,7 +30,7 @@
  * @module dsh-connect-agnes-token-plan/draw
  */
 
-import { str, num } from "./util.ts";
+import { str, num, redactSecrets } from "./util.ts";
 import { isImageGenModel } from "./modality.ts";
 import type { DrawRequest } from "./types.ts";
 
@@ -188,7 +188,11 @@ export function parseDrawResponse(data) {
  * @returns {string} the panel/agent-facing message.
  */
 export function describeDrawFailure(status, bodyText) {
-  const text = str(bodyText, "").slice(0, 300);
+  // The slice is redacted before embedding: a 4xx body may echo the API key
+  // it was sent with, and this message lands in the agent conversation, not
+  // just a panel line — the same red line `redactSecrets` guards on the
+  // provider / desktop-upstream / route surfaces (PITFALLS §15).
+  const text = redactSecrets(str(bodyText, "").slice(0, 300));
   if (status === 401 || status === 403) {
     return `draw failed: HTTP ${status} — the AGNES_TOKEN_PLAN_API_KEY is missing, invalid or not authorized for this model. Set it in the panel's 模型接入 area${text === "" ? "" : `; body: ${text}`}`;
   }
@@ -210,8 +214,9 @@ export function describeDrawFailure(status, bodyText) {
  * The deadline aborts through an `AbortController` (the `AbortSignal.timeout`
  * spelling would do, but the controller also cancels the in-flight body read
  * and keeps the whole flow injectable for tests). A non-2xx answer never
- * reaches JSON parsing: its classified message is thrown with the raw body
- * attached, so the agent sees WHY, not just that it failed.
+ * reaches JSON parsing: its classified message is thrown with the REDACTED
+ * body slice attached, so the agent sees WHY, not just that it failed,
+ * without a credential the platform may have echoed back.
  * @param {object} options - wiring.
  * @param {Function} options.fetchImpl - the fetch to use (injected; the real
  *   `globalThis.fetch` arrives from `index.ts`).

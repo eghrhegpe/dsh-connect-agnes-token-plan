@@ -152,7 +152,8 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * the panel's `video.autoOption` is pinned to it by `video.test.mjs` §3d).
    */
   videoModelId: "",
-  /** The whole-generation poll budget (create + poll). Video tasks run for minutes. */
+  /** Polling budget for one video task; the tool deadline is this plus the
+   *  create call's own deadline (`VIDEO_REQUEST_TIMEOUT_MS`). Video tasks run for minutes. */
   videoTimeoutMs: 600_000,
   /** Default video width in pixels (16:9). */
   videoWidth: 1152,
