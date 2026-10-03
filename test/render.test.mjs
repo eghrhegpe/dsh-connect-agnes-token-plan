@@ -62,7 +62,12 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     meta.indexOf("20.6%") < meta.indexOf("quota.used"), meta);
   check("the used figure is the USED count against the limit",
     meta.includes("quota.used 12,345 / 60,000"), meta);
-  check("the window's PERIOD is named", meta.includes("quota.perHours"), meta);
+  // The window card itself names no period: the head is the label it was
+  // handed, and the period the label's name comes from is applied by the
+  // GROUPING (`windowGroups` heads the request cards by period) which block G
+  // checks. A period chip here was removed — it repeated what the head or the
+  // reset line already said.
+  check("the window card draws no period of its own", !meta.includes("quota.perHours"), meta);
 
   const fill = bar(tree);
   check("the bar reports the used fraction to assistive tech",
@@ -131,8 +136,11 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 
 // === A2. a stated reset instant is printed; an absent one prints nothing ===
 // The reset moment is a fact the platform states inside `subscription.usage`,
-// so the card quotes it verbatim. Absent — the window's period chip still
-// appears — it must draw nothing rather than a placeholder.
+// so the card quotes it verbatim — and it quotes ONLY it: the line was once
+// `重置 5 小时 10-03 17:00`, which repeated the head's period and read as if
+// "5 小时" were the thing being reset. A stated instant must come with no
+// period text at all, and an absent one must draw nothing rather than a
+// placeholder.
 {
   const withReset = treeOf(render.QuotaWindowCard, {
     label: "quota.win.requests5h",
@@ -141,6 +149,8 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   });
   check("a stated reset instant is printed",
     texts(withReset).join("\n").includes("quota.resetAt"), texts(withReset).join("\n"));
+  check("the reset line carries no period text beside the moment",
+    !texts(withReset).join("\n").includes("quota.perHours"), texts(withReset).join("\n"));
   const withoutReset = treeOf(render.QuotaWindowCard, {
     label: "quota.win.requests5h",
     window: { key: "requests5h", unit: "requests", limit: 1500, windowHours: 5, used: 548 },
@@ -155,6 +165,25 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   });
   check("the platform's own countdown is the fallback when the instant is missing",
     texts(countdownOnly).join("\n").includes("quota.resetCountdown"), texts(countdownOnly).join("\n"));
+  // Same-day resets collapse to `HH:mm` (the panel re-renders before the day
+  // turns), while a reset on another calendar day keeps `MM-DD HH:mm` so the
+  // reader is never left guessing whether the clock means today or tomorrow.
+  // Built from the live clock because the formatter compares against it, and
+  // rendered through the REAL zh dictionary — the identity `tt` returns the key
+  // itself, which carries no `{time}` placeholder for `format` to fill.
+  const now = new Date();
+  const laterToday = Math.floor(now.getTime() / 1000) + 3600;
+  const tomorrow = Math.floor(now.getTime() / 1000) + 48 * 3600;
+  const zhDict = surface.dictionaries.zh;
+  const zhTt = (key) => zhDict[key] ?? key;
+  const resetArg = (epoch) => texts(treeOf(render.QuotaWindowCard, {
+    label: "l", window: { key: "requests5h", unit: "requests", limit: 1500, windowHours: 5, used: 548, resetAt: epoch }, tt: zhTt
+  })).join("\n");
+  check("a same-day reset prints the clock alone",
+    resetArg(laterToday).includes(zhDict["quota.resetAt"].replace(" {time}", "")) && !/\d{2}-\d{2} \d{2}:\d{2}/.test(resetArg(laterToday)),
+    resetArg(laterToday));
+  check("a reset on another day keeps its date",
+    /\d{2}-\d{2} \d{2}:\d{2}/.test(resetArg(tomorrow)), resetArg(tomorrow));
 }
 
 // === B. a window with no stated consumption draws NO bar ==================
@@ -172,6 +201,11 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the limit still renders without a used figure", meta.includes("500"), meta);
   check("no bar is drawn when no consumption was stated", bar(tree) === null, JSON.stringify(bar(tree)));
   check("no used caption either", !meta.includes("quota.used"), meta);
+  // The card head is the window's IDENTITY only — the period chip was removed
+  // deliberately: the reset line states the moment and the request group's head
+  // already names its period, so the chip only ever repeated one of the two.
+  check("the card draws no period chip, with or without a reset line",
+    !meta.includes("quota.perDay") && !meta.includes("quota.perWeek") && !meta.includes("quota.perHours"), meta);
   // Video is deliberately UNITLESS: the platform never says whether the cap is
   // in clips or in seconds, so the panel prints the bare number rather than
   // asserting one. The image window, by contrast, has a unit the platform's own
@@ -348,6 +382,7 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the two responsibility groups are named",
     out.includes("quota.group.requests") && out.includes("quota.group.media"), out.join("\n"));
   check("the subscription expiry is rendered when present", out.includes("quota.expires"), out.join("\n"));
+
   // The card is about the READER's plan; the catalogue is a separate section,
   // so the plan card must never draw it — even when the quota carries plans.
   check("the plan card never draws the catalogue (it lives in its own section)",
@@ -718,6 +753,18 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
 {
   check("the style tokens were lifted from the client", S.card?.borderRadius === 12 && S.bar?.height === 6,
     JSON.stringify(S.card ?? {}));
+  // The headline and the no-consumption fallback are TWO sizes on purpose: a
+  // measured percentage leads at quotaRemaining, while the raw capacity
+  // ceiling falls back to the smaller quotaLimit so the two claims do not read
+  // as the same kind of fact. Pinned as a pair — equalizing them again is the
+  // regression this guards, and so is letting the headline grow back past the
+  // 12px label it has to outrank.
+  check("the percentage headline and the limit fallback are different sizes",
+    S.quotaRemaining?.fontSize > S.quotaLimit?.fontSize && S.quotaLimit?.fontSize > S.quotaLabel?.fontSize,
+    `remaining=${S.quotaRemaining?.fontSize} limit=${S.quotaLimit?.fontSize} label=${S.quotaLabel?.fontSize}`);
+  check("the headline's line box is pinned, not inherited from the page",
+    typeof S.quotaRemaining?.lineHeight === "string",
+    String(S.quotaRemaining?.lineHeight));
   check("the components were lifted from the shipped bundle",
     render.PlanCard instanceof Function && render.CatalogueCard instanceof Function
       && render.QuotaWindowCard instanceof Function

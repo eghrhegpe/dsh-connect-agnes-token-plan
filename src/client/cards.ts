@@ -4,7 +4,7 @@
  * section card. The render suite drives every one of these in Node, so
  * behavior may not drift by a hair.
  */
-import { clockLong, count, format, money } from "./format.ts";
+import { clockLong, clockSameDay, count, format, money } from "./format.ts";
 import { h } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
@@ -94,7 +94,6 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
   if (window === null || typeof window !== "object") return null;
   const source = window as QuotaWindow;
   const limit = Number(source.limit) || 0;
-  const period = windowPeriod(source.windowHours, tt);
   const unit = unitOf(source.unit, tt);
   // `used` is only meaningful when the PLATFORM stated it — a missing field
   // must not read as zero used, which would draw a full bar and claim the
@@ -123,28 +122,37 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
   // countdown is used only when the absolute time is missing.
   const resetAt = typeof source.resetAt === "number" && Number.isFinite(source.resetAt) ? source.resetAt : null;
   const resetInSeconds = typeof source.resetInSeconds === "number" && Number.isFinite(source.resetInSeconds) ? source.resetInSeconds : null;
+  // A same-day reset collapses to time only (`重置 17:00`): the panel re-
+  // renders well before the day turns, so the date is dead weight on the
+  // common case. `clockSameDay` keeps the date when the reset falls on a
+  // different calendar day, so the reader never has to guess whether the
+  // clock means today or tomorrow.
   const resetLine = resetAt !== null
-    ? format(tt("quota.resetAt"), { time: clockLong(resetAt) })
+    ? format(tt("quota.resetAt"), { time: clockSameDay(resetAt) })
     : resetInSeconds !== null
       ? format(tt("quota.resetCountdown"), { minutes: Math.max(1, Math.round(resetInSeconds / 60)) })
       : null;
   return h(
     "div",
     { style: S.quota },
+    // The head is the window's IDENTITY alone. It used to carry a period chip
+    // ("生图" + "每日", "5 小时" + "每周"), but the card head already names the
+    // period for the request group ("5 小时" / "每周") and the reset line below
+    // states the moment — so the chip only ever repeated one of the two. The
+    // card reads: what it is, how much is used, when it resets.
     h(
       "div",
       { style: S.quotaTop },
-      h("span", { style: S.quotaLabel }, label),
-      // When the period IS the head label (the request group's "5 小时" /
-      // "每周"), the chip would repeat it verbatim — so it only rides along
-      // on cards whose label names something else ("生图" + "每日").
-      period === "" || period === label ? null : h("span", { style: S.quotaReset }, period)
+      h("span", { style: S.quotaLabel }, label)
     ),
     // With a stated `used`, the percentage IS the fact the reader needs — it
-    // leads. Without one, the limit is all the card knows and keeps the lead.
+    // leads. Without one, the limit is all the card knows and keeps the lead,
+    // but at a smaller size: a capacity ceiling and a measured reading are not
+    // the same claim, and dressing the ceiling like the headline made the two
+    // indistinguishable at a glance.
     pct !== null
       ? h("div", { style: S.quotaRemaining }, `${pct.toFixed(1)}%`)
-      : h("div", { style: S.quotaRemaining }, limit > 0 ? `${count(limit)}${unit === "" ? "" : ` ${unit}`}` : "—"),
+      : h("div", { style: S.quotaLimit }, limit > 0 ? `${count(limit)}${unit === "" ? "" : ` ${unit}`}` : "—"),
     pct === null
       ? null
       : h(

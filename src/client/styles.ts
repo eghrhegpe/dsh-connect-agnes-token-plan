@@ -84,15 +84,27 @@ export const S = {
   // reads by background step alone — three nested borders would flatten the
   // hierarchy.
   quota: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, padding: "12px 14px", borderRadius: 10, background: "var(--dsw-alias-bg-layer-2)" },
-  // `flexWrap` because the reset stamp can grow to `MM-DD HH:mm`: in a narrow
-  // twin column the label and the date no longer share a row, and the date is
-  // the one part of the line that must never be clipped.
-  quotaTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
+  // The head row now holds the label ALONE (the period chip it used to share
+  // the row with was removed), so it is a plain block: the `space-between` and
+  // `flexWrap` that used to keep a second child from crowding the date would
+  // be dead config here and would suggest a second child exists.
+  quotaTop: { display: "flex", alignItems: "center", gap: 8 },
   quotaLabel: { fontSize: 12, fontWeight: 500, color: "var(--dsw-alias-label-secondary)" },
   quotaReset: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
   // The remaining PERCENTAGE is the headline — tabular figures keep it
-  // still while polling.
-  quotaRemaining: { fontSize: 18, lineHeight: "22px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
+  // still while polling. Sized against the LABEL above it (12px), not against
+  // the captions below: 16px keeps a clear 1.33x step while stopping the
+  // short "1.1%" case from reading as a display figure. lineHeight is pinned
+  // rather than inherited so the drop from 22 to 20 is what actually reclaims
+  // the vertical space — a fontSize-only edit would have left the box 22px
+  // tall and bought nothing but a smaller glyph.
+  quotaRemaining: { fontSize: 16, lineHeight: "20px", fontWeight: 650, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
+  // The fallback headline for a window with no stated consumption: the LIMIT
+  // itself ("4,000 张" / "500" / "—"), which is a different kind of fact from
+  // a measured percentage — a capacity ceiling, not a reading. It is rendered
+  // a step smaller than the percentage so the two shapes do not pretend to be
+  // the same thing; the percentage stays the card's one emphasis slot.
+  quotaLimit: { fontSize: 14, lineHeight: "20px", fontWeight: 600, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" },
   // used/limit and the reset stamp share one bottom row (counts left, reset
   // right) so the card spends one caption line, not two.
   quotaFoot: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },

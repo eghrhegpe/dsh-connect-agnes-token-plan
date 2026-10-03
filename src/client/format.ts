@@ -17,6 +17,27 @@ export function clockLong(epoch: unknown): string {
 }
 
 /**
+ * `HH:mm` for a same-day instant, `MM-DD HH:mm` across days.
+ *
+ * The card's bottom row is a single short caption line shared with the used
+ * counts, so every character the stamp spends crowds the pair. On the common
+ * same-day case the date carries no information — the panel re-renders well
+ * before the day turns and the reader is looking at a live figure — so it
+ * collapses to the clock alone. A reset that lands on a different calendar day
+ * keeps `MM-DD HH:mm`, because there the date IS the information: without it
+ * the reader cannot tell whether 00:00 means tonight or tomorrow night.
+ */
+export function clockSameDay(epoch: unknown): string {
+  if (typeof epoch !== "number" || !Number.isFinite(epoch) || epoch <= 0) return "—";
+  const date = new Date(epoch * 1000);
+  const now = new Date();
+  const sameDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  return sameDay ? clock(epoch) : clockLong(epoch);
+}
+
+/**
  * A credit figure as text: 2-decimal precision under 10 000, whole with
  * thousands separators at or above it. The switch is deliberate — a pool
  * limit of 60 000 reads as "60,000", a live balance of 47.5 as "47.5".

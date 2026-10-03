@@ -481,6 +481,23 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 	}
 	/**
+	* `HH:mm` for a same-day instant, `MM-DD HH:mm` across days.
+	*
+	* The card's bottom row is a single short caption line shared with the used
+	* counts, so every character the stamp spends crowds the pair. On the common
+	* same-day case the date carries no information — the panel re-renders well
+	* before the day turns and the reader is looking at a live figure — so it
+	* collapses to the clock alone. A reset that lands on a different calendar day
+	* keeps `MM-DD HH:mm`, because there the date IS the information: without it
+	* the reader cannot tell whether 00:00 means tonight or tomorrow night.
+	*/
+	function clockSameDay(epoch) {
+		if (typeof epoch !== "number" || !Number.isFinite(epoch) || epoch <= 0) return "—";
+		const date = /* @__PURE__ */ new Date(epoch * 1e3);
+		const now = /* @__PURE__ */ new Date();
+		return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate() ? clock(epoch) : clockLong(epoch);
+	}
+	/**
 	* A credit figure as text: 2-decimal precision under 10 000, whole with
 	* thousands separators at or above it. The switch is deliberate — a pool
 	* limit of 60 000 reads as "60,000", a live balance of 47.5 as "47.5".
@@ -946,9 +963,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			quotaTop: {
 				display: "flex",
 				alignItems: "center",
-				justifyContent: "space-between",
-				gap: 8,
-				flexWrap: "wrap"
+				gap: 8
 			},
 			quotaLabel: {
 				fontSize: 12,
@@ -960,10 +975,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				color: "var(--dsw-alias-label-secondary)"
 			},
 			quotaRemaining: {
-				fontSize: 18,
-				lineHeight: "22px",
+				fontSize: 16,
+				lineHeight: "20px",
 				fontWeight: 650,
 				letterSpacing: "-0.02em",
+				fontVariantNumeric: "tabular-nums"
+			},
+			quotaLimit: {
+				fontSize: 14,
+				lineHeight: "20px",
+				fontWeight: 600,
+				letterSpacing: "-0.01em",
 				fontVariantNumeric: "tabular-nums"
 			},
 			quotaFoot: {
@@ -2427,7 +2449,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		if (window === null || typeof window !== "object") return null;
 		const source = window;
 		const limit = Number(source.limit) || 0;
-		const period = windowPeriod(source.windowHours, tt);
 		const unit = unitOf(source.unit, tt);
 		const used = typeof source.used === "number" && Number.isFinite(source.used) ? source.used : null;
 		const platformPct = typeof source.usagePct === "number" && Number.isFinite(source.usagePct) ? source.usagePct : null;
@@ -2435,8 +2456,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const tone = usageTone(pct ?? 0);
 		const resetAt = typeof source.resetAt === "number" && Number.isFinite(source.resetAt) ? source.resetAt : null;
 		const resetInSeconds = typeof source.resetInSeconds === "number" && Number.isFinite(source.resetInSeconds) ? source.resetInSeconds : null;
-		const resetLine = resetAt !== null ? format(tt("quota.resetAt"), { time: clockLong(resetAt) }) : resetInSeconds !== null ? format(tt("quota.resetCountdown"), { minutes: Math.max(1, Math.round(resetInSeconds / 60)) }) : null;
-		return h("div", { style: S.quota }, h("div", { style: S.quotaTop }, h("span", { style: S.quotaLabel }, label), period === "" || period === label ? null : h("span", { style: S.quotaReset }, period)), pct !== null ? h("div", { style: S.quotaRemaining }, `${pct.toFixed(1)}%`) : h("div", { style: S.quotaRemaining }, limit > 0 ? `${count(limit)}${unit === "" ? "" : ` ${unit}`}` : "—"), pct === null ? null : h("div", {
+		const resetLine = resetAt !== null ? format(tt("quota.resetAt"), { time: clockSameDay(resetAt) }) : resetInSeconds !== null ? format(tt("quota.resetCountdown"), { minutes: Math.max(1, Math.round(resetInSeconds / 60)) }) : null;
+		return h("div", { style: S.quota }, h("div", { style: S.quotaTop }, h("span", { style: S.quotaLabel }, label)), pct !== null ? h("div", { style: S.quotaRemaining }, `${pct.toFixed(1)}%`) : h("div", { style: S.quotaLimit }, limit > 0 ? `${count(limit)}${unit === "" ? "" : ` ${unit}`}` : "—"), pct === null ? null : h("div", {
 			style: S.bar,
 			role: "progressbar",
 			"aria-label": `${label} ${tt("quota.used")} ${pct.toFixed(1)}%`,
