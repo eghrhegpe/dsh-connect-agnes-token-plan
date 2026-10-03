@@ -94,7 +94,7 @@ function check(name, condition, detail = "") {
   check("a catalog with no fetchedAt and no entries reads as unset",
     parseCatalogPayload({ version: 1, entries: [] }) === null);
   // The store's `fetchedAt` gate is a WHOLE-record verdict, not a per-field
-  // default: `catalog-store.parse` returns null the moment the stamp is unusable,
+  // default: `catalog-store.parseCatalogPayload` returns null the moment the stamp is unusable,
   // so the next snapshot re-fetches. Before this re-export the doctor's copy
   // only fell back to 0 and then asked "is the entry list empty?", which let it
   // call a file the store had rejected ("there is no usable catalog here") a

@@ -72,6 +72,10 @@ export async function readStored(wiring, _state) {
  * otherwise invalidate each other's grant.
  * @param {string} accessToken - the new console JWT.
  * @param {string} refreshToken - the refresh token the platform just issued.
+ *   Agnes issues none, so this is always `""` on the current platform; the
+ *   parameter and the stored field stay because the record shape is the
+ *   frozen behavior baseline's face (and `acquire()` reads it to decide the
+ *   dormant renewal path).
  * @param {number} expiresIn - the access token lifetime in seconds.
  * @param {string} [replacing] - the access token this write supersedes:
  *   passed by every refresh, and by a password login that read an existing
@@ -137,6 +141,11 @@ export async function storeGrant(wiring, state, accessToken, refreshToken, expir
  * ever revives it. Leaving it on disk did two things: it kept an ownerless
  * token pair in the credentials file after "forget account", and it made
  * every poll hit the dead refresh token before giving up. This reaps it.
+ *
+ * The `refresh_rejected` half can only occur on a predecessor-shaped grant:
+ * Agnes has no refresh endpoint, so its stored grants never carry the token
+ * a platform could reject — the live trigger today is the "no account to
+ * re-login with" half (after "forget account", once the live token expires).
  * Best-effort: a read-only store keeps serving from memory until restart.
  * @param {string} [accessToken] - the dead token, also dropped from the
  *   in-memory cache and rejection set.

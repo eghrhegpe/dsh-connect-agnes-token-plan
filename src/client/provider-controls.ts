@@ -1,13 +1,15 @@
 /**
  * The secret-free provider / agent-tool registration controls: the status
- * lines, the live provider switch, and the live draw- and video-tool
- * switches. The two tool cards share one body (`ToolSwitch`) because the Host
- * mounts both tools through one ladder and serves both routes through one
- * handler shape.
+ * lines, the live provider switch, the live draw- and video-tool
+ * switches, and the provider card body (`ProviderForm`) that composes the
+ * switch, the roster it feeds, and the registration status. The two tool
+ * cards share one body (`ToolSwitch`) because the Host mounts both tools
+ * through one ladder and serves both routes through one handler shape.
  */
 import { DRAW_PATH, PROVIDER_PATH, VIDEO_PATH } from "./const.ts";
 import { count, format } from "./format.ts";
 import { postJsonOrThrow } from "./http.ts";
+import { ModelPicker } from "./model-picker.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import type { LlmData } from "./wire.ts";
@@ -389,4 +391,30 @@ export function VideoSwitch({ llm, onDone, tt }: {
     onDone,
     tt
   });
+}
+
+/**
+ * The provider-registration half — the live switch plus its "which models
+ * get pushed" roster — as ONE card body. Split from `ApiKeyForm` when the
+ * panel grew one SectionCard per concern: key, provider+push, draw are
+ * three different functions and no longer share a card. Lives next to its
+ * constituents (`ProviderSwitch`, `ProviderRegStatus`, and the `ModelPicker`
+ * it composes) rather than in the key editor's file.
+ */
+export function ProviderForm({ llm, onDone, tt }: {
+  llm?: LlmData | null;
+  onDone?: () => void;
+  tt: Tt;
+}): unknown {
+  return h(
+    "div",
+    null,
+    // The controls read first (switch, then the roster it feeds); the
+    // registration status — a diagnostic echo of what the Host reports —
+    // closes the card. At the top it competed with the title and
+    // duplicated the roster's own counts out of reading order.
+    h(ProviderSwitch, { llm, onDone, tt }),
+    h(ModelPicker, { llm, onDone, tt }),
+    h(ProviderRegStatus, { llm, tt })
+  );
 }

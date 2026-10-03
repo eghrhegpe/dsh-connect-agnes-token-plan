@@ -1,19 +1,19 @@
 /**
- * The inference API-key editor (free `sk-…` or Token Plan `cpk-…`) with the llm section assembled around
- * it. Same security shape as `AccountForm`: show/hide, save/forget, busy and
- * outcome notes, and the value leaves component state the moment it is saved.
- * It is hook-based, so like AccountForm the render suite does not mount it;
- * the secret-free half it displays IS covered, via `ProviderStatus`. The key
- * is NEVER populated from the snapshot — the Host only reports whether one
- * exists.
+ * The inference API-key editor (free `sk-…` or Token Plan `cpk-…`): save,
+ * forget, show/hide, busy and outcome notes. Same security shape as
+ * `AccountForm`: the value leaves component state the moment it is saved,
+ * and the key is NEVER populated from the snapshot — the Host only reports
+ * whether one exists. It is hook-based, so like AccountForm the render
+ * suite does not mount it; the secret-free half it displays IS covered, via
+ * `ProviderStatus` (in `provider-controls.ts`, alongside the provider card
+ * body `ProviderForm` that this key feeds).
  */
 import { API_KEY_PATH, AGNES_SIGNUP_URL } from "./const.ts";
 import { postJson } from "./http.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import type { LlmData } from "./wire.ts";
-import { ProviderRegStatus, ProviderStatus, ProviderSwitch } from "./provider-controls.ts";
-import { ModelPicker } from "./model-picker.ts";
+import { ProviderStatus } from "./provider-controls.ts";
 import { S } from "./styles.ts";
 
 export function ApiKeyForm({ llm, onDone, tt }: {
@@ -156,26 +156,6 @@ export function ApiKeyForm({ llm, onDone, tt }: {
   );
 }
 
-/**
- * The provider-registration half — the live switch plus its "which models
- * get pushed" roster — as ONE card body. Split from `ApiKeyForm` when the
- * panel grew one SectionCard per concern: key, provider+push, draw are
- * three different functions and no longer share a card.
- */
-export function ProviderForm({ llm, onDone, tt }: {
-  llm?: LlmData | null;
-  onDone?: () => void;
-  tt: Tt;
-}): unknown {
-  return h(
-    "div",
-    null,
-    // The controls read first (switch, then the roster it feeds); the
-    // registration status — a diagnostic echo of what the Host reports —
-    // closes the card. At the top it competed with the title and
-    // duplicated the roster's own counts out of reading order.
-    h(ProviderSwitch, { llm, onDone, tt }),
-    h(ModelPicker, { llm, onDone, tt }),
-    h(ProviderRegStatus, { llm, tt })
-  );
-}
+// `ProviderForm` (the provider card: switch + roster + registration status)
+// moved to `provider-controls.ts` next to its constituents; this file is
+// now the key editor only.

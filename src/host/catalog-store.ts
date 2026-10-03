@@ -96,7 +96,7 @@ export function normalizeEntries(raw: unknown) {
  * @param {unknown} raw - the parsed file contents.
  * @returns {{version: number, fetchedAt: number, entries: object[], enabledModelIds: string[]}|null}
  */
-export function parse(raw: Record<string, unknown> | null) {
+export function parseCatalogPayload(raw: Record<string, unknown> | null) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const body = /** @type {{ version?: unknown, fetchedAt?: unknown, entries?: unknown, enabledModelIds?: unknown }} */ (raw);
   if (num(body.version, 0) !== CATALOG_VERSION) return null;
@@ -105,8 +105,8 @@ export function parse(raw: Record<string, unknown> | null) {
   const entries = normalizeEntries(body.entries);
   const enabledModelIds = normalizeEnabledIds(body.enabledModelIds);
   // `version` travels with the record so the in-memory view and the written
-  // payload are the same shape: what `parse` accepted is exactly what `persist`
-  // will write back.
+  // payload are the same shape: what `parseCatalogPayload` accepted is exactly
+  // what `persist` will write back.
   return { version: CATALOG_VERSION, fetchedAt, entries, enabledModelIds };
 }
 
@@ -155,12 +155,12 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
   // (the tests) never inherits: it was never part of the shared layout.
   const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "catalog.json") : null;
 
-  const cache = createStateReadCache(async () => parse(await readStateJson(file)), {
+  const cache = createStateReadCache(async () => parseCatalogPayload(await readStateJson(file)), {
     ttlMs,
     now,
     inheritFrom: legacyFile === null ? null : {
       /** The pre-§23 record, if this machine ever wrote one. */
-      read: async () => parse(await readStateJson(legacyFile)),
+      read: async () => parseCatalogPayload(await readStateJson(legacyFile)),
       /** Re-persist an inherited record under this profile's own directory. */
       write: async (record) => {
         held = record;

@@ -27,14 +27,14 @@ import { parseAgnescodePayload } from "./agnescode-switch-store.ts";
  * to the survey and to the store.
  *
  * The catalog parser belongs to that set for the same reason and was added last:
- * it had its own copy until the store exported `parse`, and the copies had
+ * it had its own copy until the store exported `parseCatalogPayload`, and the copies had
  * already drifted into disagreeing about a record with an unusable
- * `fetchedAt` (see the note on `parse` in `catalog-store.ts`).
+ * `fetchedAt` (see the note on `parseCatalogPayload` in `catalog-store.ts`).
  */
 import { parseProviderPayload } from "./provider-store.ts";
 import { parseDrawPayload } from "./draw-store.ts";
 import { parseVideoPayload } from "./video-store.ts";
-import { parse as parseCatalogPayload } from "./catalog-store.ts";
+import { parseCatalogPayload } from "./catalog-store.ts";
 import { parseAgnescodeModelsPayload } from "./agnescode-models-store.ts";
 
 export { parseProviderPayload, parseDrawPayload, parseVideoPayload, parseCatalogPayload };

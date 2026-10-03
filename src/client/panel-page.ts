@@ -5,7 +5,7 @@
 import {
   AccountForm
 } from "./account-form.ts";
-import { ApiKeyForm, ProviderForm } from "./api-key-form.ts";
+import { ApiKeyForm } from "./api-key-form.ts";
 import { PANEL_ID, SNAPSHOT_PATH } from "./const.ts";
 import { clock, format } from "./format.ts";
 import { errorOfStatus, interpretSnapshot, viewOf, shouldShowAccountManagement } from "./snapshot.ts";
@@ -14,7 +14,7 @@ import type { Tt } from "./runtime.ts";
 import type { SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PlanCard, CatalogueCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
-import { DrawSwitch, RpmNote, VideoSwitch } from "./provider-controls.ts";
+import { DrawSwitch, RpmNote, VideoSwitch, ProviderForm } from "./provider-controls.ts";
 import { AgnescodeTab } from "./agnescode-tab.ts";
 import type { TabStatus } from "./agnescode-tab.ts";
 
