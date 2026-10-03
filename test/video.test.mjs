@@ -939,6 +939,23 @@ function errResponse(status, text) {
       /视频生成失败/.test(message ?? "") && /v-42/.test(message ?? "") && /nsfw/.test(message ?? ""), message);
   }
   {
+    // Red line 1, fourth surface: this message lands in the AGENT conversation,
+    // and the detail is the platform's own error object — a 4xx body may echo
+    // the API key it was sent with. `draw.ts` redacts its equivalent string
+    // (describeDrawFailure) and `video-protocol.ts` redacts describeVideoFailure;
+    // this task-failure path hand-rolled the same shape and used to skip it.
+    const LEAK = "sk-should-never-reach-the-agent";
+    const message = await rejects(() => makeTool({
+      fetchImpl: async (url) => (url.includes("/agnesapi")
+        ? okResponse({ status: "failed", error: `upstream rejected: key ${LEAK} is not authorized` })
+        : okResponse({ video_id: "v-43", status: "queued" }))
+    }).execute({ prompt: "x" }));
+    check("a failed task REDACTS an API key echoed back by the platform",
+      !String(message ?? "").includes(LEAK), message);
+    check("that redaction keeps the diagnostic (video_id + the rest of the detail)",
+      /视频生成失败/.test(message ?? "") && /v-43/.test(message ?? "") && /not authorized/.test(message ?? ""), message);
+  }
+  {
     const message = await rejects(() => makeTool({ isDisposed: () => true }).execute({ prompt: "x" }));
     check("a disposed plugin refuses video generation", /no longer mounted/.test(message ?? ""), message);
   }

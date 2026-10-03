@@ -30,7 +30,7 @@
  * @module dsh-connect-agnes-token-plan/video
  */
 
-import { str, num } from "./util.ts";
+import { str, num, redactSecrets } from "./util.ts";
 import { isVideo25Family, pickVideoModel } from "./video-models.ts";
 import {
   VIDEO_DEFAULT_TIMEOUT_MS,
@@ -236,7 +236,15 @@ export function defineVideoTool({
         isDisposed
       });
       if (result.status === "failed") {
-        const detail = typeof result.error === "string" ? result.error : JSON.stringify(result.error ?? "(无错误详情)");
+        // The detail is the platform's own error object, spliced into a message
+        // that lands in the AGENT conversation (not just a panel line). A 4xx
+        // body may echo the API key it was sent with, so it is redacted before
+        // embedding — the same red line `redactSecrets` guards on the provider /
+        // desktop-upstream / route surfaces, and the same treatment
+        // `describeDrawFailure` (draw.ts) and `describeVideoFailure`
+        // (video-protocol.ts) already give their own paths (PITFALLS §15).
+        const raw = typeof result.error === "string" ? result.error : JSON.stringify(result.error ?? "(无错误详情)");
+        const detail = redactSecrets(str(raw, ""));
         throw new Error(`视频生成失败（video_id=${videoId}，模型 ${model}）：${detail}`);
       }
       const hint = result.url !== ""
