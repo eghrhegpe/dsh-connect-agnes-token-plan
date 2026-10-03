@@ -184,6 +184,19 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   // LLM runtime the panel still works and `llm.providerRegistered` simply
   // stays false. Everything registration-related is wrapped so a peer that
   // fails to load degrades to "models absent", never "panel down".
+  //
+  // ONE emit seam, built once and handed to BOTH publishers below (Token Plan
+  // and AgnesCode). It used to be written out at each call site — twice, each
+  // with the same try/catch and the same comment (PITFALLS §42), while
+  // `publish-core.ts` had already exported this function and
+  // `publish-core.test.mjs` already pinned it. A guard that exists, is
+  // tested, and is bypassed at its own call sites is worse than one that
+  // does not: it reads as coverage the wiring does not have. Factoring it here
+  // makes the next copy a diff against this line instead of a silent fork.
+  // The event name is `ADAPTERS_UPDATED_EVENT`, fixed inside the shared
+  // function — the dep contract stays `(event) => void` so a caller cannot
+  // drift onto a different event than the one the registration announces.
+  const emitAdaptersUpdate = () => emitAdaptersUpdated((event) => ctx.emit?.(event));
   const loadAdapterModule = deps.loadAdapterModule ?? (() => import("./llm-adapter.ts"));
   const publisher = createProviderPublisher({
     settings,
@@ -191,16 +204,7 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     loadAdapterModule,
     getLlm: (service: string) => getService(service),
     resolveApiKey,
-    // The shared, tested emitter — not a third hand-written copy. It was two
-    // (PITFALLS §42), each with the same try/catch and the same comment, while
-    // `publish-core.ts` had already exported this function and
-    // `publish-core.test.mjs` already pinned it. A guard that exists, is
-    // tested, and is bypassed at its own call sites is worse than one that
-    // does not: it reads as coverage the wiring does not have.
-    // The event name is `ADAPTERS_UPDATED_EVENT`, fixed inside the shared
-    // function — the dep contract stays `(event) => void` so a caller cannot
-    // drift onto a different event than the one the registration announces.
-    emit: () => emitAdaptersUpdated((name) => ctx.emit?.(name)),
+    emit: emitAdaptersUpdate,
     logger: ctx.logger
   });
   const providerState = publisher.state;
@@ -232,16 +236,10 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     enabledIds: () => agnescodeModels.listEnabledIds().catch(() => []),
     getLlm: (service) => getService(service),
     loadAdapterModule: deps.loadAgnescodeAdapterModule,
-    // The shared, tested emitter — not a third hand-written copy. It was two
-    // (PITFALLS §42), each with the same try/catch and the same comment, while
-    // `publish-core.ts` had already exported this function and
-    // `publish-core.test.mjs` already pinned it. A guard that exists, is
-    // tested, and is bypassed at its own call sites is worse than one that
-    // does not: it reads as coverage the wiring does not have.
-    // The event name is `ADAPTERS_UPDATED_EVENT`, fixed inside the shared
-    // function — the dep contract stays `(event) => void` so a caller cannot
-    // drift onto a different event than the one the registration announces.
-    emit: () => emitAdaptersUpdated((name) => ctx.emit?.(name)),
+    // The SAME emit seam as the Token Plan publisher above (`emitAdaptersUpdate`):
+    // both registrations announce themselves with the one tested emitter, so a
+    // third copy cannot grow here again.
+    emit: emitAdaptersUpdate,
     logger: ctx.logger
   });
   // Mount seed: if the switch survived a restart, re-register from the
