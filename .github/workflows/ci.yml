@@ -117,6 +117,7 @@ jobs:
           node test/publish-core.test.mjs
           node test/state-authority.test.mjs
           node test/platform-assumptions.test.mjs
+          node test/state-store.test.mjs
           # The build gate is not a *.test.mjs, so it stays outside the
           # three-way roster pin; it is listed here because CI is exactly
           # where the build must be proven. The artifacts are committed with
