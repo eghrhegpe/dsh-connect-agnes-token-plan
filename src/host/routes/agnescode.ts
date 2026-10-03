@@ -307,26 +307,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         return;
       }
 
-      // ── logout: forget the stored credential and release the provider ──
-      if (action === "logout") {
-        if (agnescodeStore === null || agnescodeStore === undefined) {
-          await answer({ ok: false, error: "the agnescode credential store is unavailable" });
-          return;
-        }
-        try {
-          await agnescodeStore.forget();
-          if (agnescodePublisher !== null && agnescodePublisher !== undefined) {
-            await agnescodePublisher.publish(AGNESCODE_FALLBACK_MODELS, "");
-          }
-        } catch (error) {
-          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
-          return;
-        }
-        await answer({ ok: true, status: "logged_out" });
-        return;
-      }
-
-      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"logout\"|\"saveModels\" }" }, { "cache-control": "no-store" });
+      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"saveModels\" }" }, { "cache-control": "no-store" });
     }
   });
 }

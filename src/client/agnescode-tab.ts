@@ -31,6 +31,7 @@ import { modelIsOn } from "./models.ts";
 import { useRosterDraft } from "./roster-draft.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
+import { Switch } from "./switch.ts";
 import { S } from "./styles.ts";
 import {
   AGNESCODE_ERROR_NOT_CONFIGURED,
@@ -239,16 +240,6 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     }
   }, [load, tt]);
 
-  const logout = useCallback(async () => {
-    setNote(null);
-    try {
-      await postJsonOrThrow(AGNESCODE_PATH, { action: "logout" });
-      if (alive.current) void load();
-    } catch (why) {
-      if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
-    }
-  }, [load, tt]);
-
   // The curation write: persist the allow-list, then reload so the picker's
   // next echo matches what was saved — the edit is live the moment it lands.
   const saveModels = useCallback(async (ids: string[]) => {
@@ -266,11 +257,6 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   return h(
     "div",
     null,
-    h(
-      "div",
-      { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)", marginBottom: 12 } },
-      tt("agnescode.desc")
-    ),
     // A route that did not answer is named FIRST. This state used to be set and
     // never rendered, so a failed read left `state === null` and the tab below
     // accused the reader's desktop App of not being signed in — the one
@@ -278,45 +264,16 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     view.showError
       ? h("div", { style: S.formError, role: "alert" }, format(tt("agnescode.error"), { error }))
       : null,
-    // The provider switch (opt-in, default off). It decides whether the
-    // AgnesCode models are registered with DSH at all.
-    h(
-      "label",
-      { style: { display: "flex", gap: 8, alignItems: "center", margin: "0 0 12px", cursor: harvestBusy ? "wait" : "pointer" } },
-      h("input", { type: "checkbox", checked: enabled, disabled: harvestBusy, onChange: () => void toggle(!enabled) }),
-      h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, tt("agnescode.switch"))
-    ),
-    // Registration status: the switch says "wants", the roster header pill
-    // says "is" (小浣 shape). Only the NON-registered states stay as text
-    // lines here — a successful registration needs no sentence of its own
-    // competing with the roster it describes.
+    // The provider switch and the credential card are ONE card now. They used
+    // to be two separate things — the switch floated alone at the top of the
+    // tab and the linked account sat in its own card below — so a reader saw
+    // two rectangles for what is really one decision: is AgnesCode active, and
+    // am I signed in. Qoder does the same: the enable toggle lives inside the
+    // account card, not above it.
     //
-    // `AGNESCODE_ERROR_NOT_CONFIGURED` is the publish gate's word for
-    // "switch ON, no token yet" — the EXPECTED state between ticking the
-    // switch and running the harvest. Rendered raw it looked like a failure
-    // that appeared and then vanished ("开关一下启用又消失"), so: before
-    // linking it is suppressed — the awaiting-harvest line below already says
-    // exactly that; after linking it becomes one quiet instruction, not a red
-    // alert.
-    state !== null
-      ? state.providerError === AGNESCODE_ERROR_NOT_CONFIGURED && loggedIn
-        ? h("div", { style: { ...S.muted, fontSize: 12 }, role: "status" }, tt("agnescode.errNotConfigured"))
-        : state.providerError !== undefined && state.providerError !== "" && state.providerError !== AGNESCODE_ERROR_NOT_CONFIGURED
-          ? h("div", { style: S.formError, role: "alert" }, state.providerError)
-          : enabled && !loggedIn
-            ? h("div", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.awaitingHarvest"))
-            : state.providerRegistered === true
-              ? null
-              : h("div", { style: { ...S.muted, fontSize: 12 } }, tt("agnescode.unregistered"))
-      : null,
-    // The credential half: the linked account (or the harvest affordance).
-    // Withheld while a failed read leaves us knowing NOTHING: `state` is null,
-    // so `linked` is false, and the unlinked copy below would accuse the
-    // reader's desktop App of not being signed in — a claim this tab has no
-    // evidence for. The `agnescode.error` line above is the honest statement.
-    // Note the asymmetry (`agnescodeView`): once ANY reading has landed, a later
-    // failed poll keeps the card up — error line PLUS last known account,
-    // never a blank.
+    // The switch (opt-in, default off) decides whether AgnesCode models are
+    // registered with DSH at all; the credential card is the desktop App's
+    // login state. Two facts, one card.
     view.credentialCard
       ? h(
           "div",
@@ -326,9 +283,9 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                 "div",
                 null,
                 // The 小浣 shape: state left, actions right, ONE row — the
-                // account line, the base URL and the JWT expiry are three
-                // stacked rows today and the buttons drift below them, so a
-                // linked card spends four lines to say "you are in".
+                // account line and the buttons share it, and the base URL and
+                // the JWT expiry share a caption row beneath (the old three
+                // stacked rows spent four lines to say "you are in").
                 h(
                   "div",
                   { style: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" } },
@@ -336,31 +293,95 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                     format(tt("agnescode.loggedIn"), { nick: String(state?.nickname ?? "") })),
                   h("span", { style: S.spacer }),
                   h("button", { type: "button", style: S.button, onClick: () => void harvest(), disabled: harvestBusy },
-                    harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")),
-                  h("button", { type: "button", style: S.button, onClick: () => void logout() }, tt("agnescode.logout"))
+                    harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
+                  // NO logout button. The old one did two things the other
+                  // controls already do: `harvest` overwrites the stored JWT
+                  // from the desktop App (so a stale credential is refreshed,
+                  // not logged out) and the switch OFF deregisters the provider.
+                  // The only unique effect was deleting the stored JWT from
+                  // disk, which is a "forget the credential" privacy action,
+                  // not a routine logout — naming it 解除关联 made it read as a
+                  // normal operation. The desktop App's own login state is
+                  // untouched either way: it lives in the App, not in this
+                  // plugin's store.
                 ),
                 // Shape facts the user may need ("is my token the dead one?") —
-                // both from the route secret-free, quiet lines under the row.
+                // both from the route secret-free, ONE quiet caption row under
+                // the header instead of two stacked lines: the base URL and the
+                // expiry are two properties of the same credential, so they
+                // read together, and they share the row the way the quota card
+                // shares counts-left / reset-right (`S.quotaFoot`). The URL
+                // wraps when the row is too narrow for both.
                 state?.bffBase !== undefined && state?.bffBase !== ""
-                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 6, wordBreak: "break-all" } },
-                      format(tt("agnescode.bffBase"), { base: state.bffBase }))
-                  : null,
-                typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
-                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 2 } },
-                      format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) }))
+                  || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
+                  ? h(
+                      "div",
+                      { style: { ...S.quotaFoot, marginTop: 8, color: "var(--dsw-alias-label-secondary)" } },
+                      state?.bffBase !== undefined && state?.bffBase !== ""
+                        ? h("span", { style: { ...S.quotaUsed, wordBreak: "break-all" } },
+                            format(tt("agnescode.bffBase"), { base: state.bffBase }))
+                        : null,
+                      typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
+                        ? h("span", { style: { ...S.quotaUsed, whiteSpace: "nowrap" } },
+                            format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) }))
+                        : null
+                    )
                   : null
               )
             : h(
                 "div",
                 null,
-                h("div", { style: { fontSize: 13 } }, tt("agnescode.notLogged")),
-                h("button", {
-                  type: "button",
-                  style: { ...S.button, marginTop: 8 },
-                  onClick: () => void harvest(),
-                  disabled: harvestBusy
-                }, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
-              )
+                h(
+                  "div",
+                  { style: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" } },
+                  h("div", { style: { fontSize: 13 } }, tt("agnescode.notLogged")),
+                  h("span", { style: S.spacer }),
+                  h("button", {
+                    type: "button",
+                    style: S.button,
+                    onClick: () => void harvest(),
+                    disabled: harvestBusy
+                  }, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
+                )
+              ),
+          // The switch, a labeled row inside the card rather than a floating
+          // line above it. It is deliberately a checkbox (the repo draws no
+          // custom toggle): native, keyboard-focusable, and announced by a
+          // real `input` to assistive tech, not by a painted pill.
+          // The provider switch is the shared `Switch` pill (see `switch.ts`):
+          // a native checkbox drawn as a track + thumb, `title` carries the
+          // long consequence so the row reads short.
+          h(Switch, {
+            checked: enabled,
+            disabled: harvestBusy,
+            onChange: () => void toggle(!enabled),
+            label: tt("agnescode.switch"),
+            title: tt("agnescode.switchTip"),
+            rowStyle: { marginTop: 10 }
+          }),
+          // Registration status: the switch says "wants", the roster header pill
+          // says "is" (小浣 shape). Only the NON-registered states stay as text
+          // lines here — a successful registration needs no sentence of its own
+          // competing with the roster it describes.
+          //
+          // `AGNESCODE_ERROR_NOT_CONFIGURED` is the publish gate's word for
+          // "switch ON, no token yet" — the EXPECTED state between ticking the
+          // switch and running the harvest. Rendered raw it looked like a failure
+          // that appeared and then vanished ("开关一下启用又消失"), so: before
+          // linking it is suppressed — the awaiting-harvest line below already says
+          // exactly that; after linking it becomes one quiet instruction, not a red
+          // alert.
+          state !== null
+            ? state.providerError === AGNESCODE_ERROR_NOT_CONFIGURED && loggedIn
+              ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 }, role: "status" }, tt("agnescode.errNotConfigured"))
+              : state.providerError !== undefined && state.providerError !== "" && state.providerError !== AGNESCODE_ERROR_NOT_CONFIGURED
+                ? h("div", { style: { ...S.formError, marginTop: 4 }, role: "alert" }, state.providerError)
+                : enabled && !loggedIn
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } }, tt("agnescode.awaitingHarvest"))
+                  : state.providerRegistered === true
+                    ? null
+                    : h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } }, tt("agnescode.unregistered"))
+            : null
         )
       : null,
     // The last harvest walk's diagnosis rows: one line per probed file, tier
@@ -385,22 +406,30 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       ? h("div", { style: { ...S.formNote, fontSize: 12, marginTop: 8 }, role: "status" }, note)
       : null,
     // The credit pool and the roster the adapter offers. The pool is a
-    // subscription pool: total, then the platform's own split, then the JWT
-    // expiry — ONE quiet line, the way the 小浣 card does it (the old two
-    // stacked lines read as two separate facts about two things). A pool the
-    // route could not read (`balance === null`) draws NOTHING — a rendered
-    // zero would present an unread figure as a measurement.
+    // subscription pool and it is rendered as a HEADLINE card, not a gray
+    // caption line: the number is the one fact the reader came to see, so it
+    // carries the same weight as a quota percentage (`S.quotaRemaining`), with
+    // the platform's own time/permanent split as a quiet caption beneath. A
+    // pool the route could not read (`balance === null`) draws NOTHING — a
+    // rendered zero would present an unread figure as a measurement.
     loggedIn
       ? h(
           "div",
           { style: { marginTop: 12 } },
           balance !== null
-            ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 } },
-                format(tt("agnescode.balanceLine"), {
-                  balance: count(balance.totalBalance ?? 0),
-                  timeSensitive: count(balance.timeSensitiveBalance ?? 0),
-                  permanent: count(balance.permanentBalance ?? 0)
-                }))
+            ? h(
+                "div",
+                { style: { ...S.pool, marginBottom: 10 } },
+                h("div", { style: S.cardHead },
+                  h("span", { style: S.poolHead }, tt("agnescode.balanceLabel"))),
+                h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },
+                  count(balance.totalBalance ?? 0)),
+                h("div", { style: { ...S.quotaUsed, marginTop: 2 } },
+                  format(tt("agnescode.balanceSplit"), {
+                    timeSensitive: count(balance.timeSensitiveBalance ?? 0),
+                    permanent: count(balance.permanentBalance ?? 0)
+                  }))
+              )
             : null,
           models.length > 0
             ? h(AgnescodeModelPicker, { models, hostIds: state?.enabledModelIds, registered: state?.providerRegistered === true, tt, onSave: saveModels })
@@ -413,14 +442,30 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     // credits for installing. One quiet line at the bottom, same public-URL
     // discipline as the API tab's official-site link.
     h(
-      "a",
-      {
-        href: AGNESCODE_SITE_URL,
-        target: "_blank",
-        rel: "noreferrer",
-        style: { display: "inline-block", marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)", fontSize: 12, color: "var(--dsw-alias-label-secondary)", textDecoration: "underline", cursor: "pointer" }
-      },
-      tt("agnescode.downloadCta")
+      "div",
+      { style: { marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)" } },
+      // What this tab IS, at the FOOT rather than the head. At the top it
+      // pushed the switch and the credential card below the fold, and every
+      // visit began by re-reading sentences the reader had already accepted
+      // when they turned the tab on. A reader who needs the explanation (what
+      // the plugin touches, why the credentials sit apart from the quota) now
+      // finds it here — after the state they came to check, sharing the one
+      // divider this tab's closing block already draws.
+      h(
+        "div",
+        { style: { ...S.note, marginTop: 0 } },
+        tt("agnescode.desc")
+      ),
+      h(
+        "a",
+        {
+          href: AGNESCODE_SITE_URL,
+          target: "_blank",
+          rel: "noreferrer",
+          style: { display: "inline-block", marginTop: 8, fontSize: 12, color: "var(--dsw-alias-label-secondary)", textDecoration: "underline", cursor: "pointer" }
+        },
+        tt("agnescode.downloadCta")
+      )
     )
   );
 }

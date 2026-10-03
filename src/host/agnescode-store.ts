@@ -116,7 +116,10 @@ export function createAgnescodeStore({ credentials = null }: { credentials?: (()
       await storeNow({ ...credential, bffBase });
     },
 
-    /** Forget the stored credential (the panel's「解除关联」). */
+    /** Forget the stored credential. A store-level primitive (the shared
+     * `CredentialStore` contract), not a panel action — the「解除关联」button
+     * that used to call it was removed, but the primitive stays because it is
+     * part of the interface every store implements and the tests call it. */
     async forget() {
       memory.delete(AGNESCODE_CREDENTIAL_REF);
       try {

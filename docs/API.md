@@ -208,7 +208,7 @@
 
 ### `GET|POST /api/dsh-connect-agnes-token-plan/agnescode`
 
-桌面端上游（AgnesCode 桌面端登录态）的开关与状态，独立存证与凭据，与主链路完全隔离。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, balance, models, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是会话文件里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久），不是 Token Plan 的窗口语义；`models` 行带 `memberOnly` 标记（门槛是账号状态，标记而不隐藏）。`POST` 动作三种：`{action:"switch", enabled}`、`{action:"harvest"}`（重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**——tier 代码 + 形状事实，令牌永不进响应）、`{action:"logout"}`（解除关联并释放注册）。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
+桌面端上游（AgnesCode 桌面端登录态）的开关与状态，独立存证与凭据，与主链路完全隔离。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, balance, models, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是会话文件里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久），不是 Token Plan 的窗口语义；`models` 行带 `memberOnly` 标记（门槛是账号状态，标记而不隐藏）。`POST` 动作两种：`{action:"switch", enabled}`、`{action:"harvest"}`（重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**——tier 代码 + 形状事实，令牌永不进响应）。**无 `logout`**：凭据刷新靠 `harvest` 覆盖写入（不是登出），注销 provider 靠 `switch:false`——「解除关联」按钮已移除，它删本地 JWT 之外没有 `harvest`/`switch` 做不了的事，而桌面 App 自己的登录态本就不归本插件管。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
 
 ---
 

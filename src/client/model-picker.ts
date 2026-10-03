@@ -152,16 +152,17 @@ export function ModelPicker({ llm, onDone, tt }: {
   return h(
     "div",
     { style: { marginBottom: 14 } },
-    // Title and rule share one line — the rule is the tail of the same
-    // sentence, not a second notice competing for attention. The provider-wide
-    // thinking default rides here too: it is one constant for every row, so
-    // the roster says it ONCE instead of repeating it seven times.
-    h("p", { style: { margin: "0 0 10px" } },
-      h("span", { style: S.sectionTitle }, tt("llm.roster"), " — "),
-      h("span", { style: { ...S.muted, fontSize: 12 } }, tt("llm.rosterHint")),
+    // The header carries ONLY two things of the same kind: the title (what
+    // this section is) and the provider-wide thinking default (the one setting
+    // that applies to every row). The mechanism explanation used to sit here
+    // as a third thing of a DIFFERENT kind — static, never changing — and next
+    // to a live value it read as if the whole line changed. It moved to the
+    // card's footer, where a footnote belongs.
+    h("div", { style: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, margin: "0 0 10px" } },
+      h("span", { style: { ...S.sectionTitle, margin: 0 } }, tt("llm.roster")),
       typeof llm?.thinkingDefault === "string" && llm.thinkingDefault !== ""
-        ? h("span", { style: { ...S.muted, fontSize: 12 } },
-          ` · ${format(tt("llm.rosterThinkingDefault"), { level: tt(`llm.level.${llm.thinkingDefault}`) })}`)
+        ? h("span", { style: { ...S.muted, fontSize: 12, whiteSpace: "nowrap", flex: "none" } },
+          format(tt("llm.rosterThinkingDefault"), { level: tt(`llm.level.${llm.thinkingDefault}`) }))
         : null),
     models.length === 0
       ? h("p", { style: S.empty }, tt("llm.rosterEmpty"))
@@ -251,7 +252,11 @@ export function ModelPicker({ llm, onDone, tt }: {
             : justSaved
               ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-success-primary)" }, role: "status" }, tt("llm.rosterSaved"))
               : null,
-          notice !== null ? h("p", { style: S.formError, role: "alert" }, notice) : null
+          notice !== null ? h("p", { style: S.formError, role: "alert" }, notice) : null,
+          // The mechanism explanation is a static footnote, not a heading: the
+          // roster above it is the interactive part, and the reader only needs
+          // the rule once they are about to tick rows.
+          h("p", { style: { ...S.muted, fontSize: 12, margin: "10px 0 0" } }, tt("llm.rosterHint"))
         )
   );
 }

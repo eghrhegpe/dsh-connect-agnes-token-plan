@@ -62,6 +62,7 @@ import { createAgnescodePublisher } from "../src/host/agnescode-publish.ts";
 import { createFileAgnescodeStore, normalizeAgnescodeEnabled, AGNESCODE_SWITCH_VERSION } from "../src/host/agnescode-switch-store.ts";
 import { installNetworkGuard } from "./peer-roots.mjs";
 import { surface as clientSurface } from "./client-surface.js";
+import { texts } from "./panel-render.js";
 import { createCipheriv, randomBytes } from "node:crypto";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -987,6 +988,62 @@ const GOOD_SESSION = {
     const needed = ["tab.agnescode", "agnescode.title", "agnescode.desc", "agnescode.notLogged", "agnescode.harvestFail"];
     check("the zh dictionary covers the tab's keys",
       needed.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""));
+
+    // The credit pool is a headline card now: a LABEL plus a SPLIT caption,
+    // not the old single sentence that buried the number in gray text. Both
+    // halves must exist in both languages (the number itself is rendered from
+    // the route, not the dictionary), and the retired single-sentence key must
+    // not linger as dead weight.
+    const balanceKeys = ["agnescode.balanceLabel", "agnescode.balanceSplit"];
+    check("the balance card's keys exist in both languages",
+      balanceKeys.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""
+        && typeof dictionaries.en[key] === "string" && dictionaries.en[key] !== ""),
+      balanceKeys.filter((key) => typeof dictionaries.zh[key] !== "string" || typeof dictionaries.en[key] !== "string").join(","));
+    check("the retired balance-line key is gone",
+      !("agnescode.balanceLine" in dictionaries.zh) && !("agnescode.balanceLine" in dictionaries.en));
+
+    // The explainer sits in the tab's CLOSING block, after the state the
+    // reader came to check — it used to open the tab and push the switch and
+    // the credential card below the fold. Pinned by POSITION, not just
+    // presence: the dictionary check above passes wherever it renders, so only
+    // an ordering assertion can catch it drifting back to the head. It shares
+    // the block's divider with the download CTA, which closes the tab; the
+    // contract is therefore "in the tail, after the actionable lines, and
+    // immediately before that CTA" rather than "the very last string".
+    // `texts` is the shared walker (it reads the client's real `children`
+    // shape and calls nested function components as React would) rather than a
+    // second copy of the traversal.
+    const flat = texts(AgnescodeTab({ tt }));
+    const descAt = flat.indexOf(dictionaries.zh["agnescode.desc"]);
+    const ctaAt = flat.indexOf(dictionaries.zh["agnescode.downloadCta"]);
+    check("the tab's explainer renders in the closing block, not at the head",
+      descAt > 0 && descAt === ctaAt - 1 && ctaAt === flat.length - 1,
+      `desc index ${descAt}, cta ${ctaAt}, of ${flat.length}`);
+
+    // The provider switch lives INSIDE the credential card, after the login
+    // state — it used to float above the card as its own line at the top of
+    // the tab, so a reader saw two rectangles for one decision. Ordering is
+    // the only thing that catches that drift: the switch text must follow the
+    // not-logged-in state, never precede it.
+    const switchAt = flat.indexOf(dictionaries.zh["agnescode.switch"]);
+    const notLoggedAt = flat.indexOf(dictionaries.zh["agnescode.notLogged"]);
+    check("the provider switch renders inside the credential card, after the login state",
+      switchAt > notLoggedAt && notLoggedAt >= 0,
+      `switch index ${switchAt}, notLogged ${notLoggedAt}`);
+
+    // The switch row is SHORT: the full consequence lives in the label's
+    // `title` tooltip, not on the panel (a hover away). The label text must
+    // not carry the parenthetical that used to be inlined, and the tooltip
+    // key must exist in both languages — otherwise the panel either grew the
+    // long sentence back or the tooltip has nothing to show.
+    check("the switch label is a short phrase, not the full consequence",
+      typeof dictionaries.zh["agnescode.switch"] === "string"
+        && !dictionaries.zh["agnescode.switch"].includes("（向 DSH 注册模型）")
+        && dictionaries.zh["agnescode.switch"].length < 20,
+      dictionaries.zh["agnescode.switch"]);
+    check("the switch's tooltip text exists in both languages",
+      typeof dictionaries.zh["agnescode.switchTip"] === "string" && dictionaries.zh["agnescode.switchTip"] !== ""
+        && typeof dictionaries.en["agnescode.switchTip"] === "string" && dictionaries.en["agnescode.switchTip"] !== "");
 
     // The picker's own keys plus the shared `llm.roster*` ones it reuses must
     // exist in BOTH languages — a missing one renders as a bare key.

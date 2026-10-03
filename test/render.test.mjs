@@ -1192,6 +1192,34 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   }
 }
 
+// === G8c. the picker header separates three kinds of information ==========
+// The header used to be ONE sentence packing three things of different kinds:
+// the title (static), the mechanism explanation (static) and the provider-wide
+// thinking default (LIVE). A live value next to static text makes the whole
+// line look like it changes. Now the header carries only the title and the
+// live value (a label + its setting on one row), and the mechanism explanation
+// is a footnote at the bottom of the card.
+{
+  const tt = (key) => key;
+  const pickerLlm = {
+    thinkingDefault: "high",
+    models: [{ id: "m1", name: "M1" }, { id: "m2", name: "M2" }],
+    hasApiKey: true
+  };
+  const pickerTree = treeOf(render.ModelPicker, { llm: pickerLlm, onDone: () => {}, tt });
+  const pickerText = texts(pickerTree);
+  const titleAt = pickerText.indexOf("llm.roster");
+  const valueAt = pickerText.indexOf("llm.rosterThinkingDefault");
+  const countAt = pickerText.indexOf("llm.rosterCount");
+  const hintAt = pickerText.indexOf("llm.rosterHint");
+  check("the picker header is a label/value row, not a sentence",
+    titleAt >= 0 && valueAt >= 0, `title=${titleAt} value=${valueAt}`);
+  check("the live value sits in the header, before the roster",
+    valueAt >= 0 && valueAt < countAt, `value=${valueAt} count=${countAt}`);
+  check("the mechanism explanation moved to the footer, after the roster",
+    hintAt > countAt, `hint=${hintAt} count=${countAt}`);
+}
+
 // === G8b. the official-site link is ALWAYS in the API-key card ============
 // Without a key it is where you get one ("免费获取"); with one it is where
 // you manage the quota that key spends ("管理额度"). Redundant with the quota
@@ -1252,6 +1280,34 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     typeof surface.dictionaries.zh["draw.switch"] === "string" &&
       typeof surface.dictionaries.zh["draw.off"] === "string",
     JSON.stringify(Object.keys(surface.dictionaries.zh).filter((k) => k.startsWith("draw."))));
+
+  // The switch is a PILL: a native checkbox (`appearance: none`) whose track is
+  // a 30×17 span and whose thumb is a nested 12×12 circle. The shape is the
+  // contract — a bare native checkbox renders as the browser's box, which is
+  // exactly the visual the user asked to leave behind.
+  {
+    const switchInput = findAll(drawTree, (props) => props.type === "checkbox" && props.style?.appearance === "none");
+    check("the draw switch is a native checkbox styled as a pill (appearance: none)",
+      switchInput.length === 1, `found ${switchInput.length}`);
+    check("the pill input is the 30×17 track-sized element",
+      switchInput[0]?.props?.style?.width === 30 && switchInput[0]?.props?.style?.height === 17,
+      JSON.stringify(switchInput[0]?.props?.style ?? {}));
+    const track = findAll(drawTree, (props) => props.style?.width === 30 && props.style?.borderRadius === 999);
+    check("the pill draws a track span behind the input",
+      track.length === 1, `tracks=${track.length}`);
+    const thumb = findAll(drawTree, (props) => props.style?.width === 12 && props.style?.height === 12);
+    check("the pill draws a thumb circle inside the track",
+      thumb.length === 1, `thumbs=${thumb.length}`);
+    check("the thumb sits at the checked side (left: 14px) when enabled",
+      thumb[0]?.props?.style?.left === 14, JSON.stringify(thumb[0]?.props?.style ?? {}));
+    const titled = findAll(drawTree, (props) => typeof props?.title === "string" && props.title !== "");
+    check("the switch row carries the consequence as a tooltip, not as text",
+      titled.some((el) => el.props.title === "draw.switchTip"),
+      titled.map((el) => el.props.title.slice(0, 18)).join(" | "));
+    check("the tooltip resolves to real text in both languages",
+      typeof surface.dictionaries.zh["draw.switchTip"] === "string" && surface.dictionaries.zh["draw.switchTip"] !== ""
+        && typeof surface.dictionaries.en["draw.switchTip"] === "string" && surface.dictionaries.en["draw.switchTip"] !== "");
+  }
 
   // The row SHAPE is a contract, not a detail: `modelRow` is a column (a head
   // line over an optional parameter line), so the name and its badge must be
@@ -1347,6 +1403,20 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
       typeof surface.dictionaries.zh["video.off"] === "string" &&
       typeof surface.dictionaries.zh["video.note25"] === "string",
     JSON.stringify(Object.keys(surface.dictionaries.zh).filter((key) => key.startsWith("video."))));
+
+  // The video switch is the same `ToolSwitch` body as draw, so the pill shape
+  // is already pinned by the draw checks; here we only pin the tooltip key,
+  // because the two switches translate through different prefixes and a
+  // missing `video.switchTip` would render a bare key in the tooltip.
+  {
+    const videoTitled = findAll(videoTree, (props) => typeof props?.title === "string" && props.title !== "");
+    check("the video switch carries its consequence as a tooltip",
+      videoTitled.some((el) => el.props.title === "video.switchTip"),
+      videoTitled.map((el) => el.props.title.slice(0, 18)).join(" | "));
+    check("the video tooltip exists in both languages",
+      typeof surface.dictionaries.zh["video.switchTip"] === "string" && surface.dictionaries.zh["video.switchTip"] !== ""
+        && typeof surface.dictionaries.en["video.switchTip"] === "string" && surface.dictionaries.en["video.switchTip"] !== "");
+  }
 
   // The rows now cover BOTH families: the 2.5 ids sit in the candidate list
   // (the tool drives them), and the image models on the same object must not

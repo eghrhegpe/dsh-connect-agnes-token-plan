@@ -178,7 +178,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.level.xhigh": "极高",
 			"llm.level.max": "最高",
 			"draw.title": "出图工具",
-			"draw.switch": "注册出图工具 agnes_draw_image（下次 Host 装载生效）",
+			"draw.switch": "注册出图工具",
+			"draw.switchTip": "开启后 DSH 会在下次 Host 装载时挂载出图工具 agnes_draw_image，无需手动重启；工具本身由 Host 端加载，面板只负责开/关。",
 			"draw.switchBusy": "切换中…",
 			"draw.switchError": "切换失败：{error}",
 			"draw.onList": "agent 出图将使用以下模型：",
@@ -190,7 +191,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"draw.needsKey": "尚未配置 API Key；保存后即可出图。",
 			"draw.noCandidates": "当前 API Key 目录里暂无出图模型；出图不可用。",
 			"video.title": "视频工具",
-			"video.switch": "注册视频工具 agnes_video_generate（下次 Host 装载生效）",
+			"video.switch": "注册视频工具",
+			"video.switchTip": "开启后 DSH 会在下次 Host 装载时挂载视频工具 agnes_video_generate，无需手动重启；工具本身由 Host 端加载，面板只负责开/关。",
 			"video.switchBusy": "切换中…",
 			"video.switchError": "切换失败：{error}",
 			"video.onList": "agent 生成视频将使用以下模型：",
@@ -209,16 +211,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"tab.agnescode": "AgnesCode",
 			"agnescode.title": "AgnesCode（爱思编程）",
 			"agnescode.desc": "读取本机 AgnesCode 桌面端的登录态（微信登录在桌面 App 内完成，本插件不碰你的密码），模型经 DSH 提供方注册后可对话。凭据独立，与积分额度互不影响。",
-			"agnescode.switch": "启用 AgnesCode 提供方（向 DSH 注册模型）",
+			"agnescode.switch": "启用 AgnesCode 提供方",
+			"agnescode.switchTip": "关闭后 AgnesCode 模型不会出现在 DSH 的模型下拉框里；凭据与模型设置都会保留，重新开启即恢复。",
 			"agnescode.switchError": "切换失败：{error}",
 			"agnescode.harvest": "检测本机登录态",
 			"agnescode.harvesting": "正在读取本机登录态…",
-			"agnescode.logout": "解除关联",
 			"agnescode.loggedIn": "已关联：{nick}",
 			"agnescode.bffBase": "接口地址 {base}",
 			"agnescode.notLogged": "未关联——请先在 AgnesCode 桌面端登录（微信扫码），再点「检测本机登录态」。",
 			"agnescode.downloadCta": "下载 AgnesCode 桌面客户端，领取限时积分 →",
-			"agnescode.balanceLine": "积分余额 {balance}（时效 {timeSensitive} · 永久 {permanent}）",
+			"agnescode.balanceLabel": "积分余额",
+			"agnescode.balanceSplit": "时效 {timeSensitive} · 永久 {permanent}",
 			"agnescode.models": "模型（{count}）",
 			"agnescode.memberOnly": "会员",
 			"agnescode.registeredPill": "已注册",
@@ -392,7 +395,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.level.xhigh": "xhigh",
 			"llm.level.max": "max",
 			"draw.title": "Draw tool",
-			"draw.switch": "Register the agnes_draw_image tool (next Host mount)",
+			"draw.switch": "Register the draw tool",
+			"draw.switchTip": "When on, DSH mounts the agnes_draw_image tool at the next Host (re)load — no manual restart needed; the tool itself is loaded by the Host, the panel only toggles it.",
 			"draw.switchBusy": "Switching…",
 			"draw.switchError": "Switch failed: {error}",
 			"draw.onList": "Draw calls will use the model below:",
@@ -404,7 +408,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"draw.needsKey": "No API key yet; save one to start generating images.",
 			"draw.noCandidates": "This API key's catalogue has no image model; drawing is unavailable.",
 			"video.title": "Video tool",
-			"video.switch": "Register the agnes_video_generate tool (next Host mount)",
+			"video.switch": "Register the video tool",
+			"video.switchTip": "When on, DSH mounts the agnes_video_generate tool at the next Host (re)load — no manual restart needed; the tool itself is loaded by the Host, the panel only toggles it.",
 			"video.switchBusy": "Switching…",
 			"video.switchError": "Switch failed: {error}",
 			"video.onList": "Video calls will use the model below:",
@@ -423,16 +428,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"tab.agnescode": "AgnesCode",
 			"agnescode.title": "AgnesCode",
 			"agnescode.desc": "Uses the locally signed-in AgnesCode desktop App (the WeChat login happens inside the App — this plugin never touches your password). Models register with DSH as a provider. Credentials stay independent of the quota tab.",
-			"agnescode.switch": "Enable the AgnesCode provider (register models with DSH)",
+			"agnescode.switch": "Enable AgnesCode provider",
+			"agnescode.switchTip": "When off, AgnesCode models do not appear in DSH's model dropdown; the credential and model settings are kept and return when you switch it back on.",
 			"agnescode.switchError": "Switch failed: {error}",
 			"agnescode.harvest": "Detect local login state",
 			"agnescode.harvesting": "Reading the local login state…",
-			"agnescode.logout": "Unlink",
 			"agnescode.loggedIn": "Linked: {nick}",
 			"agnescode.bffBase": "API base {base}",
 			"agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
 			"agnescode.downloadCta": "Download the AgnesCode desktop client and claim your limited-time credits →",
-			"agnescode.balanceLine": "Credit balance {balance} (time-limited {timeSensitive} · permanent {permanent})",
+			"agnescode.balanceLabel": "Credit balance",
+			"agnescode.balanceSplit": "time-limited {timeSensitive} · permanent {permanent}",
 			"agnescode.models": "Models ({count})",
 			"agnescode.memberOnly": "member",
 			"agnescode.registeredPill": "Registered",
@@ -1756,13 +1762,21 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setNotice,
 			setSavedKey
 		]);
-		return h("div", { style: { marginBottom: 14 } }, h("p", { style: { margin: "0 0 10px" } }, h("span", { style: S.sectionTitle }, tt("llm.roster"), " — "), h("span", { style: {
+		return h("div", { style: { marginBottom: 14 } }, h("div", { style: {
+			display: "flex",
+			alignItems: "baseline",
+			justifyContent: "space-between",
+			gap: 8,
+			margin: "0 0 10px"
+		} }, h("span", { style: {
+			...S.sectionTitle,
+			margin: 0
+		} }, tt("llm.roster")), typeof llm?.thinkingDefault === "string" && llm.thinkingDefault !== "" ? h("span", { style: {
 			...S.muted,
-			fontSize: 12
-		} }, tt("llm.rosterHint")), typeof llm?.thinkingDefault === "string" && llm.thinkingDefault !== "" ? h("span", { style: {
-			...S.muted,
-			fontSize: 12
-		} }, ` · ${format(tt("llm.rosterThinkingDefault"), { level: tt(`llm.level.${llm.thinkingDefault}`) })}`) : null), models.length === 0 ? h("p", { style: S.empty }, tt("llm.rosterEmpty")) : h("div", null, h("div", { style: S.rosterTools }, h("input", {
+			fontSize: 12,
+			whiteSpace: "nowrap",
+			flex: "none"
+		} }, format(tt("llm.rosterThinkingDefault"), { level: tt(`llm.level.${llm.thinkingDefault}`) })) : null), models.length === 0 ? h("p", { style: S.empty }, tt("llm.rosterEmpty")) : h("div", null, h("div", { style: S.rosterTools }, h("input", {
 			type: "search",
 			style: {
 				...S.input,
@@ -1823,7 +1837,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, tt("llm.rosterSaved")) : null, notice !== null ? h("p", {
 			style: S.formError,
 			role: "alert"
-		}, notice) : null));
+		}, notice) : null, h("p", { style: {
+			...S.muted,
+			fontSize: 12,
+			margin: "10px 0 0"
+		} }, tt("llm.rosterHint"))));
 	}
 	var init_model_picker = __esmMin((() => {
 		init_const();
@@ -1833,6 +1851,74 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_roster_draft();
 		init_runtime();
 		init_styles();
+	}));
+
+//#endregion
+//#region src/client/switch.ts
+	function Switch({ checked, disabled, onChange, label, title, rowStyle, labelStyle }) {
+		return h("label", {
+			style: {
+				display: "flex",
+				gap: 8,
+				alignItems: "center",
+				cursor: disabled ? "wait" : "pointer",
+				position: "relative",
+				...rowStyle ?? {}
+			},
+			...title !== void 0 ? { title } : {}
+		}, h("input", {
+			type: "checkbox",
+			checked,
+			disabled,
+			onChange,
+			"aria-label": label,
+			style: {
+				appearance: "none",
+				WebkitAppearance: "none",
+				position: "absolute",
+				left: 0,
+				top: "50%",
+				transform: "translateY(-50%)",
+				width: 30,
+				height: 17,
+				margin: 0,
+				border: "none",
+				background: "transparent",
+				cursor: "pointer"
+			}
+		}), h("span", { style: {
+			...TRACK_STYLE,
+			background: checked ? "var(--dsw-alias-state-success-primary, #12b76a)" : "var(--dsw-alias-bg-layer-2, #2a2b31)"
+		} }, h("span", { style: {
+			position: "absolute",
+			top: 1.5,
+			left: checked ? 14 : 1.5,
+			width: 12,
+			height: 12,
+			borderRadius: "50%",
+			background: checked ? "#fff" : "var(--dsw-alias-label-tertiary, #999)",
+			transition: "left .15s, background .15s"
+		} })), h("span", { style: {
+			...LABEL_STYLE,
+			...labelStyle ?? {}
+		} }, label));
+	}
+	var LABEL_STYLE, TRACK_STYLE;
+	var init_switch = __esmMin((() => {
+		init_runtime();
+		LABEL_STYLE = {
+			fontSize: 12,
+			color: "var(--dsw-alias-label-secondary)"
+		};
+		TRACK_STYLE = {
+			width: 30,
+			height: 17,
+			borderRadius: 999,
+			flex: "none",
+			position: "relative",
+			border: "1px solid var(--dsw-alias-border-l2, #36373b)",
+			transition: "background .15s, border-color .15s"
+		};
 	}));
 
 //#endregion
@@ -1980,21 +2066,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			onDone,
 			tt
 		]);
-		return h("label", { style: {
-			display: "flex",
-			gap: 8,
-			alignItems: "center",
-			margin: "0 0 12px",
-			cursor: busy ? "wait" : "pointer"
-		} }, h("input", {
-			type: "checkbox",
+		return h("div", null, h(Switch, {
 			checked: enabled,
 			disabled: busy,
-			onChange: toggle
-		}), h("span", { style: {
-			fontSize: 12,
-			color: "var(--dsw-alias-label-secondary)"
-		} }, busy ? tt("llm.switchBusy") : tt("llm.switch")), switchError ? h("span", {
+			onChange: toggle,
+			label: busy ? tt("llm.switchBusy") : tt("llm.switch"),
+			rowStyle: { margin: "0 0 12px" }
+		}), switchError ? h("span", {
 			style: S.formError,
 			role: "alert"
 		}, switchError) : null);
@@ -2114,20 +2192,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			fontSize: 12,
 			marginTop: 4
 		} }, k("noCandidates")) : null;
-		return h("div", { style: { marginBottom: 12 } }, h("label", { style: {
-			display: "flex",
-			gap: 8,
-			alignItems: "baseline",
-			cursor: busy ? "wait" : "pointer"
-		} }, h("input", {
-			type: "checkbox",
+		return h("div", { style: { marginBottom: 12 } }, h(Switch, {
 			checked: enabled,
 			disabled: busy,
-			onChange: toggle
-		}), h("span", { style: {
-			fontSize: 12,
-			color: "var(--dsw-alias-label-primary)"
-		} }, busy ? k("switchBusy") : k("switch"))), h("div", { style: {
+			onChange: toggle,
+			label: busy ? k("switchBusy") : k("switch"),
+			title: k("switchTip"),
+			labelStyle: { color: "var(--dsw-alias-label-primary)" }
+		}), h("div", { style: {
 			...S.muted,
 			fontSize: 12,
 			marginTop: 4
@@ -2229,6 +2301,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_http();
 		init_model_picker();
 		init_runtime();
+		init_switch();
 		init_styles();
 	}));
 
@@ -2856,15 +2929,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				if (alive.current) setHarvestBusy(false);
 			}
 		}, [load, tt]);
-		const logout = useCallback(async () => {
-			setNote(null);
-			try {
-				await postJsonOrThrow(AGNESCODE_PATH, { action: "logout" });
-				if (alive.current) load();
-			} catch (why) {
-				if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
-			}
-		}, [load, tt]);
 		const saveModels = useCallback(async (ids) => {
 			await postJsonOrThrow(AGNESCODE_PATH, {
 				action: "saveModels",
@@ -2878,43 +2942,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const models = Array.isArray(state?.models) ? state.models : [];
 		const attempts = Array.isArray(state?.harvest?.attempts) ? state.harvest.attempts : [];
 		const balance = state?.balance ?? null;
-		return h("div", null, h("div", { style: {
-			fontSize: 12,
-			color: "var(--dsw-alias-label-secondary)",
-			marginBottom: 12
-		} }, tt("agnescode.desc")), view.showError ? h("div", {
+		return h("div", null, view.showError ? h("div", {
 			style: S.formError,
 			role: "alert"
-		}, format(tt("agnescode.error"), { error })) : null, h("label", { style: {
-			display: "flex",
-			gap: 8,
-			alignItems: "center",
-			margin: "0 0 12px",
-			cursor: harvestBusy ? "wait" : "pointer"
-		} }, h("input", {
-			type: "checkbox",
-			checked: enabled,
-			disabled: harvestBusy,
-			onChange: () => void toggle(!enabled)
-		}), h("span", { style: {
-			fontSize: 12,
-			color: "var(--dsw-alias-label-secondary)"
-		} }, tt("agnescode.switch"))), state !== null ? state.providerError === "not_configured" && loggedIn ? h("div", {
-			style: {
-				...S.muted,
-				fontSize: 12
-			},
-			role: "status"
-		}, tt("agnescode.errNotConfigured")) : state.providerError !== void 0 && state.providerError !== "" && state.providerError !== "not_configured" ? h("div", {
-			style: S.formError,
-			role: "alert"
-		}, state.providerError) : enabled && !loggedIn ? h("div", { style: {
-			...S.muted,
-			fontSize: 12
-		} }, tt("agnescode.awaitingHarvest")) : state.providerRegistered === true ? null : h("div", { style: {
-			...S.muted,
-			fontSize: 12
-		} }, tt("agnescode.unregistered")) : null, view.credentialCard ? h("div", { style: {
+		}, format(tt("agnescode.error"), { error })) : null, view.credentialCard ? h("div", { style: {
 			...S.card,
 			marginTop: 4
 		} }, loggedIn ? h("div", null, h("div", { style: {
@@ -2930,28 +2961,55 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			style: S.button,
 			onClick: () => void harvest(),
 			disabled: harvestBusy
-		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")), h("button", {
+		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))), state?.bffBase !== void 0 && state?.bffBase !== "" || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("div", { style: {
+			...S.quotaFoot,
+			marginTop: 8,
+			color: "var(--dsw-alias-label-secondary)"
+		} }, state?.bffBase !== void 0 && state?.bffBase !== "" ? h("span", { style: {
+			...S.quotaUsed,
+			wordBreak: "break-all"
+		} }, format(tt("agnescode.bffBase"), { base: state.bffBase })) : null, typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("span", { style: {
+			...S.quotaUsed,
+			whiteSpace: "nowrap"
+		} }, format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) })) : null) : null) : h("div", null, h("div", { style: {
+			display: "flex",
+			alignItems: "center",
+			gap: 12,
+			flexWrap: "wrap"
+		} }, h("div", { style: { fontSize: 13 } }, tt("agnescode.notLogged")), h("span", { style: S.spacer }), h("button", {
 			type: "button",
 			style: S.button,
-			onClick: () => void logout()
-		}, tt("agnescode.logout"))), state?.bffBase !== void 0 && state?.bffBase !== "" ? h("div", { style: {
-			...S.muted,
-			fontSize: 12,
-			marginTop: 6,
-			wordBreak: "break-all"
-		} }, format(tt("agnescode.bffBase"), { base: state.bffBase })) : null, typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("div", { style: {
-			...S.muted,
-			fontSize: 12,
-			marginTop: 2
-		} }, format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) })) : null) : h("div", null, h("div", { style: { fontSize: 13 } }, tt("agnescode.notLogged")), h("button", {
-			type: "button",
-			style: {
-				...S.button,
-				marginTop: 8
-			},
 			onClick: () => void harvest(),
 			disabled: harvestBusy
-		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")))) : null, attempts.length > 0 ? h("div", {
+		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")))), h(Switch, {
+			checked: enabled,
+			disabled: harvestBusy,
+			onChange: () => void toggle(!enabled),
+			label: tt("agnescode.switch"),
+			title: tt("agnescode.switchTip"),
+			rowStyle: { marginTop: 10 }
+		}), state !== null ? state.providerError === "not_configured" && loggedIn ? h("div", {
+			style: {
+				...S.muted,
+				fontSize: 12,
+				marginTop: 4
+			},
+			role: "status"
+		}, tt("agnescode.errNotConfigured")) : state.providerError !== void 0 && state.providerError !== "" && state.providerError !== "not_configured" ? h("div", {
+			style: {
+				...S.formError,
+				marginTop: 4
+			},
+			role: "alert"
+		}, state.providerError) : enabled && !loggedIn ? h("div", { style: {
+			...S.muted,
+			fontSize: 12,
+			marginTop: 4
+		} }, tt("agnescode.awaitingHarvest")) : state.providerRegistered === true ? null : h("div", { style: {
+			...S.muted,
+			fontSize: 12,
+			marginTop: 4
+		} }, tt("agnescode.unregistered")) : null) : null, attempts.length > 0 ? h("div", {
 			style: {
 				...S.muted,
 				fontSize: 12,
@@ -2970,34 +3028,43 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			},
 			role: "status"
 		}, note) : null, loggedIn ? h("div", { style: { marginTop: 12 } }, balance !== null ? h("div", { style: {
-			...S.muted,
-			fontSize: 12,
-			marginBottom: 8
-		} }, format(tt("agnescode.balanceLine"), {
-			balance: count(balance.totalBalance ?? 0),
+			...S.pool,
+			marginBottom: 10
+		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balanceLabel"))), h("div", { style: {
+			...S.quotaRemaining,
+			marginTop: 4
+		} }, count(balance.totalBalance ?? 0)), h("div", { style: {
+			...S.quotaUsed,
+			marginTop: 2
+		} }, format(tt("agnescode.balanceSplit"), {
 			timeSensitive: count(balance.timeSensitiveBalance ?? 0),
 			permanent: count(balance.permanentBalance ?? 0)
-		})) : null, models.length > 0 ? h(AgnescodeModelPicker, {
+		}))) : null, models.length > 0 ? h(AgnescodeModelPicker, {
 			models,
 			hostIds: state?.enabledModelIds,
 			registered: state?.providerRegistered === true,
 			tt,
 			onSave: saveModels
-		}) : null) : null, h("a", {
+		}) : null) : null, h("div", { style: {
+			marginTop: 12,
+			paddingTop: 10,
+			borderTop: "1px solid var(--dsw-alias-border-l1)"
+		} }, h("div", { style: {
+			...S.note,
+			marginTop: 0
+		} }, tt("agnescode.desc")), h("a", {
 			href: AGNESCODE_SITE_URL,
 			target: "_blank",
 			rel: "noreferrer",
 			style: {
 				display: "inline-block",
-				marginTop: 12,
-				paddingTop: 10,
-				borderTop: "1px solid var(--dsw-alias-border-l1)",
+				marginTop: 8,
 				fontSize: 12,
 				color: "var(--dsw-alias-label-secondary)",
 				textDecoration: "underline",
 				cursor: "pointer"
 			}
-		}, tt("agnescode.downloadCta")));
+		}, tt("agnescode.downloadCta"))));
 	}
 	/**
 	* The model roster the AgnesCode adapter offers, as a hook-free component.
@@ -3195,6 +3262,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_models();
 		init_roster_draft();
 		init_runtime();
+		init_switch();
 		init_styles();
 		init_wire();
 		AGNESCODE_POLL_MS = 6e4;

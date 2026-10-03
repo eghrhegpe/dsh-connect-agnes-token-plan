@@ -12,6 +12,7 @@ import { postJsonOrThrow } from "./http.ts";
 import { ModelPicker } from "./model-picker.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
+import { Switch } from "./switch.ts";
 import type { LlmData } from "./wire.ts";
 import { S } from "./styles.ts";
 
@@ -148,10 +149,15 @@ export function ProviderSwitch({ llm, onDone, tt }: {
     }
   }, [enabled, onDone, tt]);
   return h(
-    "label",
-    { style: { display: "flex", gap: 8, alignItems: "center", margin: "0 0 12px", cursor: busy ? "wait" : "pointer" } },
-    h("input", { type: "checkbox", checked: enabled, disabled: busy, onChange: toggle }),
-    h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" } }, busy ? tt("llm.switchBusy") : tt("llm.switch")),
+    "div",
+    null,
+    h(Switch, {
+      checked: enabled,
+      disabled: busy,
+      onChange: toggle,
+      label: busy ? tt("llm.switchBusy") : tt("llm.switch"),
+      rowStyle: { margin: "0 0 12px" }
+    }),
     switchError ? h("span", { style: S.formError, role: "alert" }, switchError) : null
   );
 }
@@ -307,12 +313,14 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
   return h(
     "div",
     { style: { marginBottom: 12 } },
-    h(
-      "label",
-      { style: { display: "flex", gap: 8, alignItems: "baseline", cursor: busy ? "wait" : "pointer" } },
-      h("input", { type: "checkbox", checked: enabled, disabled: busy, onChange: toggle }),
-      h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-primary)" } }, busy ? k("switchBusy") : k("switch"))
-    ),
+    h(Switch, {
+      checked: enabled,
+      disabled: busy,
+      onChange: toggle,
+      label: busy ? k("switchBusy") : k("switch"),
+      title: k("switchTip"),
+      labelStyle: { color: "var(--dsw-alias-label-primary)" }
+    }),
     h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } }, statusText),
     pickerRows,
     noListHint,
