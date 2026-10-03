@@ -106,7 +106,8 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 **窗口内的已用量由平台自己给，直接引用，不做减法。** `subscription.usage` 是控制台「当前用量」
 那一屏的数据源：每个窗口都带 `used` / `limit` / `time_range_start` / `time_range_end` / `reset_at` /
 `reset_in_seconds` / `usage_pct`（**2026-10-01 实测**）。面板把它并进 `quota.windows[].used`，
-进度条是逐字转写，不是计算。`overview` / `series` 仍是**累计**与**分桶**口径，与窗口周期不同，
+进度条是逐字转写，不是计算——画条用的就是 `usage_pct` 本身（超额窗口的 `>100` 也照原样显示，
+平台报多少就是多少；只有该字段缺失时才回退到 `used/limit` 的算术值，那是兼容形状，不是首选口径）。`overview` / `series` 仍是**累计**与**分桶**口径，与窗口周期不同，
 `上限 − 累计` 依然是跨周期减法，算出来的数没人能负责——所以面板把平台给的窗口用量与账号累计
 作为两类独立事实并排显示，并明说不可相减（`quota.windowNote`）。
 

@@ -43,8 +43,12 @@
     // 控制台的 `subscription.usage` 给到该窗口时，会带上平台自己报出的 `used`
     // 与窗口起止 / 重置时间（下面省略号处）；没有就留空，面板不画进度条。
     // 没有 remaining —— 控制台从不报「剩余」，面板也从不计算它。
-    // usagePct / rangeStart / rangeEnd / resetInSeconds 由窗口内用量算出后随 used 一并下发：
-    // 面板画进度条用 usagePct，重置倒计时用 resetInSeconds（resetAt 是绝对时间、resetInSeconds 是相对秒）。
+    // usagePct 是平台自己报出的那个百分比（`subscription.usage` 的 `usage_pct`
+    // 字段，逐字转写）；rangeStart / rangeEnd / resetInSeconds 同为平台随窗口
+    // 报出的事实：面板画进度条用 usagePct，重置倒计时用 resetInSeconds
+    //（resetAt 是绝对时间、resetInSeconds 是相对秒）。
+    // 只有 usagePct 缺失（老 Host / 该窗口读不到）时，面板才回退到 used/limit
+    // 的算术值——那是兼容形状，不是首选口径。
     "windows": [{ "key": "requests5h", "unit": "requests", "limit": 30000, "windowHours": 5,
       "used": 12345, "usagePct": 41, "rangeStart": 1790848800, "rangeEnd": 1790902800,
       "resetAt": 1790866800, "resetInSeconds": 17190 }],

@@ -72,6 +72,63 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     inner?.props.style.width === "20.575%", String(inner?.props.style.width));
 }
 
+// === A1b. the platform's own `usage_pct` wins over the client's arithmetic ===
+// The Host parses `usage_pct` out of the subscription response and ships it
+// down (`parsers.ts`, `snapshot-aggregate.ts`); AGNES-API.md records the bar as
+// a transcription, not a computation. The block above proves the FALLBACK is
+// still there (its fixture has no `usage_pct`); this one proves the platform's
+// value is what actually gets shown when both are present — including when the
+// two disagree, and including above 100, which is a fact about an overage
+// window rather than a rendering error to clamp away.
+{
+  const diverged = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    // 100 / 400 would be 25% by arithmetic; the platform says 33. The platform
+    // is the one whose number the console shows the user.
+    window: { key: "requests5h", unit: "requests", limit: 400, windowHours: 5, used: 100, usagePct: 33 },
+    tt
+  });
+  const meta = texts(diverged).join("\n");
+  check("the platform's usage_pct is quoted, not re-derived from used/limit",
+    meta.includes("33.0%") && !meta.includes("25.0%"), meta);
+  check("the used counts still quote both platform numbers verbatim",
+    meta.includes("quota.used 100 / 400"), meta);
+  check("the bar width follows the platform's percentage",
+    bar(diverged)?.props["aria-valuenow"] === "33.0", String(bar(diverged)?.props["aria-valuenow"]));
+
+  const overage = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 100, windowHours: 5, used: 130, usagePct: 130 },
+    tt
+  });
+  check("a window in overage is not clamped to 100%",
+    texts(overage).join("\n").includes("130.0%"), texts(overage).join("\n"));
+  const overageInner = findElement(bar(overage), (props) => typeof props.style?.width === "string");
+  check("the overage bar keeps the platform's width instead of a 100% cap",
+    overageInner?.props.style.width === "130%", String(overageInner?.props.style.width));
+  // 130% is past the 90 threshold, so the fill must be the error tone rather
+  // than the calm default — the tone follows the platform's number too.
+  const calmInner = findElement(treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 400, windowHours: 5, used: 10, usagePct: 10 },
+    tt
+  }), (props) => typeof props.style?.width === "string");
+  check("an overage window takes the danger fill, a calm one does not",
+    JSON.stringify(overageInner?.props.style) !== JSON.stringify(calmInner?.props.style),
+    `${JSON.stringify(overageInner?.props.style)} vs ${JSON.stringify(calmInner?.props.style)}`);
+
+  // A present-but-null `usage_pct` is a shape the Host sends for a window it
+  // could not read a percentage for. It must fall back rather than render a
+  // NaN bar — the same "missing is not zero" rule `used` follows above.
+  const nullPct = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 400, windowHours: 5, used: 100, usagePct: null },
+    tt
+  });
+  check("a null usage_pct falls back to the arithmetic instead of rendering NaN",
+    texts(nullPct).join("\n").includes("25.0%"), texts(nullPct).join("\n"));
+}
+
 // === A2. a stated reset instant is printed; an absent one prints nothing ===
 // The reset moment is a fact the platform states inside `subscription.usage`,
 // so the card quotes it verbatim. Absent — the window's period chip still

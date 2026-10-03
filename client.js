@@ -2418,7 +2418,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const period = windowPeriod(source.windowHours, tt);
 		const unit = unitOf(source.unit, tt);
 		const used = typeof source.used === "number" && Number.isFinite(source.used) ? source.used : null;
-		const pct = used !== null && limit > 0 ? Math.min(100, used / limit * 100) : null;
+		const platformPct = typeof source.usagePct === "number" && Number.isFinite(source.usagePct) ? source.usagePct : null;
+		const pct = platformPct !== null ? platformPct : used !== null && limit > 0 ? used / limit * 100 : null;
 		const tone = usageTone(pct ?? 0);
 		const resetAt = typeof source.resetAt === "number" && Number.isFinite(source.resetAt) ? source.resetAt : null;
 		const resetInSeconds = typeof source.resetInSeconds === "number" && Number.isFinite(source.resetInSeconds) ? source.resetInSeconds : null;

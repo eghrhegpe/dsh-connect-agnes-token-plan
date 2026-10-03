@@ -100,7 +100,23 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
   // must not read as zero used, which would draw a full bar and claim the
   // window is untouched.
   const used = typeof source.used === "number" && Number.isFinite(source.used) ? source.used : null;
-  const pct = used !== null && limit > 0 ? Math.min(100, (used / limit) * 100) : null;
+  // The percentage is the platform's own `usage_pct`, quoted verbatim — never a
+  // re-derivation. The Host parses it from the subscription response and ships
+  // it down for exactly this purpose (docs/API.md §快照, AGNES-API.md: the bar
+  // is a transcription, not a computation). Two reasons it is NOT `used/limit`:
+  //
+  //  - the platform's denominator need not be `limit` (it may be a separate
+  //    quota ceiling for the same window), so the arithmetic silently shows a
+  //    different number than the one the console shows;
+  //  - clamping to 100 would rewrite the platform's own value. A window in
+  //    overage reports >100, and that is a fact, not a rendering bug.
+  //
+  // `used / limit` remains only as the fallback for a Host that predates the
+  // field or omits it for this window — a shape mismatch must still render.
+  const platformPct = typeof source.usagePct === "number" && Number.isFinite(source.usagePct) ? source.usagePct : null;
+  const pct = platformPct !== null
+    ? platformPct
+    : used !== null && limit > 0 ? (used / limit) * 100 : null;
   const tone = usageTone(pct ?? 0);
   // The window's own reset moment, when the subscription reported one. It is a
   // fact the platform states, so it is quoted verbatim; the platform's own
