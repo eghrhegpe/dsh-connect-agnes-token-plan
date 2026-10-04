@@ -2,9 +2,6 @@
 
 把 Agnes 接进 DSH 的 **Plugins 页**插件卡。**DSH** 即 **DeepSeek Harness**；**Agnes**（爱思）是全模态大模型平台，本插件对接其**控制台 API** 与**推理 API**。
 
-> 厂商与命名：Agnes 由**爱思科技**（南京市爱思人工智能科技有限公司，国内主体）与 **Sapiens Technology**（新加坡国际主体）共同研发运营。桌面端产品名是「**爱思办公**」，其编程线在面板里称「**AgnesCode（爱思编程）**」——下文一律用 **Agnes / AgnesCode** 这两个英文名，与本插件的 provider id 一致。
->
-> **历史背景（别混淆）**：本插件 2026-10 之前接的是**商汤 SenseNova 控制台**（已退役，见 [docs/PITFALLS.md](docs/PITFALLS.md) 的「商汤时代」条目）。**Agnes 与商汤不是同一平台**，两者是先后关系而非归属关系。
 
 > **第一次读这个仓库？先看这三句。**
 >
