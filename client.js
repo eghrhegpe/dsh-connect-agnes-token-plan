@@ -227,6 +227,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.balancePermanentLabel": "永久",
 			"agnescode.models": "模型（{count}）",
 			"agnescode.memberOnly": "会员",
+			"agnescode.rateTitle": "平台公布的积分消耗倍率（0 为免费）",
 			"agnescode.registeredPill": "已注册",
 			"agnescode.rosterHint": "勾选决定哪些模型推送进 DSH 模型列表，改动即时生效。",
 			"agnescode.rosterSave": "保存",
@@ -447,6 +448,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.balancePermanentLabel": "Permanent",
 			"agnescode.models": "Models ({count})",
 			"agnescode.memberOnly": "member",
+			"agnescode.rateTitle": "Credit multiplier as published by the platform (0 = free)",
 			"agnescode.registeredPill": "Registered",
 			"agnescode.rosterHint": "Ticking decides which models are pushed into DSH's model list; the change takes effect immediately.",
 			"agnescode.rosterSave": "Save",
@@ -1312,6 +1314,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				borderRadius: 999,
 				background: "var(--dsw-alias-bg-layer-2)",
 				color: "var(--dsw-alias-label-secondary)"
+			},
+			modelPromo: {
+				flex: "none",
+				fontSize: 11,
+				padding: "1px 7px",
+				borderRadius: 999,
+				background: "#D1DDFC",
+				color: "#003DD9"
 			},
 			modelMeta: {
 				paddingLeft: 25,
@@ -3159,11 +3169,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* the unlinked frame — a roster inlined there is unassertable. The row is the
 	* SAME two-line shape as the sibling rosters (head line over an indented
 	* parameter line), sharing `S.modelRow`'s contract — and, since the panel can
-	* now curate this provider, the SAME checkbox. What it carries instead
-	* of a rate chip is the `memberOnly` badge — the platform-declared
-	* gating fact this provider HAS; no multiplier chip exists here because the
-	* upstream declares no per-model rate (billing is the credit pool), and
-	* inventing one would libel the roster.
+	* now curate this provider, the SAME checkbox.
+	*
+	* The head line's tail carries three platform-declared facts, in this order:
+	* a PROMOTION tag (`displayLabel`, tinted like the desktop App's own chip), the
+	* credit rate (`multiplier`, as `×N`), and the gating badge (`memberOnly`).
+	* All three come from the live `/v2/models` catalogue — none is inferred, and
+	* an absent field draws nothing rather than a placeholder.
 	*
 	* The checkbox is hook-free like the sibling rows: `onToggle` is handed in, so
 	* without it the box is display-only and the roster cannot be edited at all.
@@ -3206,6 +3218,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			const label = String(row?.name ?? id);
 			const on = modelIsOn(enabledIds, id);
 			const meta = [typeof row?.contextWindow === "number" && row.contextWindow > 0 ? format(tt("llm.contextBadge"), { ctx: tokenSize(row.contextWindow) }) : null, typeof row?.maxOutputLength === "number" && row.maxOutputLength > 0 ? format(tt("llm.metaOutput"), { out: tokenSize(row.maxOutputLength) }) : null].filter(Boolean).join(" · ");
+			const rate = typeof row?.multiplier === "number" ? row.multiplier : null;
+			const promo = typeof row?.displayLabel === "string" && row.displayLabel !== "" ? row.displayLabel : null;
 			return h("li", {
 				key: id,
 				style: {
@@ -3229,7 +3243,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}), h("span", {
 				style: S.modelName,
 				title: id
-			}, label)), h("span", { style: S.spacer }), row.memberOnly === true ? h("span", { style: S.modelBadge }, tt("agnescode.memberOnly")) : null), meta === "" ? null : h("div", { style: S.modelMeta }, meta));
+			}, label)), h("span", { style: S.spacer }), promo === null ? null : h("span", { style: S.modelPromo }, promo), rate === null ? null : h("span", {
+				style: S.modelRate,
+				title: tt("agnescode.rateTitle")
+			}, `×${rate}`), row.memberOnly === true ? h("span", { style: S.modelBadge }, tt("agnescode.memberOnly")) : null), meta === "" ? null : h("div", { style: S.modelMeta }, meta));
 		})));
 	}
 	/**
