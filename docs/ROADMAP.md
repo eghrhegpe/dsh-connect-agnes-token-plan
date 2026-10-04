@@ -439,9 +439,8 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 
 | 端点 | 行数 | 带 `points_cost_multiplier` |
 |---|---|---|
-| `{bffBase}/models`（v1） | 8 | **0/8** |
-| `{apiRoot}/v2/models`（**已切换，插件现读这条**） | 9 | **8/9** |
-| `{apiRoot}/v2/models`（**桌面端读的**） | 9 | **8/9** |
+| `{bffBase}/models`（v1，2026-10-04 起插件不再读） | 8 | **0/8** |
+| `{apiRoot}/v2/models`（**桌面端读的；2026-10-04 起插件也读这条**） | 9 | **8/9** |
 
 `/v2/models` 实测值（与截图逐一吻合）：`agnes-3.0-flash` **0**、`agnes-2.5-flash` **0**、`agnes-2.5-pro` **1**、`deepseek-v4-flash` **1.2**、`agnes-2.0-flash` **0**、`glm-5.2` **1.85**（另带 `display_label:"限时七折"`）、`kimi-k3` **5.3**、`deepseek-v4-pro` **1.5**；`auto` 行**缺该字段**（8/9 中的那个 1）。
 
