@@ -24,6 +24,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 ```jsonc
 {
   "name": "dsh-connect-agnes-token-plan",
+  "icon": "./icon.svg",                  // Plugins 页插件卡图标：Host 读此字段按 SVG/PNG/JPEG/WebP 渲染（相对路径、落在 files 内、≤256 KiB，任一不满足会让整条元数据报错）
   "version": "0.10.0",
   "main": "./lib/index.js",              // Host 半边入口：src/host/*.ts 经 tsdown 打成的单条 bundle
   "exports": {
@@ -34,7 +35,8 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
   },
   "files": [                            // 发到 registry 时只带这些；必须覆盖构建产物与文档，
                                         // 由 test/package.test.mjs 钉住（src/ 不进包，panel-*.js 是测试基建也不进包）
-    "lib", "client.js", "locale",
+    "lib", "client.js", "icon.svg",
+    "locale",
     "assets",                           // screenshots.json 指的就是这两张图：清单在包里而图不在包，
                                          // 市场页对所有从 npm 装的人全裂，且没有任何门禁会红
     "cordis.patch.yml", "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "screenshots.json"

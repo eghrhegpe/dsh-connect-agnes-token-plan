@@ -2,6 +2,14 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [Unreleased]
+
+### 插件卡补上图标：Plugins 页不再裸显示包名 + 一段英文
+
+- **新增 `icon.svg`**（`icon: "./icon.svg"`）：Plugins 页的插件卡此前只有文字，卡片图标由 DSH Host 读 `package.json` 的 `icon` 字段渲染——不提供就缺一块。沿用面板的「积分币」母题（渐变圆盘 + 白色记数笔画），配色对齐本插件自己的品牌蓝 `--agnes-brand`（#1E40AF），与面板开关 / tab 下边框 / 额度进度条同一套 token，不跟 DSH 的中性色走。几何与兄弟插件 `dsh-connect-sensenova-token-plan` 保持一致，避免同系列插件卡片形态各异。
+- **读取端是硬校验，不是降级**：`icon` 必须是相对路径、扩展名限 SVG/PNG/JPEG/WebP、文件必须落在 `files` 白名单目录内、体积 ≤256 KiB——任一不满足会让整条插件元数据报错（该经验的出处是 `dsh-connect-sensenova-token-plan` CHANGELOG 0.4.4，已写进 `docs/PITFALLS.md` §27）。因此 `icon.svg` 同时进 `files` 白名单，`exports` 无需新增子路径（图标由 Host 直接按仓库路径读，不走包导出）。
+- 影响面：`icon.svg`、`package.json`、`docs/DSH-PLUGIN.md`（教学快照同步 `icon` 字段与 `files` 数组）。
+
 ## [0.10.0] — 2026-10-04
 
 ### AgnesCode 目录改读 `/v2/models`：模型名带上平台真实的积分倍率与促销标
