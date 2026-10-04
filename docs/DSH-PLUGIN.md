@@ -24,7 +24,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
 ```jsonc
 {
   "name": "dsh-connect-agnes-token-plan",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "main": "./lib/index.js",              // Host 半边入口：src/host/*.ts 经 tsdown 打成的单条 bundle
   "exports": {
     ".": "./lib/index.js",               // 源码在 src/host/，lib/ 为纯构建产物（随库提交，git/市场直装零构建）
