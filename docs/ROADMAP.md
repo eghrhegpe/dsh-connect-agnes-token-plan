@@ -433,9 +433,24 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 | `POST {bffBase}/v1/chat/completions` 思考 wire（2026-10-03 真机补探） | `agnes-3.0-flash`，同一道多步算术题，7 发全 `200`：① 不发任何思考字段 → `reasoning_content` 406 字 / `reasoning_tokens` 320（v1 原形状）；② `request_params.agnes_thinking_enabled=true`+`thinking_effort=high` → 327 字 / 266；③ 同 +`auto` → 398 字 / 314；④ 通用 `reasoning_effort=high` → 366 字 / 291；⑤ `reasoning_effort=none` → **257 字 / 188，思考未关**；⑥ `low` → 425 字 / 342；⑦ `medium` → 328 字 / 260 | **「BFF 默认思考关」「档位不生效」两条假设均被推翻**：默认即思考开，`reasoning_effort` 阶梯被接受。**`reasoning_effort:"none"` 关不掉思考**（仍产 188 推理 token）——真关开关是桌面端的 `request_params.agnes_thinking_enabled=false`（或 `thinking_effort:"off"`），pi-ai 的字符串档位映射表达不了它。落地：descriptor 翻 `reasoning:true` + `agnescodeThinkingLevelMap`（`off:null`、`low/medium/high` 开、`xhigh/max` 关），profile 钉 `reasoning:DEFAULT_REASONING_EFFORT`（`agnescode-models.ts` / `agnescode-llm-adapter.ts`），`test/agnescode.test.mjs` 同步钉 |
 | 倍率候选端点 | `GET /v1/model-config`、`/v1/model-rates`、`/v1/models/rates`、`/api/v2/model-config`、`/api/v2/models` 全部 `404`；活目录（行数随 `AGNESCODE_FALLBACK_MODELS`）上也**无任何** `credit` / `rate` / `multiplier` / `price` / `cost` / `billing` 键 | **平台级事实（非「没读到」）**：AgnesCode 的计费口径是账号级积分池，不存在按模型倍率——与 workbuddy 的 `credits: "x0.79"` 字段是不同体系。AgnesCode tab 因此**无倍率可显示**（数据层缺席；与 §7 表「伪倍率折名不做」那条决议不是一回事——那条裁的是操作者手填 ×N，这里是 BFF 根本没出这个数据源） |
 
-**倍率字段补记（2026-10-04，桌面端 bundle 对照 + 本机只读复探）——上表「不存在按模型倍率」需修正**：用户在桌面端模型选择器上截到真实的**每模型消耗**（`agnes-2.5-pro 1.00x` / `deepseek-v4-flash 1.20x` / `glm-5.2 1.85x` / `agnes-2.5-flash 0.00x`）。对照本机快照 `upstream/AgnesCode-desktop-1.0.68/.vite/renderer/main_window/assets/App-Br3qyjae.js`：字段名是 **`points_cost_multiplier`**，渲染为 `${points_cost_multiplier.toFixed(2)}x`，i18n 标签 `modelDetailPopover.consumption` 原文是 **"Credits per call"**（每次调用消耗的积分数）。即**平台侧确有按模型的消耗倍率**，上表「平台级事实：不存在按模型倍率」的判读**过强**——正确表述是「**该字段不在插件当前读的那条 `/models` 响应上**」。
+**倍率字段正记（2026-10-04，mitmproxy 抓包 + 本机只读复探）——上表「不存在按模型倍率」判读【错误】，根因是端点选错**：用户在桌面端模型选择器上截到真实的**每模型消耗**（`agnes-2.5-pro 1.00x` / `deepseek-v4-flash 1.20x` / `glm-5.2 1.85x` / `agnes-2.5-flash 0.00x`）。抓包定位到桌面端读的是 **`GET {apiRoot}/v2/models`**（**不是在用的 `/v1/models`**），该响应携带 **`points_cost_multiplier`**；桌面端渲染为 `${points_cost_multiplier.toFixed(2)}x`，i18n 标签 `modelDetailPopover.consumption` 原文 **"Credits per call"**。
 
-只读复探（`probe-multiplier-field.mjs` / `probe-multiplier-endpoints.mjs` / `probe-multiplier-hosts.mjs`，均在 `upstream/` gitignore 区内）：`GET {bffBase}/models` → `200`，8 行，行键 `created,description,gray_available,id,is_gray,is_member_only,max_input_tokens,max_output_tokens,model_type,object,owned_by,provider,supported_endpoint_types,thinking_toggle` —— **无 `points_cost_multiplier`**；同 host 12 条候选路径全 `404`；`agnescode.agnes-ai.cn` 各路径 `200` 但是 Docusaurus 文档站的 `text/html` 404 页（非 API）；`app.agnes-ai.cn` 全 `404`；`api.agnes-ai.com` 全 `401`。**结论：本机凭据（免费账号）在读得到的任何端点上都不返回该字段，但桌面端确实拿到了它** → 该字段**按账号/响应分支下发**（免费账号疑似不返回，或由另一条未定位的响应携带），**不是「平台没有这个东西」**。要接入需先定位携带它的那个响应；在定位到之前，插件维持「无倍率可显示」是**正确的现状**，但理由应改为「数据源未定位」而非「平台不存在」。
+**同 host、同 token、同请求头，只差端点**，逐行实测：
+
+| 端点 | 行数 | 带 `points_cost_multiplier` |
+|---|---|---|
+| `{bffBase}/models`（即 `/v1/models`，**插件当前读的**） | 8 | **0/8** |
+| `{apiRoot}/v2/models`（**桌面端读的**） | 9 | **8/9** |
+
+`/v2/models` 实测值（与截图逐一吻合）：`agnes-3.0-flash` **0**、`agnes-2.5-flash` **0**、`agnes-2.5-pro` **1**、`deepseek-v4-flash` **1.2**、`agnes-2.0-flash` **0**、`glm-5.2` **1.85**（另带 `display_label:"限时七折"`）、`kimi-k3` **5.3**、`deepseek-v4-pro` **1.5**；`auto` 行**缺该字段**（8/9 中的那个 1）。
+
+**所以上表判读要改两处**：① 「平台级事实（非『没读到』）」**不成立**——倍率确实存在，是**插件读的 v1 精简目录不带它**；② 「与 workbuddy 的 credits 字段是不同体系」**也不成立**——AgnesCode 同样有按模型倍率，形态是倍数字段 + `display_label`。
+
+**字段面差异（切换前须知）**：`/v2/models` 比 `/v1/models` **多** `allowed_subscription` / `auto_compact_threshold` / `display_label` / `points_cost_multiplier`，**少** `thinking_toggle` / `is_member_only`（改为 `is_member`）。`thinking_toggle` 插件**零运行时依赖**（`src/` 与 `test/` 全文 grep 零命中，仅 PITFALLS 与本文提及），故该差异**不构成切换阻塞**；`is_member_only` → `is_member` 的键名变化与 `memberOnly` 读取需核对。**是否切换端点、倍率如何呈现（面板侧标记形态）尚未裁定**，本文只记事实。
+
+> **取证纪律补记（本条踩过的坑）**：① 首轮探针只查 `rows[0]` 的键就报「字段不存在」——而该字段 **8/9 行有、第一行 `auto` 恰好没有**，**取错样本得出反向结论**；判「字段不存在」必须查全集（用 `body.includes()` 或逐行枚举），不能只看第一个元素。② 据此错判推出的「**按账号分支下发**」（见下方历史补记）**同样是错的**——真实原因是**端点不同**，与账号无关。两条都属「量化断言只看了一个样本」的同源病。
+
+**（历史补记，已被上条取代，保留以记形状）倍率字段补记（2026-10-04 上半天，bundle 对照 + 部分探针）**：当时由桌面端 bundle 定位到字段名 `points_cost_multiplier`，但复探只在 `/v1` 及其同前缀的 12 条候选路径上找（全 404 或 200-无字段），**未试 `{apiRoot}/v2/models`**，于是推出「按账号/响应分支下发」这一**错误**结论。教训：**「同 host 的候选路径全试过」不等于「端点的版本前缀也试过」**——`/v1` 与 `/v2` 是同一 host 下的两条不同目录，本仓的 `AGNESCODE_FALLBACK_MODELS` 也只镜像了 `/v1`。
 
 **`usage.reasoning_tokens` 汇报漂移补记（2026-10-03，`test/live-agnescode.mjs --chat` 复探）**：`/v1/chat/completions` 响应的 `usage.reasoning_tokens` 不再出现——上表当日思考 wire 七发里它逐发非零（188–342），晚间 ON wire（`reasoning_effort:"high"`，`reasoning_content` 98 字）与 OFF wire（无任何思考字段，101 字）复探均观察为 **absent**。插件对该值无运行时依赖（grep 证实：仅 `src/host/agnescode-models.ts` 注释层引用）→ 属注释层单点漂移，不是 wire 漂移；ADR-009 的两条结论（默认即思考开、off 诚实不提供）经本次 live 复探**复核仍成立**。上表的 188–342 与各字符数是本机账号当日状态，不是平台常量。
 

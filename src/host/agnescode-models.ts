@@ -115,15 +115,19 @@ export function agnescodeRoster(catalog: unknown) {
       // the Agnes family rows borrow `PROBED_VISION`'s official-doc evidence.
       vision: agnescodeVisionOf(row),
       memberOnly: row?.memberOnly === true,
-      // The desktop App DOES show a per-model consumption factor, read from a
-      // `points_cost_multiplier` field (label: "Credits per call"), but the
-      // `/models` response THIS plugin reads does not carry it — probed live
-      // 2026-10-04: 8 rows, no such key, and 12 candidate paths on the same
-      // host all 404 (ROADMAP §6.3.1 「倍率字段补记」). So the field is not
-      // absent platform-wide, it is simply not on this data source yet; the
-      // roster therefore draws no rate chip, which is the honest shape until
-      // the carrying response is located. `undefined` means "not read here",
-      // NOT "the platform has no such concept".
+      // The desktop App shows a per-model consumption factor ("Credits per
+      // call" in the UI). CAUSE OF ITS ABSENCE HERE, now established (probed
+      // live 2026-10-04, mitmproxy capture + read-only replay): it is an
+      // ENDPOINT difference, not an account gate. The desktop reads
+      // `{apiRoot}/v2/models`, which carries `points_cost_multiplier` on 8 of
+      // 9 rows; the `/models` (v1) directory THIS plugin reads carries it on
+      // 0 of 8. Same host, same token, same headers — only the version
+      // prefix differs. So `undefined` means "v1 does not publish this",
+      // NOT "the platform has no such concept" (an earlier note in this repo
+      // wrongly inferred an account-based gate; see ROADMAP §6.3.1 「倍率字段
+      // 正记」). Switching the catalogue to /v2 is an open decision, not a
+      // proven drop-in: v2 also renames `is_member_only` → `is_member` and
+      // drops `thinking_toggle` (the latter has zero runtime users here).
       multiplier: typeof row?.multiplier === "number" ? row.multiplier : undefined,
       contextWindow: num(row?.contextWindow),
       maxOutputLength: num(row?.maxOutputLength)
