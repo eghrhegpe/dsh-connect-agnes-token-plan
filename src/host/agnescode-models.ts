@@ -115,9 +115,15 @@ export function agnescodeRoster(catalog: unknown) {
       // the Agnes family rows borrow `PROBED_VISION`'s official-doc evidence.
       vision: agnescodeVisionOf(row),
       memberOnly: row?.memberOnly === true,
-      // No multiplier concept on this provider: billing is the credit pool
-      // (credits-balance), not per-model rates — `undefined` means the roster
-      // draws no rate chip, which is the honest shape.
+      // The desktop App DOES show a per-model consumption factor, read from a
+      // `points_cost_multiplier` field (label: "Credits per call"), but the
+      // `/models` response THIS plugin reads does not carry it — probed live
+      // 2026-10-04: 8 rows, no such key, and 12 candidate paths on the same
+      // host all 404 (ROADMAP §6.3.1 「倍率字段补记」). So the field is not
+      // absent platform-wide, it is simply not on this data source yet; the
+      // roster therefore draws no rate chip, which is the honest shape until
+      // the carrying response is located. `undefined` means "not read here",
+      // NOT "the platform has no such concept".
       multiplier: typeof row?.multiplier === "number" ? row.multiplier : undefined,
       contextWindow: num(row?.contextWindow),
       maxOutputLength: num(row?.maxOutputLength)
