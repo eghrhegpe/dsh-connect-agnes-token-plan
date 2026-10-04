@@ -470,6 +470,21 @@ const GOOD_SESSION = {
     // `auto` exists only in v2 and is a routing alias, not a model.
     check("the v2-only `auto` alias is excluded from the roster",
       !catalog.some((row) => row.id === "auto"), JSON.stringify(catalog.map((r) => r.id)));
+
+    // The promotional tag (`display_label`): the platform puts the KEY on every
+    // row and leaves it `""` on the unpromoted ones (measured 1/9 non-empty).
+    // So empty must collapse to ABSENT here — otherwise the panel's presence
+    // check would draw a blank chip on every unpromoted model.
+    const promoRows = [
+      { id: "promoted", model_type: "text", points_cost_multiplier: 1.85, display_label: "限时七折" },
+      { id: "plain", model_type: "text", points_cost_multiplier: 1, display_label: "" }
+    ];
+    const promo = await fetchAgnescodeCatalog(credential, fetchJson({ data: promoRows }));
+    check("a non-empty display_label travels to the roster",
+      promo?.[0]?.displayLabel === "限时七折", JSON.stringify(promo?.[0]));
+    check("an EMPTY display_label is dropped, not carried as \"\"",
+      promo !== null && promo[1] !== undefined && !("displayLabel" in promo[1]),
+      JSON.stringify(promo?.[1]));
     // The catalogue now lives under the ORIGIN-scoped /v2 path, NOT the
     // per-account base's /v1 — v1 serves the same rows WITHOUT the price, so a
     // drift back here would silently re-empty every multiplier chip. The

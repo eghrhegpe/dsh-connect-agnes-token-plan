@@ -218,6 +218,10 @@ export const zh = {
   // Gating is account state, not model truth — the badge states the limit
   // instead of the Host silently dropping the model.
   "agnescode.memberOnly": "会员",
+  // The platform's own per-call credit multiplier. `×0.00` is meaningful
+  // (free), so the chip is drawn whenever the field is present — only an
+  // ABSENT field means "the platform stated no price".
+  "agnescode.rateTitle": "平台公布的积分消耗倍率（0 为免费）",
   "agnescode.registeredPill": "已注册",
   "agnescode.rosterHint": "勾选决定哪些模型推送进 DSH 模型列表，改动即时生效。",
   "agnescode.rosterSave": "保存",
@@ -444,6 +448,7 @@ export const en: typeof zh = {
   "agnescode.balancePermanentLabel": "Permanent",
   "agnescode.models": "Models ({count})",
   "agnescode.memberOnly": "member",
+  "agnescode.rateTitle": "Credit multiplier as published by the platform (0 = free)",
   "agnescode.registeredPill": "Registered",
   "agnescode.rosterHint": "Ticking decides which models are pushed into DSH's model list; the change takes effect immediately.",
   "agnescode.rosterSave": "Save",

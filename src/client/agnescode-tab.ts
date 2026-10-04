@@ -481,11 +481,13 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
  * the unlinked frame — a roster inlined there is unassertable. The row is the
  * SAME two-line shape as the sibling rosters (head line over an indented
  * parameter line), sharing `S.modelRow`'s contract — and, since the panel can
- * now curate this provider, the SAME checkbox. What it carries instead
- * of a rate chip is the `memberOnly` badge — the platform-declared
- * gating fact this provider HAS; no multiplier chip exists here because the
- * upstream declares no per-model rate (billing is the credit pool), and
- * inventing one would libel the roster.
+ * now curate this provider, the SAME checkbox.
+ *
+ * The head line's tail carries three platform-declared facts, in this order:
+ * a PROMOTION tag (`displayLabel`, tinted like the desktop App's own chip), the
+ * credit rate (`multiplier`, as `×N`), and the gating badge (`memberOnly`).
+ * All three come from the live `/v2/models` catalogue — none is inferred, and
+ * an absent field draws nothing rather than a placeholder.
  *
  * The checkbox is hook-free like the sibling rows: `onToggle` is handed in, so
  * without it the box is display-only and the roster cannot be edited at all.
@@ -549,6 +551,15 @@ export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, to
           ? format(tt("llm.metaOutput"), { out: tokenSize(row.maxOutputLength) })
           : null;
         const meta = [ctx, out].filter(Boolean).join(" · ");
+        // The platform's own credit multiplier ("Credits per call"). `0` is a
+        // PUBLISHED PRICE (free), so it renders `×0.00` rather than vanishing —
+        // only an ABSENT field draws nothing. Same rule as the descriptor's
+        // display name on the Host side, so picker and panel cannot disagree.
+        const rate = typeof row?.multiplier === "number" ? row.multiplier : null;
+        // A promotional tag the platform publishes ("限时七折"). Empty means no
+        // tag: the key is present on every row, so a presence check would draw
+        // eight blank chips.
+        const promo = typeof row?.displayLabel === "string" && row.displayLabel !== "" ? row.displayLabel : null;
         return h(
           "li",
           { key: id, style: { ...S.modelRow, ...(on ? {} : S.modelRowOff) } },
@@ -574,6 +585,10 @@ export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, to
               h("span", { style: S.modelName, title: id }, label)
             ),
             h("span", { style: S.spacer }),
+            promo === null ? null : h("span", { style: S.modelPromo }, promo),
+            rate === null
+              ? null
+              : h("span", { style: S.modelRate, title: tt("agnescode.rateTitle") }, `×${rate}`),
             row.memberOnly === true ? h("span", { style: S.modelBadge }, tt("agnescode.memberOnly")) : null
           ),
           meta === "" ? null : h("div", { style: S.modelMeta }, meta)

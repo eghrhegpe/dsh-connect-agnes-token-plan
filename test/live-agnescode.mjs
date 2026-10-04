@@ -270,6 +270,14 @@ const headers = {
       check("gating still arrives as allowed_subscription (v1's is_member_only is absent here)",
         rows.every((r) => "allowed_subscription" in (r ?? {})),
         `rows carrying allowed_subscription: ${rows.filter((r) => "allowed_subscription" in (r ?? {})).length}/${rows.length}`);
+      // The promo tag: the plugin reads it and drops the EMPTY value, so what
+      // matters live is only that the key survives. Whether it is empty today
+      // is a platform-side promotion decision, not a contract fact.
+      const labelled = rows.filter((r) => "display_label" in (r ?? {}));
+      const nonEmpty = rows.filter((r) => typeof r?.display_label === "string" && r.display_label !== "");
+      check("the v2 rows still carry display_label (the promo tag the roster draws)",
+        labelled.length > 0,
+        `${labelled.length}/${rows.length} rows carry the key; ${nonEmpty.length} non-empty${nonEmpty.length > 0 ? ` (${[...new Set(nonEmpty.map((r) => r.display_label))].join(", ")})` : ""}`);
       check("the `auto` alias is still present and still excluded by the plugin",
         liveIds.includes("auto") && !FALLBACK_IDS.includes("auto"),
         liveIds.includes("auto") ? "auto present (excluded by AGNESCODE_CATALOGUE_EXCLUDED_IDS)" : "auto no longer listed — the exclusion is now dead code, revisit it");

@@ -223,6 +223,19 @@ export interface AgnescodeModelData {
   name?: string;
   vision?: boolean;
   memberOnly?: boolean;
+  /**
+   * The platform's per-model credit multiplier ("Credits per call"), read from
+   * `/v2/models`'s `points_cost_multiplier`. `0` is a PUBLISHED PRICE (free),
+   * not a missing reading, so the panel must render it as `×0.00` — an absent
+   * field (not this one being 0) is what suppresses the chip.
+   *
+   * NOTE: unlike this provider's descriptor display name (which carries
+   * `· xNN.NN`, because pi-ai's descriptor has no billing channel), the panel
+   * renders the rate as its own chip.
+   */
+  multiplier?: number;
+  /** A promotional tag the platform publishes on the row (`限时七折`); empty = none. */
+  displayLabel?: string;
   contextWindow?: number;
   maxOutputLength?: number;
 }

@@ -597,7 +597,7 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
     const body = obj(await response.json().catch(() => ({})));
     const models = Array.isArray(body.data) ? body.data : [];
     const seen = new Set();
-    const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow: number; maxOutputLength: number }> = [];
+    const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; displayLabel?: string; contextWindow: number; maxOutputLength: number }> = [];
     for (const raw of models) {
       const model = obj(raw);
       const id = str(model.id, "");
@@ -621,12 +621,18 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
       // `exactOptionalPropertyTypes` rejects the row and the picker would see
       // a key it cannot distinguish from "not read".
       const multiplier = numZeroOk(model.points_cost_multiplier);
+      // A promotional tag the platform publishes on the row ("限时七折" on
+      // glm-5.2; empty string on every other row — measured 1/9 non-empty, so
+      // EMPTY MUST MEAN "NO BADGE": the key is present on all 9 rows, and a
+      // presence check (`!= null`) would draw eight blank chips).
+      const displayLabel = str(model.display_label, "");
       out.push({
         id,
         name: str(model.name, id),
         vision: false,
         memberOnly: allowed.length > 0,
         ...(multiplier === undefined ? {} : { multiplier }),
+        ...(displayLabel === "" ? {} : { displayLabel }),
         contextWindow: num(model.max_input_tokens),
         maxOutputLength: num(model.max_output_tokens)
       });
@@ -694,7 +700,7 @@ export const AGNESCODE_FALLBACK_MODELS = Object.freeze([
   { id: "agnes-2.5-pro", name: "Agnes 2.5 Pro", memberOnly: false, vision: false, multiplier: 1, contextWindow: 512_000, maxOutputLength: 65_536 },
   { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", memberOnly: true, vision: false, multiplier: 1.2, contextWindow: 1_000_000, maxOutputLength: 393_216 },
   { id: "agnes-2.0-flash", name: "Agnes 2.0 Flash", memberOnly: false, vision: false, multiplier: 0, contextWindow: 512_000, maxOutputLength: 65_536 },
-  { id: "glm-5.2", name: "GLM-5.2", memberOnly: true, vision: false, multiplier: 1.85, contextWindow: 1_000_000, maxOutputLength: 131_072 },
+  { id: "glm-5.2", name: "GLM-5.2", memberOnly: true, vision: false, multiplier: 1.85, displayLabel: "限时七折", contextWindow: 1_000_000, maxOutputLength: 131_072 },
   { id: "kimi-k3", name: "Kimi K3", memberOnly: true, vision: false, multiplier: 5.3, contextWindow: 1_048_576, maxOutputLength: 131_072 },
   { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", memberOnly: true, vision: false, multiplier: 1.5, contextWindow: 1_000_000, maxOutputLength: 393_216 }
 ]);

@@ -202,6 +202,12 @@ export const S = {
   modelName: { flex: "0 1 auto", minWidth: 0, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   modelRate: { flex: "none", fontSize: 11, color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums" },
   modelBadge: { flex: "none", fontSize: 11, padding: "1px 7px", borderRadius: 999, background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-secondary)" },
+  // A platform-declared PROMOTION (`限时七折`): a fact about the platform's
+  // pricing, not a state of this plugin or of the account. Tinted like the
+  // desktop App's own tag chip (`#003DD9` on `#D1DDFC`), so the same fact
+  // reads the same in both places — and so it is visibly NOT the neutral
+  // `modelBadge` that marks account gating (`memberOnly`).
+  modelPromo: { flex: "none", fontSize: 11, padding: "1px 7px", borderRadius: 999, background: "#D1DDFC", color: "#003DD9" },
   // The WorkBuddy-style parameter line: only per-model facts — the figures the
   // platform declares (window, output ceiling) and the levels the selector
   // offers. Provider-wide constants live in the header once, never here.
