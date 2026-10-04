@@ -1,6 +1,10 @@
 # dsh-connect-agnes-token-plan
 
-把 Agnes 接进 DSH 的 **Plugins 页**插件卡。**DSH** 即 **DeepSeek Harness**；**Agnes** 是商汤科技的模型平台（本插件对接其控制台 API 与推理 API）。
+把 Agnes 接进 DSH 的 **Plugins 页**插件卡。**DSH** 即 **DeepSeek Harness**；**Agnes**（爱思）是全模态大模型平台，本插件对接其**控制台 API** 与**推理 API**。
+
+> 厂商与命名：Agnes 由**爱思科技**（南京市爱思人工智能科技有限公司，国内主体）与 **Sapiens Technology**（新加坡国际主体）共同研发运营。桌面端产品名是「**爱思办公**」，其编程线在面板里称「**AgnesCode（爱思编程）**」——下文一律用 **Agnes / AgnesCode** 这两个英文名，与本插件的 provider id 一致。
+>
+> **历史背景（别混淆）**：本插件 2026-10 之前接的是**商汤 SenseNova 控制台**（已退役，见 [docs/PITFALLS.md](docs/PITFALLS.md) 的「商汤时代」条目）。**Agnes 与商汤不是同一平台**，两者是先后关系而非归属关系。
 
 > **第一次读这个仓库？先看这三句。**
 >
@@ -11,8 +15,8 @@
 > 协作会话的完整纪律见 [AGENTS.md](AGENTS.md)。
 
 - **积分额度**——登录一次，实时查看积分余额、额度窗口与每模型消耗，令牌自动续期，之后无需再管；
-- **接入 API**——把爱思模型注册为 DSH provider，参与对话、出图与出视频；
-- **Agnescode**——上游限流较宽松的另一条爱思办公产品线，独立账号、独立积分。
+- **接入 API**——把 Agnes 模型注册为 DSH provider，参与对话、出图与出视频；
+- **AgnesCode**——上游限流较宽松的另一条产品线（爱思办公桌面端），独立账号、独立积分。
 
 面板分三个 tab，按「先看数、再接入、最后可选加桌面端上游」排序：
 
