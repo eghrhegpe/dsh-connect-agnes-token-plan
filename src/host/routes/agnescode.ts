@@ -156,7 +156,11 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
        *  (empty when there is none — the publisher's gate then releases). */
       const publishFromStore = async () => {
         if (agnescodePublisher === null || agnescodePublisher === undefined) return;
-        let rows = AGNESCODE_FALLBACK_MODELS;
+        // Annotated (not inferred from the fallback): the fallback happens to
+        // carry `multiplier` on every row, so inference would make it required
+        // and reject a LIVE catalogue row whose model has no published price
+        // (`auto` is excluded, but a future unpriced model would hit this).
+        let rows: ReadonlyArray<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow: number; maxOutputLength: number }> = AGNESCODE_FALLBACK_MODELS;
         let bffBase = "";
         try {
           const { credential } = agnescodeStore ? await agnescodeStore.resolve().catch(() => ({ credential: null })) : { credential: null };

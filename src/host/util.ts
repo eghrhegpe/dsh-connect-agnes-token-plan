@@ -126,6 +126,28 @@ export function numOrNull(value: unknown) {
 }
 
 /**
+ * Read a finite number that may legitimately be ZERO, else `undefined`.
+ *
+ * `num()` and `numOrNull()` both reject `0` because for their callers a zero is
+ * a missing reading (a limit, a window, a count — none of which is honestly
+ * zero when the platform simply did not say). This reader exists for the
+ * opposite case, and the distinction is load-bearing at the call site: the
+ * platform's `points_cost_multiplier` uses `0` to mean "this model is free",
+ * which is a published PRICE, not a missing value. Routing it through `num()`
+ * would collapse "free" into "not stated" and the panel would then render
+ * nothing where it should render the free badge (the sibling SenseNova plugin
+ * renders this exact figure as `· x0.00`).
+ *
+ * So: absent / non-numeric / non-finite / negative → `undefined` (no claim);
+ * `0` → `0` (a claim of free).
+ * @param {unknown} value - the raw field.
+ * @returns {number|undefined} the finite non-negative number, or `undefined`.
+ */
+export function numZeroOk(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/**
  * Run one attempt loop inside a bounded window.
  *
  * The shared backoff shape for every "a service or a seed may be late" case

@@ -436,9 +436,13 @@ const GOOD_SESSION = {
   section("catalogue + balance fetchers (stubbed fetch)");
   try {
     const credential = { accessToken: "tok", bffBase: "https://api-agnes-code.agnes-ai.cn/v1" };
+    // v2 shape (switched 2026-10-04): gating is `allowed_subscription` (a
+    // list), the price is `points_cost_multiplier`, and an `auto` routing
+    // alias rides along. `agnes-3.0-flash` carries an explicit 0 = free.
     const rows = [
-      { id: "agnes-3.0-flash", model_type: "text", max_input_tokens: 512000, max_output_tokens: 65536, is_member_only: false, supported_endpoint_types: ["openai"] },
-      { id: "kimi-k3", model_type: "text", max_input_tokens: 1048576, max_output_tokens: 131072, is_member_only: true },
+      { id: "agnes-3.0-flash", model_type: "text", max_input_tokens: 512000, max_output_tokens: 65536, allowed_subscription: [], points_cost_multiplier: 0, supported_endpoint_types: ["openai"] },
+      { id: "kimi-k3", model_type: "text", max_input_tokens: 1048576, max_output_tokens: 131072, allowed_subscription: ["Starter", "Plus", "Pro"], points_cost_multiplier: 5.3 },
+      { id: "auto", model_type: "text", max_input_tokens: 512000, max_output_tokens: 65536, allowed_subscription: [] },
       { id: "dup", model_type: "text", max_input_tokens: 1, max_output_tokens: 1 },
       { id: "dup", model_type: "text", max_input_tokens: 1, max_output_tokens: 1 },
       { id: "media-x", model_type: "video", max_input_tokens: 1, max_output_tokens: 1 }
@@ -449,16 +453,34 @@ const GOOD_SESSION = {
       catalog?.length === 3 && catalog[0].id === "agnes-3.0-flash" && catalog[0].memberOnly === false
       && catalog[1].memberOnly === true && catalog[1].contextWindow === 1048576,
       JSON.stringify(catalog));
-    // The /v1 suffix rides the per-account base; a drift here would 404 the
-    // whole provider against a silently different endpoint (the balance probe
-    // pins its own URL below — this one pins the catalogue's).
+    // The gating fact MOVED FIELDS in v2 (boolean -> subscription list). This
+    // pins the re-encoding: a non-empty list is exactly what v1 called
+    // `is_member_only: true` (verified against v1 8/8 on 2026-10-04).
+    check("memberOnly is re-encoded from allowed_subscription (v1's is_member_only is gone in v2)",
+      catalog?.[0].memberOnly === false && catalog?.[1].memberOnly === true);
+    // 0 is a PUBLISHED PRICE (free), not a missing reading. Routing it through
+    // the repo's `num()`/`numOrNull()` — both of which reject 0 — would erase
+    // the free badge and silently turn "free" into "not stated".
+    check("a zero multiplier survives as 0 (free is a price, not a missing value)",
+      catalog?.[0].multiplier === 0, String(catalog?.[0]?.multiplier));
+    check("a non-zero multiplier travels verbatim",
+      catalog?.[1].multiplier === 5.3, String(catalog?.[1]?.multiplier));
+    check("an ABSENT multiplier stays absent (no invented 1, no undefined key)",
+      catalog !== null && !("multiplier" in catalog[2]), JSON.stringify(catalog?.[2]));
+    // `auto` exists only in v2 and is a routing alias, not a model.
+    check("the v2-only `auto` alias is excluded from the roster",
+      !catalog.some((row) => row.id === "auto"), JSON.stringify(catalog.map((r) => r.id)));
+    // The catalogue now lives under the ORIGIN-scoped /v2 path, NOT the
+    // per-account base's /v1 — v1 serves the same rows WITHOUT the price, so a
+    // drift back here would silently re-empty every multiplier chip. The
+    // balance probe pins its own URL below; this one pins the catalogue's.
     let catalogUrl = "";
     await fetchAgnescodeCatalog(credential, async (url) => {
       catalogUrl = String(url);
       return { ok: true, status: 200, json: async () => ({ data: rows }) };
     });
-    check("the catalogue addresses {per-account base}/models exactly",
-      catalogUrl === "https://api-agnes-code.agnes-ai.cn/v1/models", catalogUrl);
+    check("the catalogue addresses {origin}/v2/models exactly",
+      catalogUrl === "https://api-agnes-code.agnes-ai.cn/v2/models", catalogUrl);
     check("vision stays false — the rows declare no image modality (never invented)",
       catalog.every((row) => row.vision === false));
     check("a non-text model_type is dropped, a duplicate id deduped",
@@ -610,6 +632,24 @@ const GOOD_SESSION = {
       agnescodeRequestHeaders()["X-App-Id"] === "1" && agnescodeRequestHeaders()["X-Platform"] === "1");
     check("the cost is the zero sentinel (credit-gated, per-token prices unknowable)",
       descriptor.cost.input === 0 && descriptor.cost.output === 0);
+
+    // The credit multiplier has no descriptor channel (see the zero sentinel
+    // directly above), so it rides the DISPLAY NAME — the only surface the DSH
+    // picker renders. Spelled `· x0.00` to match the sibling SenseNova plugin
+    // and WorkBuddy's own selector, so users do not meet two conventions.
+    const withPrice = (multiplier) => agnescodeToDescriptor(
+      { id: "priced", name: "Priced Model", multiplier, contextWindow: 1000, maxOutputLength: 100 },
+      { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }
+    ).name;
+    check("a priced model carries `· xNN.NN` in its display name",
+      withPrice(1.85) === "Priced Model · x1.85", withPrice(1.85));
+    check("a zero multiplier renders `· x0.00` (free is a price, not silence)",
+      withPrice(0) === "Priced Model · x0.00", withPrice(0));
+    check("an absent multiplier keeps the bare name (no invented price)",
+      agnescodeToDescriptor(
+        { id: "unpriced", name: "Unpriced Model", contextWindow: 1000, maxOutputLength: 100 },
+        { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }
+      ).name === "Unpriced Model");
 
     let threw = "";
     try { agnescodeToDescriptor({ id: "x" }, {}); } catch (why) { threw = why.message; }

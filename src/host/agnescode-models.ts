@@ -30,7 +30,7 @@
  * @module dsh-connect-agnes-token-plan/agnescode-models
  */
 
-import { str, num } from "./util.ts";
+import { str, num, numZeroOk } from "./util.ts";
 import { AGNESCODE_FALLBACK_MODELS } from "./agnescode.ts";
 import { PROBED_VISION } from "./llm-models.ts";
 import { normalizeEnabledIds } from "./catalog-store.ts";
@@ -104,10 +104,11 @@ export function agnescodeVisionOf(row: Record<string, unknown>) {
  */
 export function agnescodeRoster(catalog: unknown) {
   const rows = Array.isArray(catalog) && catalog.length > 0 ? catalog : AGNESCODE_FALLBACK_MODELS;
-  const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier: number; contextWindow: number; maxOutputLength: number }> = [];
+  const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow: number; maxOutputLength: number }> = [];
   for (const row of rows) {
     const id = str(row?.id, "");
     if (id === "") continue;
+    const multiplier = numZeroOk(row?.multiplier);
     out.push({
       id,
       name: str(row?.name, id),
@@ -115,20 +116,11 @@ export function agnescodeRoster(catalog: unknown) {
       // the Agnes family rows borrow `PROBED_VISION`'s official-doc evidence.
       vision: agnescodeVisionOf(row),
       memberOnly: row?.memberOnly === true,
-      // The desktop App shows a per-model consumption factor ("Credits per
-      // call" in the UI). CAUSE OF ITS ABSENCE HERE, now established (probed
-      // live 2026-10-04, mitmproxy capture + read-only replay): it is an
-      // ENDPOINT difference, not an account gate. The desktop reads
-      // `{apiRoot}/v2/models`, which carries `points_cost_multiplier` on 8 of
-      // 9 rows; the `/models` (v1) directory THIS plugin reads carries it on
-      // 0 of 8. Same host, same token, same headers — only the version
-      // prefix differs. So `undefined` means "v1 does not publish this",
-      // NOT "the platform has no such concept" (an earlier note in this repo
-      // wrongly inferred an account-based gate; see ROADMAP §6.3.1 「倍率字段
-      // 正记」). Switching the catalogue to /v2 is an open decision, not a
-      // proven drop-in: v2 also renames `is_member_only` → `is_member` and
-      // drops `thinking_toggle` (the latter has zero runtime users here).
-      multiplier: typeof row?.multiplier === "number" ? row.multiplier : undefined,
+      // `0` is a PUBLISHED PRICE ("free"), not a missing reading — read it
+      // ONCE (the codebase's read-once discipline) and let an absent field
+      // stay absent rather than become an explicit `undefined`, or
+      // `exactOptionalPropertyTypes` rejects the row.
+      ...(multiplier === undefined ? {} : { multiplier }),
       contextWindow: num(row?.contextWindow),
       maxOutputLength: num(row?.maxOutputLength)
     });
@@ -187,9 +179,22 @@ export function agnescodeToDescriptor(row: Record<string, unknown>, options: { b
   const bffBase = str(options.bffBase, "");
   if (bffBase === "") throw new Error("agnescodeToDescriptor: a pinned bffBase is required");
   const vision = agnescodeVisionOf(row);
+  // The credit multiplier is billing metadata pi-ai has no channel for (the
+  // descriptor's `cost` is per-token USD, which this credit-gated gateway does
+  // not have — see `NO_COST`), so it rides in the display name, the one
+  // surface the DSH model picker renders. The panel's roster shows the same
+  // figure, so the two views cannot disagree.
+  //
+  // Spelled `· x0.00` — the `·` + `x` form the sibling SenseNova plugin and
+  // WorkBuddy's own selector already use, so a second convention would read as
+  // noise. A zero multiplier renders `· x0.00` (it means free, a real price);
+  // an absent one keeps the bare name (no claim at all).
+  const multiplier = numZeroOk(row?.multiplier);
+  const name = str(row?.name, id);
+  const displayName = multiplier === undefined ? name : `${name} · x${multiplier.toFixed(2)}`;
   return {
     id,
-    name: str(row?.name, id),
+    name: displayName,
     api: "openai-completions",
     provider: AGNESCODE_PROVIDER_ID,
     baseUrl: bffBase,

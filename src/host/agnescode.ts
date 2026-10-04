@@ -37,7 +37,7 @@
  */
 
 import { createDecipheriv } from "node:crypto";
-import { obj, num, str } from "./util.ts";
+import { obj, num, numZeroOk, str } from "./util.ts";
 
 /** The model-catalogue request headers the BFF gates on (probed: required). */
 export const AGNESCODE_CATALOG_HEADERS = Object.freeze({
@@ -133,6 +133,18 @@ export const AGNESCODE_HARVEST_TIER = Object.freeze({
   UNSUPPORTED_PLATFORM: "unsupported_platform",
   OK: "ok"
 });
+
+/**
+ * Catalogue rows that are NOT models and must never reach the roster.
+ *
+ * `/v2/models` adds an `auto` row that `/v1/models` does not have. It is a
+ * routing alias (no vendor, no `points_cost_multiplier`, and the only row the
+ * platform omits the price on), so offering it as a selectable model would put
+ * a non-model in the picker. Keyed by id on purpose: a rule tied to "has no
+ * multiplier" would silently start leaking `auto` back in the day the platform
+ * prices it.
+ */
+export const AGNESCODE_CATALOGUE_EXCLUDED_IDS = Object.freeze(["auto"]);
 
 /**
  * Whether a BFF base may carry the account's Authorization header. Pinned to
@@ -544,13 +556,29 @@ export async function harvestAgnescodeLocalSession(
  * adapter falls back to the static roster on `null` (the `console-client`
  * silent-fallback discipline).
  *
- * The BFF rows carry `is_member_only` — a fact about gating, not visibility,
- * so it is KEPT (the panel badges it; offering a member-gated model is
- * preferable to silently hiding one, mirroring red line 7's spirit of stating
- * account-level limits instead of dropping models).
+ * **Endpoint: `/v2/models`, not `/v1/models`** (switched 2026-10-04). The two
+ * are different directories on the same host, not the same data: v1 carries 8
+ * rows and NO credit multiplier, v2 carries 9 rows and the platform's own
+ * `points_cost_multiplier` on 8 of them (measured live, same token/headers;
+ * see ROADMAP §6.3.1 「倍率字段正记」). The desktop App reads v2 — that is why
+ * its picker shows `1.20x` / `1.85x` while this plugin showed nothing.
+ *
+ * The member fact MOVES FIELDS between the two: v1 declares
+ * `is_member_only: bool`, v2 declares `allowed_subscription: string[]`. The
+ * mapping `memberOnly = allowed_subscription.length > 0` was verified against
+ * v1 across all 8 shared rows with zero mismatches — so this is a re-encoding,
+ * not a reinterpretation.
+ *
+ * `auto` is DROPPED: it exists only in v2, is a routing alias rather than a
+ * real model, and carries no multiplier. Dropping by explicit id (not by
+ * "no multiplier") keeps the filter honest if the platform later prices it.
+ *
+ * The rows carry a per-model credit multiplier — a fact about billing, not
+ * gating, so it is KEPT and travels to the panel and the descriptor's display
+ * name (see `agnescodeToDescriptor`).
  * @param {object} credential - `{ accessToken, bffBase }`.
  * @param {typeof fetch} [fetcher] - injected fetch.
- * @returns {Promise<object[]|null>} `[{id, name, vision, memberOnly, contextWindow, maxOutputLength}]`, or `null`.
+ * @returns {Promise<object[]|null>} `[{id, name, vision, memberOnly, multiplier, contextWindow, maxOutputLength}]`, or `null`.
  */
 export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fetch) {
   const effective = fetcher ?? globalThis.fetch;
@@ -558,7 +586,7 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
   const bffBase = trustAgnescodeBffBase(source.bffBase);
   if (bffBase === null) return null;
   try {
-    const response = await effective(`${bffBase}/models`, {
+    const response = await effective(`${agnescodeApiRoot(bffBase)}/v2/models`, {
       headers: agnescodeHeaders(source),
       signal: AbortSignal.timeout(30_000)
     });
@@ -566,21 +594,36 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
     const body = obj(await response.json().catch(() => ({})));
     const models = Array.isArray(body.data) ? body.data : [];
     const seen = new Set();
-    const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; contextWindow: number; maxOutputLength: number }> = [];
+    const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow: number; maxOutputLength: number }> = [];
     for (const raw of models) {
       const model = obj(raw);
       const id = str(model.id, "");
       if (id === "" || seen.has(id)) continue;
+      // A routing alias, not a model: present only in v2, carries no
+      // multiplier. Excluded by id so the rule stays a statement about what
+      // this row IS, not about what it happens to be priced at today.
+      if (id === AGNESCODE_CATALOGUE_EXCLUDED_IDS[0]) continue;
       // `model_type: "text"` and `supported_endpoint_types: ["openai"]` are the
       // only modality facts the row declares — an image-input claim would be
       // invented, so vision is false until the platform says otherwise.
       if (str(model.model_type, "text") !== "text") continue;
       seen.add(id);
+      // v2 encodes gating as a subscription list, v1 as a boolean. Empty list
+      // means "no subscription required"; a non-empty list is exactly the
+      // rows v1 flagged `is_member_only: true` (verified 8/8).
+      const allowed = Array.isArray(model.allowed_subscription) ? model.allowed_subscription : [];
+      // A published price, so 0 is a claim ("free"), not a missing value —
+      // `numZeroOk` keeps it, `num()` would have erased it. An absent field
+      // must stay ABSENT rather than travel as `undefined`, or
+      // `exactOptionalPropertyTypes` rejects the row and the picker would see
+      // a key it cannot distinguish from "not read".
+      const multiplier = numZeroOk(model.points_cost_multiplier);
       out.push({
         id,
         name: str(model.name, id),
         vision: false,
-        memberOnly: model.is_member_only === true,
+        memberOnly: allowed.length > 0,
+        ...(multiplier === undefined ? {} : { multiplier }),
         contextWindow: num(model.max_input_tokens),
         maxOutputLength: num(model.max_output_tokens)
       });
@@ -643,12 +686,12 @@ function numOrNullSafe(value: unknown) {
  * when `fetchAgnescodeCatalog` comes back empty; a fresh catalogue always wins.
  */
 export const AGNESCODE_FALLBACK_MODELS = Object.freeze([
-  { id: "agnes-3.0-flash", name: "Agnes 3.0 Flash", memberOnly: false, vision: false, contextWindow: 512_000, maxOutputLength: 65_536 },
-  { id: "agnes-2.5-flash", name: "Agnes 2.5 Flash", memberOnly: false, vision: false, contextWindow: 512_000, maxOutputLength: 65_536 },
-  { id: "agnes-2.5-pro", name: "Agnes 2.5 Pro", memberOnly: false, vision: false, contextWindow: 512_000, maxOutputLength: 65_536 },
-  { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", memberOnly: true, vision: false, contextWindow: 1_000_000, maxOutputLength: 393_216 },
-  { id: "agnes-2.0-flash", name: "Agnes 2.0 Flash", memberOnly: false, vision: false, contextWindow: 512_000, maxOutputLength: 65_536 },
-  { id: "glm-5.2", name: "GLM-5.2", memberOnly: true, vision: false, contextWindow: 1_000_000, maxOutputLength: 131_072 },
-  { id: "kimi-k3", name: "Kimi K3", memberOnly: true, vision: false, contextWindow: 1_048_576, maxOutputLength: 131_072 },
-  { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", memberOnly: true, vision: false, contextWindow: 1_000_000, maxOutputLength: 393_216 }
+  { id: "agnes-3.0-flash", name: "Agnes 3.0 Flash", memberOnly: false, vision: false, multiplier: 0, contextWindow: 512_000, maxOutputLength: 65_536 },
+  { id: "agnes-2.5-flash", name: "Agnes 2.5 Flash", memberOnly: false, vision: false, multiplier: 0, contextWindow: 512_000, maxOutputLength: 65_536 },
+  { id: "agnes-2.5-pro", name: "Agnes 2.5 Pro", memberOnly: false, vision: false, multiplier: 1, contextWindow: 512_000, maxOutputLength: 65_536 },
+  { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", memberOnly: true, vision: false, multiplier: 1.2, contextWindow: 1_000_000, maxOutputLength: 393_216 },
+  { id: "agnes-2.0-flash", name: "Agnes 2.0 Flash", memberOnly: false, vision: false, multiplier: 0, contextWindow: 512_000, maxOutputLength: 65_536 },
+  { id: "glm-5.2", name: "GLM-5.2", memberOnly: true, vision: false, multiplier: 1.85, contextWindow: 1_000_000, maxOutputLength: 131_072 },
+  { id: "kimi-k3", name: "Kimi K3", memberOnly: true, vision: false, multiplier: 5.3, contextWindow: 1_048_576, maxOutputLength: 131_072 },
+  { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", memberOnly: true, vision: false, multiplier: 1.5, contextWindow: 1_000_000, maxOutputLength: 393_216 }
 ]);
