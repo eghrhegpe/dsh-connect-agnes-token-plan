@@ -229,22 +229,27 @@ const headers = {
 }
 
 // --- 2. the catalogue: the row field set the parser builds on -------------
+// Probes `/v2/models` — the endpoint `fetchAgnescodeCatalog` reads since the
+// 2026-10-04 switch. `/v1/models` on the same host serves the SAME ids WITHOUT
+// `points_cost_multiplier`, so probing v1 here would go green while every
+// multiplier chip silently emptied.
 {
+  const apiRoot = bffBase.endsWith("/v1") ? bffBase.slice(0, -3) : bffBase;
   let response;
   try {
-    response = await fetch(`${bffBase}/models`, {
+    response = await fetch(`${apiRoot}/v2/models`, {
       headers,
       signal: AbortSignal.timeout(30_000)
     });
   } catch (error) {
-    check("the /models catalogue is reachable", false, String(error?.message ?? error));
+    check("the /v2/models catalogue is reachable", false, String(error?.message ?? error));
   }
   if (response !== undefined) {
     if (response.status === 429) {
-      check("/models probe INDEFINITE (rate-limited)", true,
+      check("/v2/models probe INDEFINITE (rate-limited)", true,
         "HTTP 429 — re-run after the window clears; a 429 is not a verdict");
     } else {
-      check("the /models catalogue answers 200", response.status === 200, `HTTP ${response.status}`);
+      check("the /v2/models catalogue answers 200", response.status === 200, `HTTP ${response.status}`);
       const body = (await response.json().catch(() => ({}))) ?? {};
       const rows = Array.isArray(body.data) ? body.data : [];
       const liveIds = [...new Set(rows.map((r) => String(r?.id ?? "")).filter((id) => id !== ""))];
@@ -255,11 +260,24 @@ const headers = {
           && "max_input_tokens" in (r ?? {})
           && "max_output_tokens" in (r ?? {})),
         `rows=${liveIds.length} ids: ${liveIds.join(", ") || "none"}`);
+      // The two facts the plugin now READS off this endpoint. Pinned so a
+      // platform rename reads as a drift here rather than as a silently
+      // multiplier-less / badge-less panel.
+      const priced = rows.filter((r) => "points_cost_multiplier" in (r ?? {}));
+      check("the v2 rows still carry points_cost_multiplier (the field the roster reads)",
+        priced.length > 0,
+        `${priced.length}/${rows.length} rows priced`);
+      check("gating still arrives as allowed_subscription (v1's is_member_only is absent here)",
+        rows.every((r) => "allowed_subscription" in (r ?? {})),
+        `rows carrying allowed_subscription: ${rows.filter((r) => "allowed_subscription" in (r ?? {})).length}/${rows.length}`);
+      check("the `auto` alias is still present and still excluded by the plugin",
+        liveIds.includes("auto") && !FALLBACK_IDS.includes("auto"),
+        liveIds.includes("auto") ? "auto present (excluded by AGNESCODE_CATALOGUE_EXCLUDED_IDS)" : "auto no longer listed — the exclusion is now dead code, revisit it");
       const missingLive = FALLBACK_IDS.filter((id) => !liveIds.includes(id));
       check("every AGNESCODE_FALLBACK_MODELS id is still served live",
         missingLive.length === 0,
         missingLive.length > 0 ? `no longer listed: ${missingLive.join(", ")} — refresh the fallback table` : "all 8 live");
-      const newLive = liveIds.filter((id) => !FALLBACK_IDS.includes(id));
+      const newLive = liveIds.filter((id) => !FALLBACK_IDS.includes(id) && id !== "auto");
       check(`INFO: ${newLive.length === 0 ? "the catalogue added no rows beyond the fallback" : "catalogue rows beyond the fallback (refresh AGNESCODE_FALLBACK_MODELS + the agnescode.test.mjs count pin, same discipline as the 10-01 re-probe)"}`,
         true,
         newLive.join(", ") || "");
@@ -290,8 +308,10 @@ if (process.argv.includes("--chat")) {
     let response;
     try {
       // `bffBase` already carries the `/v1` suffix (the credential's
-      // `bff_public_base_url`), so the chat path is relative to it — the same
-      // shape `fetchAgnescodeCatalog` uses for `${bffBase}/models`.
+      // `bff_public_base_url`), so the chat path is relative to it. The
+      // catalogue is the exception: it moved to `{origin}/v2/models` on
+      // 2026-10-04 (see the section above), so do NOT derive its URL from this
+      // same base.
       response = await fetch(`${bffBase}/chat/completions`, {
         method: "POST",
         headers,

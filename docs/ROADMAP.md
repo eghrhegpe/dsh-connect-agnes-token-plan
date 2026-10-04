@@ -429,7 +429,7 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 |---|---|---|
 | `GET {apiRoot}/api/v2/subscription/credits-balance` | `200`，信封 `code` 为**字符串** `"000000"`；`data` 共 13 字段：五个余额字段（`total_balance` / `time_sensitive_balance` / `permanent_balance` / `daily_free_credits` / `subscription_credits`）+ `level`(number) / `level_name`(string) / `effect_quota_balance` / `daily_effect_quota` + **四个订阅期字段** `current_period_start` / `current_period_end` / `duration` / `cancel_at_period_end` | `fetchAgnescodeBalance` 的字符串 `code` 比对与五个余额字段读取**全部对**。四个订阅期字段是「有无订阅 / 何时到期 / 是否期末取消」的判别料——本机免费账号全 `0`/`false`，有订阅的账号形状以真机为准。信封码形态与线上逆向件文档（`code: 0` 数字）不同，以本机实测为准（[REFERENCES.md](./REFERENCES.md) §3 版本漂移纪律） |
 | `POST {apiRoot}/api/v1/subscription/credits-transactions`（body `{page,page_size,filter:0}`） | `200`，`data: {pagination:{page,page_size,total}, list:[…]}`；条目键 `description` / `amount` / `direction` / `platform` / `created_at` | **插件尚未接入的流水端点**。三条形状事实：① `created_at` 是 **epoch 秒**（逆向件文档的 ISO 串是版本漂移）；② `direction` 实测 1=入账 / 2=扣减；③ `platform` 是数字枚举（入账条 `4`、扣减条 `7`）语义未明——面板接入时原样存、不翻译。`description` 值带账号级内容，只进本机文件 |
-| `GET {bffBase}/models` 字段面 | 活目录字段面（行数随 `AGNESCODE_FALLBACK_MODELS`，不在此钉死；新增 `agnes-2.0-flash`：`max_input_tokens 512000` / `max_output_tokens 65536`，BFF 行内直发）；行键新成员：`thinking_toggle`（`{default_enabled, switchable_endpoints:["chat"]}`，`kimi-k3` 无此键）、`is_gray` / `gray_available`、`provider`（全 `agrouter`） | `AGNESCODE_FALLBACK_MODELS` 已随复测同步（补 `agnes-2.0-flash`，上限值取 BFF 行内声明；`test/agnescode.test.mjs` 两处 `7` 钉同步改 `8`）——兜底表与活目录在复测时点对齐，行数随 `AGNESCODE_FALLBACK_MODELS` 走、不在此写死；活目录日后增行按同纪律刷表。`thinking_toggle` 是**推理开关事实**（哪些模型可切 thinking），现行 catalog 丢弃它；是否进面板未裁，先只记事实 |
+| `GET {bffBase}/models`（**v1，2026-10-04 起不再是插件读的端点**）字段面 | 活目录字段面（行数随 `AGNESCODE_FALLBACK_MODELS`，不在此钉死；新增 `agnes-2.0-flash`：`max_input_tokens 512000` / `max_output_tokens 65536`，BFF 行内直发）；行键新成员：`thinking_toggle`（`{default_enabled, switchable_endpoints:["chat"]}`，`kimi-k3` 无此键）、`is_gray` / `gray_available`、`provider`（全 `agrouter`） | `AGNESCODE_FALLBACK_MODELS` 已随复测同步——**注意：兜底表的 id 集合取自 v1，而 2026-10-04 起活目录改读 v2（多一个 `auto`，已按 id 排除）**，两边 id 集合因此仍逐一对齐，可继续核对。`thinking_toggle` 是**推理开关事实**（哪些模型可切 thinking），现行 catalog 丢弃它；是否进面板未裁，先只记事实 |
 | `POST {bffBase}/v1/chat/completions` 思考 wire（2026-10-03 真机补探） | `agnes-3.0-flash`，同一道多步算术题，7 发全 `200`：① 不发任何思考字段 → `reasoning_content` 406 字 / `reasoning_tokens` 320（v1 原形状）；② `request_params.agnes_thinking_enabled=true`+`thinking_effort=high` → 327 字 / 266；③ 同 +`auto` → 398 字 / 314；④ 通用 `reasoning_effort=high` → 366 字 / 291；⑤ `reasoning_effort=none` → **257 字 / 188，思考未关**；⑥ `low` → 425 字 / 342；⑦ `medium` → 328 字 / 260 | **「BFF 默认思考关」「档位不生效」两条假设均被推翻**：默认即思考开，`reasoning_effort` 阶梯被接受。**`reasoning_effort:"none"` 关不掉思考**（仍产 188 推理 token）——真关开关是桌面端的 `request_params.agnes_thinking_enabled=false`（或 `thinking_effort:"off"`），pi-ai 的字符串档位映射表达不了它。落地：descriptor 翻 `reasoning:true` + `agnescodeThinkingLevelMap`（`off:null`、`low/medium/high` 开、`xhigh/max` 关），profile 钉 `reasoning:DEFAULT_REASONING_EFFORT`（`agnescode-models.ts` / `agnescode-llm-adapter.ts`），`test/agnescode.test.mjs` 同步钉 |
 | 倍率候选端点 | `GET /v1/model-config`、`/v1/model-rates`、`/v1/models/rates`、`/api/v2/model-config`、`/api/v2/models` 全部 `404`；活目录（行数随 `AGNESCODE_FALLBACK_MODELS`）上也**无任何** `credit` / `rate` / `multiplier` / `price` / `cost` / `billing` 键 | **平台级事实（非「没读到」）**：AgnesCode 的计费口径是账号级积分池，不存在按模型倍率——与 workbuddy 的 `credits: "x0.79"` 字段是不同体系。AgnesCode tab 因此**无倍率可显示**（数据层缺席；与 §7 表「伪倍率折名不做」那条决议不是一回事——那条裁的是操作者手填 ×N，这里是 BFF 根本没出这个数据源） |
 
@@ -439,18 +439,23 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 
 | 端点 | 行数 | 带 `points_cost_multiplier` |
 |---|---|---|
-| `{bffBase}/models`（即 `/v1/models`，**插件当前读的**） | 8 | **0/8** |
+| `{bffBase}/models`（v1） | 8 | **0/8** |
+| `{apiRoot}/v2/models`（**已切换，插件现读这条**） | 9 | **8/9** |
 | `{apiRoot}/v2/models`（**桌面端读的**） | 9 | **8/9** |
 
 `/v2/models` 实测值（与截图逐一吻合）：`agnes-3.0-flash` **0**、`agnes-2.5-flash` **0**、`agnes-2.5-pro` **1**、`deepseek-v4-flash` **1.2**、`agnes-2.0-flash` **0**、`glm-5.2` **1.85**（另带 `display_label:"限时七折"`）、`kimi-k3` **5.3**、`deepseek-v4-pro` **1.5**；`auto` 行**缺该字段**（8/9 中的那个 1）。
 
 **所以上表判读要改两处**：① 「平台级事实（非『没读到』）」**不成立**——倍率确实存在，是**插件读的 v1 精简目录不带它**；② 「与 workbuddy 的 credits 字段是不同体系」**也不成立**——AgnesCode 同样有按模型倍率，形态是倍数字段 + `display_label`。
 
-**字段面差异（切换前须知）**：`/v2/models` 比 `/v1/models` **多** `allowed_subscription` / `auto_compact_threshold` / `display_label` / `points_cost_multiplier`，**少** `thinking_toggle` / `is_member_only`（改为 `is_member`）。`thinking_toggle` 插件**零运行时依赖**（`src/` 与 `test/` 全文 grep 零命中，仅 PITFALLS 与本文提及），故该差异**不构成切换阻塞**；`is_member_only` → `is_member` 的键名变化与 `memberOnly` 读取需核对。**是否切换端点、倍率如何呈现（面板侧标记形态）尚未裁定**，本文只记事实。
+**字段面差异（切换前须知）**：`/v2/models` 比 `/v1/models` **多** `allowed_subscription` / `auto_compact_threshold` / `display_label` / `points_cost_multiplier`，**少** `is_member_only`（门槛改由 `allowed_subscription` 表达）。`thinking_toggle` **两边都有**（早期记录说 v2 缺它是错的），且插件**零运行时依赖**（`src/` 与 `test/` 全文 grep 零命中）。
+
+**✅ 已落地（2026-10-04，commit `00011d0`）**：`fetchAgnescodeCatalog` 改读 `{origin}/v2/models`；`memberOnly` 改由 `allowed_subscription.length > 0` 推导（**对 v1 的 `is_member_only` 逐行核对 8/8 一致**，故属重新编码而非重新解释）；倍率经 `numZeroOk()` 读取并拼进描述符显示名 **`· xNN.NN`**（形态对齐兄弟插件 `dsh-connect-sensenova-token-plan` 的 `raccoon-models.ts` 与 WorkBuddy 自有选择器——**这是既有先例，不是新决议**）；`auto` 按 id 排除（`AGNESCODE_CATALOGUE_EXCLUDED_IDS`），并补进 `AGNESCODE_FALLBACK_MODELS` 的倍率值。
+
+> **两条实现陷阱（踩过，别再踩）**：① **`num()` / `numOrNull()` 都拒绝 `0`**（`value > 0`）——倍率走它们会把「**免费**」静默变成「未声明」，因为平台用 `0` 表示免费、那是**已公布的价格**而非缺失读数。为此新增 `numZeroOk()`：`0 → 0`、缺席 → 缺席。② `exactOptionalPropertyTypes` 下**可选字段不能显式赋 `undefined`**，缺席行必须用条件展开（`...(x === undefined ? {} : { x })`），否则 `lib/` 编译不过、且会让下游无法区分「没读到」与「读到 undefined」。
 
 > **取证纪律补记（本条踩过的坑）**：① 首轮探针只查 `rows[0]` 的键就报「字段不存在」——而该字段 **8/9 行有、第一行 `auto` 恰好没有**，**取错样本得出反向结论**；判「字段不存在」必须查全集（用 `body.includes()` 或逐行枚举），不能只看第一个元素。② 据此错判推出的「**按账号分支下发**」（见下方历史补记）**同样是错的**——真实原因是**端点不同**，与账号无关。两条都属「量化断言只看了一个样本」的同源病。
 
-**（历史补记，已被上条取代，保留以记形状）倍率字段补记（2026-10-04 上半天，bundle 对照 + 部分探针）**：当时由桌面端 bundle 定位到字段名 `points_cost_multiplier`，但复探只在 `/v1` 及其同前缀的 12 条候选路径上找（全 404 或 200-无字段），**未试 `{apiRoot}/v2/models`**，于是推出「按账号/响应分支下发」这一**错误**结论。教训：**「同 host 的候选路径全试过」不等于「端点的版本前缀也试过」**——`/v1` 与 `/v2` 是同一 host 下的两条不同目录，本仓的 `AGNESCODE_FALLBACK_MODELS` 也只镜像了 `/v1`。
+**（历史补记，已被上条取代，保留以记形状）倍率字段补记（2026-10-04 上半天，bundle 对照 + 部分探针）**：当时由桌面端 bundle 定位到字段名 `points_cost_multiplier`，但复探只在 `/v1` 及其同前缀的 12 条候选路径上找（全 404 或 200-无字段），**未试 `{apiRoot}/v2/models`**，于是推出「按账号/响应分支下发」这一**错误**结论。教训：**「同 host 的候选路径全试过」不等于「端点的版本前缀也试过」**——`/v1` 与 `/v2` 是同一 host 下的两条不同目录（当时 `AGNESCODE_FALLBACK_MODELS` 也只镜像了 `/v1`，2026-10-04 已切换到 v2；见下方「已落地」）。
 
 **`usage.reasoning_tokens` 汇报漂移补记（2026-10-03，`test/live-agnescode.mjs --chat` 复探）**：`/v1/chat/completions` 响应的 `usage.reasoning_tokens` 不再出现——上表当日思考 wire 七发里它逐发非零（188–342），晚间 ON wire（`reasoning_effort:"high"`，`reasoning_content` 98 字）与 OFF wire（无任何思考字段，101 字）复探均观察为 **absent**。插件对该值无运行时依赖（grep 证实：仅 `src/host/agnescode-models.ts` 注释层引用）→ 属注释层单点漂移，不是 wire 漂移；ADR-009 的两条结论（默认即思考开、off 诚实不提供）经本次 live 复探**复核仍成立**。上表的 188–342 与各字符数是本机账号当日状态，不是平台常量。
 
