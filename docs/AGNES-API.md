@@ -284,10 +284,14 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 `summarizeCatalog` / snapshot / `provider-publish`。判定顺序：**目录字段 → 名字
 兜底 → 硬编码表 → 非 vision**——平台将来补 `input_modalities` 会自动胜出。
 
-> ⚠️ **尚未 probe 图像输入方言**：官方文档只说「图像 URL 输入」，**没写**具体
-> 拼写（`image_url` 块还是 `image` 字段）与上限。`PROBED_VISION` 只让 descriptor
-> 带上 `input:["text","image"]` 让 DSH 允许发图片；**具体 wire 拼写由上层请求体
-> 构造负责，未实测前不得断言**（PITFALLS 关于「文档须说实话」的纪律）。
+> ⚠️ **图像输入拼写/上限探针时序**：官方文档只说「图像 URL 输入」，**没写**
+> 具体拼写（`image_url` 块还是 `image` 字段）与上限。拼写已于 2026-10-01 实测
+> （§7.3：OpenAI 标准 `image_url` 块接受、`image` 字段拼写 500）；「单次请求 ≤4
+> 张」上限 2026-10-04 实测（3.0-flash 网关，平台 400 原文），见 §7.3。
+> `PROBED_VISION` 只让 descriptor
+> 带上 `input:["text","image"]` 让 DSH 允许发图片；**具体 wire 拼写与数量
+> 上限以 §7.3 实测为准，不得在实测范围外断言**（PITFALLS 关于「文档须说实话」
+> 的纪律）。
 
 #### 7.1.2 上下文窗口：官方文档声明 vs `FALLBACK_CONTEXT_WINDOW`（已落地）
 
@@ -367,6 +371,15 @@ safe-set，保证选择器不空：
   用户实测：向 `agnes-3.0-flash` 发游戏截图能正确识别画面内容（角色/武器/HUD/
   计时器等），识图能力成立。**结论：图像输入走标准 OpenAI 拼写，与
   `dsh-llm-pi-ai` 的 `openai-completions` 方言一致，无需特判**。
+- **图像数量上限：新实测（2026-10-04）**——用户向 `agnes-3.0-flash` 的单条 chat
+  请求带 5 个 `image_url` 块，平台回 **HTTP 400**，原文
+  `Image count 5 exceeds limit 4 per request.`（`BadRequestError` 包装
+  `OpenAIException`）——即**单次请求图像上限 4 张**。该上限**官方文档未公示**
+  （官方模型文档对 `messages[].content` 只描述「`text` / `image_url` 内容块
+  数组」，不写数量上限）；此前全部图像探针（§2d wire 拼写、单图识别）均为
+  单张，从未触到上限。此为 **payload 形状错**（非 429），429 退避机制不适用，
+  只能减图块或开新会话。**断言范围仅及本次实测的 `agnes-3.0-flash` 网关**；
+  其余 chat 模型是否同限未实测，不扩大断言。
 
 #### 7.3.1 官方错误码表（中文站文档，抓存 [AGNES-API-docs/2、常见错误码.md](./AGNES-API-docs/2、常见错误码.md)）
 
