@@ -31,7 +31,7 @@ import {
   swapRegistration,
   emitAdaptersUpdated
 } from "../src/host/publish-core.ts";
-import { createProviderPublisher } from "../src/host/provider-publish.ts";
+import { createProviderPublisher, catalogSignature } from "../src/host/provider-publish.ts";
 import { createAgnescodePublisher } from "../src/host/agnescode-publish.ts";
 
 const results = [];
@@ -451,6 +451,43 @@ const makeLlm = () => {
 
   check("the shape-check message is the shared constant",
     BAD_FACTORY_SHAPE_ERROR === "the adapter factory did not return { adapter, providerIds }");
+}
+
+// --- the catalogue signature must see the OFFER, price included -------------
+// The multiplier rides in the descriptor's display name (`Name · xNN.NN`),
+// because pi-ai's descriptor has no billing channel for it. So a repriced model
+// has to rebuild the registration — otherwise the picker keeps advertising the
+// old factor. The pre-2026-10-04 signature was `id:vision` only, under which
+// `glm-5.2` moving 1.85 → 9.99 produced an IDENTICAL string (measured), so the
+// picker would have kept showing 1.85 forever. This is not hypothetical: the
+// platform reprices on promotion boundaries (`glm-5.2` carries
+// `display_label: "限时七折"`).
+{
+  section("catalogSignature sees the price (a reprice must rebuild)");
+  const priced = (multiplier) => [
+    { id: "glm-5.2", vision: false, multiplier },
+    { id: "kimi-k3", vision: false, multiplier: 5.3 }
+  ];
+  check("a reprice changes the signature (so the registration rebuilds)",
+    catalogSignature(priced(1.85), []) !== catalogSignature(priced(9.99), []),
+    `${catalogSignature(priced(1.85), [])} vs ${catalogSignature(priced(9.99), [])}`);
+  check("an unchanged price keeps the signature stable (no needless rebuild)",
+    catalogSignature(priced(1.85), []) === catalogSignature(priced(1.85), []));
+  // `0` is a published price (free); absent means the platform said nothing.
+  // They must not collapse, or a model becoming free would look unchanged.
+  check("a multiplier of 0 is distinct from an absent multiplier",
+    catalogSignature([{ id: "m", vision: false, multiplier: 0 }], [])
+      !== catalogSignature([{ id: "m", vision: false }], []));
+  // Vision is NOT read from a bare `vision` field — `visionOf` resolves it via
+  // `identifyVisionModel` (the structured `input_modalities` array, or a name
+  // pattern) and falls back to the `PROBED_VISION` id table. So the flip is
+  // exercised through the real contract field.
+  check("a vision flip still changes the signature",
+    catalogSignature([{ id: "m", multiplier: 1, input_modalities: ["text"] }], [])
+      !== catalogSignature([{ id: "m", multiplier: 1, input_modalities: ["text", "image"] }], []));
+  check("the allow-list still rides the signature",
+    catalogSignature([{ id: "m", vision: false }], ["m"])
+      !== catalogSignature([{ id: "m", vision: false }], []));
 }
 
 console.log(JSON.stringify(results, null, 2));

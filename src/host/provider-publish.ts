@@ -19,7 +19,7 @@
  */
 
 import { LLM_PROVIDER_ID, LLM_DISPLAY_NAME, visionOf } from "./llm-models.ts";
-import { str } from "./util.ts";
+import { str, numZeroOk } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import {
   createPublishQueue,
@@ -324,13 +324,35 @@ export function seedPublisherFromCatalog(publisher, listCatalog, listEnabled, si
  * use (an id whose modality flipped must rebuild even though the id list did
  * not change), plus the curated allow-list. Anything else changing in a
  * catalog entry does not affect the registered offer.
+ *
+ * **The multiplier IS part of the offer** (since 2026-10-04): it rides in the
+ * descriptor's display name (`Name · xNN.NN` — see `agnescodeToDescriptor`),
+ * because pi-ai's descriptor has no billing channel for it. So a repriced model
+ * must rebuild the registration, or the picker keeps showing a stale factor:
+ * measured on this signature, `glm-5.2` moving 1.85 → 9.99 produced an
+ * IDENTICAL `id:vision` string, so the old shape would have kept advertising
+ * 1.85 forever. This matters because the platform reprices on promotion
+ * boundaries (`glm-5.2` carries `display_label: "限时七折"`).
+ *
+ * Reading the multiplier from `entries` (the raw catalogue) deliberately does
+ * NOT catch the Token Plan side's operator-configured pseudo multiplier: that
+ * one is attached later, by `matchMultiplier`, to the rows the snapshot hands
+ * the panel — never to `catalog`. Turning that knob still does not rebuild the
+ * registration, which is the documented intent (IMPROVEMENTS.md §7).
  * @param {object[]} entries - the normalized catalog entries.
  * @param {string[]} enabledIds - the allow-list (empty = all).
  * @returns {string}
  */
 export function catalogSignature(entries, enabledIds) {
   const models = (Array.isArray(entries) ? entries : [])
-    .map((entry) => `${str(entry?.id, "")}:${visionOf(entry).vision === true ? 1 : 0}`)
+    .map((entry) => {
+      const id = str(entry?.id, "");
+      const vision = visionOf(entry).vision === true ? 1 : 0;
+      // Absent stays absent (`-`), and `0` is a real price, so the two must
+      // not collapse — same distinction as `numZeroOk` at the read site.
+      const multiplier = numZeroOk(entry?.multiplier);
+      return `${id}:${vision}:${multiplier === undefined ? "-" : multiplier}`;
+    })
     .join(",");
   return `${models}|${(Array.isArray(enabledIds) ? enabledIds : []).join(",")}`;
 }
