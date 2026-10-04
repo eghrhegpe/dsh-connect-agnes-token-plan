@@ -1206,6 +1206,67 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   }
 }
 
+// === G8d. the AgnesCode roster shows the platform's own credit rate ========
+// The panel roster must quote the same figure the DSH picker's display name
+// carries (`Name · xNN.NN`), or the two views disagree about what a model
+// costs. The Host reads `points_cost_multiplier` from `/v2/models` (the 2026-10-04
+// switch); this pins the CLIENT half.
+//
+// The load-bearing distinction is `0` vs absent: `0` is a PUBLISHED PRICE
+// ("free"), absent means the platform declared nothing. Collapsing them either
+// way is wrong — dropping the zero hides a free model, and inventing a chip for
+// an absent one libels the roster.
+{
+  const zhDict = surface.dictionaries.zh;
+  const zhTt = (key) => zhDict[key] ?? key;
+  const rowsFor = (spec) => spec.map(([id, name, ...rest]) => {
+    const row = { id, name };
+    if (rest.length > 0 && rest[0] !== undefined) row.multiplier = rest[0];
+    if (rest.length > 1 && rest[1] !== undefined) row.displayLabel = rest[1];
+    return row;
+  });
+
+  const drawNames = (spec) => {
+    const tree = treeOf(render.AgnescodeModelPicker, {
+      models: rowsFor(spec), hostIds: [], registered: true, tt: zhTt, onSave: async () => {}
+    });
+    return texts(tree).join("\n");
+  };
+
+  const withRates = drawNames([
+    ["free-one", "Free One", 0],
+    ["priced", "Priced", 1.85],
+    ["unpriced", "Unpriced", undefined]
+  ]);
+
+  check("a priced model shows its platform rate as a ×N chip",
+    withRates.includes("×1.85"), withRates);
+  // `0` is a price, not silence: the platform publishes it for the free models
+  // (agnes-3.0-flash / -2.5-flash / -2.0-flash all report 0).
+  check("a zero rate renders ×0 (free is a published price, not an absent value)",
+    withRates.includes("×0"), withRates);
+  // The absent one must draw NO chip. Counting chips is the honest assertion:
+  // a substring check on the name alone would pass even if a stray chip leaked
+  // in beside it.
+  check("an absent rate draws no chip at all (two chips for three models)",
+    (withRates.match(/×/g) ?? []).length === 2,
+    String((withRates.match(/×/g) ?? []).length));
+
+  // The promotional tag rides the same row and is emitted only when non-empty:
+  // the platform sends `display_label: ""` on every unpromoted row, so a
+  // presence check would draw eight blank chips. Asserting on the CHIP COUNT
+  // (not on a substring) is what makes this test meaningful — `tt` is the
+  // identity here, so the label text itself is a constant.
+  const promoLine = drawNames([
+    ["promoted", "Promoted", 1.85, "限时七折"],
+    ["plain", "Plain", 1.0, ""]
+  ]);
+  check("a non-empty display label is drawn", promoLine.includes("限时七折"), promoLine);
+  check("an empty display label draws no promo chip (one tag for two rows)",
+    (promoLine.match(/限时七折/g) ?? []).length === 1,
+    String((promoLine.match(/限时七折/g) ?? []).length));
+}
+
 // === G8c. the picker header separates three kinds of information ==========
 // The header used to be ONE sentence packing three things of different kinds:
 // the title (static), the mechanism explanation (static) and the provider-wide
