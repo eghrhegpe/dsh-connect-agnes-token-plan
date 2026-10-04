@@ -27,7 +27,7 @@ import {
 } from "./agnescode.ts";
 import { createAgnescodePublisher } from "./agnescode-publish.ts";
 import { filterAgnescodeRows } from "./agnescode-models.ts";
-import { str, retryBounded } from "./util.ts";
+import { str, retryBounded, redactSecrets } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 
 /** How long a failed re-harvest blocks further re-harvest attempts. */
@@ -127,7 +127,10 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
               ...walk.session,
               ...(expMs !== undefined ? { expiresAtMs: expMs } : {})
             }).catch((why: unknown) => {
-              logger?.warn?.(`agnescode: re-harvest succeeded but the store refused it: ${str((why as { message?: unknown })?.message ?? why, "unknown")}`);
+              // Redacted: this walk's payload is a harvested DESKTOP SESSION
+              // (access token included), so a store refusal that echoes what
+              // it was handed would write one into the Host log.
+              logger?.warn?.(`agnescode: re-harvest succeeded but the store refused it: ${redactSecrets(str((why as { message?: unknown })?.message ?? why, "unknown"))}`);
             });
             const pub = holder.current;
             if (pub && walk.session.bffBase !== pub.state.bffBase) {
@@ -137,7 +140,7 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
               // it must not vanish: the picker would keep pointing at the old
               // base with no trace of why.
               await pub.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), walk.session.bffBase).catch((why: unknown) => {
-                logger?.warn?.(`agnescode: re-harvest moved the BFF base to ${walk.session.bffBase} but republishing the adapter failed (the picker still points at the previous base): ${str((why as { message?: unknown })?.message ?? why, "unknown")}`);
+                logger?.warn?.(`agnescode: re-harvest moved the BFF base to ${walk.session.bffBase} but republishing the adapter failed (the picker still points at the previous base): ${redactSecrets(str((why as { message?: unknown })?.message ?? why, "unknown"))}`);
               });
             }
             return walk;
@@ -205,7 +208,7 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
             // loop retries — but a publish that keeps failing leaves the picker
             // empty for the whole session while the tab says "logged in", which
             // is exactly the state this seed exists to prevent. Leave a trace.
-            logger?.warn?.(`agnescode: mount seed could not publish the provider; the picker stays empty until another trigger: ${str((why as { message?: unknown })?.message ?? why, "unknown")}`);
+            logger?.warn?.(`agnescode: mount seed could not publish the provider; the picker stays empty until another trigger: ${redactSecrets(str((why as { message?: unknown })?.message ?? why, "unknown"))}`);
           });
           if (publisher.state.registered === true) return true;
           if (publisher.isDisposed()) return true;

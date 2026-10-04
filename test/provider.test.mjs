@@ -43,7 +43,7 @@ import {
 import { createApiKeyStore, API_KEY_REF } from "../src/host/api-key-store.ts";
 import { PROVIDER_VERSION, createFileProviderStore } from "../src/host/provider-store.ts";
 import { DRAW_STORE_VERSION, createFileDrawStore, normalizeDrawEnabled } from "../src/host/draw-store.ts";
-import { redactSecrets } from "../src/host/util.ts";
+import { redactSecrets, forget } from "../src/host/util.ts";
 import { profileSegment, profileStateDir, writeStateFile, temporaryOf } from "../src/host/state-store.ts";
 import { surface as clientSurface } from "./client-surface.js";
 
@@ -1032,6 +1032,36 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
   }
 }
 
+// --- 13b. forget(): a fire-and-forget cannot take the Host down -----------
+// Node terminates the process on an unhandled rejection, and this plugin
+// deliberately installs no `process.on` net — a plugin must not install a
+// process-wide handler inside someone else's process. So every not-awaited
+// promise has to be safe on its own, and `forget` is where that lives: what
+// used to be "each `void` site's target remembered to swallow its own failure"
+// is now a property of the seam.
+{
+  try {
+    const warnings = [];
+    const logger = { warn: (message) => warnings.push(message) };
+    forget(Promise.reject(new Error("seed failed: cpk-a1b2c3d4e5f6")), { logger, label: "mount seed" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    check("a rejected background task is reported, not thrown", warnings.length === 1,
+      JSON.stringify(warnings));
+    check("its text is redacted like any other log exit",
+      warnings[0]?.includes("[REDACTED]") === true && warnings[0]?.includes("cpk-a1b2c3d4e5f6") === false,
+      JSON.stringify(warnings));
+    check("the label names the task that failed", warnings[0]?.includes("mount seed") === true,
+      JSON.stringify(warnings));
+    // A call site that stops being async must not become a warning — or, worse,
+    // a rejection: `forget` takes any value, not just a promise.
+    forget(undefined, { logger });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    check("a non-promise is accepted in silence", warnings.length === 1, JSON.stringify(warnings));
+  } catch (error) {
+    fail("forget keeps a background task from taking the Host down", error);
+  }
+}
+
 // --- 14. redactSecrets: a credential never reaches the panel or a log ------
 // The LLM route's `providerState.error` and `ctx.logger.warn` both pass
 // through `redactSecrets`, because an HTTP error object's `message` often
@@ -1080,6 +1110,26 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
       redactSecrets("the llm peer packages ship with the Host")
         === "the llm peer packages ship with the Host");
     check("non-string input reads as empty", redactSecrets(undefined) === "" && redactSecrets(null) === "");
+    // A BARE JWT. The four name-keyed rules cannot catch it: they match on the
+    // KEY, so a token arriving under a name this list has never met (`jwt`,
+    // `id_token`, `session`, a renamed field) sailed straight through — and a
+    // bare JWT is exactly the shape of the Agnes access token and of the
+    // AgnesCode session token. A blacklist that only knows names cannot
+    // redact a value whose name it has not met yet, so the VALUE shape is
+    // matched too.
+    check("a bare JWT is redacted whatever key name carried it",
+      redactSecrets('{"jwt":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcsignature"}')
+        === '{"jwt":"[REDACTED]"}',
+      redactSecrets('{"jwt":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcsignature"}'));
+    check("a JWT in prose is redacted too",
+      redactSecrets("re-harvest refused it: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig")
+        === "re-harvest refused it: [REDACTED]",
+      redactSecrets("re-harvest refused it: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig"));
+    // A three-segment string that is not a JWT must be left alone: the rule
+    // keys on the `eyJ` prefix (base64url of `{"`), not on "has dots".
+    check("an ordinary dotted identifier passes through",
+      redactSecrets("module @deepseek-ai/dsh-llm is missing")
+        === "module @deepseek-ai/dsh-llm is missing");
   } catch (error) {
     fail("redactSecrets strips credentials", error);
   }

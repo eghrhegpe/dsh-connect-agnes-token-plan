@@ -23,7 +23,7 @@ import { defineDrawTool } from "./draw.ts";
 import { defineVideoTool } from "./video.ts";
 import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.ts";
 import { name } from "./host-config.ts";
-import { retryBounded } from "./util.ts";
+import { retryBounded, redactError } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import type { HostCtx, HostWiring, ToolSide, ToolWiring, SwitchStore, Settings } from "./types.ts";
 
@@ -333,7 +333,10 @@ export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSid
           }, descriptor.revision);
           lastPublishedIds = ids.slice();
         } catch (error) {
-          wiring.logger?.warn?.(`${name}: vision publish refused: ${error instanceof Error ? error.message : String(error)}`);
+          // Redacted like every other log exit: a settings-service refusal can
+          // carry the payload it was handed, and this line is written to the
+          // Host's stdout (PITFALLS §42) where nobody filters it afterwards.
+          wiring.logger?.warn?.(`${name}: vision publish refused: ${redactError(error)}`);
         } finally {
           publishing = false;
         }

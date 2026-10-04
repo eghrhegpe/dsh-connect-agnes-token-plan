@@ -573,7 +573,9 @@ function literalScan(text, opener, after) {
       // `after` so the scan does not grab an earlier 2-space `return {`.
       scan: literalScan(hostSrc, /^ {2}return \{$/, /function buildQuotaBlock\b/),
       client: clientFields(wireSrc, "QuotaData"),
-      anchors: ["plan", "windows", "totals", "plans", "consoleConnected", "error"],
+      // `errors` joined `error` when the single-failure report stopped being
+      // able to describe a poll where two sources failed at once.
+      anchors: ["plan", "windows", "totals", "plans", "consoleConnected", "error", "errors"],
       label: "quota"
     },
     {

@@ -147,19 +147,46 @@ export function planSummary(plan: Record<string, unknown> | null | undefined) {
  * @param {Array<[string, {error: Error|null}]>} sources - name/outcome pairs.
  * @returns {{source: string, code: string|null, message: string}|null} the report.
  */
+function oneFailure(source: string, error: Error & { code?: unknown }) {
+  return {
+    source,
+    code: typeof error.code === "string" ? error.code : null,
+    // Red line: `quota.error.message` reaches the panel, and a console
+    // refusal message may echo the key it was refused for.
+    message: redactSecrets(error.message)
+  };
+}
+
 function firstFailure(sources: Array<[string, { error: (Error & { code?: unknown }) | null }]>) {
   for (const [source, outcome] of sources) {
-    if (outcome.error !== null) {
-      return {
-        source,
-        code: typeof outcome.error.code === "string" ? outcome.error.code : null,
-        // Red line: `quota.error.message` reaches the panel, and a console
-        // refusal message may echo the key it was refused for.
-        message: redactSecrets(outcome.error.message)
-      };
-    }
+    if (outcome.error !== null) return oneFailure(source, outcome.error);
   }
   return null;
+}
+
+/**
+ * EVERY source that failed, in the order the sources are declared.
+ *
+ * `firstFailure` answers a different question and deliberately keeps answering
+ * it — "what do I tell the user in one line" — but it is a LOSSY answer: four
+ * sources are fetched in parallel and any number of them can fail at once, so
+ * a panel that only ever sees the first one cannot distinguish "the console
+ * is down" from "the console is down AND you are not signed in". The user
+ * then fixes the reported half, waits a poll, and meets the next failure as
+ * if it had just appeared.
+ *
+ * So both are reported: `error` stays the single line the existing panel and
+ * its tests read, and `errors` carries the whole set for anything that wants
+ * to count, group, or stop being surprised. Absent (not `[]`) when nothing
+ * failed, so "no failures" and "an empty report" stay different shapes.
+ * @param {Array<[string, {error: Error|null}]>} sources - name/outcome pairs.
+ * @returns {Array<{source: string, code: string|null, message: string}>|null}
+ */
+function allFailures(sources: Array<[string, { error: (Error & { code?: unknown }) | null }]>) {
+  const failures = sources
+    .filter(([, outcome]) => outcome.error !== null)
+    .map(([source, outcome]) => oneFailure(source, outcome.error!));
+  return failures.length === 0 ? null : failures;
 }
 
 /**
@@ -252,6 +279,15 @@ function buildQuotaBlock(
     // on a dead token, `console_error` when the platform is down) is what tells
     // the panel whether a login would fix this or patience would.
     error: firstFailure([
+      ["usage-overview", overview],
+      ["series", series],
+      ["subscription", subscription],
+      ["plans", plans]
+    ]),
+    // The whole set, not just the first — see `allFailures`. `error` above is
+    // the one-line answer and stays authoritative for it; this is the same
+    // facts without the truncation.
+    errors: allFailures([
       ["usage-overview", overview],
       ["series", series],
       ["subscription", subscription],
@@ -592,7 +628,14 @@ export async function buildSnapshotBody({
     pollSeconds: settings.pollSeconds,
     // Token state, with no secret in it: the panel uses this to say whether
     // the token renews itself or is waiting on an account.
-    auth: await tokenStore.state(),
+    //
+    // Guarded because the route's own catch branch guards this exact call
+    // (`routes/snapshot.ts`) — which is an admission that it can reject. Left
+    // bare here it would discard five sources that were fetched, parsed and
+    // degraded correctly and hand the panel `ok:false`, which is precisely the
+    // shape red line ⑥ forbids: one module's failure blanking tabs that never
+    // read it.
+    auth: await tokenStore.state().catch(() => null),
     catalogAvailable: Array.isArray(catalog),
     catalogModels: catalogIds,
     // `undefined` (no API key) vs `[]` (key present, no vision models) — the

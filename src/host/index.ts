@@ -54,7 +54,7 @@ import {
   inject,
   name
 } from "./host-config.ts";
-import { str } from "./util.ts";
+import { str, forget } from "./util.ts";
 import type { HostCtx, HostDeps } from "./types.ts";
 
 /**
@@ -272,7 +272,16 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     // debuggable by diffing a working attempt against a failing one. The
     // failure half is named by its code; a success has none, so it says so.
     onTrace: (hops: object[] | undefined, error: { code?: unknown } | null) => {
-      void writeLoginTrace(hops, error === null ? "ok" : str(error?.code, CODE.AUTH_ERROR));
+      // `forget`, not `void`: the trace write is the one side effect that must
+      // never be awaited (it is on the sign-in path) and never crash the Host
+      // (it is a log write). `writeLoginTrace` already swallows its own I/O
+      // failures, but routing it through the shared seam means a future
+      // change inside it cannot turn an unhandled rejection into a Host exit.
+      // Its `null` return (nothing written) is reported by the warning.
+      forget(writeLoginTrace(hops, error === null ? "ok" : str(error?.code, CODE.AUTH_ERROR), { logger: ctx.logger }), {
+        logger: ctx.logger,
+        label: `${name}: login trace write`
+      });
     }
   });
   // Vision step two (ARCHITECTURE.md §5.1): the settings-row writer the

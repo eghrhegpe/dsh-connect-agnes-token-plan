@@ -115,6 +115,15 @@ export interface QuotaData {
   consoleConnected?: boolean;
   /** Why the authenticated half is missing, when it is. */
   error?: { source?: string; code?: string | null; message?: string } | null;
+  /**
+   * Every source that failed this poll, same shape as `error`.
+   *
+   * `error` is the first of them (the one-line answer); this is the whole set,
+   * because several sources can fail at once and a panel that only ever sees
+   * one cannot tell "the console is down" from "the console is down and you
+   * are signed out". Absent, not `[]`, when nothing failed.
+   */
+  errors?: Array<{ source?: string; code?: string | null; message?: string }> | null;
 }
 
 /** The `usage` block: the charted window and its buckets. */

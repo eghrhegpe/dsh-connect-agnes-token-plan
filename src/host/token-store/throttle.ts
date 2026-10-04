@@ -35,6 +35,70 @@ export const DEFAULT_LOGIN_BACKOFF_MS = 60_000;
 export const MAX_LOGIN_BACKOFF_MS = 30 * 60_000;
 
 /**
+ * How many self-imposed waits one refusal may spend before it is parked.
+ *
+ * This is the ceiling on the guesses. A wait this store invented is a guess
+ * about a failure it did not fully understand, and every guess is spent by
+ * retrying — against an endpoint that locks the account after a few bad
+ * attempts. So the guessing is finite: three invented waits, then the refusal
+ * is parked and only the user can lift it.
+ *
+ * What it does NOT bound: a window the PLATFORM stated. Those are honoured
+ * verbatim and uncapped (`MAX_LOGIN_BACKOFF_MS` deliberately does not apply
+ * to them), because truncating a real window walks straight back into a lock
+ * that is still in force. Counting them here would invent a cap on a number
+ * somebody else actually told us.
+ *
+ * @see {@link exhaustsInventedWaits} for which refusals this applies to.
+ */
+export const MAX_INVENTED_WAITS = 3;
+
+/**
+ * Refusals that waiting cannot fix, and so must not be waited on forever.
+ *
+ * The companion set to `CREDENTIAL_REFUSALS`, which parks on the FIRST
+ * refusal. These two get a finite number of invented waits first — a single
+ * unrecognised 500 from a console that is having a bad day should not ask the
+ * user to retype a password — but they are not retried indefinitely, because
+ * no amount of waiting changes what they are:
+ *
+ * - `login_failed` is the classifier's own fallback: the platform refused in
+ *   words this plugin does not have a rule for. It may well be permanent
+ *   ("password expired", "reset required"). Retrying it forever is the one
+ *   behaviour the throttle exists to prevent, and it is exactly what the
+ *   fallback used to do — an unrecognised wording was translated into
+ *   "temporary, back off, try again", indefinitely.
+ * - `account_locked` with no stated window: the platform named a lock and did
+ *   not say how long it lasts. Inventing a countdown and retrying when it
+ *   expires is knocking on a locked door on a timer.
+ *
+ * A stated window overrides this entirely — see {@link MAX_INVENTED_WAITS}.
+ * @type {ReadonlySet<string>}
+ */
+const FINITE_RETRY_REFUSALS: ReadonlySet<string> = Object.freeze(new Set([
+  CODE.LOGIN_FAILED,
+  CODE.ACCOUNT_LOCKED
+]));
+
+/**
+ * Whether this refusal has spent its budget of self-imposed waits.
+ *
+ * True only when the three conditions hold together: the platform stated no
+ * window of its own, the refusal is one waiting cannot fix, and the invented
+ * waits are used up. A single missing condition means the wait is still
+ * governing and nothing is parked.
+ * @param {string} code - the classified refusal code.
+ * @param {number|null} statedMs - the window the platform stated, if any.
+ * @param {number} attempt - how many waits have now been served.
+ * @returns {boolean} true when the refusal must be parked instead of timed.
+ */
+export function exhaustsInventedWaits(code: string, statedMs: number | null, attempt: number) {
+  if (statedMs !== null) return false;
+  if (typeof code !== "string" || !FINITE_RETRY_REFUSALS.has(code)) return false;
+  return attempt >= MAX_INVENTED_WAITS;
+}
+
+/**
  * The refusal an in-force throttle stands for.
  *
  * Rethrows the platform's own failure while it is still the live one, so the
@@ -105,12 +169,19 @@ export async function writeThrottle(
 ) {
   const { throttleStore, now } = wiring;
   const code = str(error?.code, CODE.LOGIN_FAILED);
-  const parked = isCredentialRefusal(code);
   // A window the platform stated is taken at its word; only a window we
   // invented is capped.
   const stated = numOrNull(error?.retryAfterMs);
   state.consecutiveRefusals = num(previousAttempt, state.consecutiveRefusals) + 1;
   const attempt = state.consecutiveRefusals;
+  // Two ways to stop retrying: the refusal is credential-shaped (parked at
+  // once — waiting cannot fix a wrong password), or it is one waiting cannot
+  // fix and the invented waits are used up (see `exhaustsInventedWaits`).
+  // The second is what stops an UNRECOGNISED refusal from being retried
+  // forever: the classifier's fallback used to translate "I do not know this
+  // wording" into "temporary, back off, try again", which is the one thing
+  // this store exists to prevent.
+  const parked = isCredentialRefusal(code) || exhaustsInventedWaits(code, stated, attempt);
   const until = parked
     ? null
     : now() + (stated === null ? localBackoffMs(attempt) : Math.max(stated, 0));

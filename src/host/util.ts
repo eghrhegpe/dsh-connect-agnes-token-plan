@@ -71,6 +71,16 @@ export function redactSecrets(text: string) {
       //    (README/AGNES-API §7, the i18n placeholder), so the prefix class
       //    covers both, not just `sk-`.
       .replace(/\b(sk|cpk)-[A-Za-z0-9._-]{8,}/g, "$1-[REDACTED]")
+      // 3b) A bare JWT — three dot-separated base64url segments, which is
+      //     exactly the shape of the Agnes `access_token` (`readJwtExpiry`
+      //     parses it) and of the AgnesCode session token. It is listed
+      //     separately from rule 4/5 because those match on the KEY NAME, and
+      //     a token that arrives under a name this list never anticipated
+      //     (`jwt`, `id_token`, `session`, a renamed field) would otherwise
+      //     sail through: a blacklist that only knows names cannot redact a
+      //     value whose name it has not met yet, so the VALUE shape is
+      //     matched here too.
+      .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g, "[REDACTED]")
       // 4) Known secret JSON pairs, quoted: {"api_key":"..."}.
       .replace(/(["']?(?:password|access_token|refresh_token|api[_-]?key|token)["']?\s*:\s*["'])[^"']+(?=["'])/gi, "$1[REDACTED]")
       // 5) Known secret key=value pairs.
@@ -181,6 +191,46 @@ export async function retryBounded({ attempts, delayMs, run }: {
     }
   }
   return false;
+}
+
+/**
+ * Run a promise to completion without awaiting it — and guarantee it cannot
+ * become an unhandled rejection.
+ *
+ * Every fire-and-forget in this plugin is a side effect that must not be able
+ * to take the Host down, and Node has terminated the process on an unhandled
+ * rejection since v15. There is deliberately no `process.on("unhandledRejection")`
+ * net here: a plugin must not install a process-wide handler inside someone
+ * else's process, so the guarantee has to be per-call. This is it.
+ *
+ * Prefer this over `void p`. `void` documents nothing and protects nothing —
+ * the safety of every `void` site in this repo rests on each target having
+ * remembered to swallow its own failure, which is a discipline, not a
+ * mechanism. `forget` moves the swallow into the seam so a NEW call site is
+ * safe by construction rather than by memory.
+ *
+ * @param {Promise<unknown>|unknown} promise - the promise not being awaited
+ *   (a non-promise is accepted and ignored, so a call site cannot regress by
+ *   passing the result of a function that stopped being async).
+ * @param {{logger?: {warn?: (message: string, ...rest: unknown[]) => void}|undefined, label?: string}} [options]
+ *   `label` names the task in the warning; `logger` receives it. The message
+ *   is redacted unconditionally: this is a log exit, and which promise
+ *   reached it must not decide whether a credential is filtered.
+ * @returns {void}
+ */
+export function forget(
+  promise: unknown,
+  options: { logger?: { warn?: (message: string, ...rest: unknown[]) => void } | undefined; label?: string } = {}
+): void {
+  const label = str(options?.label, "background task");
+  Promise.resolve(promise).catch((error: unknown) => {
+    try {
+      const detail = redactSecrets(error instanceof Error ? error.message : String(error));
+      options?.logger?.warn?.(`${label} failed: ${detail}`);
+    } catch {
+      // A logger that throws must not become the rejection it was reporting.
+    }
+  });
 }
 
 /**

@@ -274,7 +274,12 @@ export function warnBuildFailure(
   label: string,
   described: DescribedBuildFailure
 ): void {
-  logger?.warn?.(`${pluginName}: cannot build the ${label} adapter: ${described.note}${described.hint}`);
+  // The note/hint already went through `describeBuildFailure`, which reads the
+  // thrown message — and this is a LOG EXIT, so it is redacted here too rather
+  // than trusting the describer to have covered every credential shape an
+  // adapter factory can embed (its error may carry the baseUrl or the key it
+  // was built with).
+  logger?.warn?.(`${pluginName}: cannot build the ${label} adapter: ${redactSecrets(`${described.note}${described.hint}`)}`);
 }
 
 /**

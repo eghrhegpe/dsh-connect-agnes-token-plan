@@ -29,7 +29,7 @@ export const ACCOUNT_PATH = `/api/${name}/account`;
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
-  const { settings, cache, tokenStore } = wiring;
+  const { settings, cache, tokenStore, logger } = wiring;
 
   return ctx.webServer.register({
     kind: "exact",
@@ -45,7 +45,11 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
       if (method === "GET") {
         // The form needs to know whether an account is already stored, and
         // must never be told the password.
-        writeJson(response, 200, { ok: true, ...(await tokenStore.state()) }, { "cache-control": "no-store" });
+        //
+        // A state read that rejects degrades to `{}` rather than failing the
+        // route: the form's whole question here is "is an account stored", and
+        // an error page answers it with nothing at all.
+        writeJson(response, 200, { ok: true, ...(await tokenStore.state().catch(() => null)) }, { "cache-control": "no-store" });
         return;
       }
       if (method !== "POST") {
@@ -74,7 +78,7 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
         // console responses from the previous account must not survive it.
         // (saveAccount does the same on its success path.)
         cache.clear();
-        writeJson(response, 200, { ...(await tokenStore.state()), ok: true }, { "cache-control": "no-store" });
+        writeJson(response, 200, { ...(await tokenStore.state().catch(() => null)), ok: true }, { "cache-control": "no-store" });
         return;
       }
       try {
@@ -85,7 +89,9 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
         // A rejected password is the common case, and it is the user's to
         // correct: report the reason and leave the panel usable.
         const failure = error as { code?: unknown; trace?: object[]; detail?: unknown; retryAfterMs?: number };
-        const traceFile = await writeLoginTrace(failure?.trace, str(failure?.code, CODE.AUTH_ERROR));
+        // A logger is handed in so a trace that could not be written says so
+        // instead of returning a `null` nobody inspects (see `trace.ts`).
+        const traceFile = await writeLoginTrace(failure?.trace, str(failure?.code, CODE.AUTH_ERROR), { logger });
         writeJson(response, 200, {
           ...(await tokenStore.state().catch(() => null)),
           ok: false,
@@ -106,7 +112,7 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
       // The grant that just landed answers the very next poll, so the cached
       // console responses from the previous account must not survive it.
       cache.clear();
-      writeJson(response, 200, { ...(await tokenStore.state()), ok: true }, { "cache-control": "no-store" });
+      writeJson(response, 200, { ...(await tokenStore.state().catch(() => null)), ok: true }, { "cache-control": "no-store" });
     }
   });
 }

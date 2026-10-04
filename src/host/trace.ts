@@ -13,7 +13,7 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { str } from "./util.ts";
+import { str, redactSecrets } from "./util.ts";
 
 /**
  * Where login traces are written. `$DSH_HOME/logs/` keeps them next to the
@@ -35,12 +35,20 @@ export function traceDir() {
  * response.
  * @param {object[]|undefined} trace - the sanitized hop list from the auth module.
  * @param {string} outcome - "ok" or the error code, for the filename.
+ * @param {{logger?: {warn?: (message: string, ...rest: unknown[]) => void}|undefined}} [options]
+ *   a logger to receive the reason when NOTHING was written. Optional in
+ *   signature, but the caller should pass one: see the catch below for why a
+ *   silent `null` is not an acceptable outcome here.
  * @returns {Promise<string|null>} the file path, or null when not written.
  */
-export async function writeLoginTrace(trace: object[] | undefined, outcome: string) {
+export async function writeLoginTrace(
+  trace: object[] | undefined,
+  outcome: string,
+  options: { logger?: { warn?: (message: string, ...rest: unknown[]) => void } | undefined } = {}
+) {
   if (!Array.isArray(trace) || trace.length === 0) return null;
+  const dir = traceDir();
   try {
-    const dir = traceDir();
     await fs.mkdir(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const file = join(dir, `agnes-login-${stamp}-${str(outcome, "unknown").replace(/[^a-z_]/gi, "")}.json`);
@@ -51,7 +59,20 @@ export async function writeLoginTrace(trace: object[] | undefined, outcome: stri
       await fs.rm(join(dir, stale), { force: true }).catch(() => {});
     }
     return file;
-  } catch {
+  } catch (error) {
+    // Nothing was written and all the caller can see is `null`, so the reason
+    // has to be reported HERE or it is lost. This matters more than a usual
+    // swallowed I/O error: red line ⑤ makes this file the ONLY record of a
+    // sign-in attempt, so a write that silently failed leaves the red line
+    // true in the source and false on disk — and the one artifact a "browser
+    // works, the panel does not" question depends on is simply absent, with
+    // nothing anywhere saying so.
+    try {
+      const detail = redactSecrets(error instanceof Error ? error.message : String(error));
+      options.logger?.warn?.(`agnes login trace was NOT written to ${dir}: ${detail}`);
+    } catch {
+      /* a logger that throws must not break the sign-in it was reporting */
+    }
     return null;
   }
 }

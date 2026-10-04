@@ -3,6 +3,7 @@
  * with and without a credentials service.
  */
 import { createTokenStore, MAX_LOGIN_BACKOFF_MS, DEFAULT_LOGIN_BACKOFF_MS, THROTTLE_ID } from "../src/host/token-store.ts";
+import { writeThrottle, MAX_INVENTED_WAITS } from "../src/host/token-store/throttle.ts";
 import { createFileThrottleStore, createMemoryThrottleStore } from "../src/host/throttle-store.ts";
 import { loadPeer, installNetworkGuard, findPeerRoot, isolateStateDir } from "./peer-roots.mjs";
 import { createRequire } from "node:module";
@@ -870,6 +871,64 @@ async function withNetwork(stub, body) {
   await second.clear();
   check("clearing it removes it for everyone", (await first.read()) === null);
   rmSync(dir, { recursive: true, force: true });
+}
+
+// --- 17b. a version this code does not know is NOT read as "no throttle" ---
+// Bumping `THROTTLE_VERSION` used to erase every parked refusal on every
+// machine in one release: an unrecognised version read as "nothing stored",
+// and for a PARKED refusal that is the instruction to retry a password the
+// user has not changed — straight into the lock the throttle exists to avoid.
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-throttle-ver-"));
+  const file = join(dir, "throttle.json");
+  const reader = createFileThrottleStore({ dir, now: () => 1_000 });
+  // A NEWER shape (another Host process, or one started before an upgrade):
+  // it still represents somebody being told to stop knocking.
+  writeFileSync(file, JSON.stringify({ version: 99, code: "account_locked", parked: true, attempt: 2 }), "utf8");
+  const foreign = await reader.read();
+  check("a newer throttle version is not read as 'no throttle'", foreign !== null, JSON.stringify(foreign));
+  check("it buys a wait instead of letting the next poll knock at once",
+    foreign !== null && foreign.until !== null && foreign.until > 1_000, JSON.stringify(foreign));
+  // An OLDER shape with no migration entry has no path to here, so it still
+  // reads as nothing stored — the documented direction for a file this code
+  // cannot account for. (Adding a version means adding a `MIGRATIONS` entry;
+  // this is the state that entry exists to remove.)
+  writeFileSync(file, JSON.stringify({ version: 0, code: "account_locked", parked: true }), "utf8");
+  check("an older version with no migration still reads as no throttle",
+    (await reader.read()) === null, JSON.stringify(await reader.read()));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// --- 17c. an unrecognised refusal stops being retried after a while -------
+// `login_failed` is the classifier's fallback: the platform refused in words
+// this plugin has no rule for. Translating "I do not recognise this" into
+// "temporary, back off, try again" and then retrying FOREVER is the exact
+// behaviour the throttle exists to prevent — one new wording from the platform
+// and the anti-lock protection becomes an automatic lockout.
+{
+  const wiring = { throttleStore: createMemoryThrottleStore(), now: () => 0 };
+  const state = { consecutiveRefusals: 0, throttle: null };
+  const unrecognised = { code: "login_failed" };
+  const first = await writeThrottle(wiring, state, unrecognised, undefined);
+  check("the first unrecognised refusal waits rather than parking", first.parked === false,
+    JSON.stringify(first));
+  const second = await writeThrottle(wiring, state, unrecognised, first.attempt);
+  check("the second invented wait is still granted", second.parked === false, JSON.stringify(second));
+  const third = await writeThrottle(wiring, state, unrecognised, second.attempt);
+  check(`the ${MAX_INVENTED_WAITS}rd one parks: the invented waits are spent`, third.parked === true,
+    JSON.stringify(third));
+  check("a parked refusal carries no deadline to serve", third.until === null, JSON.stringify(third));
+
+  // A window the PLATFORM stated is never counted against that budget: it is
+  // not a guess, and truncating it walks back into a lock still in force.
+  const statedState = { consecutiveRefusals: MAX_INVENTED_WAITS, throttle: null };
+  const honoured = await writeThrottle(wiring, statedState, { code: "account_locked", retryAfterMs: 7_200_000 }, MAX_INVENTED_WAITS);
+  check("a platform-stated window is honoured, never converted into a park",
+    honoured.parked === false && honoured.until === 7_200_000, JSON.stringify(honoured));
+  // A rate limit keeps its uncapped doubling: waiting genuinely does fix it.
+  const limited = await writeThrottle(wiring, { consecutiveRefusals: 0, throttle: null }, { code: "rate_limited" }, MAX_INVENTED_WAITS);
+  check("a rate limit keeps waiting — retrying it is not the danger",
+    limited.parked === false, JSON.stringify(limited));
 }
 
 // --- 18. the plugin's credentialKey shim equals the real peer function ----

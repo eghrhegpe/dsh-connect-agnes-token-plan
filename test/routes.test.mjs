@@ -475,6 +475,20 @@ async function withNetwork(stub, body) {
     check("the totals are absent, not zeroed", response.payload.quota?.totals === null,
       JSON.stringify(response.payload.quota?.totals));
     check("the failure carries auth state", response.payload.auth !== undefined);
+    // Several sources fail at once here (every authenticated one, plus the
+    // console-shaped answer the public catalogue got). `quota.error` can only
+    // name one of them, which is a lossy answer to "what is wrong" — so the
+    // whole set rides alongside it, and the single line stays the first of it.
+    check("every failed source is reported, not just the first",
+      Array.isArray(response.payload.quota?.errors) && response.payload.quota.errors.length >= 2,
+      JSON.stringify(response.payload.quota?.errors));
+    check("the one-line error is the first of the set",
+      response.payload.quota?.errors?.[0]?.source === response.payload.quota?.error?.source
+        && response.payload.quota?.errors?.[0]?.code === response.payload.quota?.error?.code,
+      JSON.stringify(response.payload.quota?.errors?.[0]));
+    check("no failure in the set carries an unredacted text",
+      response.payload.quota?.errors?.every((entry) => typeof entry.message === "string") !== false,
+      JSON.stringify(response.payload.quota?.errors?.map((e) => e.message)));
 
     const decision = panelDecision(response.payload);
     check("the panel is still told the account is the next action", decision.needsSetup === true);

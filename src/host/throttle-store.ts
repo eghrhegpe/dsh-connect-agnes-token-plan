@@ -19,11 +19,70 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { str, num } from "./util.ts";
+import { CODE } from "./codes.ts";
 import { name } from "./host-config.ts";
 import { ensureStateDir, temporaryOf, writeStateFile, readStateJson, stateDir as pluginStateDir } from "./state-store.ts";
 
 /** Shape version, bumped when the persisted form changes. */
 const THROTTLE_VERSION = 1;
+
+/**
+ * Upgrades from an older persisted shape to {@link THROTTLE_VERSION}.
+ *
+ * The seam that makes bumping the version SAFE, and the reason the constant
+ * above must never be bumped without adding an entry here. `parse` reads any
+ * version it does not recognise as "no throttle", and for a PARKED refusal
+ * that is not a neutral outcome — it is an automatic retry of a password the
+ * user has not changed, into an account the platform may have locked. So a
+ * bare version bump silently disables the anti-lock protection on every
+ * machine at the exact moment nobody is looking at it: the old file is still
+ * there, it just stopped being understood.
+ *
+ * Keyed by the version being upgraded FROM and applied in order. Empty today
+ * because there is only one version; adding a second is a two-line change
+ * (bump the constant, add the entry) and forgetting the second half is what
+ * this table exists to make visible.
+ * @type {ReadonlyMap<number, (body: Record<string, unknown>) => Record<string, unknown>>}
+ */
+const MIGRATIONS: ReadonlyMap<number, (body: Record<string, unknown>) => Record<string, unknown>> = new Map([
+  // Example, once version 2 exists:
+  //   1: (body) => ({ ...body, version: 2, attempt: num(body.attempt, 1) })
+]);
+
+/**
+ * How long to wait when the persisted throttle was written by a NEWER shape
+ * than this code understands.
+ *
+ * Deliberately a wait and not a shrug. Two processes can hold different
+ * versions of this plugin (a Host started before an upgrade keeps running),
+ * and a file we cannot parse still represents someone being told to stop
+ * knocking. Reading it as "no throttle" would restart the knocking for the
+ * reason the throttle exists to prevent; waiting a short while and retrying
+ * the read costs one poll and gets it right on its own, because the window
+ * expires and the next attempt re-reads the file.
+ */
+const FOREIGN_VERSION_WAIT_MS = 60_000;
+
+/**
+ * Bring a persisted payload to {@link THROTTLE_VERSION}, or `null` when there
+ * is no path from where it is to here.
+ * @param {Record<string, unknown>} body - the parsed file contents.
+ * @returns {Record<string, unknown>|null} the payload at the current version.
+ */
+function migrateToCurrent(body: Record<string, unknown>): Record<string, unknown> | null {
+  let version = Number(body.version);
+  let current = body;
+  // Bounded: a migration that fails to advance the version would otherwise
+  // spin here forever.
+  for (let step = 0; step < 8 && version !== THROTTLE_VERSION; step += 1) {
+    const upgrade = MIGRATIONS.get(version);
+    if (upgrade === undefined) return null;
+    current = upgrade(current);
+    version = Number(current.version);
+    if (!Number.isFinite(version)) return null;
+  }
+  return version === THROTTLE_VERSION ? current : null;
+}
 
 /**
  * Where the throttle lives: the SHARED directory, `$DSH_HOME/state/<plugin>`.
@@ -55,7 +114,20 @@ export function throttleDir() {
 function parse(raw: unknown, now: () => number) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const body = raw as { version?: unknown; code?: unknown; parked?: unknown; until?: unknown; attempt?: unknown };
-  if (num(body.version, 0) !== THROTTLE_VERSION) return null;
+  const version = num(body.version, 0);
+  if (version !== THROTTLE_VERSION) {
+    // A NEWER shape than this code knows (another process, or a Host started
+    // before an upgrade): wait it out rather than reading it as "no throttle"
+    // — see `FOREIGN_VERSION_WAIT_MS`. An OLDER shape goes through the
+    // migration table first, and only reads as "nothing stored" when that
+    // table has no path for it.
+    if (version > THROTTLE_VERSION) {
+      return { code: CODE.RATE_LIMITED, parked: false, until: now() + FOREIGN_VERSION_WAIT_MS, attempt: 1 };
+    }
+    const migrated = migrateToCurrent(body as Record<string, unknown>);
+    if (migrated === null) return null;
+    return parse({ ...migrated, version: THROTTLE_VERSION }, now);
+  }
   const code = str(body.code, "");
   if (code === "") return null;
   const attempt = Math.max(1, Math.floor(num(body.attempt, 1)));
