@@ -2948,15 +2948,36 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, []);
 		useEffect(() => {
 			alive.current = true;
-			load();
-			const timer = setInterval(() => {
+			let timer = null;
+			const run = () => {
 				if (alive.current) load();
-			}, AGNESCODE_POLL_MS);
+			};
+			const start = () => {
+				if (timer === null) timer = setInterval(run, AGNESCODE_POLL_MS);
+			};
+			const stop = () => {
+				if (timer !== null) {
+					clearInterval(timer);
+					timer = null;
+				}
+			};
+			load();
+			start();
+			const onVisibility = () => {
+				if (!alive.current) return;
+				if (document.visibilityState === "hidden") stop();
+				else {
+					run();
+					start();
+				}
+			};
+			if (typeof document !== "undefined" && typeof document.addEventListener === "function") document.addEventListener("visibilitychange", onVisibility);
 			return () => {
 				alive.current = false;
 				generation.current += 1;
 				inFlight.current?.abort?.();
-				clearInterval(timer);
+				stop();
+				if (typeof document !== "undefined" && typeof document.removeEventListener === "function") document.removeEventListener("visibilitychange", onVisibility);
 			};
 		}, [load]);
 		useEffect(() => {

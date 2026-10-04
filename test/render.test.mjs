@@ -1267,6 +1267,40 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     String((promoLine.match(/限时七折/g) ?? []).length));
 }
 
+// === G8e. the AgnesCode tab stops polling while the document is hidden ====
+// This tab keeps its OWN 60 s timer (it does not ride the shell's cadence), so
+// it is the one tab that can keep talking to the platform with nobody looking.
+// `PanelPage`'s interval has always stopped on `visibilitychange` — "nobody is
+// watching the screen, and every poll keeps a Host connection open" — while
+// this one did not, so a minimised window or a background browser tab left it
+// issuing two upstream reads (balance + catalogue) every minute, indefinitely.
+//
+// Both reads are read-only and spend no quota, so this was waste rather than
+// damage — but it is invisible waste, which is exactly why it needs a guard
+// rather than a comment. The stand-in React in this suite no-ops effects, so
+// the invariant is asserted against the SOURCE, the way `panel.test.mjs` F4
+// pins the shell's timer.
+{
+  const tabSrc = readFileSync(join(ROOT, "src", "client", "agnescode-tab.ts"), "utf8");
+  const shellSrc = readFileSync(join(ROOT, "src", "client", "panel-page.ts"), "utf8");
+  const occurrences = (src, needle) => src.split(needle).length - 1;
+
+  check("the AgnesCode tab subscribes to visibilitychange",
+    tabSrc.includes("visibilitychange"), "no visibilitychange listener");
+  check("the AgnesCode tab stops its timer when the document is hidden",
+    tabSrc.includes('visibilityState === "hidden"'), "no hidden check");
+  // Listener and remover must be symmetric: an unremoved listener outlives the
+  // effect and would fire against a dead `alive` flag.
+  check("the visibility listener is removed on cleanup",
+    occurrences(tabSrc, "addEventListener(\"visibilitychange\"") === 1
+    && occurrences(tabSrc, "removeEventListener(\"visibilitychange\"") === 1,
+    `add=${occurrences(tabSrc, 'addEventListener("visibilitychange"')} remove=${occurrences(tabSrc, 'removeEventListener("visibilitychange"')}`);
+  // Parity is the point: both timers answer the same question, so a future edit
+  // that drops the guard from one of them should be visible as an asymmetry.
+  check("both poll timers handle visibility the same way",
+    shellSrc.includes("visibilitychange") && tabSrc.includes("visibilitychange"));
+}
+
 // === G8c. the picker header separates three kinds of information ==========
 // The header used to be ONE sentence packing three things of different kinds:
 // the title (static), the mechanism explanation (static) and the provider-wide

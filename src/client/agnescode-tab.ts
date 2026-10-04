@@ -178,19 +178,59 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
 
   // One loop owns the tab's polling: an immediate load on entry, then the
   // cadence; the timer stops on unmount (the tab may close at any time).
+  //
+  // The timer ALSO stops while the document is hidden, matching `PanelPage`'s
+  // interval (which has done this since it was written, with the reasoning
+  // "nobody is watching the screen, and every poll keeps a Host connection
+  // open"). This tab used to poll on regardless: minimising the window or
+  // switching browser tabs left it issuing two upstream reads (balance +
+  // catalogue) every 60 s for as long as the panel stayed open — indefinitely,
+  // and invisibly, since this tab keeps its own timer rather than riding the
+  // shell's cadence. Nothing here is inference (both reads are read-only and
+  // spend no quota), so this was waste rather than damage; it is fixed for
+  // parity with the sibling tab as much as for the traffic.
+  //
+  // A returning tab reloads once before resuming, so the "更新于" line cannot
+  // greet the user with a figure that aged while the window was in the
+  // background — the same handoff `PanelPage` makes.
   useEffect(() => {
     alive.current = true;
-    load();
-    const timer = setInterval(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const run = () => {
       if (alive.current) void load();
-    }, AGNESCODE_POLL_MS);
+    };
+    const start = () => {
+      if (timer === null) timer = setInterval(run, AGNESCODE_POLL_MS);
+    };
+    const stop = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    load();
+    start();
+    const onVisibility = () => {
+      if (!alive.current) return;
+      if (document.visibilityState === "hidden") stop();
+      else {
+        run();
+        start();
+      }
+    };
+    if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+      document.addEventListener("visibilitychange", onVisibility);
+    }
     return () => {
       alive.current = false;
       // Bump once more so an in-flight read that resolves after the unmount
       // cannot pass a later remount's generation check.
       generation.current += 1;
       inFlight.current?.abort?.();
-      clearInterval(timer);
+      stop();
+      if (typeof document !== "undefined" && typeof document.removeEventListener === "function") {
+        document.removeEventListener("visibilitychange", onVisibility);
+      }
     };
   }, [load]);
 
