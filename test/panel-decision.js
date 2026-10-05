@@ -134,7 +134,8 @@ export function decidePanelView(data, error) {
   // `needsSetup && loadedOnce`, a first-frame state this view model has no
   // notion of — so the two are structurally different questions rather than two
   // copies of one. `consoleConnected` is a field read, not a verdict: the three
-  // places that branch on it (`panel-page.ts:298` / `:404`, `snapshot.ts:261`)
+  // places that branch on it (`panel-page.ts`'s `openedAccountOnce` early return
+  // and its `consoleConnected === false` ternary, `snapshot.ts`'s `needsSetup`)
   // each mean something different by it. ADR-006's "same source, written
   // twice" list over-reached on those two, and its residual note now says so.
   return {
