@@ -1406,11 +1406,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const [now, setNow] = useState(() => Date.now());
 		useEffect(() => {
 			const until = servedWaitUntil(auth ?? null, Date.now());
-			if (until > cooldownUntil) {
-				setCooldownUntil(until);
-				setNow(Date.now());
-			}
-		}, [auth, cooldownUntil]);
+			if (until <= 0) return;
+			setCooldownUntil((previous) => until > previous ? until : previous);
+		}, [auth]);
 		useEffect(() => {
 			if (cooldownUntil <= Date.now()) return void 0;
 			const timer = setInterval(() => {
@@ -1448,7 +1446,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					return;
 				}
 				const code = body?.code;
-				const waitMs = typeof body?.retryAfterMs === "number" ? body.retryAfterMs : null;
+				const waitMs = !(body?.needsUserAction === true) && typeof body?.retryAfterMs === "number" ? body.retryAfterMs : null;
 				if (waitMs !== null && waitMs > 0) {
 					setCooldown(waitMs);
 					setFormError(tt(code !== void 0 ? COOLDOWN_TEXT[code] ?? "auth.rateLimited" : "auth.rateLimited"));

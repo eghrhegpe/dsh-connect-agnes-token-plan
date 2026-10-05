@@ -77,16 +77,29 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
 
   // Adopt a window the Host started serving after this form mounted (another
   // process parked a refusal, or the account route answered a different
-  // profile's throttle). Monotonic on purpose: a snapshot whose remaining
-  // window is SHORTER must not re-arm a countdown the user is already inside
-  // — only a later deadline moves the button back to disabled.
+  // profile's throttle).
+  //
+  // DEPENDENCY SHAPE IS LOAD-BEARING. This must depend on `[auth]` ALONE, and
+  // must NOT read `cooldownUntil` — it used to, and that was an infinite loop:
+  // the effect writes the state it also depends on, and the value it writes is
+  // computed from `Date.now()`. While the served window is live, `auth` is
+  // frozen between polls (a 30s cadence) while the wall clock keeps moving, so
+  // `now + remaining` grew past the previous value on every single commit —
+  // re-armed, re-ran, re-armed. Commit time is 0ms in no real browser. The
+  // visible damage was worse than the bug this commit fixed: the countdown
+  // interval below was torn down and rebuilt on every re-arm, so the ticking
+  // clock never ticked, `coolingMinutes` froze at its initial value, and the
+  // button stayed disabled FOREVER — "window" had become "never".
+  //
+  // A functional update hands the comparison to React without making the
+  // current value a dependency, so the effect cannot observe its own write.
+  // The guard is still monotonic (a shorter remaining window must not re-arm
+  // one the reader is already inside), it just stops being self-feeding.
   useEffect(() => {
     const until = servedWaitUntil(auth ?? null, Date.now());
-    if (until > cooldownUntil) {
-      setCooldownUntil(until);
-      setNow(Date.now());
-    }
-  }, [auth, cooldownUntil]);
+    if (until <= 0) return;
+    setCooldownUntil((previous) => (until > previous ? until : previous));
+  }, [auth]);
 
   // One ticking clock drives the countdown; it stops when the wait ends.
   useEffect(() => {
@@ -133,7 +146,19 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
       // The Host's own backoff is authoritative: retrying inside it is what
       // turns a bad password into a locked account, so surface the wait
       // instead of a plain refusal.
-      const waitMs = typeof body?.retryAfterMs === "number" ? body.retryAfterMs : null;
+      //
+      // A PARKED refusal wins over the window, and the window is honoured only
+      // when the refusal is NOT parked. They can both arrive: the account
+      // route copies the platform's stated window into the body
+      // (`routes/account.ts`) while the snapshot's `needsUserAction` is
+      // computed from the throttle's own `parked` flag — and a captcha that the
+      // platform answers with `Retry-After: 7200` yields `parked: true` AND a
+      // two-hour window. Counting that down is the same lie `servedWaitUntil`
+      // refuses to tell: the clock reaches zero and nothing retries, because
+      // waiting cannot satisfy a captcha. The sentence below then says so in
+      // words instead, and the button stays usable — retyping IS the fix.
+      const parked = body?.needsUserAction === true;
+      const waitMs = !parked && typeof body?.retryAfterMs === "number" ? body.retryAfterMs : null;
       if (waitMs !== null && waitMs > 0) {
         setCooldown(waitMs);
         // Same guard the refusal lookup below uses: an absent code must not be
