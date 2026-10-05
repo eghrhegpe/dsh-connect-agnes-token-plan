@@ -32,7 +32,7 @@
 
 `package.json` 的 `files` 打包清单（由 `test/package.test.mjs` 的 import 闭包检查钉住）**不包含任何第三方代码**：
 
-- `peerDependencies`（`react`、`@deepseek-ai/dsh`、`@deepseek-ai/dsh-credentials`）由 DSH Host 运行时在运行期提供，不随本插件安装或打包（见 `docs/DSH-PLUGIN.md` §2）；测试基建 `test/peer-roots.mjs` 就地解析它们，不引入新依赖；
+- `peerDependencies`（共 13 个，由 DSH Host 运行时在运行期提供，不随本插件安装或打包；见 `package.json` 的 `peerDependencies` 与 `docs/DSH-PLUGIN.md` §2）：`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-locale`、`@deepseek-ai/dsh-client-ui-layout`、`@deepseek-ai/dsh-client-ui-renderer`、`@deepseek-ai/dsh-credentials`、`@deepseek-ai/dsh-home-paths`、`@deepseek-ai/dsh-host-webserver`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-llm-pi-ai`、`@deepseek-ai/dsh-settings`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/schemastery`、`@earendil-works/pi-ai`。其中 `@deepseek-ai/cordis` 在 `peerDependenciesMeta` 中标记为 optional。注意：**本插件不依赖 `react`**，也不依赖 `@deepseek-ai/dsh`（与旧文案不同）；测试基建 `test/peer-roots.mjs` 就地解析这些 peer，不引入新依赖；
 - `react` 为 MIT 许可；`@deepseek-ai/*` 属 DSH 运行时发行物，其许可证以 DSH 官方发行版为准；
 - `LICENSE` 与本文随包携带，但均为本项目自身文档。
 

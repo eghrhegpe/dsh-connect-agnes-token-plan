@@ -21,13 +21,13 @@
 ## 2. P0：`index.js` 控制面解耦 + 推理契约自动化回归 ✅ 已实现（2026-09）
 
 > 来源：2026-09 锐评结论，证据链已归档于 [ARCHIVE-IMPROVEMENTS-2026-09.md](./ARCHIVE-IMPROVEMENTS-2026-09.md) §2 与 [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md) A2。两个 P0 先于任何「继续吸收」——§0 已承认本插件
-> 可注册推理 provider（是否默认通道由 profile 决定），`index.js` 1187 行里同时挂着
+> 可注册推理 provider（是否默认通道由 profile 决定），拆分前的 `index.js` 曾达 1187 行、同时挂着
 > 5 条路由 + `providerState` 状态机 + `publishChain` 串行化 + 两个 fire-and-forget IIFE
 > （catalog seed、draw 注册），复杂度已溢出：注释越解释越拆不动。再谈下一块吸收之前，
 > 先把「控制面」和「契约护栏」立住，否则吸收越快、爆炸半径越大。
 >
-> **落地状态（本节完成时）**：§2.1 抽 `provider-publish.js` + `snapshot-aggregate.js`，
-> `index.js` 从 1187 行瘦到 778 行（wiring F3 经新模块注入仍全绿）；§2.2 落
+> **落地状态（本节完成时）**：§2.1 抽 `provider-publish.ts` + `snapshot-aggregate.ts`，
+> 原 `index.js` 从 1187 行瘦到 778 行（wiring F3 经新模块注入仍全绿）；**现状** `src/host/index.ts` 收口为约 328 行。§2.2 落
 > `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/sensenova-contract.json`
 > （冻结 2026-09-29 实测）+ `test/live-contract.mjs`（`npm run test:live:contract`，手动档）。
 > 离线全量套件 + e2e-gate 全绿。
@@ -103,7 +103,7 @@ live 档在 `package.json` 有 `test:live:contract` 脚本。
 
 | 检查点 | 结论 |
 |---|---|
-| `retryPolicy` 落点 | `llm-adapter.js:127` 唯一 `profiles` 条目（`LLM_PROVIDER_ID`），**provider 全局级**，非 model 级 |
+| `retryPolicy` 落点 | `llm-adapter.ts:127` 唯一 `profiles` 条目（`LLM_PROVIDER_ID`），**provider 全局级**，非 model 级 |
 | descriptor 是否带 per-model retry | `llm-models.ts` `toPiDescriptor` 无 retry/quota 字段，全局策略即全 model 一刀切 |
 | quota 数据源粒度 | `parsers.ts` `parsePools` 每个 pool 带 `modelIds`，额度是 **pool 级归组**，model 级差异化无数据支撑 |
 | 推论 | 保持**全局** retry 策略（最低侵入）+ **per-model 可用性标记**（descriptor 重建时按 pool 耗尽打标） |
@@ -196,7 +196,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - **不再往 `upstream/` 拉新项目**，除非同时定义「提炼出口」（吸知识不吸代码）。
 - **跨 provider 通用聚合**：不吸收 `dsh-provider-quota` / `dsh-musage` 的泛化定位（见 §5.3）。
 - **client.js 文件级分解（2026-09-29 定界不拆；2026-09-30 tripwire 触发、决策重开并执行完毕——client 半边 TS 化 + 按功能拆文件一步到位，见 §6.2）**。
-  该边界条目的「不拆」部分就此退役；「Host 半边免构建」也已随之作废（见 §6.2 末段「【当晚已被取代】」——Host 源码迁 `src/host/*.ts` 并由 tsdown 构建 `lib/`，产物不入库）。
+  该边界条目的「不拆」部分就此退役；「Host 半边免构建」也已随之作废（见 §6.2 末段「【当晚已被取代】」——Host 源码迁 `src/host/*.ts` 并由 tsdown 构建 `lib/`；产物**随库提交**，2026-10-03 起已推翻本节 §6.2 末尾的旧「不入库」口径，见根 `.gitignore`「构建产物」）。
 
 ## 6.2 构建链与 Client 拆分（2026-09-30：先干跑验证，当日决策重开并执行完毕）
 
@@ -205,14 +205,14 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 
 **已落地：**
 
-- **源码布局**：`src/client/*.ts` 十五个文件，按功能拆——`index.ts`（factory +
+- **源码布局**：`src/client/*.ts` **21 个文件**，按功能拆——`index.ts`（factory +
   三世界尾巴）、`runtime.ts`（React 缝隙：factory 入口 `provideClientReact`，其余
   模块经转发的 `h`/hooks 取用，调用点与拆分前的闭包形式逐字一致）、`const.ts`
   （路由常量）、`i18n.ts`（zh/en 双语字典，`en: typeof zh` 编译期钉键集齐平）、
   `styles.ts`、`format.ts`、`models.ts`（allow-list 代数）、`snapshot.ts`（决策层
   + 三张码表）、`cards.ts`、`account-form.ts`、`provider-controls.ts`、
   `model-picker.ts`、`api-key-form.ts`、`panel-page.ts`、`apply.ts`。行为逐字转录，
-  17 个离线套件 + e2e 全绿背书。
+  **28 个离线套件** + e2e 全绿背书。
 - **构建**：`tsdown.config.mjs` → 根 `client.js` 产物，`npm run build:client`。三个
   关键取值：`format: "iife"`（顶层零 import/export，三世界尾巴活在函数作用域里；
   esm 构建会被 rolldown 的 CJS 语法探测包壳改写 ABI）；`outputOptions.entryFileNames:
@@ -223,7 +223,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 - **门禁**：`test/build-gate.mjs`（npm test 链尾、e2e-gate 之前；文件名不含
   `.test.`，不入 `package.test.mjs` 三方名册，同 e2e-gate 范式）——**freshness**
   （重建与产物做换行归一化的逐字节比对，**过期即红**：`src/client/` 变了没重建会被
-  门禁拦住；产物 gitignore 不入库，所以红只是提示「保持产物与源码同步」，无需提交）
+  门禁拦住；`lib/` 与根 `client.js` **随库提交**（不 ignore，见根 `.gitignore`「构建产物」），所以红就是「改了 src 没重建」，需把产物与源码放**同一个 commit** 提交）
   + **形状**
   （无顶层 import/export、ESM 导入恰好注册一份、react-only 替身可物化、panel 测试面
   键齐全）。tsdown 缺席则醒目 SKIP 退出 0。
@@ -232,7 +232,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
   `--legacy-peer-deps`（peer 包不在 registry；本仓刻意无 lockfile）。
 - **【当晚已被取代】「Host 半边不动」**：随后按 workbuddy 规范完成全仓归一——Host 源码迁
   `src/host/*.ts`（Host 模块），tsdown 多入口构建 `lib/`（ESM bundle + 切分 chunk）；`lib/` 与根
-  `client.js` 一并 `.gitignore`，**产物彻底不入库**（上文「产物与源码同 commit」纪律随之作废），
+  `client.js` 当时一并 `.gitignore`、**产物不入库**（上文「产物与源码同 commit」纪律随之作废）——**该口径已于 2026-10-03 被推翻**：现 `.gitignore` 让 `lib/` 与根 `client.js` **随库提交**（DSH 市场 / `dsh plugin add` 的 git 直装走 pnpm git-dep 管线，`packageShouldBeBuilt` 按 `main` 在克隆里是否存在决定是否构建，产物入库则克隆**零构建、零 devDeps、零 allowBuilds 审批**，加回 ignore 会让插件卡失效），上文「产物与源码同 commit」纪律随之恢复；见根 `.gitignore`「构建产物」与 CI 的 artifacts 新鲜度门禁，
   测试面与门禁已适配；全量套件 + build-gate + e2e + tsc 全绿，「删 lib 可重建」验收通过。
   checkJs 的 JSDoc 投入随 .ts 化自然并入类型标注。
 
@@ -363,9 +363,8 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 
 ## 6.3 第三上游形态：AgnesCode BFF（2026-10-01 契约探针 ✅，当日落地实现）
 
-> **落地记录**：本节探针当日完成实现——`src/host/agnescode*.ts` 六件套（协议层 + 本机采集 /
-> 凭据 store / 开关 store / 花名册映射 / 独立 publisher / peer adapter）+ `/agnescode` 路由 +
-> 面板第四个 tab，套件 `test/agnescode.test.mjs`（离线检查）进 `npm test` 门禁。隔离纪律
+> **落地记录**：本节探针当日完成实现——`src/host/agnescode*.ts` **8 个文件**（agnescode.ts 协议层 + 本机采集 / 凭据 store / 开关 store / 花名册映射 / 模型清单 store / 生命周期 / 独立 publisher + peer adapter）+ `/agnescode` 路由 +
+> 面板第四个 tab（现行三 tab 之 AgnesCode tab），套件 `test/agnescode.test.mjs`（离线检查）进 `npm test` 门禁。隔离纪律
 > 与 §6.1 的 raccoon 行同款：独立 publisher / store / 凭据引用，对主注册影响恒为零。
 
 > **背景**：用户问及 `https://agnes-ai.cn/agnescode`（AgnesCode，独立编程助手产品，微信登录、
@@ -462,7 +461,7 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 
 | 优先级 | 项 | 侵入性 | 门禁 |
 |---|---|---|---|
-| **P0 ✅** | `index.js` 控制面解耦（§2.1：`provider-publish.js` + `snapshot-aggregate.js` 抽状态机与聚合、`index.js` 1187→778 行、5 路由 + 2 IIFE 收编） | 中（纯重构，快照契约零改动） | `test/wiring.test.mjs` F3 经新模块注入仍全绿 + `routes`/`provider`/`draw` 四套件全绿 + `e2e-gate` |
+| **P0 ✅** | `index.js` 控制面解耦（§2.1：`provider-publish.ts` + `snapshot-aggregate.ts` 抽状态机与聚合、`index.js` 从 1187 行瘦到 778 行、5 路由 + 2 IIFE 收编；**现状 `src/host/index.ts` 约 328 行**） | 中（纯重构，快照契约零改动） | `test/wiring.test.mjs` F3 经新模块注入仍全绿 + `routes`/`provider`/`draw` 四套件全绿 + `e2e-gate` |
 | **P0 ✅** | 推理契约自动化回归（§2.2：`test/contract.test.mjs` 进 `npm test` + `test/live-contract.mjs` live 手动档 + `test/baselines/agnes-contract.json`） | 低（纯测试基建，不碰运行时） | `npm test` 全绿；`package.json` 有 `test:live:contract` 脚本 |
 | **P0 ✅** | 429 spike + 配额联动（全局策略 `llm-retry.ts` + per-model 可用性 `llm-models.ts` + `index.ts` quota 重注册） | 低（1 行 peer + peer-free 分类器 + 状态文件桥） | `e2e-gate`（dsh CLI 在则实跑）；`test/retry.test.mjs` 已落地 |
 | **P0 文档** | §5 纠偏 + 本文入库 | 无（仅 doc） | `docs.test.mjs` |
@@ -470,7 +469,7 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 | **P1 ✅** | `doctor --json`（§5：`src/host/doctor.ts` 只读巡检 + `tools/doctor.mjs`，零平台依赖） | 低 | `test/doctor.test.mjs`（独立套件，进 `npm test`） |
 | P1（可选） | §4 官方文档保真（改名/链接，不提炼不 `git rm`） | 低（仅重命名 + 链接） | `docs.test.mjs` |
 | **P2 ✅ 已落地后移除（2026-10-01）** | 第二上游 provider（小浣熊 / `sensenova-raccoon`）：曾随 0.4.3 落地、2026-10-01 续做网关契约复测**契约成立**（§6.1.2），但已随 Agnes 线独立**整条移除**（兄弟插件保留该线）——移除即本项终态，无「剩余未做」 | 高（新上游 + 新凭据生命周期） | 移除时同删 `test/raccoon.test.mjs` 与全部接线/文档；`docs.test.mjs` 检查 `README_TABS` 改钉三 tab |
-| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——六件套 + `/agnescode` 路由 + 第三个 tab + `test/agnescode.test.mjs`；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）、**格式漂移哨子 `format_drift`**（2026-10：walk 第 9 档直说「格式变了，升级插件」+ doctor 只读盘点三事实分点名，见上方哨子段）；**live 探针档已落地（2026-10-03）**：`test/live-agnescode.mjs`（`npm run test:live:agnescode`；凭据取 DSH 凭据服务的 `AGNESCODE_CREDENTIAL` 或 `$AGNESCODE_CREDENTIAL` 环境变量，缺则醒目 SKIP；默认 2 只读请求，`--chat` 追加 2 条计费思考探针——节奏与修法纪律比照 `live-contract`，漂移补记见 §6.3.1）；**真 DPAPI 路径已补覆盖（2026-10-03）**：`test/agnescode-dpapi.test.mjs`——Windows 真往返（本测试自己用 PowerShell `ProtectedData::Protect` CurrentUser 加密随机字节再喂 `defaultDpapiUnprotect`，32B/1024B 双档 + 垃圾输入拒绝路径），离线、不碰用户真实会话文件，非 Windows SKIP。**仍缺**：会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线检查 + `docs.test.mjs` 检查 `README_TABS`（三 tab 全覆盖）+ render 首帧三 tab 断言 |
+| **P2 ✅ 落地（2026-10-01）** | 桌面端上游 AgnesCode（§6.3）：契约探针当日落地——`src/host/agnescode*.ts` **8 个文件** + `/agnescode` 路由 + 第三个 tab（AgnesCode tab）+ `test/agnescode.test.mjs`；三路子代理审核后修复 4 条 P1（挂载种子死守卫与旧上游同款一并修、harvest 诊断行即逝、客户端 `postJsonOrThrow` 丢失败载荷、过期重采集无单飞）与一批 P2（DPAPI 超时/stdin 容错、JSON 错误带文件原文泄露、非 win32 诚实报 unsupported、钉域拒非默认端口、switch/logout 过 redactSecrets、harvest 服务端单飞、余额 null 不画 0、doctor 增读开关、render 首帧钉三 tab）、**格式漂移哨子 `format_drift`**（2026-10：walk 第 9 档直说「格式变了，升级插件」+ doctor 只读盘点三事实分点名，见上方哨子段）；**live 探针档已落地（2026-10-03）**：`test/live-agnescode.mjs`（`npm run test:live:agnescode`；凭据取 DSH 凭据服务的 `AGNESCODE_CREDENTIAL` 或 `$AGNESCODE_CREDENTIAL` 环境变量，缺则醒目 SKIP；默认 2 只读请求，`--chat` 追加 2 条计费思考探针——节奏与修法纪律比照 `live-contract`，漂移补记见 §6.3.1）；**真 DPAPI 路径已补覆盖（2026-10-03）**：`test/agnescode-dpapi.test.mjs`——Windows 真往返（本测试自己用 PowerShell `ProtectedData::Protect` CurrentUser 加密随机字节再喂 `defaultDpapiUnprotect`，32B/1024B 双档 + 垃圾输入拒绝路径），离线、不碰用户真实会话文件，非 Windows SKIP。**仍缺**：会话文件 blob 布局假设仅探针一次性验证（fixture 与实现共享同一布局假设）、macOS/Linux 采集路径未实测（非 win32 现如实报 unsupported） | 高（新上游 + 新凭据生命周期；本插件首条「本机登录态采集」形态） | `test/agnescode.test.mjs` 离线检查 + `docs.test.mjs` 检查 `README_TABS`（三 tab 全覆盖）+ render 首帧三 tab 断言 |
 | 明确不做 | 多 Key / 签到 / 跨 provider 聚合 | — | — |
 | 明确不做 | 伪倍率折进注册模型名（qoder ② 法：把倍率嵌进 DSH 原生选择器的模型名里，绕「选择器无旁路字段」限制）。2026-09-30 决议 | 低 | 现状即决议：`×N` 只作**面板侧标记**（模型花名册行尾 + 趋势图，同一匹配器、同一数值，均标「非官方」）。理由：① 倍率是操作者手填的对比数据、非平台计费事实，折进 DSH 全局模型名会把个人配置泄漏给所有会话；② qoder 嵌名是「DSH 无字段携带平台真实倍率」的 workaround，本插件的倍率本就没有平台出处，面板就是它唯一合理的位置；③ 模型名是 DSH 配置 / 选择器的稳定标识（id 匹配），加 `×N` 会破坏 id 语义 |
 

@@ -23,7 +23,7 @@
 
 - `AgnesAI-Models/`——**官方**网关与模型目录（`AgnesAI-Labs/AgnesAI-Models`），「接入 API」与出图两条线的接口形状出处。
 - `AgnesAI-Labs-skills/`——**官方**模型集成 Skills（`AgnesAI-Labs/skills`：text / image / video / agent）。
-- 其余为社区实现（`agnes-ai-skill`、`agnes-video-generator`、`ComfyUI-Agnes-AI-All`、`dsh-agnes*` 等）与四个**裸目录**（无 `.git`，上游 zip 解包：`agnes-ai-for-dsh`、`deepseek-harness-codearts-master`、`dsh-connect-workbuddy-main`、`dsh-draw-router`），与插件主线关系弱，保留为历史对照。本机 `upstream/SOURCES.md` 有全量机械清单。
+- 其余为社区实现（`agnes-ai-skill`、`agnes-video-generator`、`ComfyUI-Agnes-AI-All`、`dsh-agnes*` 等）与三个**裸目录**（无 `.git`，上游 zip 解包：`agnes-ai-for-dsh`、`deepseek-harness-codearts-master`、`dsh-draw-router`），与插件主线关系弱，保留为历史对照。本机 `upstream/SOURCES.md` 有全量机械清单。
 
 ## 3. 纪律
 

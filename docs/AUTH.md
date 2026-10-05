@@ -93,7 +93,7 @@ SenseNova 时代密码要走 JWE 封包（平台 JWKS 公钥 RSA-OAEP + A256GCM�
 
 **自造退避是有上限的**（`MAX_INVENTED_WAITS = 3`），这是「未知失败形状」的兜底：分类器只认得有限几种措辞，认不出的落到 `LOGIN_FAILED`，而把「我不认识这句话」翻译成「暂时故障、退避重试」并**无限重试**，正好是节流机制存在的目的的反面——平台改一个词（密码过期、需要重置），防锁号就变成自动撞锁。`ACCOUNT_LOCKED` 若平台**声明**了窗口，照单全收（时间型）；没声明窗口时同样受这 3 次上限约束，因为「锁着」不会自己变好。平台声明的窗口**永不计数也永不截短**，计的是我们猜的那些。
 
-节流状态写在**插件自己的状态文件**（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），因此**跨进程、跨重启**都生效：另一个 Host 进程（桌面版 / `dsh web` 用不同 profile，但可能共用同一 Home）不会在等待期内继续敲门。放在插件自己的文件里而不是凭据服务，是因为节流不是凭据，而凭据服务只认两种记录 kind——发明第三种会让整份凭据文件对 Host 不可解析（见 PITFALLS §6 与 `throttle-store.js` 头注）。旧版曾把节流伪装成 `grant` 记录（marker 字段 `THROTTLE_MARKER`）寄存在凭据服务里，该地址仅作**一次性迁移读取**，之后不再写入。窗口读取同时支持中英文（「try again after 8 minutes」与「请 8 分钟后重试」）以及 `Retry-After` 头。
+节流状态写在**插件自己的状态文件**（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），因此**跨进程、跨重启**都生效：另一个 Host 进程（桌面版 / `dsh web` 用不同 profile，但可能共用同一 Home）不会在等待期内继续敲门。放在插件自己的文件里而不是凭据服务，是因为节流不是凭据，而凭据服务只认两种记录 kind——发明第三种会让整份凭据文件对 Host 不可解析（见 PITFALLS §6 与 `throttle-store.ts` 头注）。旧版曾把节流伪装成 `grant` 记录（marker 字段 `THROTTLE_MARKER`）寄存在凭据服务里，该地址仅作**一次性迁移读取**，之后不再写入。窗口读取同时支持中英文（「try again after 8 minutes」与「请 8 分钟后重试」）以及 `Retry-After` 头。
 
 **版本演进不许解除停车**：`throttle.json` 带 `version`，读到的版本不认识时**不能**当作「无节流」——对一条 parked 记录那等于重发一个用户没改过的密码。所以 `throttle-store.ts` 有迁移缝（`MIGRATIONS`）：**改 `THROTTLE_VERSION` 必须同时在这里加一条迁移**，旧版本走迁移、比当前更高的版本（另一个进程 / 升级前的旧 Host 写的）按 `FOREIGN_VERSION_WAIT_MS` 短等一次再重试读，而不是当成没记录。
 

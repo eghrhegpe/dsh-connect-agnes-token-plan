@@ -6,7 +6,7 @@
 
 ## 1. 前置条件
 
-- **Node.js ≥ 22**：仅用于跑测试（`npm test`），运行时由 Host 提供运行时，无需本机装 Node 来跑插件本身。
+- **Node.js `^22.19.0 || >=24.0.0`**：仅用于跑测试（`npm test`）；`package.json` 的 `engines` 已钉此范围，运行时由 Host 提供运行时，无需本机装 Node 来跑插件本身。
 - **DSH 运行时**：插件装在某个 DSH profile 下，由 Host 在启动时加载 `index.ts` 等 Host 半边文件。
 - **凭据服务**：Host 需具备 `@deepseek-ai/dsh-credentials` 能力，账号与令牌才能落库。没有它时面板仍可打开，但账号只存内存（重启需重登，见 [AUTH.md](./AUTH.md)）。
 
@@ -18,7 +18,7 @@
 
 | target 形态 | 值 | 适用场景 |
 |---|---|---|
-| npm 包名（推荐） | `dsh-connect-agnes-token-plan`（可钉版本，如 `dsh-connect-agnes-token-plan@0.4.3`） | 普通用户，无需 clone |
+| npm 包名（推荐） | `dsh-connect-agnes-token-plan`（可钉版本，如 `dsh-connect-agnes-token-plan@0.10.0`） | 普通用户，无需 clone |
 | git 地址 | `https://github.com/eghrhegpe/dsh-connect-agnes-token-plan` | 不经 registry 直接装 |
 | 本地路径 | 本检出目录的绝对路径（如 `~\.dsh\plugins\dsh-connect-agnes-token-plan`） | 开发调试 |
 
@@ -33,7 +33,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 
 ### 环境隔离（历史注记）
 
-2026-09-27 本插件曾作为**桌面端必需启动项**（`dsh.profile.bundles`），因往共享凭据库写入宿主不认识的 `kind: throttle` 记录，把桌面端直接炸到 startup failed（爆炸半径是整机插件全卡死）。该问题已修复——节流迁到插件自己的状态文件 `throttle-store.js`（原子写、0600），凭据服务只认 `grant`/`api-key` 两种 kind（见 [PITFALLS.md](./PITFALLS.md) §6）。**2026-09-29 双端实测：web 与桌面端均可正常挂载运行，不再有任何 profile 限制。**
+2026-09-27 本插件曾作为**桌面端必需启动项**（`dsh.profile.bundles`），因往共享凭据库写入宿主不认识的 `kind: throttle` 记录，把桌面端直接炸到 startup failed（爆炸半径是整机插件全卡死）。该问题已修复——节流迁到插件自己的状态文件 `throttle-store.ts`（原子写、0600），凭据服务只认 `grant`/`api-key` 两种 kind（见 [PITFALLS.md](./PITFALLS.md) §6）。**2026-09-29 双端实测：web 与桌面端均可正常挂载运行，不再有任何 profile 限制。**
 
 ---
 
@@ -114,9 +114,9 @@ AgnesCode tab 走的是桌面端登录态采集，**没有刷新端点**：会�
 | 面板顶部 `config_error` | 配置面有非法端点地址等挂载期错误 | 检查 `cordis.patch.yml` 的端点类字段（§3），改后重装 / 重载 Host |
 | 快照带 `shapeWarnings` | 控制台返回结构与预期不符（如字段改名） | 对照 [AGNES-API.md](./AGNES-API.md) §2 核对接口字段——这是接口变更的第一信号，不是「暂无数据」 |
 | 面板 `console_error` | 控制台没应答 | 通常是下一轮轮询自愈；持续出现再查网络与控制台状态 |
-| `quota.error` 指名某个 source | 那一个额度源降级了（series / subscription / plans / overview），其余照常 | 看 `message` 里平台自己的话；当前实现将五个源一律软失败，`overview` 失败时面板会显示 `consoleConnected:false` 并保留其他来源数据。旧文曾写「overview 是致命源」，现已改为软降级（见 ADR 账本及 ARCHITECTURE §3）。 |
+| `quota.error` 指名某个 source | 那一个额度源降级了（series / subscription / plans / overview），其余照常 | 看 `message` 里平台自己的话；当前实现将五个源一律软失败，`overview` 失败时面板会显示 `consoleConnected:false` 并保留其他来源数据。旧文曾写「overview 是致命源」，现已改为软降级（见 [ADR.md](./ADR.md) ADR-007 及 [ARCHITECTURE.md](./ARCHITECTURE.md) §5 不变量）。 |
 | 快照接口没有 `auth` 字段 | 跑的还是旧代码 | 完全退出 DSH（含托盘）再启动（见 §4） |
 | 面板提示需要重新登录 | 令牌被拒且环境里已无密码 | 面板表单填一次账号密码即可 |
 | 面板「可看图」一行缺失，但 `/v1/models` 有模型 | 没有 API key，模型目录没拉（`catalogAvailable: false`），视觉清单随之不显示 | 在面板「API Key」卡粘贴 API Key 保存（免费版 `sk-` 或 Token Plan `cpk-` 皆可；写入 DSH 凭据服务引用），或在用户级 env 变量层配 `AGNES_TOKEN_PLAN_API_KEY`；下一轮 poll 自动亮起来，无需重启 |
 | 「可看图」清单为空但 catalog 有模型 | Agnes 目录条目**不带** `input_modalities`（§7.1 实测只有 `id`/`object`/`created`/`owned_by`/`supported_endpoint_types` 五个字段），`identifyVisionModel` 只能读目录 → 恒 false | **这是「读不到」，不是「没有」**——官方文档（`docs/AGNES-API-docs/`）明说 `agnes-3.0-flash` / `agnes-2.5-pro` / `agnes-2.5-flash` 支持「文本 + 图像 URL 输入」。空清单不能当作「真没有可看图模型」的证据；要补 vision 需按 §7.1.1 的硬编码清单路线 |
-| `quota.planUnknown` | 订阅 payload 没有可匹配的套餐身份（uuid / 名称） | 套餐对比卡照常显示（公开目录）；当前套餐上限需要 `/api/cn/user/subscription` 返回可识别的套餐名或 uuid，见 [AGNES-API.md](./AGNES-API.md) §5 |
+| `quota.planUnknown`（界面文案键） | 订阅 payload 没有可匹配的套餐身份（uuid / 名称）时，面板用 i18n 文案键 `quota.planUnknown` 渲染一行说明——**它是 client 侧的渲染文案键，不是快照信号字段**；套餐对比卡照常显示（公开目录），当前套餐上限需要 `/api/cn/user/subscription` 返回可识别的套餐名或 uuid，见 [AGNES-API.md](./AGNES-API.md) §5 |

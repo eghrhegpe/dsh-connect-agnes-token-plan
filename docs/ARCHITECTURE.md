@@ -178,9 +178,16 @@ client.js: interpretSnapshot(body) → {data, error}
 **Agnes 目录条目只有 5 个字段**（`id`/`object`/`created`/`owned_by`/
 `supported_endpoint_types`，见 [AGNES-API.md](./AGNES-API.md) §7.1），
 `input_modalities` **完全缺失** → `identifyVisionModel` 在 Agnes 上**恒 false**。
-所以 Agnes 的 `visionModels` 恒为空——**不是「没有可看图模型」，是「目录读不到」**；
+所以**只靠目录读不到**——**不是「没有可看图模型」，是「目录没暴露该能力」**；
 官方文档明说 `agnes-3.0-flash` / `agnes-2.5-pro` / `agnes-2.5-flash` 支持
-「文本 + 图像 URL 输入」（见 `AGNES-API.md` §7.1.1 的待补清单）。
+「文本 + 图像 URL 输入」。
+
+**✅ 已落地（2026-10）**：按 `PROBED_EFFORT` 的既有纪律，在 `src/host/llm-models.ts`
+加了硬编码 `PROBED_VISION` 表（`agnes-3.0-flash` / `agnes-2.5-pro` /
+`agnes-2.5-flash`），并经 `visionOf(entry)` 接入 descriptor / roster /
+snapshot / `provider-publish`——`visionModels` **不再是空的**。判定顺序：**目录字段
+→ 名字兜底 → 硬编码表 → 非 vision**，平台将来补 `input_modalities` 会自动胜出。
+详见 [AGNES-API.md](./AGNES-API.md) §7.1.1。
 
 名字规律兜底（`vl` / `vision`）保留作为「平台若某天不返回模态字段」的退路，
 标 `source: "name"` 注明是按名字推断。**商汤时代的例子**（`deepseek-v4-flash` /
@@ -217,9 +224,10 @@ offload 链路知道这把 Key 里哪些模型可以接图。
 宿主机器 `~/.dsh/profiles/*/cordis.patch.yml` 里已有 `imageModelIds`
 与 `imageOverrides` 实例（该路径在宿主 profile 目录，不在本仓库），
 trae 源码注释「Provider API 不暴露模态元数据，image 输入靠显式
-`imageModelIds` 声明」对本插件读的这份目录**不成立**：平台已经暴露
-`input_modalities`（见上），第二步只是把这份现成信息按 DSH 的
-settings 写路径交出去，不做识别逻辑。
+`imageModelIds` 声明」对本插件读的这份目录**大体成立**：Agnes 的 `/v1/models` 也
+不返回 `input_modalities`，所以本插件不能只靠目录——而是像上文 §5.1 已落地的那样，
+在目录之外再叠一层「官方文档声明」的 `PROBED_VISION` 硬表，把这份算出来的清单按
+DSH 的 settings 写路径交出去。
 
 ### 5.2 第三步：本插件直接注册 LLM provider（2026-09，opt-in）
 
@@ -261,7 +269,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 - **peer 依赖懒加载**：`llm-adapter.ts` import Host 发行的
   `@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm-pi-ai` /
   `@deepseek-ai/dsh-llm`，干净检出解析不到，所以 index.js 只在开关开启
-  且 `ctx.get("llm")` 存在时动态 `import("./llm-adapter.js")`；无 llm
+  且 `ctx.get("llm")` 存在时动态 `import("./llm-adapter.ts")`；无 llm
   服务、peer 加载失败都降级为「面板照常用、provider 缺席」，并把
   去密错误带进快照 `llm.providerError`。图片两 hook
   （`resolveAttachments` / `resolveImageAccess`）必须接，否则图片消息

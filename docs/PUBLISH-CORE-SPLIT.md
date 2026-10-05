@@ -141,7 +141,7 @@ AgnesCode 侧少了后半句（复制时漏的）。共享后统一为完整版�
   覆盖——这是既存缺口，不是删除引入的。
 - **`HostDeps` 已收窄**：主通道 `createProviderPublisher` 改用专用 `ProviderPublisherDeps`
   （7 个字段各有其型，`settings` 取精确 `Settings` 而非 `any`——字段名拼错 tsc 会拦），
-  `HostDeps` 随之只剩 5 个 test-only seams。删掉的 12 个字段分两类：6 个
+   `HostDeps` 随之只剩 6 个 test-only seams（`types.ts:48-65`：`loadAdapterModule` / `loadAgnescodeAdapterModule` / `loadToolsModule` / `drawFetch` / `videoFetch` / `catalogStore`）。删掉的 11 个字段分两类：5 个
   （`settings` / `panelSwitch` / `getLlm` / `resolveApiKey` / `emit` / `logger`）是 publisher
   **借道** `HostDeps` 读取的输入，专用类型一落地即失去唯一读者；6 个（`onTrace` /
   `credential` / `timeoutMs` / `headers` / `baseUrl` / `requestTimeoutMs`）是 auth/transport

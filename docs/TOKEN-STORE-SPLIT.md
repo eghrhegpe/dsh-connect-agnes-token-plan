@@ -4,9 +4,9 @@
 > 前置护栏：`test/store-baseline.test.mjs`（15 场景 42 帧全行为冻结基线，
 > 见 [TESTING.md §5](./TESTING.md)）。拆分的门禁 = 基线零漂移 + `store.test.mjs` 131 项全绿。
 >
-> **状态（2026-09-29）：6 步全部落地，token-store.js 从 944 行收口为 314 行薄 facade。**
-> 各块已抽至 `token-store/{state,grant,throttle,account,renewal,acquire}.js`，
-> 全量 17 离线套件 + 基线 48 帧零漂移全绿。剩余：§7 迁移块退役（下次大版本）。
+> **状态（2026-09-29）：6 步全部落地，`src/host/token-store.ts` 收口为 347 行薄 facade（由原先 944 行的单体 `token-store.js` 拆分而来）。**
+> 各块已抽至 `token-store/{state,grant,throttle,account,renewal,acquire}.ts`，
+> 全量 28 离线套件 + 基线 42 帧零漂移全绿。剩余：§7 迁移块退役（下次大版本）。
 
 ---
 
@@ -21,22 +21,26 @@
 拆完后的目标形状：
 
 ```
-token-store.js        薄 facade：createTokenStore(options) 组装 wiring + state，
+token-store.ts        薄 facade：createTokenStore(options) 组装 wiring + state，
                       委托各块，导出原公共 API（getToken/invalidate/saveAccount/
-                      forgetAccount/state）与全部常量 re-export。index.js 的
-                      import 一行不动。
-token-store/state.js  StoreState（七变量的显式容器）+ Wiring（backend/memory
-                      vault/keys/now/skewMs/env/refs），工厂 createStoreContext()
-token-store/grant.js  parseGrant / readStored / adoptLegacyGrant / store(CAS) /
-                      purgeGrant / isFresh            （块 1：grant 的读写与判定）
-token-store/account.js readUsername / readAccount(+密码清扫) / loginFromAccount /
+                      forgetAccount/state）与全部常量 re-export。index（lib/index.js）
+                      的 import 一行不动。
+token-store/state.ts  StoreState（七变量的**扁平顶层**显式容器：cached/rejected/
+                      inflight/lastError/throttle/consecutiveRefusals/passwordSwept）
+                      + Wiring（backend/memory vault/keys/now/skewMs/env/refs），
+                      工厂 createStoreContext()
+token-store/grant.ts  parseGrant / readStored / store(CAS) / purgeGrant / isFresh
+                      （块 1：grant 的读写与判定；**刻意不收养旧命名 grant**——
+                      grant.ts 明写 deliberately NO legacy-namespace adoption）
+token-store/account.ts readUsername / readAccount(+密码清扫) / loginFromAccount /
                       saveAccount / forgetAccount     （块 2：账号生命周期）
-token-store/renewal.js renewWithRefresh + refresh_rejected 岔路（回收 vs 重登）
+token-store/renewal.ts renewWithRefresh + refresh_rejected 岔路（回收 vs 重登）
                                         （块 3：续期）
-token-store/throttle.js localBackoffMs / readThrottle / adoptLegacyThrottle /
-                      writeThrottle / clearThrottle / inForceWaitMs / throttleError
-                                        （块 4：节流状态机 + 旧记录收养）
-token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续期 → 登录兜底
+token-store/throttle.ts localBackoffMs / readThrottle / writeThrottle / clearThrottle
+                      / inForceWaitMs / throttleError    （块 4：节流状态机；只 sweep
+                      本插件旧地址，不做 adoptLegacyThrottle——旧记录一次性迁移读取
+                      经 THROTTLE_MARKER 完成，不常驻）
+token-store/acquire.ts acquire()：节流闸门 → grant 新鲜判定 → 续期 → 登录兜底
                       （四块交手的唯一缝，留在独立模块，不塞进任何一块）
 ```
 
@@ -48,15 +52,15 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 
 ## 1. 状态归属表（七个闭包变量 → 新 owner）
 
-| 变量 | 语义 | 新 owner | 读写方 |
+| 变量 | 语义 | 新 owner（扁平顶层 state 上的字段） | 读写方 |
 |---|---|---|---|
-| `cached` | 本进程内存 grant 镜像 | `state.grant`（grant.js 写，renewal.js 写） | getToken 短路读 |
-| `rejected` | 被控制台 401 过的 token 集（≤8） | `state.grant.rejected`（grant.js `markRejected`） | `isFresh` 读；`invalidate` 写 |
-| `inflight` | 单一进行中的 acquire | `state.acquire`（facade 的 `getToken` 管） | 并发短路 |
-| `lastError` | 最近一次失败，供 `state()` 报 | `state.ui`（facade 写，`state()` 读） | state().error |
-| `throttle` | 本进程节流镜像（与持久存储同形） | `state.throttle`（throttle.js 唯一写方） | acquire 闸门读 |
-| `consecutiveRefusals` | 跨关窗保留的连续拒绝计数 | `state.throttle.attempt` 同源（与 `throttle` 合并进一个 `throttle.js` 拥有的 `held` 结构，关窗不清零） | writeThrottle 读前值 |
-| `passwordSwept` | 旧版密码 ref 一次性清扫标志 | `state.account`（account.js） | readAccount |
+| `cached` | 本进程内存 grant 镜像 | `state.cached`（state.ts 顶层，grant.js 写，renewal.js 写） | getToken 短路读 |
+| `rejected` | 被控制台 401 过的 token 集（≤8） | `state.rejected`（state.ts 顶层，grant.js `markRejected`） | `isFresh` 读；`invalidate` 写 |
+| `inflight` | 单一进行中的 acquire | `state.inflight`（state.ts 顶层，facade 的 `getToken` 管） | 并发短路 |
+| `lastError` | 最近一次失败，供 `state()` 报 | `state.lastError`（state.ts 顶层，facade 写，`state()` 读） | state().error |
+| `throttle` | 本进程节流镜像（与持久存储同形） | `state.throttle`（state.ts 顶层，throttle.js 唯一写方） | acquire 闸门读 |
+| `consecutiveRefusals` | 跨关窗保留的连续拒绝计数 | `state.consecutiveRefusals`（state.ts 顶层，throttle.js 写） | writeThrottle 读前值 |
+| `passwordSwept` | 旧版密码 ref 一次性清扫标志 | `state.passwordSwept`（state.ts 顶层，account.js） | readAccount |
 
 **纪律**：每个块只写自己 owner 的字段，读任何字段必须显式经 `state.` 前缀。
 基线冻结的凭据服务调用序列对「读的顺序」敏感（S1/S4 帧可证），所以
@@ -68,11 +72,11 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 
 | 新模块 | 迁自 `token-store.js` | 备注 |
 |---|---|---|
-| `state.js` | 构造器头（wiring 解析、memory vault、`resolveService`/`backend`/`ephemeral`）+ 七个 let 变量 | memory vault 留 wiring 层，不进块 |
-| `grant.js` | `parseGrant`（模块级）/ `readStored` / `adoptLegacyGrant` / `store` / `purgeGrant` / `isFresh` | `parseGrant` 用 `readJwtExpiry`（agnes-auth 再导出），注入即可 |
-| `account.js` | `readUsername` / `readAccount` / `loginFromAccount` / `saveAccount` / `forgetAccount` / 常量 `USERNAME_REF`/`PASSWORD_REF` 的使用 | 密码永不入 refs——`saveAccount` 的注释原样搬 |
-| `renewal.js` | `renewWithRefresh` + `acquire` 内 refresh 失败岔路（`refresh_rejected`/`no_refresh_token` → 有账号重登 / 无账号 `purgeGrant` 回收） | 岔路逻辑**留在 acquire.js 调用 renewal.js 的出口钩子**，renewal.js 本身只做「refresh → store(CAS) 命名 superseded」 |
-| `throttle.js` | `localBackoffMs` / `readThrottle` / `adoptLegacyThrottle` / `writeThrottle` / `clearThrottle` / `inForceWaitMs` / `throttleError`（模块级） | `THROTTLE_MARKER` 常量随迁 |
+| `state.ts` | 构造器头（wiring 解析、memory vault、`resolveService`/`backend`/`ephemeral`）+ 七个 let 变量 | memory vault 留 wiring 层，不进块 |
+| `grant.ts` | `parseGrant`（模块级）/ `readStored` / `store` / `purgeGrant` / `isFresh` | `parseGrant` 用 `readJwtExpiry`（agnes-auth 再导出），注入即可；**不收养旧命名 grant**（grant.ts 明写 deliberately NO legacy-namespace adoption） |
+| `account.ts` | `readUsername` / `readAccount` / `loginFromAccount` / `saveAccount` / `forgetAccount` / 常量 `USERNAME_REF`/`PASSWORD_REF` 的使用 | 密码永不入 refs——`saveAccount` 的注释原样搬 |
+| `renewal.ts` | `renewWithRefresh` + `acquire` 内 refresh 失败岔路（`refresh_rejected`/`no_refresh_token` → 有账号重登 / 无账号 `purgeGrant` 回收） | 岔路逻辑**留在 acquire.ts 调用 renewal.ts 的出口钩子**，renewal.ts 本身只做「refresh → store(CAS) 命名 superseded」 |
+| `throttle.ts` | `localBackoffMs` / `readThrottle` / `writeThrottle` / `clearThrottle` / `inForceWaitMs` / `throttleError`（模块级） | `THROTTLE_MARKER` 常量随迁；旧寄居记录只一次性迁移读取，不常驻 |
 | `acquire.js` | `acquire`（729 行起 ~80 行）+ `getToken` 壳（inflight/lastError） | 唯一的交互缝，保持最小 |
 | `index.js`（facade） | `createTokenStore` 组装、`invalidate`、`state()` 的读侧拼装 | `state()` 调用各块的 read 视图，拼装顺序 = 基线顺序 |
 
@@ -80,16 +84,15 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 
 ## 3. 迁移（migration）块的处置
 
-`adoptLegacyGrant` / `adoptLegacyThrottle` / 密码 ref 清扫是三处**一次性迁移**，
-挂在读路径上（读 grant 时收养旧命名 grant；读节流时收养旧命名/寄居记录；
-首次 readAccount 清扫旧密码 ref）。
+`LEGACY_SCOPE` 命名空间在 2026-09 拆分时**未再收养**（grant.ts 明写 deliberately NO
+legacy-namespace adoption），旧寄居节流记录改为一次性迁移读取（经 `THROTTLE_MARKER`），
+密码 ref 清扫（`passwordSwept`）则保留为 `state` 顶层的一次性标志。
 
-- **拆分时**：作为 `grant.js` / `throttle.js` / `account.js` 各自的尾部私有函数
-  原样保留（语义与注释一字不动），它们不是独立「迁移块」——强行抽出第五个
-  模块只会多一个只被调用一次的 import。
-- **退役条件**（写进各函数头注释，别忘删）：`LEGACY_SCOPE` 命名空间在目标
-  用户群全部升级过一个完整发布周期后，三处收养与清扫可整段删除，`state.js`
-  的 wiring 随之少两个 legacy key。删除时基线对应帧（S9a/S9b/S9c）要**同时**
+- **拆分时**：旧命名 grant 不收养；throttle.ts 只 sweep 本插件旧地址、不常驻旧记录；
+  三处一次性逻辑落地为各自模块的私有函数（语义与注释一字不动），它们不是独立
+  「迁移块」——强行抽出第五个模块只会多一个只被调用一次的 import。
+- **退役条件**（写进各函数头注释，别忘删）：当目标用户群全部升级过一个完整发布
+  周期后，一次性清扫与迁移读取可整段删除，对应基线帧（S9a/S9b/S9c）要**同时**
   重生成——那是唯一的「有意漂移」窗口，提交信息写明退役原因。
 
 ---
@@ -103,7 +106,7 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 | 3 | 抽 `token-store/throttle.js`（七函数 + `DEFAULT_LOGIN_BACKOFF_MS`/`MAX_LOGIN_BACKOFF_MS`/`THROTTLE_MARKER` 常量随迁） | 同上，S3/S4/S5/S11 帧重点核对 | `6c9ec96`+`00eeaef` | ✅ |
 | 4 | 抽 `token-store/account.js`（`readUsername`/`readAccount`/`loginFromAccount`/`forgetAccount` + `passwordSwept` 语义 + `USERNAME_REF`/`PASSWORD_REF` 随迁） | 同上，S9c/S10 帧重点核对 | `b44a5f8`+`fd854fa` | ✅ |
 | 5 | 抽 `token-store/renewal.js` + `token-store/acquire.js`（`renewWithRefresh` 经 `store` 回调注入；`acquire` 经 `blocks` 参数注入四块函数，调用次序 = 基线次序） | 同上，S6a/b/c、S7a/b、S8 帧重点核对 | `623b673`+`a0ee546` | ✅ |
-| 6 | `token-store.js` 收口为薄 facade（944 行 → 314 行）：删除全部死委托壳，`createTokenStore` 内 14 行 const 一行委托 + 公开 API 编排；公开导出面不变 | 全量 17 离线套件全绿 | `47c0bdf` | ✅ |
+| 6 | `token-store.ts` 收口为薄 facade（944 行单体 `token-store.js` → 347 行）：删除全部死委托壳，`createTokenStore` 内 const 一行委托 + 公开 API 编排；公开导出面不变 | 全量 28 离线套件全绿 | `47c0bdf` | ✅ |
 | 7（下个大版本） | 退役三处 legacy 迁移（§3 条件满足时），`UPDATE_BASELINE=1` 重生成并在提交信息写明 | 基线（新版）零漂移 | — | ⏳ |
 
 每步**只搬不写**：函数体、注释、调用次序原样移动；唯一允许的新代码是
@@ -125,10 +128,10 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 - [x] 节流寄居记录的 marker/version 校验不变（`THROTTLE_MARKER` + `THROTTLE_VERSION`），
       非法记录读作 absent（S9b 帧）。
 - [x] `createTokenStore` 的**公开选项名**不变（index.js 与 e2e 的注入面）。
-- [x] `token-store.js` 的 re-export 面不变：`createTokenStore` + `RECORD_SCOPE` /
-      `LEGACY_SCOPE` / `RECORD_ID` / `USERNAME_REF` / `PASSWORD_REF` / `THROTTLE_ID` /
+- [x] `token-store.ts` 的 re-export 面不变：`createTokenStore` + `RECORD_SCOPE` /
+       `RECORD_ID` / `USERNAME_REF` / `PASSWORD_REF` / `THROTTLE_ID` /
       `DEFAULT_LOGIN_BACKOFF_MS` / `MAX_LOGIN_BACKOFF_MS`（`store.test.mjs` 与
-      `peer-contract` 依赖这些名）。
+      `peer-contract` 依赖这些名；拆分时未再导出 `LEGACY_SCOPE`）。
 
 ---
 
@@ -139,3 +142,5 @@ token-store/acquire.js acquire()：节流闸门 → grant 新鲜判定 → 续�
 2. 拆完六步后 `npm test` 全量出现**新**失败（非基线）——语义有遗漏，停。
 3. `acquire.js` 超过 ~120 行还装不下交互缝——说明块的边界划错了，
    回来重划（候选：把「refresh 失败岔路」整段归给 renewal.js，acquire 只留调用）。
+
+

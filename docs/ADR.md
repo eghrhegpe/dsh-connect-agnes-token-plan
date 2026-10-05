@@ -73,7 +73,7 @@
 
 - **日期**：2026-10-03
 - **状态**：现行（取代旧裁决「overview 唯一致命源」）
-- **裁定**：控制台四源（`overview` / `series` / `subscription` / `plans`）一律软失败——失败时写入 `quota.error` 并显示来源，但不冒泡到路由的 catch；`overview` 失败时设置 `quota.consoleConnected:false` 且 `quota.totals=null`（而非零值块）。第五个源 `/v1/models`（Key 侧目录）同样软失败，但**只降级、不写 `quota.error`**：目录拉不到置 `catalogAvailable:false`（面板「可看图」行随目录缺席），这是 Key 侧语义，故意与配额侧的四源错开（`snapshot-aggregate.ts:301` 的 Optional 注释钉住这个方向）。面板据此说明「控制台未连接」，其他 tab 不受影响。
+- **裁定**：控制台四源（`overview` / `series` / `subscription` / `plans`）一律软失败——失败时写入 `quota.error` 并显示来源，但不冒泡到路由的 catch；`overview` 失败时设置 `quota.consoleConnected:false` 且 `quota.totals=null`（而非零值块）。第五个源 `/v1/models`（Key 侧目录）同样软失败，但**只降级、不写 `quota.error`**：目录拉不到置 `catalogAvailable:false`（面板「可看图」行随目录缺席），这是 Key 侧语义，故意与配额侧的四源错开（`snapshot-aggregate.ts:289-291` 的 `errors: allFailures(...)` 注释钉住这个方向）。面板据此说明「控制台未连接」，其他 tab 不受影响。
 - **理由**：旧文曾写 `usage/overview` 是唯一致命源（[SETUP.md](./SETUP.md):117、[AGNES-API.md](./AGNES-API.md):66-69 旧表述），与代码实现相反。代码与测试（`test/routes.test.mjs:466-471`、`test/e2e.mjs:396-404`）早已钉死新行为。为避免读者按旧文档排查误判代码回归，需把旧裁决入账本，并在正文统一为新表述。此裁定已在 [ARCHITECTURE.md](./ARCHITECTURE.md):76-77/102-104、[API.md](./API.md):220-225 体现，现补入账本以方便后续追溯。
 - **受影响的文档**：`docs/SETUP.md:117`、`docs/AGNES-API.md:66-69` 已同步为新表述；`docs/AGENTS.md` 红线 6 亦已改为现行表述（「overview 唯一致命源」旧裁决废止一句即见），本条待办行随 2026-10-03 核销。
 - **与既有条目的关系**：继承 ADR-004「一个模块缺席不许埋掉别的模块」，将之具体化为五个额度源的软失败策略。

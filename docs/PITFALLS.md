@@ -157,7 +157,7 @@
 ## 16. 插件目录解析不到 Host 的 peer 依赖，provider 静默缺席
 
 - **现象**：`registerProvider: true` 之后面板一直显示 provider 未注册，快照 `llm.providerError` 里是
-  `Cannot find package '@earendil-works/pi-ai' imported from …/plugins/dsh-connect-agnes-token-plan/llm-adapter.js`；
+  `Cannot find package '@earendil-works/pi-ai' imported from …/plugins/dsh-connect-agnes-token-plan/llm-adapter.ts`；
   而离线套件（连 `npm test` 全量）**全绿**，因为离线套件通过 `peer-roots.mjs` 从 Host 运行时就地解析 peer，
   走的不是插件自己的解析链。
 - **根因**：`llm-adapter.ts` 要 import Host 发行的三个 peer（`@earendil-works/pi-ai`、
@@ -212,7 +212,7 @@
   `thinking` **字符串形态**（`"enabled"`/`"disabled"`/`true`/`false`）全线 400——文档当字符串写是错的（object 形态 `{"type":...}` 才有效，见第 21 条）；
   `reasoning_effort:"max"` 在 flash-lite / deepseek-v4-flash 上实测 400（glm-5.2 上有效）——平台报错原文 `field ReasoningEffort invalid, should be one of: low, medium, high, xhigh, none`；
   目录 `supported_sampling_parameters` 只声明 `["temperature","stop"]`，文档表格里列的 `top_p`/`frequency_penalty`/`presence_penalty`/`seed`/`n` 一个都不在声明里（思考模式下 temperature 等本就不生效，送不送得动未验证，别假设支持）。
-  另外文档写 `max_tokens` 默认 65535，目录实际 `max_output_length` 是 65536；窗口字段是 `context_length` 不是 `context_window`（曾让 `contextWindowOf` 拿不到真实窗口、全体回退 128k，见 `llm-models.js` 与 `test/provider.test.mjs`）。
+  另外文档写 `max_tokens` 默认 65535，目录实际 `max_output_length` 是 65536；窗口字段是 `context_length` 不是 `context_window`（曾让 `contextWindowOf` 拿不到真实窗口、全体回退 128k，见 `llm-models.ts` 与 `test/provider.test.mjs`）。
 - **修法**：与平台行为有关的契约一律以**实测**为准，官方文档只当线索、不当依据——且各模型页面互相矛盾（GLM 页说 `thinking.type:disabled` 会失败、实测可用；DeepSeek 页与 flash-lite 页都列 `max`、实测两处 400）。实测要点：默认即思考开（flash-lite `message.reasoning`、deepseek/glm/kimi 是 `reasoning_content`，每请求多约 26 个 prompt token、慢约 2.9 倍）；`reasoning_effort:"none"` 关思考（思考字段消失、`reasoning_tokens=0`）；`role:"developer"` 是 400（`supportsDeveloperRole:false` 的依据）；流式 `delta` 含 `content`/`reasoning`/`role`。
 
 ---
@@ -497,7 +497,7 @@
 
 ## 45. 平台给了权威值，客户端却自算，还顺手把它钳住了
 
-- **现象**：面板进度条画的是客户端自己算的 `(used / limit) * 100`，而 **Host 早就解析出平台原值 `usage_pct` 一路下发到了 wire**（`parsers.ts:460` → `snapshot-aggregate.ts:216` → `wire.ts:37` 声明 `usagePct`），**`src/client/` 里读取它的点 0 处**。更刺眼的是两处文档都写着相反的话——`AGNES-API.md:109`「进度条是逐字转写，不是计算」、`API.md:47`「面板画进度条用 usagePct」。三处事实里文档是对的，客户端是那个「分头走路」的。
+- **现象**：面板进度条画的是客户端自己算的 `(used / limit) * 100`，而 **Host 早就解析出平台原值 `usage_pct` 一路下发到了 wire**（`parsers.ts:469` → `snapshot-aggregate.ts:225`（`buildQuotaBlock`）→ `wire.ts:37` 声明 `usagePct`），**`src/client/` 里读取它的点 0 处**。更刺眼的是两处文档都写着相反的话——`AGNES-API.md:109`「进度条是逐字转写，不是计算」、`API.md:47`「面板画进度条用 usagePct」。三处事实里文档是对的，客户端是那个「分头走路」的。
 - **根因**：`wire.ts` 声明了字段，但**声明不等于消费**；契约门禁 `contract.test.mjs` 钉的是「host ⊆ client 的键集」（Host 有、client 也声明了 `usagePct`），**它不检查 client 是否真的读了那个值**。而客户端自算那行不仅「多此一举」，还**钳制**了结果：`Math.min(100, …)` 把平台报的 `>100`（超额窗口）封顶成 100%。所以这不是「等价实现」，是**悄悄改写了平台口径**——平台说 130，面板说 100。
 - **修法**（`cards.ts`）：优先用平台 `usagePct`；**仅当它缺失或为 null 时**才回退 `used/limit` 的算术值（老 Host / 某窗口读不到百分比），并撤掉 `Math.min`。与 `used` 已有的「缺失不是零」纪律同源。
 - **验证**：`render.test.mjs` 新增 A1b 组——① 平台值与算术值分歧时（`used/limit=25%` 但 `usagePct=33`）必须显示 33.0%；② 超额窗口（`usagePct=130`）**不被封顶**成 100%、且仍取 danger 色；③ `usagePct: null` 回退到算术、不渲染 NaN。**负向**：把优先级退回自算 → 该套件 `4/235 FAILED`。既有 A1 组的 fixture 不带 `usagePct`，因此**回退路径仍被原有断言钉住**（未被新行为顶掉）。
@@ -505,7 +505,7 @@
 
 ## 46. 护栏把一个错误归因钉成了「正确」：修 bug 前得先承认当初判断错了
 
-- **现象**：面板把 HTTP 403 一律读成「令牌已失效，请重新登录」，而 **Host 全仓唯一的 403 来自它的同源闸**（`routes/http.ts:77` `refuseOrigin`，body 是 `{ok:false, error:"forbidden: origin mismatch"}`）——即**凭据没问题，是来源/Host 头对不上**。于是用户被引导去做一件**修不好这个问题**的动作（重新登录）。`panel-page.ts` 更进一步：在 `!response.ok` 时**直接 return，连 body 都不读**，把 Host 明明写出来的原因扔了。更矛盾的是紧随其后那行注释还断言「Host 对每个预期失败都答 200 + ok:false」——**同源闸恰是唯一答 403 的那个**，注释的前提对它不成立。
+- **现象**：面板把 HTTP 403 一律读成「令牌已失效，请重新登录」，而 **Host 全仓唯一的 403 来自它的同源闸**（`routes/http.ts:76` `refuseOrigin`，body 是 `{ok:false, error:"forbidden: origin mismatch"}`）——即**凭据没问题，是来源/Host 头对不上**。于是用户被引导去做一件**修不好这个问题**的动作（重新登录）。`panel-page.ts` 更进一步：在 `!response.ok` 时**直接 return，连 body 都不读**，把 Host 明明写出来的原因扔了。更矛盾的是紧随其后那行注释还断言「Host 对每个预期失败都答 200 + ok:false」——**同源闸恰是唯一答 403 的那个**，注释的前提对它不成立。
 - **根因**：**401 与 403 在「非 2xx 里没有 body」这个假设下无法区分，但那个假设是错的**——403 恰恰有 body。当年的映射把 403 和 401 焊成同义（都读成 `jwt_expired`），并被 `render.test.mjs` 一条**循环断言**固化下来。于是**修复的第一步是先拆掉这条护栏**——它不是障碍，它是**错误被制度化的现场**。这与 §43「护栏点名了别的东西」互补：**§43 是护栏钉错了对象，本条是护栏把错的答案钉成了标准**。
 - **修法**：`errorOfStatus(status, bodyError?)`——403 且 body 里有非空 reason 时，**保持 transport string 并原样显示 Host 的措辞**（`viewOf` 因此不弹登录引导、`guidanceKey === null`）；**裸 403（无 body / body 空白）仍按令牌失效读**（无解释的状态码，更可能是凭据而非闸）。`panel-page.ts` 改为**尽力读错误信封**（读不到/形状不对就退回原逻辑）。
 - **验证**：`render.test.mjs` 里那条把 401/403 一起 loop 的旧断言**拆成三段**——401 仍读作令牌失效并弹表单；403 带 reason 显示真实成因且 `guidanceKey === null`；403 空/空白 body 回退到旧读法。**负向**：删掉 403 的 body 分支 → `2/237 FAILED`。
@@ -521,7 +521,7 @@
 
 ## 48. 护栏的存活守卫漏了**时间**假设：`now + 1h` 让门禁每晚 23:00 后固定转红
 
-- **现象**：每天 **23:00–00:00** 之间跑 `test/render.test.mjs`，**恰好红 1 项**——「a same-day reset prints the clock alone」，detail 里赫然是 `重置 10-04 00:59`（23:59 跑的，`now+1h` 已经跨到明天）。同一份代码在白天跑**全绿（257/257）**，所以它既不会被白天的本机 `npm test` 抓到，也不会进任何一次人工排查的第一现场——它只在那个特定小时里存在。**这是一个每天定时炸、炸完自己消失的门禁。**
+- **现象**：每天 **23:00–00:00** 之间跑 `test/render.test.mjs`，**恰好红 1 项**——「a same-day reset prints the clock alone」，detail 里赫然是 `重置 10-04 00:59`（23:59 跑的，`now+1h` 已经跨到明天）。同一份代码在白天跑**全绿（257/257）**，所以它既不会被白天的本机 `npm test` 抓到，也不会进任何一次人工排查的第一现场——它只在那个特定小时里存在。**这是一个每天定时炸、炸完自己消失的门禁。**（该缺陷已在 0.10.0 修复，见 [CHANGELOG.md](../CHANGELOG.md)；当前安装版本已含，无需升级。）
 - **根因**：fixture 用**相对偏移**构造「同日」样本——`laterToday = now + 3600`（`render.test.mjs:175`），再断言渲染结果**不含**日期（`!/\d{2}-\d{2} \d{2}:\d{2}/`）。但 `clockSameDay` 判的是**日历日相等**（`format.ts:30-38`），于是 23:00 之后 `now+1h` 落在**明天**，格式化器**完全按契约**输出 `MM-DD HH:mm`，而断言仍在要求一个裸时钟。**红的不是代码，是 fixture 自己违反了「同日」这个前提**——注释（`render.test.mjs:168-170`）与断言本来就写着「同日折叠成 `HH:mm`」，偏偏构造出来的时刻在夜里不是同日。也就是：**测试的意图与它的构造式互相矛盾，而这个矛盾只在特定钟点显形。**
 - **修法**：把「同日」由**偏移**改为**按构造恒为当天**——`new Date(y, m, d, 23, 58, 0)`，取当天 23:58 的本地墙钟时刻。它**在一天里的任何时刻都是「今天」**，前提因此结构性成立，不再依赖运行时刻。`tomorrow`（`+48h`）保持偏移形式不动：它断言的就是**跨日**渲染，跨夜正是它想要的。
 - **验证**：脚本对 `09:00 / 22:59 / 23:00 / 23:30 / 23:59 / 00:01` 六个钟点各跑一次两种构造式的同日判定——**旧式恰在 23:00 / 23:30 / 23:59 三个点判 `false`，新式六个点全部 `true`**（含整个危险窗口）。修复后 `render.test.mjs` 257/257 全绿。**注意验证方式**：本条的窗口一旦错过就要再等一天，**不能靠「现在跑是绿的」证明修好了**（跨过午夜后旧写法同样会绿）——必须用**注入钟点**的方式把窗口逼出来，如上。
@@ -529,7 +529,7 @@
 
 ## 49. 复用一个「拒 0」的读数助手，把「免费」读成了「未声明」
 
-- **现象**：AgnesCode 的模型倍率要接进面板与模型名（`· xNN.NN`）。倍率字段 `points_cost_multiplier` 在平台侧用 **`0` 表示「该模型免费」**——那是**已公布的价格**，不是缺字段。而本仓现成的两个读数助手 **`num()`（`util.ts:35`）与 `numOrNull()`（`util.ts:123`）都写死 `value > 0`**，对它们的**原用途**（额度上限、窗口大小、计数）这是**正确的**：那些量报 0 等同于「平台没说」。但复用到倍率上，`0` 会被判成缺失、静默返回 `undefined`，于是**四个免费模型的「免费」事实凭空消失**——面板不画芯片、模型名不带后缀，**没有任何东西会红**（缺字段与免费字段在渲染层同形）。
+- **现象**：AgnesCode 的模型倍率要接进面板与模型名（`· xNN.NN`）。倍率字段 `points_cost_multiplier` 在平台侧用 **`0` 表示「该模型免费」**——那是**已公布的价格**，不是缺字段。而本仓现成的两个读数助手 **`num()`（`util.ts:35`）与 `numOrNull()`（`util.ts:133`）都写死 `value > 0`**，对它们的**原用途**（额度上限、窗口大小、计数）这是**正确的**：那些量报 0 等同于「平台没说」。但复用到倍率上，`0` 会被判成缺失、静默返回 `undefined`，于是**四个免费模型的「免费」事实凭空消失**——面板不画芯片、模型名不带后缀，**没有任何东西会红**（缺字段与免费字段在渲染层同形）。
 - **根因**：`num()` 的 `> 0` 不是「防御性」而是**一条领域断言**：「这个量不可能是合法的 0」。它只在**调用方所属的领域**成立。跨领域复用这个助手，等于**把那条断言偷偷搬到了不成立的地方**——而它不会抛错，只会安静地把合法值翻译成缺失值。这与红线⑦「不得计算剩余」是同一族病：**把一个领域里没人能负责的推导，搬到一个它其实有确切答案的地方**；也与 §45「平台给了权威值，客户端却自算」互补——§45 是扔掉了权威值，本条是**把权威值读丢了**。
 - **修法**：新增 `numZeroOk()`（`util.ts`）——**只对倍率这类「0 是合法价格」的字段使用**：`0 → 0`（宣称免费）、缺席 / 非数字 / 非有限 / 负 → `undefined`（不做宣称）。**不改 `num()` / `numOrNull()`**：它们对原调用方的语义正确，放宽会把「平台没报」误读成「平台报了 0」，那是同一个病的镜像方向。
 - **验证**：`test/agnescode.test.mjs` 三条负向可分辨的断言——① 显式 `points_cost_multiplier: 0` 必须**活下来**（`catalog[0].multiplier === 0`）；② `5.3` 原样传递；③ **缺席必须缺席**（`!("multiplier" in row)`）。README/面板侧另由描述符测试钉显示名：`· x0.00`（免费）、`· x1.85`（付费）、无字段则**裸名**。真机端到端复核（`/v2/models` 实拉）：`agnes-3.0-flash · x0.00` / `glm-5.2 · x1.85` / `kimi-k3 · x5.30`，与桌面端选择器逐一对上。
