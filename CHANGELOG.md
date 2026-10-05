@@ -18,6 +18,12 @@
 - **读取端是硬校验，不是降级**：`icon` 必须是相对路径、扩展名限 SVG/PNG/JPEG/WebP、文件必须落在 `files` 白名单目录内、体积 ≤256 KiB——任一不满足会让整条插件元数据报错（该经验的出处是 `dsh-connect-sensenova-token-plan` CHANGELOG 0.4.4，已写进 `docs/PITFALLS.md` §27）。因此 `icon.svg` 同时进 `files` 白名单，`exports` 无需新增子路径（图标由 Host 直接按仓库路径读，不走包导出）。
 - 影响面：`icon.svg`、`package.json`、`docs/DSH-PLUGIN.md`（教学快照同步 `icon` 字段与 `files` 数组）。
 
+### 评审整改：红线④文档措辞更正 + 新增 ADR-012「大统一」爆炸半径权衡
+
+- **修（文档 / 红线④）：`AGENTS.md` 红线④称「`AUTH_DEFAULTS.consoleOrigin` 是唯一出处」与代码不符**。代码里后端源站字面量实际有两处——`agnes-auth.ts:47` 的 `AUTH_DEFAULTS.consoleOrigin` 与 `host-config.ts:41` 的 `CONFIG_DEFAULTS.consoleBase`——两者值一致，且由 `host-config.ts:323`（`resolveAuthOverrides` 在 `:384` 以 `consoleOrigin: consoleBase` 汇流）合并为单一 `consoleOrigin`，运行时是一条源、非漂移 bug。红线④现改为「两处字面量一致、配置边界汇流为单一 `consoleOrigin`，别写第三处也别让两处分叉」。
+- **新增（决策账本）：`ADR-012` 把「大统一」的结构性爆炸半径列为已知权衡**。ADR-001 把额度面板升级为商汤全过程集成单点入口；实测同进程现承载 LLM provider 注册、出图执行、视频异步状态机，以及解密第三方桌面端 AgnesCode 的 os_crypt/DPAPI 会话文件（攻击面最敏感的一块）。隔离纪律真实（agnescode 与主线 publisher 共用 `publish-core.ts` 机制、不共用状态；`kind:"grant"` 单点构造/判定；throttle 与凭据 grant 刻意共享不统一），但结构性爆炸半径被重新集中——这正是对 PITFALLS §6「私有状态误进凭据服务会炸整台机器」那次教训的现代重演形态。判定：属设计张力非缺陷；主动缓解是 §5 不变量（五源软失败 / 一个模块缺席不埋别的模块）与 ADR-005 准入门槛 + 拆分蓝图把结构债从事后锐评变事前决策点。
+- 影响面：`AGENTS.md`（红线④措辞）、`docs/ADR.md`（新增 ADR-012）、本文件。
+
 ## [0.10.0] — 2026-10-04
 
 ### AgnesCode 目录改读 `/v2/models`：模型名带上平台真实的积分倍率与促销标
