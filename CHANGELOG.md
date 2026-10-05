@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 登录表单服从 Host 下发的节流窗口：刷新页面不再让按钮在锁定期内可点
+
+- **修：跨进程 / 跨 profile 的锁定期内在面板上按一次就可能撞锁**。登录节流写在插件自己的 `throttle.json` 里，**机器级共享**（desktop profile 吃到的 429，在 web profile 的 Host 上同样真实），而 Host 一直把「剩余窗口」与「已停车」两个事实下发到快照的 `auth` 块。面板此前**不读它们**：倒计时从组件本地 state 起步，只有本进程那次登录失败才会被填上。刷新页面、换 profile、换 Host 进程这三种再正常不过的操作，都会让提交按钮在一个 Host 仍在服务的窗口里显示为可用——而 `POST /account` 是**刻意**清节流的（理由是「用户是在按面板的指示操作」），那次点击于是不止白费：它抹掉另一个进程正在遵守的记录，并把一次真实尝试打进可能已锁的账号。倒计时现由 `servedWaitMs` 判定、`servedWaitUntil` 换算，表单用前者播种并单调吸收后续窗口（只延后不缩短，避免把读者已在等的窗口提前解锁）。
+- **新增：已停车（`needsUserAction`）时给一句话而不是倒计时**。错密码、需人工验证、自造退避用尽这三类拒绝**没有**可等待的期限——倒计时数到零不会有任何东西重试，所以那个数字是撒谎。面板现在明说「已停止自动重试，请核对账号与密码后手动登录」并保持提交按钮可用（重新输入才是出路），与 `auth.locked`（平台说账号本身被锁）分作两句。
+- **修：验证码类拒绝会同时渲染两句矛盾的话**。`POST /account` 的失败体在「平台给了 `Retry-After`」时会同时带一个整段窗口与 `needsUserAction: true`，于是旧渲染路径上「已停止自动重试」与一个两小时倒计时同时出现。`submit` 现在让 parked 优先于窗口——`AccountForm` 与 `snapshot.ts` 的规则同源，此前只有后者。
+- **`API.md` 补上 `auth` 块两个节流字段的契约**（单位是**剩余**毫秒不是整段窗口；parked 时不许倒计时；面板必须服从它们而非只认自己那次失败），`AUTH.md` §7 与 `ARCHITECTURE.md` §3 数据流图同步接入。字段此前只有两个 JSON 值、没有任何语义说明，按字面读会把「parked 也倒计时」这类 bug 写出来。
+- 影响面：`src/client/{snapshot,account-form,i18n}.ts`、`test/{panel.test.mjs,panel-decision.js}`、`docs/{API,AUTH,ARCHITECTURE,ADR}.md`、`docs/PITFALLS.md`（新增 §52–§54）、`docs/ADR.md`（新增 ADR-010）、`client.js`（重建产物）。`lib/` 未改——本次全部改动在 client 半边。
+
 ### 插件卡补上图标：Plugins 页不再裸显示包名 + 一段英文
 
 - **新增 `icon.svg`**（`icon: "./icon.svg"`）：Plugins 页的插件卡此前只有文字，卡片图标由 DSH Host 读 `package.json` 的 `icon` 字段渲染——不提供就缺一块。沿用面板的「积分币」母题（渐变圆盘 + 白色记数笔画），配色对齐本插件自己的品牌蓝 `--agnes-brand`（#1E40AF），与面板开关 / tab 下边框 / 额度进度条同一套 token，不跟 DSH 的中性色走。几何与兄弟插件 `dsh-connect-sensenova-token-plan` 保持一致，避免同系列插件卡片形态各异。

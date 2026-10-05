@@ -24,6 +24,8 @@
     // Agnes 一跳登录不发 refresh_token，令牌过期就重新登录（见 §2）。
     "configured": true, "hasAccount": true, "autoRecoverArmed": true,
     "hasRefreshToken": false, "needsAccount": false, "ephemeral": false,
+    // ↓ 两个节流字段的语义见下方「auth 块的节流字段」——它们不是可读可不读的
+    //   装饰，面板**必须**服从，否则会敲门。
     "retryAfterMs": null, "needsUserAction": false,
     "expiresAt": 1790529234603, "error": null
   },
@@ -141,9 +143,27 @@
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
 - **额度与用量是两条独立事实**：`quota.windows` 的平台声明上限 +（`subscription.usage` 给到时的）窗口内 `used`；`quota.totals` 与 `usage` 是平台报出的累计 / 分桶量。窗口内的已用量由平台给，面板直接引用；Host 从不做 `limit - total`——累计值与窗口不同周期，相减会算出没人能负责的数。
 
+#### `auth` 块的两个节流字段（面板必须服从）
+
+`retryAfterMs` 与 `needsUserAction` 不是装饰性字段，**它们是防锁号机制在面板这一侧的出口**。`GET /account` 返回的同一块里也有这两个字段（见下），语义相同。
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `retryAfterMs` | `number \| null` | **剩余**毫秒（`held.until - now`），**不是**平台当初声明的整段窗口。没有节流在生效时为 `null`；窗口已走完时 Host 归一到 `0`。 |
+| `needsUserAction` | `boolean` | 该拒绝**没有**可等待的期限，必须由用户动手（错密码、需人工验证、自造退避用尽）。`true` 时 `retryAfterMs` 恒为 `null`。 |
+
+两条容易读错、且读错就会写出门禁事故的规则：
+
+- **单位是「剩余」不是「整段」。** `Host` 每轮都按当前时刻重算，所以同一个值在两次轮询之间会自然变小。要按「现在到什么时候」用，请加当前时刻（`snapshot.ts` 的 `servedWaitUntil` 做的就是这个换算）；按「平台说了多久」直接用会每次都从整段重算。
+- **parked 时不许倒计时。** `needsUserAction: true` 表示等下去也解决不了问题（等待不能让错密码变对、不能让验证码自己通过），此时给一个倒计时是**撒谎**：数到零不会有任何东西重试。面板应当用一句话说明「已停止自动重试，请核对后手动登录」，并让提交按钮**保持可用**（重新输入才是出路）。
+
+**为什么面板必须读这两个字段，而不是只用自己那次 POST 的结果：** 节流状态写在插件自己的 `throttle.json` 里，**跨进程、跨 profile 共享**（`docs/AUTH.md` §7）——desktop profile 吃到的锁，在 web profile 的 Host 上同样真实。「另一个 Host 进程显示同一个倒计时，而不是 inviting an attempt that would be refused」是 Host 端写明这个字段的用途。只认组件本地 state 的面板在刷新页面、换 profile 或换 Host 进程后就会显示可点，而 `POST /account` 是**刻意**清节流的（理由是「用户是在按面板的指示操作」）——那次点击于是不止白费，还会抹掉另一个进程正在遵守的记录并把一次真实尝试打进可能已锁的账号。
+
+这两条不是建议，是 `servedWaitMs` / `servedWaitUntil`（纯规则，可从 Node 直测）与 `AccountForm` 接线共同强制的形状；沿革与判例见 [PITFALLS.md](./PITFALLS.md) §52。
+
 ### `GET /api/dsh-connect-agnes-token-plan/account`
 
-返回账号状态（**不含密码**）：`configured` / `hasAccount` / `autoRecoverArmed` / `ephemeral` 等。
+返回账号状态（**不含密码**）：`configured` / `hasAccount` / `autoRecoverArmed` / `ephemeral` 等，另含与 `snapshot` 的 `auth` 块**同形**的 `retryAfterMs` / `needsUserAction` 两个节流字段——语义、单位与读法见上文「`auth` 块的两个节流字段」。`GET` 的状态读取被拒时降级为 `{}`（不是错误页：这个路由唯一的问题是「有没有存账号」，报错等于没回答）。
 
 ### `POST /api/dsh-connect-agnes-token-plan/account`
 
@@ -153,6 +173,12 @@
 - 清除账号：`{ "forget": true }` —— 仅删账号引用，保留仍有效的令牌。
 
 非法 body（非对象、JSON 数组、超 4 KB）返回 400；跨域 POST 返回 403 且不写入任何账号。
+
+失败响应（HTTP 仍 200，靠 `ok:false`）带 `code` / `error`（已脱敏）/ `detail`（平台原话）/ `traceFile`（脱敏 trace 路径），以及**可选**的 `retryAfterMs`。
+
+**这里有一个容易读成「两个字段同义」的陷阱**：失败体里的 `retryAfterMs` 是**平台当初声明的整段窗口**（`agnes-auth.ts` 解析 `Retry-After` 头或文案时长），而同一 body's `auth` 块里的 `auth.retryAfterMs` 是**剩余毫秒**——两者单位不同、不是同一个值。同时 `auth.needsUserAction` 可能为 `true`（该拒绝已停车，等待无意义）。
+
+后果是**「验证码类拒绝 + 平台给了 `Retry-After`」会同体给出 `needsUserAction: true` 与一个两小时窗口**，而这个窗口**不该被倒计时**：数到零不会有任何东西重试。因此面板侧必须让 **parked 优先于窗口**——`AccountForm` 的 `submit` 正是这么判的（`servedWaitMs` 对 parked 返回「无等待」，`waitMs` 在 parked 时不取）。只认窗口不认 parked，会同时渲染「已停止自动重试」与一个两小时倒计时，两句话互相矛盾。
 
 ### `GET /api/dsh-connect-agnes-token-plan/api-key`
 
