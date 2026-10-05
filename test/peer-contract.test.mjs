@@ -1,5 +1,5 @@
 /**
- * Peer 契约护栏 —— 把 "peer 改拼接格式就静默漏纠" 变成可见红（docs/IMPROVEMENTS.md §3.3①）。
+ * Peer 契约护栏 —— 把 "peer 改拼接格式就静默漏纠" 变成可见红（docs/ADR.md ADR-011 边界二）。
  *
  * `llm-error-fix.js` 依赖 peer 的 message 拼接格式：非 2xx 时 pi-ai 把整段 JSON body
  * 拼进 `errorMessage`（`<status>: <body>`，见 `@earendil-works/pi-ai/dist/utils/
@@ -38,7 +38,7 @@
  *      本机装了修好的 peer 不等于用户的 Host 修好（§3.3「不删补丁是刻意的」）。
  *      真正的删除闹钟是离线的 `test/error-fix.test.mjs` §5：peer 下界收紧到修后
  *      版本、老 Host 不再被支持时，它才要求整层删除。没有这两条，这层打在不可改
- *      peer 上的补丁就是永久债（docs/IMPROVEMENTS.md §3.3④）。
+ *      peer 上的补丁就是永久债（docs/ADR.md ADR-011 边界三）。
  *
  * peer 引用按其实际导出选取：`@deepseek-ai/dsh-llm/lib/types/error.js` 导出
  * `isQuotaExceededError` 与 `QUOTA_EXCEEDED_CODE`（= 'QUOTA'）；组合消息优先用 pi-ai
@@ -302,7 +302,7 @@ for (const message of misjudgedMessages) {
     );
 
     // 转红 = **退化**闹钟，不是删除闹钟。本层是"老 Host + bug 版 peer"的兜底
-    // （docs/IMPROVEMENTS.md §3.3 明写"不删补丁是刻意的"）：peer 范围
+    // （docs/ADR.md ADR-011 明写"不删补丁是刻意的"）：peer 范围
     // `>=0.1.5 <0.3` 仍跨 bug 版，本机装了修好的 peer 不代表用户的 Host 修好了。
     // 所以此刻该做的是确认它对新 peer 已成为 no-op，再走 §3.3③ 收紧下界；
     // **真正的删除闹钟是离线的那条**（test/error-fix.test.mjs §5）：下界提到

@@ -620,7 +620,10 @@ const CHECK_IDS = new Map([
     "ARCHIVE-BOUNDARY-DECISIONS.md",
     "CHANGELOG.md",
     "PITFALLS.md",
-    "IMPROVEMENTS.md"
+    // 2026-09 的研究档案，已改名归档。它是**混合体**（§1–§6 商汤时代、§7–§9 Agnes 线），
+    // 留在豁免名单里是因为它按原样保留了大量已被推翻的原文（§1.2 的撤销论断、§2 的过期
+    // 行号清单、§5 里 8 项已落地的待办）——考古层检查会逐条命中，那是**故意**保留的。
+    "ARCHIVE-IMPROVEMENTS-2026-09.md"
   ]);
   const archeo = /(?:\d{4}-\d{2}-\d{2}\s*修订|修订（[一二三四五六七八九]|本节裁定已失效)/;
   let scanned = 0;
@@ -824,7 +827,9 @@ const CHECK_IDS = new Map([
 {
   const COUNT_EXEMPT = new Set([
     "ADR.md", "ARCHIVE-BOUNDARY-DECISIONS.md", "CHANGELOG.md",
-    "PITFALLS.md", "IMPROVEMENTS.md", "TOKEN-STORE-SPLIT.md",
+    // 存档保留「当时 778 行」这类规模快照（§2 的行号清单已随二次拆分全失效），
+    // 所以豁免写死数字的检查——但它已**不是**活文档，别据此认为现行规模是那些数。
+    "PITFALLS.md", "ARCHIVE-IMPROVEMENTS-2026-09.md", "TOKEN-STORE-SPLIT.md",
   ]);
   // 这两篇活文档保留「上游/历史行数」叙述，只对它们豁免 N 行 子检查
   const LINE_COUNT_OK = new Set(["ARCHITECTURE.md", "ROADMAP.md"]);

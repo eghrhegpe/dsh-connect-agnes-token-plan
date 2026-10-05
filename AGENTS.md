@@ -14,7 +14,7 @@ Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/u
 2. 「接入 API」tab 与出图工具会把本插件**升级为推理通道**——注册 provider `agnes-token-plan`、给 agent 挂 `agnes_draw_image`。它们都是 **opt-in 默认关**，任何失败必须降级为「面板照常用、该模块缺席」。
 3. **「AgnesCode」tab 是桌面端上游**：接的是 AgnesCode 桌面端的登录态——本插件第一条**本机登录态采集**线（workbuddy 族先例）：微信登录发生在桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（DPAPI + AES-GCM，注入式可离线测），provider `agnescode`，接口地址**按账号跟随**会话文件且钉死在 Agnes 域名族内。**它没有刷新端点（JWT 约 28 天）——这是已知限制，不是特性**：续期没有自动路径，必须用户手动重开桌面 App、再点「检测本机登录态」重新采集，约每 28 天一次；插件无法在后台自动续期。隔离纪律与主 provider 同款：两边 publisher、store、凭据引用全部隔离（见 `docs/ROADMAP.md` §6.3）。
 
-**定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计决策研究档案见 docs/IMPROVEMENTS.md。
+**定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计裁定见 docs/ADR.md，2026-09 的研究原稿已归档为 docs/ARCHIVE-IMPROVEMENTS-2026-09.md（不作现行依据）。
 
 在web端、desktop搜索同类插件：`~/.dsh/profiles`
 
@@ -65,7 +65,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 
 - **量化断言必须可复现**：任何「多少个」先跑命令数出来，分子（命中问题的）与分母（全部候选）都写清。
   禁止凭印象报数：印象计数会把关键字总出现数当成问题数，分子分母都错、错一个数量级还不自知。
-- **先读裁定，再读代码**：本仓多数「看起来怪」的写法在 PITFALLS / ADR / IMPROVEMENTS 有明文出处
+- **先读裁定，再读代码**：本仓多数「看起来怪」的写法在 PITFALLS / ADR 有明文出处
   （例：`num()` 拒 0 服务红线⑦「不得计算剩余」、无 ESLint 是 tsc+门禁的刻意取舍）。定罪前先搜出处，
   有出处的是设计，不是缺陷。
 - **每条问题先做一次无罪搜索**：判「吞错误」前先读 catch 上方注释是否在解释故意降级；
@@ -129,7 +129,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
 | 接/改 LLM provider（descriptor、`maxTokens`、注册三件套、adapter 组装） | `docs/DSH-LLM-DEVELOP.md`（peer 分工 → 注册 → descriptor 契约 → 探针纪律 → 排查速查） |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（54 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（55 条现象→根因→修法） |
 | 排查「面板说令牌失效 / 让你重新登录，但重登没用」 | `docs/PITFALLS.md` §46（Host 唯一的 403 是同源闸，不是凭据；客户端曾把它读成 `jwt_expired`） |
 | 排查「进度条数字和控制台对不上 / 超额窗口显示成 100%」 | `docs/PITFALLS.md` §45（进度条用平台自己的 `usage_pct`，不是 `used/limit`；钳制即改写平台口径） |
 | 排查「凭据疑似漏进 agent 对话 / 日志」 | `docs/PITFALLS.md` §44（agent 工具 execute 错误是红线①第四张脱敏表面；同族漏一条就漏凭据） |

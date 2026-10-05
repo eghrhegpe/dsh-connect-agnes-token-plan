@@ -189,7 +189,7 @@ function fail(name, error) {
 
 // --- 5. 退出证的离线半边：删除面 + 删除条件 ------------------------------
 // 这层是对**不可改的 peer** 打的补丁，所以它是有到期日的债。到期日分两级，
-// 缺任何一级它都会变成永久债（docs/IMPROVEMENTS.md §3.3④）：
+// 缺任何一级它都会变成永久债（docs/ADR.md ADR-011 边界三）：
 //
 //   - 退化闹钟（peer 门控）：`test/peer-contract.test.mjs` §E 执行 peer 自己的
 //     `classifyPiAiError`，问"peer 会不会自己判对"。它只在真实 peer 可达时跑，
@@ -237,7 +237,7 @@ function fail(name, error) {
           "  1. src/host/llm-error-fix.ts",
           "  2. 挂钩点一处：src/host/pi-ai-adapter-core.ts（两条路由共用的组装核心）",
           "  3. 本套件与 test/peer-contract.test.mjs 的 A/B/C/E 段（随之作废）",
-          "  4. docs/IMPROVEMENTS.md §3.3、§5 表格与 docs/AGNES-API.md §7.3.1 改为「上游已修复」"
+          "  4. docs/ADR.md ADR-011、docs/ARCHIVE-BOUNDARY-DECISIONS.md A3 与 docs/AGNES-API.md §7.3.1 改为「上游已修复」"
         ].join("\n")
   );
 }

@@ -338,7 +338,7 @@ export function seedPublisherFromCatalog(publisher, listCatalog, listEnabled, si
  * NOT catch the Token Plan side's operator-configured pseudo multiplier: that
  * one is attached later, by `matchMultiplier`, to the rows the snapshot hands
  * the panel — never to `catalog`. Turning that knob still does not rebuild the
- * registration, which is the documented intent (IMPROVEMENTS.md §7).
+ * registration, which is the documented intent (CHANGELOG.md 0.6.0, 花名册重排).
  * @param {object[]} entries - the normalized catalog entries.
  * @param {string[]} enabledIds - the allow-list (empty = all).
  * @returns {string}

@@ -2,12 +2,12 @@
 
 > 本文承接 [ARCHITECTURE.md](./ARCHITECTURE.md) §5「大统一」定位变更，是**执行层面的时间序列与优先级**，不是重复定位。§5 负责「我们是谁、边界在哪」，本文负责「下一步做什么、按什么顺序、侵入性如何、门禁怎么过」。
 > 依据：[AGENTS.md](../AGENTS.md)（验证裁剪、红线）、[TESTING.md](./TESTING.md)（docs.test.mjs 防孤儿文件 / 防跨文件重复表）、[PITFALLS.md](./PITFALLS.md)。
-> 研究档案：[IMPROVEMENTS.md](./IMPROVEMENTS.md) 是设计问题的**研究上游**（诊断 + 证据 + 投入/风险比）；本文只记**执行状态**——标 ✅ 章节的实施进展以本文为准，研究文件里残留的「已落地」注记只是写下当时的历史时间点，不随实现继续更新。
+> 设计裁定一律看 [ADR.md](./ADR.md) 与本文的**执行状态**。2026-09 的研究原稿已归档为 [ARCHIVE-IMPROVEMENTS-2026-09.md](./ARCHIVE-IMPROVEMENTS-2026-09.md)，其「落地状态」注记只是当时的历史时间点、**待办状态已腐烂**（实测两条 P0-lite 护栏早已在册），不可作现行依据；原文按需查该文件或 [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md)。
 
 ## 0. 已锁死的前提（来自 §5，这里不复制其表）
 
 - **三条不变量**：每个新模块 opt-in 默认关；凭据红线不动；只吸与 Agnes Key / 账号线强相关的能力。
-- **能力事实**：本插件**可**向 DSH 注册推理 provider（`agnes-token-plan`）。它是否成为某台机器的默认推理通道，由该机的 profile 与用户模型选择决定，**不随插件注册自动成立**（`agent-default-model` 是宿主的选择记录服务，见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §1.2 的撤销注记）；一旦某 profile 真的把它选作默认模型，故障域就从「Plugins 页里的只读面板」升级为「推理可用性」，这是**条件性**的爆炸半径，不是既成事实。
+- **能力事实**：本插件**可**向 DSH 注册推理 provider（`agnes-token-plan`）。它是否成为某台机器的默认推理通道，由该机的 profile 与用户模型选择决定，**不随插件注册自动成立**（`agent-default-model` 是宿主的选择记录服务，撤销原文见 [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md) A1）；一旦某 profile 真的把它选作默认模型，故障域就从「Plugins 页里的只读面板」升级为「推理可用性」，这是**条件性**的爆炸半径，不是既成事实。
 - **角色**：从「只下发信息」升级为「信息 + 执行」，但每块执行都挂在三条不变量下。
 
 ## 1. 对 §5 的一处纠偏：429 不做多 Key 池
@@ -20,7 +20,7 @@
 
 ## 2. P0：`index.js` 控制面解耦 + 推理契约自动化回归 ✅ 已实现（2026-09）
 
-> 来源：2026-09 锐评结论，研究论证见 [IMPROVEMENTS.md](./IMPROVEMENTS.md) §2（接线复杂度诊断的完整证据链）。两个 P0 先于任何「继续吸收」——§0 已承认本插件
+> 来源：2026-09 锐评结论，证据链已归档于 [ARCHIVE-IMPROVEMENTS-2026-09.md](./ARCHIVE-IMPROVEMENTS-2026-09.md) §2 与 [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md) A2。两个 P0 先于任何「继续吸收」——§0 已承认本插件
 > 可注册推理 provider（是否默认通道由 profile 决定），`index.js` 1187 行里同时挂着
 > 5 条路由 + `providerState` 状态机 + `publishChain` 串行化 + 两个 fire-and-forget IIFE
 > （catalog seed、draw 注册），复杂度已溢出：注释越解释越拆不动。再谈下一块吸收之前，
@@ -97,7 +97,7 @@ live 档在 `package.json` 有 `test:live:contract` 脚本。
 
 ## 3. 旗舰刀口：429 自愈（全局级，低侵入）✅ 已实现
 
-> 研究论证：[IMPROVEMENTS.md](./IMPROVEMENTS.md) §3（peer 语义耦合的诊断与契约护栏选项）。
+> 裁定：peer 语义耦合的实证链与契约护栏选项已升为 [ADR.md](./ADR.md) ADR-011（原稿见存档 §3）。
 
 ### 3.1 配置粒度结论（已查证代码）
 

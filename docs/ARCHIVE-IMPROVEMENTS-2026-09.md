@@ -1,3 +1,59 @@
+# 改进研究（存档，2026-09 — 已拆分，勿直接引用）
+
+> ## ⚠️ 本文件是**存档**，不是现行依据，也不是研究上游
+>
+> **2026-10-05 起本文件不再承担任何现行职责**，正文内容已按「活判据 / 已失效原文」
+> 拆去三处（见下表）。留在仓库里的理由是**可回溯**：当时的取证、投入/风险估算与
+> 判错的记录本身有参考价值，尤其 §3.1 那条「我们曾把 429 误判归因到类型名匹配、
+> 而实测不成立」——它记着**一次自我更正**，删掉就没人知道那条补丁为何必须留。
+>
+> **但它已经不适合直接引用**，有三个具体原因（不是「档案都这样」这种泛泛之论）：
+>
+> 1. **它是混合体，且身份靠声明维持。** §1–§6 写于商汤 SenseNova 时代，§7–§9
+>    分别追加于 2026-09-30 / 10-02 / 10-05（Agnes 线）。文件头曾声明「落地状态不随
+>    实现更新」，而**追加新章正是这句话挡不住的**——现在回看，声明没约束住任何东西。
+> 2. **它的「待办」状态已经腐烂且无人会红。** §8.2 列的本仓欠账
+>    「`devDependencies` 无 `jscpd`、无 `commitlint`」实测**早已落地**
+>    （`package.json` 的 `lint:dup` / `lint:commits` 在册）。档案里的待办不在
+>    `COUNT_GUARD` 的活文档范围内，也不在任何测试断言里——**没有机制会提醒**。
+> 3. **它的一半行号已经漂了。** §2 的责任清单按 `index.js` 778 行写（该文件现
+>    342 行、路由已拆 8 模块），§1.1 的兄弟插件行数是 2026-09-29 的一次性快照且
+>    原文自承「数字不作门禁」。
+>
+> **要找现行内容去哪**：
+> - 429 误判的实证链、补丁不可复制、契约护栏、两级到期日 → [ADR.md](./ADR.md) **ADR-011**
+> - client 侧 Loader 不支持相对 import 的硬约束 → [ADR.md](./ADR.md) ADR-011 关系段 + ADR-006
+> - 快照聚合的纯度边界 → [PITFALLS.md](./PITFALLS.md) §51
+> - 「档案会被追加到失去身份、待办会腐烂到不可信」这条教训本身 → [PITFALLS.md](./PITFALLS.md) **§55**
+> - 已失效的边界裁定原文 → [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md)
+> - 现行执行状态 → [ROADMAP.md](./ROADMAP.md)
+>
+> 以下正文按原样保留（仅本段头替换），未作内容改动——包括其中已被推翻的论断，
+> 它们保留在那里正是为了让「当时错在哪」可查。
+
+## 拆分明细（2026-10-05）
+
+| 原节 | 去向 | 理由 |
+|---|---|---|
+| §1.1 生态对照表 | **删**（不归档） | 兄弟插件行数是一次性快照且原文自承不作门禁；本机那批插件一个都没装，无从复核 |
+| §1.2 `agent-default-model` 撤销 | → ARCHIVE-BOUNDARY-DECISIONS.md | 撤销结论的现行表述已在 [ROADMAP.md](./ROADMAP.md) §0 |
+| §2 `index.js` 接线方案与行号清单 | → ARCHIVE-BOUNDARY-DECISIONS.md | 方案已落地并被二次拆分取代（`routes/` 8 模块 + `lifecycle.ts`），行号全漂 |
+| §3.1 / §3.2 / §3.3 429 误判与护栏 | → **ADR-011** | 仍是活判据，且有 5 处源码/测试注释引用 |
+| §4.1 第二步（`dsh-atomic-write` 跨进程写锁） | → ARCHIVE-BOUNDARY-DECISIONS.md | 第一步已落地（`state-store.ts`），只剩未做的第二步 |
+| §4.2 CI live-contract job | → ARCHIVE-BOUNDARY-DECISIONS.md | 已落地，仍待 owner 配 secret；执行状态看 [ROADMAP.md](./ROADMAP.md) |
+| §4.3 `autoRecoverArmed` | **删** | 已落地且无争议，`state()` 与面板自证 |
+| §4.4 Loader 不支持相对 import | → **ADR-011** 关系段 | 硬约束实测，与 ADR-006 的 client 分层裁定同源 |
+| §5 落地顺序表 / §6 总判断 | → ARCHIVE-BOUNDARY-DECISIONS.md | 10 项里 8 项已落地；§6 原文写「下一步最该做 §4.3」而它已做 |
+| §7 花名册重排 | 留档（原文在本文） | 「逐行重复恒定量是噪音」那条判据仍活着（`provider-publish.ts` 引用） |
+| §8.1 / §8.3 / §8.4 姊妹插件对比结论 | → ARCHIVE-BOUNDARY-DECISIONS.md | 2026-10-02 的横向对比，两仓此后各自演进 |
+| §8.2 两条 P0-lite 护栏 | **删** | 实测已落地（`lint:dup` / `lint:commits`），待办状态腐烂的实例 |
+| §9 快照聚合纯度 | 留档 + → PITFALLS §51 | 已是现行纪律，跨两处引用 |
+
+---
+
+<details>
+<summary>以下为 2026-09 原稿全文（未改动）</summary>
+
 # 改进研究（Improvements）
 
 对 `dsh-connect-agnes-token-plan` 当前设计的一次**深化改进研究**：针对已识别的
@@ -563,3 +619,5 @@ modality.ts}`、`test/contract.test.mjs` §10 的**本仓实测**；对照侧结
 - **落地状态（2026-10-05）**：已提交（`ae6cd87`），`src/host/snapshot-aggregate.ts` 改动 +138 −51（含 lib 重建）；`routes`/`parsers`/`agnescode`/`switch-store`/`panel` 五套件全绿。副作用边界约定另立 `docs/PITFALLS.md` §51（护栏形态，供改快照者第一站扫到）。
 - **门禁**：`test/routes.test.mjs`（catalog 重发布路径，196/196）、`docs.test.mjs`（本文行数/链接护栏）。
 - **不做（与 §5「不做」一致）**：不造 `registerUpstream` 工厂——ROADMAP §2.1 冻结"大统一下一块吸收"（§2.1 完成前不接第三个上游）+ 当前只有 Token Plan + AgnesCode 两个 upstream、无具体第三上游 epic + YAGNI。若将来确有第三上游，正确顺序是先立控制面/契约护栏**解冻**，再设计工厂，而非预售架构。
+
+</details>

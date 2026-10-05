@@ -316,7 +316,7 @@
 ### 模型花名册重排（WorkBuddy 形态）
 
 - **行去卡内框、改用分隔线**：`modelRow` 由横向 flex 行改为纵向列（头行 + 缩进的参数行），新增 `modelRowHead` 包裹头行；徽章只标 notable 态（删「纯文本」徽章、补「额度耗尽」徽章）。工具行计数成组右置，批量按钮 32px 与搜索框等高。
-- **每行只留会变的 per-model 事实**：参数段从「上下文 · 最大输出 · 默认思考强度」改为**本模型实际可选档位**——「思考 关闭/低/中/高/极高[/最高]」，由 Host 新导出的 `supportedThinkingLevels` 按 pi-ai `getSupportedThinkingLevels` 同一规则过滤（与 DSH 选择器同源），glm-5.2 独显「最高」。provider 级常数（默认思考强度）收进花名册头部只说一次（`llm.rosterThinkingDefault`），**删掉逐行重复的恒定默认档**——用户锐评「恒定默认档逐行重复=噪音」，该反模式已记入 `docs/IMPROVEMENTS.md` §7。
+- **每行只留会变的 per-model 事实**：参数段从「上下文 · 最大输出 · 默认思考强度」改为**本模型实际可选档位**——「思考 关闭/低/中/高/极高[/最高]」，由 Host 新导出的 `supportedThinkingLevels` 按 pi-ai `getSupportedThinkingLevels` 同一规则过滤（与 DSH 选择器同源），glm-5.2 独显「最高」。provider 级常数（默认思考强度）收进花名册头部只说一次（`llm.rosterThinkingDefault`），**删掉逐行重复的恒定默认档**——用户锐评「恒定默认档逐行重复=噪音」，该反模式记于 `docs/ARCHIVE-IMPROVEMENTS-2026-09.md` §7（2026-10-05 归档）。
 - **`tokenSize` 修正 1049k → 1M**：千整走十进制、纯二进制走 1024、≥1M 归 M。Host 侧新增 `maxOutputLength` 投影（`0` = 未声明则整段不画，绝不猜）。
 - **`matchMultiplier` 单一匹配器**：趋势行 ×N 与花名册 ×N 同源同值，两处显示不可能不一致。
 
@@ -437,7 +437,7 @@ Token Plan 与小浣熊同为商汤旗下产品线，`sensenova` 这个名头名
 
 ### 文档修正：撤销 ROADMAP §0 被证伪的前提
 
-- [ROADMAP.md](docs/ROADMAP.md) §0 与 §2 引言原写「本插件已是双 profile 的 `agent-default-model`——即这台机器的**默认推理通道**，故障域已升级为推理可用性」。该论断 2026-09-29 已被 [IMPROVEMENTS.md](docs/IMPROVEMENTS.md) §1.2 撤销（`agent-default-model` 是宿主的选择记录服务，原引用不可复现），但 ROADMAP 未同步。现改为「**能力事实**：可注册 provider `sensenova-token-plan`；是否默认通道由 profile 与用户模型选择决定；一旦某 profile 选它作默认，故障域才从面板升级为推理可用性（条件性爆炸半径）」。两份文档不再正面矛盾。
+- [ROADMAP.md](docs/ROADMAP.md) §0 与 §2 引言原写「本插件已是双 profile 的 `agent-default-model`——即这台机器的**默认推理通道**，故障域已升级为推理可用性」。该论断 2026-09-29 已被研究原稿 §1.2 撤销（`agent-default-model` 是宿主的选择记录服务，原引用不可复现；撤销原文现见 [ARCHIVE-BOUNDARY-DECISIONS.md](docs/ARCHIVE-BOUNDARY-DECISIONS.md) A1），但 ROADMAP 未同步。现改为「**能力事实**：可注册 provider `sensenova-token-plan`；是否默认通道由 profile 与用户模型选择决定；一旦某 profile 选它作默认，故障域才从面板升级为推理可用性（条件性爆炸半径）」。两份文档不再正面矛盾。
 
 ### 文档与仓库纪律
 
