@@ -35,8 +35,10 @@
  * Pure by design: it takes the resolved `settings`, the shared `cache` /
  * `inflight` maps, the `tokenStore`, the `apiKeyStore`, the `publisher` (from
  * `provider-publish.ts`) and the `catalogStore`, and returns the exact
- * snapshot body the route writes. No HTTP surface, no filesystem writes, no
- * module-level state — so `test/routes.test.mjs` can pin every branch (the
+ * snapshot body the route writes. No HTTP surface or module-level state of its
+ * own; the one side effect it triggers — the catalogue persist and provider
+ * republish — is isolated in `applyCatalogEffects` (below), so the projection
+ * above it stays pure and `test/routes.test.mjs` can pin every branch (the
  * snapshot contract, the vision-vs-catalog distinction, the registration
  * re-publish) without mounting the full container.
  *
@@ -353,6 +355,75 @@ function buildShapeWarnings(
  *   video-model preference (`video-store.modelId()`); null when untouched.
  * @returns {Promise<object>} the snapshot body.
  */
+/**
+ * The ONLY side effects `buildSnapshotBody` performs, isolated here so the
+ * aggregator above stays a pure projection of the console results.
+ *
+ * Persists the freshly-fetched catalogue to its private state file and rebuilds
+ * the registered provider — but ONLY when the offered set actually changed (the
+ * catalogue is cached for an hour while the panel polls every 30 s, so a
+ * write/re-register per poll would be pure churn). The signature logic and the
+ * PITFALLS §40 write-failure handling are copied verbatim from the inline form
+ * it replaced; `routes.test.mjs` pins the call order, so this is a move, not a
+ * behaviour change.
+ * @param {object} args
+ * @param {object} args.catalogStore - the `createFileCatalogStore` instance.
+ * @param {object} args.publisher - the `createProviderPublisher` instance.
+ * @param {object} args.providerState - the publisher's live `state` (mutated in place).
+ * @param {unknown} args.catalog - the fetched `/v1/models` answer, or null.
+ * @param {string[]} args.enabledIds - the curated allow-list.
+ * @param {string[]} args.unavailableModelIds - the (empty) blocked-set.
+ * @returns {Promise<{offered: any, catalogChanged: boolean}>} what to offer and whether the catalogue branch published.
+ */
+async function applyCatalogEffects({
+  catalogStore,
+  publisher,
+  providerState,
+  catalog,
+  enabledIds,
+  unavailableModelIds
+}: {
+  catalogStore: ReturnType<typeof createFileCatalogStore>;
+  publisher: ReturnType<typeof createProviderPublisher>;
+  providerState: ReturnType<typeof createProviderPublisher>["state"];
+  catalog: any;
+  enabledIds: string[];
+  unavailableModelIds: string[];
+}): Promise<{ offered: any; catalogChanged: boolean }> {
+  let offered: any = providerState.entries;
+  let catalogChanged = false;
+  if (Array.isArray(catalog)) {
+    const freshSignature = catalogSignature(catalog, enabledIds);
+    if (freshSignature !== providerState.signature) {
+      catalogChanged = true;
+      // `replace()` swallows a write failure (a read-only Home must not break
+      // the panel). The signature's ONLY job is "equal → skip publish", so it
+      // must describe what the disk holds: advancing it past a failed write
+      // would make the next poll — serving the same catalog from cache — skip
+      // the write that would fix it, and the disk would keep the old catalog
+      // until a restart re-seeds it (PITFALLS §40). Not persisted → retry next
+      // poll, which is the abnormal case anyway.
+      const persisted = await catalogStore.replace(catalog, enabledIds).catch(() => false);
+      if (persisted) providerState.signature = freshSignature;
+      await publisher.publish(catalog, enabledIds, unavailableModelIds);
+    }
+    offered = catalog;
+  }
+  // The unavailable set can flip without the catalogue changing. When it does,
+  // rebuild the registration so the picker drops/restores the affected models —
+  // `PiAiAdapter` memoizes the profiles snapshot on Map identity, so only a
+  // fresh registration can change the offered set (ROADMAP.md §3.3). Skip when
+  // the catalogue branch already published this exact set a moment ago.
+  const quotaSig = [...unavailableModelIds].sort().join(",");
+  if (quotaSig !== providerState.quotaSignature) {
+    providerState.quotaSignature = quotaSig;
+    if (!catalogChanged) {
+      await publisher.publish(providerState.entries, providerState.enabledIds, unavailableModelIds);
+    }
+  }
+  return { offered, catalogChanged };
+}
+
 export async function buildSnapshotBody({
   settings,
   cache,
@@ -507,37 +578,17 @@ export async function buildSnapshotBody({
   // catalogue arrived: a /models save must reach the picker even on a poll
   // that serves a cached catalogue.
   const enabledIds = await catalogStore.listEnabledIds().catch(() => providerState.enabledIds);
-  let offered = providerState.entries;
-  let catalogChanged = false;
-  if (Array.isArray(catalog)) {
-    const freshSignature = catalogSignature(catalog, enabledIds);
-    if (freshSignature !== providerState.signature) {
-      catalogChanged = true;
-      // `replace()` swallows a write failure (a read-only Home must not break
-      // the panel). The signature's ONLY job is "equal → skip publish", so it
-      // must describe what the disk holds: advancing it past a failed write
-      // would make the next poll — serving the same catalog from cache — skip
-      // the write that would fix it, and the disk would keep the old catalog
-      // until a restart re-seeds it (PITFALLS §40). Not persisted → retry next
-      // poll, which is the abnormal case anyway.
-      const persisted = await catalogStore.replace(catalog, enabledIds).catch(() => false);
-      if (persisted) providerState.signature = freshSignature;
-      await publisher.publish(catalog, enabledIds, unavailableModelIds);
-    }
-    offered = catalog;
-  }
-  // The unavailable set can flip without the catalogue changing. When it does,
-  // rebuild the registration so the picker drops/restores the affected models —
-  // `PiAiAdapter` memoizes the profiles snapshot on Map identity, so only a
-  // fresh registration can change the offered set (ROADMAP.md §3.3). Skip when
-  // the catalogue branch already published this exact set a moment ago.
-  const quotaSig = [...unavailableModelIds].sort().join(",");
-  if (quotaSig !== providerState.quotaSignature) {
-    providerState.quotaSignature = quotaSig;
-    if (!catalogChanged) {
-      await publisher.publish(providerState.entries, providerState.enabledIds, unavailableModelIds);
-    }
-  }
+  // The only side effects `buildSnapshotBody` triggers (catalogue persist +
+  // provider republish) are isolated in `applyCatalogEffects` — see its header.
+  // Everything above this point is a pure projection of the console results.
+  const { offered } = await applyCatalogEffects({
+    catalogStore,
+    publisher,
+    providerState,
+    catalog,
+    enabledIds,
+    unavailableModelIds
+  });
   // The counts describe the OFFER, not the catalogue: the adapter is built
   // from the allow-list-filtered entries, so a panel line that quoted the raw
   // count would claim to have registered models that were ticked off.
