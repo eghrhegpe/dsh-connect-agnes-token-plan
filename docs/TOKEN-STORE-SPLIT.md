@@ -2,7 +2,7 @@
 
 > 锐评 #5：944 行 `token-store.js` 单体。本文是拆分的设计蓝图。
 > 前置护栏：`test/store-baseline.test.mjs`（15 场景 42 帧全行为冻结基线，
-> 见 [TESTING.md §5](./TESTING.md)）。拆分的门禁 = 基线零漂移 + `store.test.mjs` 131 项全绿。
+> 见 [TESTING.md §5](./TESTING.md)）。拆分的门禁 = 基线零漂移 + `store.test.mjs` 125 项全绿。
 >
 > **状态（2026-09-29）：6 步全部落地，`src/host/token-store.ts` 收口为 347 行薄 facade（由原先 944 行的单体 `token-store.js` 拆分而来）。**
 > 各块已抽至 `token-store/{state,grant,throttle,account,renewal,acquire}.ts`，
@@ -38,15 +38,16 @@ token-store/renewal.ts renewWithRefresh + refresh_rejected 岔路（回收 vs �
                                         （块 3：续期）
 token-store/throttle.ts localBackoffMs / readThrottle / writeThrottle / clearThrottle
                       / inForceWaitMs / throttleError    （块 4：节流状态机；只 sweep
-                      本插件旧地址，不做 adoptLegacyThrottle——旧记录一次性迁移读取
-                      经 THROTTLE_MARKER 完成，不常驻）
+                      本插件旧地址，不做 adoptLegacyThrottle——marker 一次性读取已随
+                      47f4d0c 删除，现行 clearThrottle 每次清节流都对旧地址做
+                      deleteRecord 清扫，不常驻旧记录）
 token-store/acquire.ts acquire()：节流闸门 → grant 新鲜判定 → 续期 → 登录兜底
                       （四块交手的唯一缝，留在独立模块，不塞进任何一块）
 ```
 
-`token-store.js` 本体保留为**再导出 shim**（`export { createTokenStore } from
-"./token-store/index.js"` 同形），`package.json` 的 `exports["./token-store"]` 与
-`index.js` 的 import 都不改——e2e / wiring 套件零接触。
+`token-store.ts` 是真实 347 行 **facade**（含 `export function createTokenStore`），
+并非 shim；仓库里没有 `token-store/index.ts`，`package.json` 的 `exports` 也没有
+`./token-store` 项，`index.js` 的 import 不动——e2e / wiring 套件零接触。
 
 ---
 
@@ -70,22 +71,23 @@ token-store/acquire.ts acquire()：节流闸门 → grant 新鲜判定 → 续�
 
 ## 2. 四块内容清单（从现文件行号 → 新模块）
 
-| 新模块 | 迁自 `token-store.js` | 备注 |
+| 新模块 | 迁自 `token-store.ts`（944 行前身，行号为拆分前历史行号、已失效） | 备注 |
 |---|---|---|
 | `state.ts` | 构造器头（wiring 解析、memory vault、`resolveService`/`backend`/`ephemeral`）+ 七个 let 变量 | memory vault 留 wiring 层，不进块 |
 | `grant.ts` | `parseGrant`（模块级）/ `readStored` / `store` / `purgeGrant` / `isFresh` | `parseGrant` 用 `readJwtExpiry`（agnes-auth 再导出），注入即可；**不收养旧命名 grant**（grant.ts 明写 deliberately NO legacy-namespace adoption） |
 | `account.ts` | `readUsername` / `readAccount` / `loginFromAccount` / `saveAccount` / `forgetAccount` / 常量 `USERNAME_REF`/`PASSWORD_REF` 的使用 | 密码永不入 refs——`saveAccount` 的注释原样搬 |
 | `renewal.ts` | `renewWithRefresh` + `acquire` 内 refresh 失败岔路（`refresh_rejected`/`no_refresh_token` → 有账号重登 / 无账号 `purgeGrant` 回收） | 岔路逻辑**留在 acquire.ts 调用 renewal.ts 的出口钩子**，renewal.ts 本身只做「refresh → store(CAS) 命名 superseded」 |
-| `throttle.ts` | `localBackoffMs` / `readThrottle` / `writeThrottle` / `clearThrottle` / `inForceWaitMs` / `throttleError`（模块级） | `THROTTLE_MARKER` 常量随迁；旧寄居记录只一次性迁移读取，不常驻 |
-| `acquire.js` | `acquire`（729 行起 ~80 行）+ `getToken` 壳（inflight/lastError） | 唯一的交互缝，保持最小 |
-| `index.js`（facade） | `createTokenStore` 组装、`invalidate`、`state()` 的读侧拼装 | `state()` 调用各块的 read 视图，拼装顺序 = 基线顺序 |
+| `throttle.ts` | `localBackoffMs` / `readThrottle` / `writeThrottle` / `clearThrottle` / `inForceWaitMs` / `throttleError`（模块级） | `THROTTLE_MARKER` 常量随迁；marker 一次性读取已随 47f4d0c 删除，旧记录仅每次清节流时 `deleteRecord` 清扫，不常驻 |
+| `token-store/acquire.ts` | `acquire`（拆分前历史行号 729 起 ~80 行，已失效）+ `getToken` 壳（inflight/lastError） | 唯一的交互缝，保持最小 |
+| `token-store.ts`（facade） | `createTokenStore` 组装、`invalidate`、`state()` 的读侧拼装 | `state()` 调用各块的 read 视图，拼装顺序 = 基线顺序 |
 
 ---
 
 ## 3. 迁移（migration）块的处置
 
 `LEGACY_SCOPE` 命名空间在 2026-09 拆分时**未再收养**（grant.ts 明写 deliberately NO
-legacy-namespace adoption），旧寄居节流记录改为一次性迁移读取（经 `THROTTLE_MARKER`），
+legacy-namespace adoption），旧寄居节流记录不再做一次性 marker 读取（该读取已随
+47f4d0c 删除），仅每次清节流时对旧地址 `deleteRecord` 清扫、不常驻，
 密码 ref 清扫（`passwordSwept`）则保留为 `state` 顶层的一次性标志。
 
 - **拆分时**：旧命名 grant 不收养；throttle.ts 只 sweep 本插件旧地址、不常驻旧记录；
@@ -101,7 +103,7 @@ legacy-namespace adoption），旧寄居节流记录改为一次性迁移读取�
 
 | 步 | 内容 | 门禁 | 提交 | 状态 |
 |---|---|---|---|---|
-| 1 | 新增 `token-store/state.js`：`createStoreContext(options)` 产出 `{ wiring, state }`；`createTokenStore` 改为「组 context → 委托」，函数体不动 | 基线零漂移 + store 131 | `57cdc7e`+`ffca7af` | ✅ |
+| 1 | 新增 `token-store/state.js`：`createStoreContext(options)` 产出 `{ wiring, state }`；`createTokenStore` 改为「组 context → 委托」，函数体不动 | 基线零漂移 + store 125 | `57cdc7e`+`ffca7af` | ✅ |
 | 2 | 抽 `token-store/grant.js`（`parseGrant` 模块级 + 五个闭包函数 `(wiring,state)` 参数化） | 同上 | `fabe450`+`d57207d` | ✅ |
 | 3 | 抽 `token-store/throttle.js`（七函数 + `DEFAULT_LOGIN_BACKOFF_MS`/`MAX_LOGIN_BACKOFF_MS`/`THROTTLE_MARKER` 常量随迁） | 同上，S3/S4/S5/S11 帧重点核对 | `6c9ec96`+`00eeaef` | ✅ |
 | 4 | 抽 `token-store/account.js`（`readUsername`/`readAccount`/`loginFromAccount`/`forgetAccount` + `passwordSwept` 语义 + `USERNAME_REF`/`PASSWORD_REF` 随迁） | 同上，S9c/S10 帧重点核对 | `b44a5f8`+`fd854fa` | ✅ |
@@ -121,12 +123,13 @@ legacy-namespace adoption），旧寄居节流记录改为一次性迁移读取�
 - [x] 凭据服务**调用序列**不变（基线逐帧 `calls` 数组即序列快照）；尤其
       `saveAccount` 的「先 set ref、清节流、再 login」与 `state()` 的六步读序。
 - [x] 错误对象：`throttleError(held, cause)` 的 cause 语义（窗口期内报平台原话、
-      过窗后报本模块话术）原样保留；`state().error` 仍取 `lastError.message`。
+      过窗后报本模块话术）原样保留；`state().error` 先过 `isFresh(stored)` 闸门，
+      对非 Error 值有 `String()` 兜底（`token-store.ts:331-333`）。
 - [x] `state()` 九键 + `autoRecoverArmed` 布尔，键集与取值规则不变（S 帧 result 逐值）。
 - [x] 密码不落盘：`saveAccount` 只 `set` username ref；`readAccount` 的密码来源只有
       env 与显式入参。`store.test.mjs` 8/10 组独立守住，基线 S10/S11 帧同。
-- [x] 节流寄居记录的 marker/version 校验不变（`THROTTLE_MARKER` + `THROTTLE_VERSION`），
-      非法记录读作 absent（S9b 帧）。
+- [x] 节流寄居记录不再做 marker/version 一次性读取（随 47f4d0c 删除），现行
+      `clearThrottle` 每次清节流对旧地址 `deleteRecord` 清扫、不常驻。
 - [x] `createTokenStore` 的**公开选项名**不变（index.js 与 e2e 的注入面）。
 - [x] `token-store.ts` 的 re-export 面不变：`createTokenStore` + `RECORD_SCOPE` /
        `RECORD_ID` / `USERNAME_REF` / `PASSWORD_REF` / `THROTTLE_ID` /

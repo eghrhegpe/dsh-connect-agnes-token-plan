@@ -44,7 +44,7 @@ target.releaseDirectory = typeof llm.registerConfigurableProviders === "function
 - **release 必须落到 state 上，而不是返回**。如果目录行注册在 adapter 注册之后抛错，adapter 的 release 仍然要够得着，否则 adapter 会活得比插件久。发布路径和回滚路径共用这一份实现，避免两处漂移（[PITFALLS.md](./PITFALLS.md) §19）。
 - **不要把 Promise 交给 `registerAdapter`**。adapter 工厂一旦变 async，`built.adapter` 就是 `undefined`，Host 照单全收——故障出现在模型路由，离原因很远。要么保证工厂同步，要么先 `await` 再注册（[PITFALLS.md](./PITFALLS.md) §19）。
 - **注册后要 `emit("llm/adapters-updated")`**，让选择器刷新。catalog 或 key 变化时要**换一个全新的 adapter 实例**重新注册，而不是改旧的——`PiAiAdapter` 内部按 profiles 引用做 memoize。
-- **provider id 撞车 = 静默消失**。与其它插件（含姊妹插件 `dsh-connect-sensenova-token-plan`）用同一 id 注册，会被 `registerAdapter` 以 `DUPLICATE_ADAPTER` 拒绝，其中一个 provider 从选择器**悄无声息**地不见。id 命名空间必须互不相交（本插件统一 `agnes-*`）。
+- **provider id 撞车 = 静默消失**。与其它插件（含姊妹插件 `dsh-connect-sensenova-token-plan`）用同一 id 注册，会被 `registerAdapter` 以 `DUPLICATE_ADAPTER` 拒绝，其中一个 provider 从选择器**悄无声息**地不见。id 命名空间必须互不相交（本插件统一 `agnes-*`；桌面端上游 provider id 是 `agnescode`，无连字符、并不匹配 `agnes-*` 通配符，但前缀确实为 agnes，两者互不相交）。
 
 ### 目录行是可选的
 
@@ -172,7 +172,7 @@ compat 还有一长串（thinking 相关、工具相关、cache 相关…），�
 
 1. `peerDependencies` 加齐三个 LLM peer + `@earendil-works/pi-ai`（版本区间对齐 Host 发行）。
 2. 建 **peer-free** 的 `llm-models.ts`：catalog 归一化 → `toPiDescriptor(entry)` → descriptor 数组。
-3. 建 peer 侧的 `llm-adapter.ts`：`createProvider` + `openAICompletionsApi` + `PiAiAdapter`，只做组装。**若同时还要接第二条 provider**（如本仓的 AgnesCode 桌面端上游），把两份组装里**相同**的部分（惰性 auth 平面、图像预算与两个图像 hook、429 纠正 Proxy）抽进一个共享核心（本仓的 `pi-ai-adapter-core.ts`），两个 shell 只留各自不同的事实：provider id、花名册构造、凭据解析器、profile 差异（如 `reasoning` 默认）。**别复制**：那层 Proxy 是打在不可改 peer 上的补丁、带到期日，两份手抄必然分叉。
+3. 建 peer 侧的 `llm-adapter.ts`：`createProvider` + `openAICompletionsApi` + `PiAiAdapter`，只做组装。**若同时还要接第二条 provider**（如本仓的 AgnesCode 桌面端上游），把两份组装里**相同**的部分（惰性 auth 平面、图像预算与两个图像 hook、429 纠正 Proxy）抽进一个共享核心（本仓的 `pi-ai-adapter-core.ts`），两个 shell 只留各自不同的事实：provider id、花名册构造、凭据解析器（profile 上的 `reasoning` 差异已随两条路由钉到同一个 `DEFAULT_REASONING_EFFORT` 常量而消失）。**别复制**：那层 Proxy 是打在不可改 peer 上的补丁、带到期日，两份手抄必然分叉。
 4. `registerProviderPair` 里同时调 `registerAdapter` 与 `registerConfigurableProviders`，把 release 落到 state。
 5. 写测试：descriptor 映射在离线套件里钉（`maxTokens`/`compat`/`contextWindow` 各一条）；注册对在 wiring / e2e 里钉；**opt-in 关闭时不注册**。
 6. 接 provider 前跑一轮 **live-contract 探针**，把你打算钉死的每个值都实测并留证据。

@@ -74,7 +74,7 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 | `lifecycle.ts` | `registerDrawTool` 改为读「面板保存值 > 配置默认值」的生效值，而不是直接读 `settings.drawEnabled` |
 | `routes.ts` | 新增 `POST /api/<name>/draw`，与 `/provider` 同一信任形状 |
 | `snapshot-aggregate.ts` | 快照 `llm.drawEnabled` / `llm.drawSource` 回显生效值与来源 |
-| `client.js` | `ApiKeyForm` 区新增「出图工具」卡片，含 `DrawSwitch` 控件 |
+| `panel-page.ts` | 独立 SectionCard 承载「出图工具」卡片，含 `DrawSwitch` 控件（`ProviderForm` 已移到 `provider-controls.ts`，见其脚注） |
 
 与 provider 开关的一个**语义差异**需要说明：provider 开关改的是「当前请求立刻重新发布注册对」，改完立即生效；draw 开关改的是「挂载时是否注册 agent 工具」，**当前 Host 进程里已经注册的工具不会因为改开关而消失或出现**——要真正生效需要在**下一个 Host (re)mount**（即重启 `dsh web` 或重新安装插件）时，`lifecycle.ts` 的 `startSideEffects` 重新读生效值。面板开关本身是「立即生效、无需重启」的**状态读写**；工具的实际挂载/卸载要等到下次 Host 启动。面板文案里「立即生效」指的是**开关值**本身，不是 agent 工具的实时性。
 

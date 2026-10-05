@@ -124,7 +124,7 @@
 
 - **现象**：平台改了返回字段，面板永远显示空。
 - **根因**：解析器对缺失字段宽容，若顶层 key 改名，解析仍返回「能看懂的」，缺失部分静默消失。
-- **修法**：`EXPECTED_SHAPES` 校验顶层 key（现为 `usage-overview` / `usage-series` / `subscription` 三档；`subscription` 故意是**空数组**——它的形状尚未观测到，见 [AGNES-API.md](./AGNES-API.md) §6），缺哪个就在快照里挂 `shapeWarnings`，面板顶部明示「接口缺字段 {api} {missing}」，而不是永远「暂无数据」。
+- **修法**：`EXPECTED_SHAPES` 校验顶层 key（现为 `usage-overview` / `usage-series` / `subscription` 三档；`subscription` 只把承重的身份键列为必需（`plan_name` / `billing_cycle`，2026-10-01 实测），`usage` 故意不要求（从未消费过的账号可能缺它——那是富信息缺失，不是形状漂移），见 [AGNES-API.md](./AGNES-API.md) §6），缺哪个就在快照里挂 `shapeWarnings`，面板顶部明示「接口缺字段 {api} {missing}」，而不是永远「暂无数据」。
 
 ---
 
@@ -307,7 +307,7 @@
 - **现象**：打开插件面板，浏览器的密码管理器把**商汤（SenseNova）控制台的账号**自动填进输入框——不只是登录表单，连「接入 API」tab 里的**模型搜索框**也被塞了账号。看起来像浏览器按关键词猜中了什么，于是很容易往"是不是哪里写了 username/email 之类的字眼"方向查，查不出东西。
 - **根因**：三条事实叠加，**没有一条是"猜"**。
   1. **密码库按 origin 存，不按插件**。两个插件（`dsh-connect-sensenova-token-plan` 与 `dsh-connect-agnes-token-plan`）同时装在 `profiles/web` 的 `bundles` 里，都注册进同一个 `plugins.bundle.config` slot、都由 `http://127.0.0.1:3080` 提供。浏览器眼里没有两个插件，只有一个 origin。
-  2. **两个插件的表单语义逐行相同**（`account-form.ts:166/175/190/192`、`api-key-form.ts:99/101/142`、`model-picker.ts:222`）。`<form>` + `autocomplete="username"` + `type="password"` + `autocomplete="current-password"` 正是 Chromium 文档里的标准登录表单形状——**是我们主动声明的，不是它猜的**。
+  2. **两个插件的表单语义逐行相同**（`account-form.ts:166/175/190/192`、`api-key-form.ts:99/101/142`、`roster-shared.ts:113`（模型搜索框 `<input type="search">` 在共享的 `RosterTools`，`model-picker.ts:169` 只传 `name="model-search"`））。`<form>` + `autocomplete="username"` + `type="password"` + `autocomplete="current-password"` 正是 Chromium 文档里的标准登录表单形状——**是我们主动声明的，不是它猜的**。
   3. **API Key 那个 `<form>` 里只有密码字段、没有用户名字段**。Chromium 自己的文档（*Password Form Styles that Chromium Understands* 第 2 条）明确要求：用户名与密码拆成两个表单时，**密码表单里必须放一个含用户名的字段**（可用 CSS 隐藏），否则它会自己去找一个。它挑中了同页唯一一个既无 `autocomplete` 又无 `name` 的文本输入框——模型搜索框（`type="search"`）。
 - **修法**：给模型搜索框加 `autoComplete: "off"` 与 `name="model-search"`。**账号表单的 `username`/`current-password` 语义保持不动**——那是刻意的（浏览器记住 Agnes 账号是想要的能力），本次只堵"去表单外找用户名"这条路径。
 - **验证**：机制由两处源码逐行对照 + Chromium 官方文档确认。`render.test.mjs` I2 组新增遍历式检查：渲染全部 7 个可能含输入框的组件，断言**每个可填文本输入框要么 `autoComplete="off"`、要么声明凭据角色**，并把「唯一声明凭据角色的是账号表单」钉死。该检查实测会红（临时把值改成 `TEMP_PROBE` → 精确报出 `ProviderForm: type=search` 与 `ModelPicker: type=search`，随后还原复验绿）。

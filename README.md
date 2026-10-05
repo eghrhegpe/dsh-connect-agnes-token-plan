@@ -6,7 +6,7 @@
 > **第一次读这个仓库？先看这三句。**
 >
 > 1. **这是给 DeepSeek Harness 用的插件**，不是独立应用；所有入口都在 DSH 的 Plugins 页那张卡上（三个 tab，见下）。
-> 2. **三种「红」是正常的，不是回归**：① `store/routes/wiring.test.mjs` 等 peer 套件报 `cannot resolve the peer dependency` —— 那是 DSH runtime 自带的包不在本仓库，属环境问题，先查 `test/peer-roots.mjs`；② 没装 `dsh` CLI 时 e2e 会 SKIP，属预期；③ 若在 **23:00–00:00** 之间单独跑 `render.test.mjs` 报红，那是历史上的午夜窗口缺陷（已在 0.10.0 修复，见 [docs/PITFALLS.md](docs/PITFALLS.md) §50），当前安装版本已含，无需升级。
+> 2. **三种「红」是正常的，不是回归**：① `store/routes/wiring.test.mjs` 等 peer 套件报 `cannot resolve the peer dependency` —— 那是 DSH runtime 自带的包不在本仓库，属环境问题，先查 `test/peer-roots.mjs`；② 没装 `dsh` CLI 时 e2e 会 SKIP，属预期；③ 若在 **23:00–00:00** 之间单独跑 `render.test.mjs` 报红，那是历史上的午夜窗口缺陷（已在 0.10.0 修复，见 [docs/PITFALLS.md](docs/PITFALLS.md) §48），当前安装版本已含，无需升级。
 > 3. **见到「奇怪」的写法先别定罪**——本仓多数刻意的取舍都在 [docs/PITFALLS.md](docs/PITFALLS.md) / [docs/ADR.md](docs/ADR.md) 有明文出处。**动手前先 grep 一遍 docs/**。
 >
 > 协作会话的完整纪律见 [AGENTS.md](AGENTS.md)。

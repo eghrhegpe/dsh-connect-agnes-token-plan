@@ -8,7 +8,7 @@
 
 ## 1. 与参照件容器 `upstream/` 的关系
 
-本仓库根目录下有一个 **被 `.gitignore` 忽略的 `upstream/`** 目录。它是**参照件容器**，不是「本插件的上游应用」：里面并排放着若干**独立 git 仓库**（各占一个用仓库原名命名的子目录，浅克隆、自带 `.git` 与 remote）与**本机快照**（如桌面端 `app.asar` 解包）。承重件的来源、版本与「承重在哪」登记在 [REFERENCES.md](./REFERENCES.md)。
+本仓库根目录下有一个 **被 `.gitignore` 忽略的 `upstream/`** 目录。它是**参照件容器**，不是「本插件的上游应用」：里面并排放着若干**独立 git 仓库**（各占一个用仓库原名命名的子目录，浅克隆、多数自带 `.git` 与 remote，少数为上游 zip 解包 / 本机快照）与**本机快照**（如桌面端 `app.asar` 解包）。承重件的来源、版本与「承重在哪」登记在 [REFERENCES.md](./REFERENCES.md)。
 
 历史上游是商汤时代的 Python 桌面工具 [shaobingtongzhi/sensenova-usage-dashboard](https://github.com/shaobingtongzhi/sensenova-usage-dashboard)——它曾以 `upstream/sensenova-usage-dashboard` 的形式从 `~/.dsh/fork/` 移入此处，其算法（登录 OIDC 流、密码 JWE 封包、用量接口解析）已吸收进本插件的 Node 实现；**该本地副本现已不在本机**（`upstream/` 与 `~/.dsh/fork/` 均已无），需要时按本节末尾的命令 `git clone` 恢复。下表保留它与本插件的差异对照，作为「为什么最终不沿用那套形态」的记录。
 
@@ -85,7 +85,7 @@ client.js: interpretSnapshot(body) → {data, error}
    ▼
 决策块（panel-decision.js 从同一模块取的 viewOf）决定渲染：
    - 有数据 → 「我的额度」section（套餐身份 + 四窗口池 + vision 模型行）
-      + 「套餐对比（{count} 档）」section（默认折叠，未登录时展开）
+      + 「套餐对比（{count} 档）」section（默认折叠，始终由用户点击开合）
       + 「我的用量」section（windowNote 诚实声明 + 账号累计用量 + 近 N 天柱图）
    - 控制台未连接（quota.consoleConnected:false）→ 额度 tab 内明说，
      并把登录卡展开；另两个 tab 不受影响
@@ -266,9 +266,10 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
   `ctx.emit("llm/adapters-updated")`；注册失败回滚旧 pair，不拖垮正在
   服务的模型。快照用「id+vision 位+允许清单」签名去抖，catalog 一小时
   缓存、面板 30 秒轮询也不会反复重注册。
-- **peer 依赖懒加载**：`llm-adapter.ts` import Host 发行的
-  `@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm-pi-ai` /
-  `@deepseek-ai/dsh-llm`，干净检出解析不到，所以 index.js 只在开关开启
+- **peer 依赖懒加载**：`llm-adapter.ts` 直接静态 import Host 发行的
+  `@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm`（`@deepseek-ai/dsh-llm-pi-ai`
+  是经 `pi-ai-adapter-core.ts` 间接依赖，不在此文件的直接 import 面），
+  干净检出解析不到，所以 index.js 只在开关开启
   且 `ctx.get("llm")` 存在时动态 `import("./llm-adapter.ts")`；无 llm
   服务、peer 加载失败都降级为「面板照常用、provider 缺席」，并把
   去密错误带进快照 `llm.providerError`。图片两 hook
@@ -302,7 +303,7 @@ draw-router 的多源能力时才有意义。
 |---|---|---|
 | 出图模型识别 | 名字正则 `DRAW_MODEL_PATTERNS`（line 25-34：`/image/i`、`/u1-fast/i`、`/wan/i`、`/flux/i`…命中才认），探测自己另调一次 `GET /v1/models` | `modality.ts` 三级判定：`output_modalities` 字段优先 → `agnes-image-*` 名称兜底 → 默认 `text`，catalog 每小时已有 |
 | 识别质量 | 实锤会漏：现行出图模型 `agnes-image-2.1-flash` / `agnes-image-2.5-flash` 里，`/image/i` 能命中 `-image-`，但若平台改名/加后缀（如将来出现 `agnes-img-*`）`/image/i` 就漏了——商汤时代的 `Agnes-u1.5-lite` 正是这种漏（`/u1-fast/i` 一条正则都不命中） | 两把都识别 |
-| 出图执行 | `buildEndpoint` 拼 `{base}/v1/images/generations`（line 72-79）→ `POST {model, prompt, n, response_format}` → 取 `data[0].url / b64_json`（line 209-261），约 80 行 | 无（待吸收的全部增量） |
+| 出图执行 | `buildEndpoint` 拼 `{base}/v1/images/generations`（line 72-79）→ `POST {model, prompt, n, response_format}` → 取 `data[0].url / b64_json`（line 209-261），约 80 行 | 已落地（见下文「接法 B 已落地」） |
 | 凭据 | 明文写进插件目录 `draw-config.json`（line 140-151） | DSH 凭据服务，不落盘 |
 
 对接的两种接法：
@@ -321,7 +322,7 @@ draw-router 的多源能力时才有意义。
 顺手可借的小件：probe 失败 30 秒 cooldown（line 196）；
 lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115）。
 
-**接法 B 已落地（2026-09-29，`draw.ts` + `index.ts` 接线）**：
+**接法 B 已落地（2026-09-29，`draw.ts` + `lifecycle.ts` 接线）**：
 
 - 工具名 `agnes_draw_image`（带前缀，避免与 dsh-draw-router 的
   `draw_image` 撞名），配置开关 `drawEnabled`（默认关）+ `drawModelId` +
@@ -336,7 +337,7 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
 - 快照契约**零改动**（13 键不动，`API.md` 不变）：工具要么在要么不在，
   agent 直接可见；面板不新增展示。
 
-**视频吸收（接法 B 对称，2026-10-01，`video.ts` + `index.ts` 接线）**：与出图共用同一套
+**视频吸收（接法 B 对称，2026-10-01，`video.ts` + `lifecycle.ts` 接线）**：与出图共用同一套
 「存私有状态 + 面板开关 + 挂载时读生效值」机制，差异只在协议——
 
 - 工具名 `agnes_video_generate`，配置开关 `videoEnabled`（默认关）+ `videoModelId` +
@@ -356,7 +357,7 @@ lifetime `AbortController` + `AbortSignal.any` 超时合并模式（line 103-115
   工具已支持、自动换算」（flash 收敛：仅 720P、reference ≤5）。`test/video.test.mjs`
   直接覆盖这条分派。
 - 视频**没有 30s 冷却门**：一次视频尝试耗时分钟级、且与出图共用同一视频限频池，
-  协议自身延迟已远宽于 30 秒；冷却门在此是死代码（决策见 AGNES-API.md §7.5.1）。
+  协议自身延迟已远宽于 30 秒；冷却门在此是死代码（决策见 AGNES-API.md §7.5.2）。
 - 快照契约新增视频键（仍是 `llm` 块内的子键，顶层键数不变）：`videoEnabled` / `videoSource`
   / `videoModel` / `videoCandidateIds` / `video25ModelIds`。
 

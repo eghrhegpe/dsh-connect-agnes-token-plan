@@ -106,9 +106,10 @@ const credentialRef = (name) => name;
 /**
  * Where the throttle used to live, as a record in the credentials service.
  *
- * Read for MIGRATION ONLY and never written again. The marker-based adoption
- * lives in `token-store/throttle.ts`; this constant stays here as the public
- * export surface (`THROTTLE_ID`).
+ * Never written again. The marker-based adoption was deleted with the login-flow
+ * rename; the surviving interaction is the per-clear `deleteRecord` sweep in
+ * `token-store/throttle.ts`. This constant stays here as the public export
+ * surface (`THROTTLE_ID`).
  */
 const THROTTLE_ID = "agnes-console-throttle";
 

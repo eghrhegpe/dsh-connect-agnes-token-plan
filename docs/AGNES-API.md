@@ -32,7 +32,7 @@
 | 默认思考档位 | `high` | `DEFAULT_REASONING_EFFORT` |
 | 单 token 价 | 哨兵 0（按窗口限流计费，非按 token 价） | `NO_COST` |
 | 兜底上下文窗口 | `128_000`（目录声明优先） | `FALLBACK_CONTEXT_WINDOW` |
-| 看图判定 | 仅看 `input_modalities` 含 `image`（Agnes 目录不带该字段，故恒为 false——见 §7.1） | `identifyVisionModel` |
+| 看图判定 | 先看目录模态字段（`input_modalities` 等 4 键），缺则走名字兜底；Agnes 目录两者都无命中，故恒为 false——见 §7.1 | `identifyVisionModel` |
 | 模态判定唯一出处 | `src/host/modality.ts`：`output_modalities` 字段优先 → `agnes-image-*` / `agnes-video-*` 名称兜底 → 默认 `text` | `outputModalitiesOf` |
 | 出图/视频排除 | 产出含 `image`/`video` 即非对话 | `isChatModel`（与 `isImageGenModel` 同源） |
 
@@ -54,7 +54,7 @@
 | 端点 | 鉴权 | 返回的 `data` |
 |---|---|---|
 | `POST /api/user/login` | 无 | `{access_token, user}` |
-| `GET /api/usage/overview` | Bearer | 账号**累计**用量（认证探针；旧文曾写「唯一致命源」，现已改为五源软失败，见 §3.1） |
+| `GET /api/usage/overview` | Bearer | 账号**累计**用量（认证探针；旧文曾写「唯一致命源」，现已改为五源软失败，见 [ADR-007](./ADR.md) 与 [ARCHITECTURE.md §3](./ARCHITECTURE.md)） |
 | `GET /api/usage/series?range=custom&start_date=…&end_date=…` | Bearer | `{items:[…]}` 分桶用量 |
 | `GET /api/cn/user/subscription` | Bearer | 当前账号的套餐信息 + **窗口内已用量**（`usage`，见 §4） |
 | `GET /api/cn/user/subscription/plans` | **无**（公开） | 套餐目录数组，六档 |
@@ -63,7 +63,7 @@
 **唯一无需登录**的额度来源：面板可以在没有账号时照常回答"升级能买到什么"，也是
 认证半边整体失败时唯一还能显示的内容。
 
-**overview 曾是唯一致命源，现已改为五源软失败**。它是认证探针——最便宜的认证调用，任何已登录账号都能发。它的失败是"令牌不可用"的强信号：当它失败时面板会显示 `consoleConnected:false` 且 `quota.totals=null`（而非把失败伪装成测量值），其余四个源仍然照常应答并降级为 `quota.error`（若失败）。旧文曾写「必须冒泡到路由的 catch（那里才决定显示登录表单）」，现已改为与 series / subscription / plans 一样软失败；五个源的失败都在 `firstFailure` 中标记来源，由 `viewOf` 决定面板渲染哪一类提示。详细决策见 ADR-004 及 ARCHITECTURE §3。
+**overview 曾是唯一致命源，现已改为五源软失败**。它是认证探针——最便宜的认证调用，任何已登录账号都能发。它的失败是"令牌不可用"的强信号：当它失败时面板会显示 `consoleConnected:false` 且 `quota.totals=null`（而非把失败伪装成测量值）；series / subscription / plans 三者失败则降级为 `quota.error`，overview 与这三者的失败都在 `firstFailure` / `allFailures` 中标记来源，由 `viewOf` 决定面板渲染哪一类提示；`/v1/models` 失败只表现为 `catalogModels` 缺席，**不进** `quota.error`（ADR-007 明写这是刻意设计）。旧文曾写「必须冒泡到路由的 catch（那里才决定显示登录表单）」与「五个源的失败都在 `firstFailure` 中标记来源」，均已过时。详细决策见 [ADR-007](./ADR.md) 及 [ARCHITECTURE.md §3](./ARCHITECTURE.md)。
 
 ## 3. 响应信封
 
@@ -231,7 +231,7 @@ Agnes 的 Token Plan **不是积分余额，而是按窗口限流**，账号级�
 | 字段 | SenseNova 目录 | Agnes 目录 | 插件的读取方式 |
 |---|---|---|---|
 | `id` | ✅ | ✅ | 模型 id |
-| `input_modalities` | ✅ | ❌ | `identifyVisionModel` 只看它 → Agnes 上**恒 false**；面板「0 个支持图片输入」的含义是「读不到」，不是「测过没有」 |
+| `input_modalities` | ✅ | ❌ | `identifyVisionModel` 先看它（连同另三个模态键）、再走名字兜底 → Agnes 上两者都无命中，**恒 false**；面板「0 个支持图片输入」的含义是「读不到」，不是「测过没有」 |
 | `output_modalities` | ✅ | ❌ | `modality.ts` 的第一优先；缺则退回名称兜底 |
 | `context_length` | ✅ | ❌ | `contextWindowOf` 命名字段，缺则兜底 `128_000`——面板显示的是**兜底值**，不是平台声明。⚠️ 但**官方文档**明写 `agnes-2.5-flash` / `agnes-3.0-flash` = 512K、`agnes-2.5-pro` = 1M（差 4–8 倍），见 §7.1.2 |
 | `max_output_length` | ✅ | ❌ | `maxOutputLengthOf` 命名字段，缺则兜底；**已真机探针钉 `65_536`**（2026-10-01，与官方文档一致），见 §7.3 |

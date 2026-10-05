@@ -6,7 +6,7 @@
 
 ## 1. 本插件路由（Host 半边注册）
 
-这些路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号或 Key。请求体上限：账号 / api-key 主链路 **4096 字节**（`MAX_ACCOUNT_BODY_BYTES`，`src/host/routes/http.ts:30`），AgnesCode 路由 **2048 字节**（`MAX_AGNESCODE_BODY_BYTES`，`src/host/agnescode.ts:44`）。
+这些路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号或 Key。请求体上限：账号 / api-key 主链路 **4096 字节**（`MAX_ACCOUNT_BODY_BYTES`，`src/host/routes/http.ts:30`），AgnesCode 路由 **2048 字节**（`MAX_AGNESCODE_BODY_BYTES`，`src/host/routes/agnescode.ts:44`）。
 
 ### `GET /api/dsh-connect-agnes-token-plan/snapshot`
 
@@ -137,7 +137,7 @@
 }
 ```
 
-- `ok:false` 是**兜底路径**，只在 `buildSnapshotBody` 之外失败时出现（路由挂掉、Host 不可达、`config_error`）。body 带 `code`（`not_configured` / `jwt_expired` / `auth_error` / `config_error` / `account_locked` 等）与 `auth` 块。
+- `ok:false` 是**兜底路径**，只在 `buildSnapshotBody` 之外失败时出现（路由挂掉、Host 不可达、`config_error`）。body 带 `code`（`not_configured` / `jwt_expired` / `auth_error` / `config_error` 等，另加 `account_locked` 之类仅出现在 `quota.error.code`、顶层 `code` 不透传的值）与 `auth` 块。
 - **控制台读不到时 body 仍然是 `ok:true`**：`quota.consoleConnected:false` 加上 `quota.error.code`（`not_configured` / `auth_error` / `console_error`）。这样 API Key tab 和 AgnesCode tab 仍然可达——它们一个不读控制台、一个连的是桌面 App 上游，被一个缺席模块一起埋掉正是 `ARCHITECTURE.md` §5 禁止的。
 - Host 内部：临近过期时用保存的账号重新登录一次；Agnes 不发 refresh_token，所以「续期」就是重登。
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
@@ -215,7 +215,7 @@
 
 ### `GET /api/dsh-connect-agnes-token-plan/draw`
 
-出图工具开关的去密状态：`drawEnabled`（**生效值**）、`drawSource`（`panel` 面板保存过 / `config` 沿用配置默认）。设计见 [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md) §7。
+出图工具开关的去密状态：`drawEnabled`（**生效值**）、`drawSource`（`panel` 面板保存过 / `config` 沿用配置默认）、`drawModelId`（面板钉死的出图模型偏好，未钉时缺席）、`drawModelSource`。设计见 [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md) §7。
 
 ### `POST /api/dsh-connect-agnes-token-plan/draw`
 
@@ -225,7 +225,7 @@
 
 ### `GET /api/dsh-connect-agnes-token-plan/video`
 
-视频工具开关的去密状态：`videoEnabled`（**生效值**）、`videoSource`（`panel` / `config`）。与 `/draw` 是**同一个处理器**（`registerToolSwitchRoute`），只是各自持有自己的 store 与键名。
+视频工具开关的去密状态：`videoEnabled`（**生效值**）、`videoSource`（`panel` / `config`）、`videoModelId`（面板钉死的视频模型偏好，未钉时缺席）、`videoModelSource`。与 `/draw` 是**同一个处理器**（`registerToolSwitchRoute`），只是各自持有自己的 store 与键名。
 
 ### `POST /api/dsh-connect-agnes-token-plan/video`
 

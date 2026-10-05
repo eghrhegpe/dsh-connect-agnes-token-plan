@@ -389,7 +389,7 @@ export function supportedThinkingLevels(entry: Record<string, unknown>) {
  * Map one catalog entry onto the pi-ai model descriptor the adapter offers.
  *
  * Vision is the SAME identification the snapshot publishes
- * (`identifyVisionModel`: the platform's `input_modalities` first, the name
+ * (`identifyVisionModel`: any structured modality field first, the name
  * fallback only when no structured field exists) — so the model picker cannot
  * disagree with the panel's vision list about which models accept images.
  * @param {object} entry - one normalized catalog entry (must carry `id`).

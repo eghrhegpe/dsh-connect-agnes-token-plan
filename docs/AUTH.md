@@ -93,11 +93,11 @@ SenseNova 时代密码要走 JWE 封包（平台 JWKS 公钥 RSA-OAEP + A256GCM�
 
 **自造退避是有上限的**（`MAX_INVENTED_WAITS = 3`），这是「未知失败形状」的兜底：分类器只认得有限几种措辞，认不出的落到 `LOGIN_FAILED`，而把「我不认识这句话」翻译成「暂时故障、退避重试」并**无限重试**，正好是节流机制存在的目的的反面——平台改一个词（密码过期、需要重置），防锁号就变成自动撞锁。`ACCOUNT_LOCKED` 若平台**声明**了窗口，照单全收（时间型）；没声明窗口时同样受这 3 次上限约束，因为「锁着」不会自己变好。平台声明的窗口**永不计数也永不截短**，计的是我们猜的那些。
 
-节流状态写在**插件自己的状态文件**（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），因此**跨进程、跨重启**都生效：另一个 Host 进程（桌面版 / `dsh web` 用不同 profile，但可能共用同一 Home）不会在等待期内继续敲门。放在插件自己的文件里而不是凭据服务，是因为节流不是凭据，而凭据服务只认两种记录 kind——发明第三种会让整份凭据文件对 Host 不可解析（见 PITFALLS §6 与 `throttle-store.ts` 头注）。旧版曾把节流伪装成 `grant` 记录（marker 字段 `THROTTLE_MARKER`）寄存在凭据服务里，该地址仅作**一次性迁移读取**，之后不再写入。窗口读取同时支持中英文（「try again after 8 minutes」与「请 8 分钟后重试」）以及 `Retry-After` 头。
+节流状态写在**插件自己的状态文件**（`$DSH_HOME/state/<plugin>/throttle.json`，原子写、0600），因此**跨进程、跨重启**都生效：另一个 Host 进程（桌面版 / `dsh web` 用不同 profile，但可能共用同一 Home）不会在等待期内继续敲门。放在插件自己的文件里而不是凭据服务，是因为节流不是凭据，而凭据服务只认两种记录 kind——发明第三种会让整份凭据文件对 Host 不可解析（见 PITFALLS §6 与 `throttle-store.ts` 头注）。旧版曾把节流伪装成 `grant` 记录（marker 字段 `THROTTLE_MARKER`）寄存在凭据服务里；节流迁到插件状态文件后，该地址不再常驻——`clearThrottle` 现在每次清节流都对旧地址做一次 `deleteRecord` 清扫（原来那次性 marker 读取机制已随提交 `47f4d0c` 删除）。窗口读取同时支持中英文（「try again after 8 minutes」与「请 8 分钟后重试」）以及 `Retry-After` 头。
 
 **版本演进不许解除停车**：`throttle.json` 带 `version`，读到的版本不认识时**不能**当作「无节流」——对一条 parked 记录那等于重发一个用户没改过的密码。所以 `throttle-store.ts` 有迁移缝（`MIGRATIONS`）：**改 `THROTTLE_VERSION` 必须同时在这里加一条迁移**，旧版本走迁移、比当前更高的版本（另一个进程 / 升级前的旧 Host 写的）按 `FOREIGN_VERSION_WAIT_MS` 短等一次再重试读，而不是当成没记录。
 
-注意**跨 profile 共享这条只对节流成立**：`catalog` / `provider` / `draw` 三份状态是 **per-profile** 的（`$DSH_HOME/state/<profile>/<name>/`，见 [PITFALLS.md](./PITFALLS.md) §23），与节流**故意相反**——它们答的是「这个 profile 要什么」，而节流答的是「上游要这台机器等多久」。别把两者"统一"成同一种粒度。
+注意**跨 profile 共享这条只对节流成立**：`catalog` / `provider` / `draw` / `video` / `agnescode-switch` / `agnescode-models` 六份状态都是 **per-profile** 的（`$DSH_HOME/state/<profile>/<name>/`，见 [PITFALLS.md](./PITFALLS.md) §23），与节流**故意相反**——它们答的是「这个 profile 要什么」，而节流答的是「上游要这台机器等多久」。别把两者"统一"成同一种粒度。
 
 **跨 profile 共享是面板侧的硬要求，不只是存储细节。** 既然节流是机器级的，那么「哪个进程在敲门」就不能由面板自己决定：`state()` 把剩余窗口与「已停车」两个事实放进 `auth` 块（`retryAfterMs` / `needsUserAction`，契约见 [API.md](./API.md)「`auth` 块的两个节流字段」）**正是为了让面板服从机器级的答案**。只认自己那次失败的面板在刷新页面、换 profile 或换 Host 进程后会把按钮显示成可点——而 `saveAccount` 是**刻意**清节流的（上面那条注释：用户是在按面板的指示操作），那次点击于是会抹掉另一个进程正在遵守的记录，并把一次真实尝试打进可能已锁的账号。
 

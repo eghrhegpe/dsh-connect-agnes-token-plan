@@ -74,7 +74,7 @@ npm whoami --registry=https://registry.npmjs.org   # 401 说明没登录，先�
 ### 1. 确认测试与代码
 
 ```bash
-npm test        # 全量离线门禁 + 末尾 build-gate + e2e-gate（套件清单与链以 package.json scripts.test 为准，不在本文件背书数字；探到 dsh CLI 才实跑 e2e）
+npm test        # 全量离线门禁 + 末尾 4 道 gate：tsc-gate / build-gate / dup-gate / e2e-gate（各自探到 tsc / tsdown / jscpd / dsh CLI 才实跑，否则 SKIP；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）
 ```
 
 > 并行开发是常态：改哪个域就先跑哪个域（如 `node test/panel.test.mjs`），全量留给 pre-push。
@@ -129,7 +129,7 @@ git push origin vX.Y.Z
 > ⚠️ **tag 必须指向包含本次代码的提交**。若目标 tag 已存在且指向旧提交，修正后用 `git rev-list -n1 vX.Y.Z` 确认指向当前 HEAD。
 >
 > **但「删除并强制移动 tag」只在两个前提下合法**：① 该版本**尚未** `npm publish`；② 尚未创建 GitHub Release。
-> 只要二者之一已经发生（例如 `v0.4.3` 于 2026-09-30 同时上了 npm 与 Release），tag 就**钉死**了——
+> 只要二者之一已经发生（例如 `v0.4.3` 于 2026-10-01 同时上了 npm 与 Release；该版本当时发布在旧包名 `dsh-connect-sensenova-token-plan` 下），tag 就**钉死**了——
 > 移动它会让 npm 上那一版的内容与 tag 所指不符，而 npm 又不可覆盖。此时**唯一正解是发新版本**，
 > 让后来的提交随 `X.Y.(Z+1)` 到达用户。判断方法：
 >

@@ -53,7 +53,7 @@
 
 ```powershell
 npm run build          # 改 src/ 后必跑，重建 lib/ 与 client.js 并同 commit 提交
-npm test               # 离线全量套件 + build-gate + e2e-gate（各自探到 tsdown / dsh CLI 才实跑）
+npm test               # 离线全量套件 + 末尾 4 道 gate：tsc-gate / build-gate / dup-gate / e2e-gate（各自探到 tsc / tsdown / jscpd / dsh CLI 才实跑，否则 SKIP）
 node test/<域>.test.mjs # 单跑某一域（见 AGENTS.md「验证」段清单）
 ```
 

@@ -44,7 +44,7 @@ node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shap
 node test/switch-store.test.mjs # 四个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」）
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
-npm test                    # 全量离线测试门禁 + 末尾 build-gate + e2e-gate（套件清单与链以 package.json scripts.test 为准，不在本文件背书数字；各自探到 tsdown / dsh CLI 才实跑，否则 SKIP）
+npm test                    # 全量离线测试门禁 + 末尾 4 道 gate：tsc-gate / build-gate / dup-gate / e2e-gate（各自探到 tsc / tsdown / jscpd / dsh CLI 才实跑，否则 SKIP；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）
 npm run build               # 改 src/（host 或 client）后必跑：重建 lib/ 与根 client.js（两者是入库产物：重建后必须与 src/ 同一 commit 提交；build-gate 拦构建失败/产物缺失/漂移，CI 新鲜度门禁拦「改了 src 没重建」；别把 /lib/ 加回 .gitignore）
 ```
 

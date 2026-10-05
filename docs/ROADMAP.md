@@ -49,9 +49,9 @@ F3（并发 publish「最后发起者最终注册」门控）依赖对 `index.js
 
 | 步骤 | 内容 | 门禁 |
 |---|---|---|
-| ① 抽模块 | 新建 `provider-publish.js`：`createProviderPublisher({ settings, panelSwitch, loadAdapterModule, getLlm, onEvent, logger })` 返回 `{ publish, release, dispose, state }`；内部持有 `publishChain` / `disposed` / `registerPair` 单点定义（PITFALLS §18/§19 语义原样迁移） | `test/wiring.test.mjs` F3 改为对新模块注入（gate 语义不变），原 F3 红→绿即完成 |
+| ① 抽模块 | 新建 `provider-publish.js`：`createProviderPublisher({ settings, panelSwitch, loadAdapterModule, getLlm, resolveApiKey, emit, logger })` 返回 `{ publish, release, dispose, state }`；内部持有 `publishChain` / `disposed` / `registerPair` 单点定义（PITFALLS §18/§19 语义原样迁移） | `test/wiring.test.mjs` F3 改为对新模块注入（gate 语义不变），原 F3 红→绿即完成 |
 | ② 瘦 router | `index.js` 只留路由 handler + 快照组装 + 各 store 接线；`providerState` 改为 `publisher.state` 只读引用；目标 `index.js` < 700 行 | `test/routes.test.mjs` + `test/provider.test.mjs` 全绿；快照 14 键契约零改动（`docs.test.mjs` §5 门禁） |
-| ③ 第二个 IIFE 收编 | draw 注册（`index.js:558-597` 的 `void (async () => {...})()`）改走 publisher 的 `onEvent` 钩子或独立 `draw-register.js`，与 ① 同批评审 | `test/draw.test.mjs` 全绿；快照契约仍零改动（工具缺席时 14 键不变） |
+| ③ 第二个 IIFE 收编 | draw 注册（`index.js:558-597` 的 `void (async () => {...})()`）改走 publisher 的 `emit` 钩子或独立 `draw-register.js`，与 ① 同批评审 | `test/draw.test.mjs` 全绿；快照契约仍零改动（工具缺席时 14 键不变） |
 
 **不变量**：① 并发语义（`publishChain` 串行、`disposed` 闸、慢者赢修复）与 ② 回滚语义
 （`registerPair` 单点、factory 结果 await + 形状校验）必须**原样**迁过去，不是重写；
@@ -71,7 +71,7 @@ wiring/routes/provider/draw 四套件全绿、e2e-gate 通过。
 
 | 档 | 文件 | 内容 | 门禁 |
 |---|---|---|---|
-| 离线 | `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/agnes-contract.json`（seed：逐模型的 chat / vision / thinking 档位；`test/baselines/sensenova-contract.json` 是商汤时代的历史原件，仍留在原处供对照） | 断言 `llm-models.ts` 的 `toPiDescriptor` / `identifyVisionModel` / `isChatModel` 对契约表的输出与冻结值一致；`parsers.ts` 对契约表的解析结果；`llm-retry.ts` / `codes.ts` 的 429 / quota 文案分类。契约表改动必须附「平台响应原文」证据（提交约定） | `npm test` 全绿 |
+| 离线 | `test/contract.test.mjs`（进 `npm test`）+ `test/baselines/agnes-contract.json`（seed：逐模型的 chat / vision / thinking 档位；`test/baselines/sensenova-contract.json` 是商汤时代的历史原件，仍留在原处供对照） | 断言 `toPiDescriptor` / `isChatModel`（后者自 `modality.ts`）与 `parsers.ts` 的 `identifyVisionModel` 对契约表的输出与冻结值一致；`parsers.ts` 对契约表的解析结果；`llm-retry.ts` / `codes.ts` 的 429 / quota 文案分类。契约表改动必须附「平台响应原文」证据（提交约定） | `npm test` 全绿 |
 | live | `test/live-contract.mjs`（不进 `npm test`，`npm run test:live:contract`） | 对 `api.agnes-ai.cn/v1/models` 发 1 请求核对目录仍含冻结字段（模态 / context_length / max_output_length / supported_sampling_parameters）；推理端点按契约表**每格 1 请求、限流友好**（每格失败记漂移不重试），红 = 平台方言漂移，修法走 `AGNES-API.md` §7 注释层，不静默改代码 | 手动 / CI best-effort |
 | 探针纪律（2026-09-30 扩） | 推理探针扩到 `reasoning_effort: low/medium`（每模型 2 请求、2s 退避）；**429 是节奏答案不是参数判读**——探针记 INDEFINITE、不计入失败、退出码 0，只有 4xx 参数拒绝才算「平台不支持」的负证据；探针结果**人工**写回冻结契约（`driftLog` 留平台响应原文），不自动改 `llm-models.ts` | 同上 |
 
@@ -103,9 +103,9 @@ live 档在 `package.json` 有 `test:live:contract` 脚本。
 
 | 检查点 | 结论 |
 |---|---|
-| `retryPolicy` 落点 | `llm-adapter.ts:127` 唯一 `profiles` 条目（`LLM_PROVIDER_ID`），**provider 全局级**，非 model 级 |
+| `retryPolicy` 落点 | `llm-adapter.ts:103`（profiles 里唯一那条，`LLM_PROVIDER_ID`），**provider 全局级**，非 model 级 |
 | descriptor 是否带 per-model retry | `llm-models.ts` `toPiDescriptor` 无 retry/quota 字段，全局策略即全 model 一刀切 |
-| quota 数据源粒度 | `parsers.ts` `parsePools` 每个 pool 带 `modelIds`，额度是 **pool 级归组**，model 级差异化无数据支撑 |
+| quota 数据源粒度 | `parsers.ts` 的 `quotaWindows(plan)` 与 `parseSubscriptionUsage(subscription)` 把额度归到**账号级四窗口**（`requests5h` / `requestsWeekly` / `imagesDaily` / `videoDaily`），model 级差异化无数据支撑（旧 `parsePools` 已随迁移删除） |
 | 推论 | 保持**全局** retry 策略（最低侵入）+ **per-model 可用性标记**（descriptor 重建时按 pool 耗尽打标） |
 
 per-model 可用性标记即用户要的「清单自带识别」——但它是 **availability 信号**，不是 retry 配置，不碰 peer 钩子，随 `publishProvider` 重建即生效。

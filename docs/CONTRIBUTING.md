@@ -77,9 +77,9 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
 ## 7. 已知取舍
 
 - **API key 的持久化与跨进程**
-  `index.ts` 的 `resolveApiKey()` 已优先走 `ctx.credentials.resolve("AGNES_TOKEN_PLAN_API_KEY")`、回退 `process.env`，
+  `src/host/api-key-store.ts` 的 `resolveApiKey()` 按三级优先级读：先走 `ctx.credentials.resolve("AGNES_TOKEN_PLAN_API_KEY")`、再 memory 层、最后回退 `process.env`（`src/host/index.ts` 只是一行委托），
   与账号/密码腿（走 `ctx.credentials.modifyRecord`、kind=grant、跨重启、跨进程）的不对称已收口——
-  凭据服务里的 key 与 env 里的 key 都能被读到。仍不对称的部分：API key 无写路径（不通过本插件修改），
+  凭据服务里的 key、memory 层的 key 与 env 里的 key 都能被读到。仍不对称的部分：API key 无写路径（不通过本插件修改），
   所以不给 `token-store.ts` 加 `modifyRecord`；`fetchModelCatalog` 只接字符串参数，不关心供方是谁。
   读 key 必须每次轮询时调用（凭据服务可能晚于插件挂载注册），不能在 `apply` 开头缓存。
 
@@ -121,8 +121,10 @@ description:
 - 仓库创建满 24 小时（CI 按 GitHub `created_at` 自动卡）；本仓 2026-09-28T05:03:11Z 建仓；
 - 真实可用代码、非占位——已满足；仓库需公开且处于活跃维护。
 
-已发布 npm 包 `dsh-connect-agnes-token-plan`（registry 上最新为 **0.10.0**，2026-10-04 发布；2026-09-28 首发 0.2.0，
-其后 0.4.3（2026-09-30）、0.5.0 / 0.6.0（2026-10-01）、0.7.0 / 0.8.0 / 0.8.1（2026-10-02）、0.9.0（2026-10-03）、
+已发布 npm 包（registry 上最新为 **0.10.0**，2026-10-04 发布；0.2.0 于 2026-09-28 首发、
+0.4.3 于 2026-10-01 发布，二者都发在旧包名 `dsh-connect-sensenova-token-plan` 下；本包名
+`dsh-connect-agnes-token-plan` 自 **0.5.0** 起，其后 0.5.0 / 0.6.0（2026-10-01）、
+0.7.0 / 0.8.0 / 0.8.1（2026-10-02）、0.9.0（2026-10-03）、
 0.10.0（2026-10-04）均已发布；
 0.4.1 与 0.4.2 打了 git tag 但**未发布到 npm**，其内容随 **0.4.3** 一并发布。`repository` 指回本仓，列表会
 自动按下载量关联，yml 里无需任何 npm 字段）。注意本机默认 registry 是 npmmirror 镜像，登录与发布都
@@ -142,7 +144,7 @@ description:
 
 > **已发布 ⇒ tag 不可移**（2026-10-01 实测，别踩）：`v0.4.3` 已同时存在于 npm 与 GitHub Release，
 > 因此**不能**按 RELEASING §4 的告警去「删除并强制移动 tag」来补齐后来的提交——那会让 npm 上的
-> 0.4.3 与 tag 内容不符。同理适用于其后每一个已发布的版本（0.5.0 起至 0.8.1）。
+> 0.4.3 与 tag 内容不符。同理适用于其后每一个已发布的版本（0.5.0 起至 0.10.0）。
 > `v0.4.3` 之后落地的改动（e2e 进程树修复、`.gitignore`、以及自述面文档追平）
 > **已随 0.5.0 到达用户**。
 >

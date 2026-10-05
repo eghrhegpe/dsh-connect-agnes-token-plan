@@ -51,7 +51,7 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 | `pollSeconds` | `30` | 面板轮询间隔，由 Host 下发、面板跟随（不再硬编码 30s） |
 | `consoleTimeoutMs` | `15000` | 单次控制台请求超时（下限 1000） |
 | `tokenSkewSeconds` | `120` | 提前多久续期，避免撞过期边界 |
-| `allowedHosts` | `[]` | 追加可信 `Host` 名（默认 `localhost` / `127.0.0.1` / `::1`，**只增不替**） |
+| `allowedHosts` | `[]` | 追加可信 `Host` 名（默认 `localhost` / `127.0.0.1` / `[::1]` / `::1`，共 4 项，**只增不替**） |
 | `loginPath` | `""` → `/api/user/login` | 登录路径，平台哪天改了才需要动 |
 | `loginTimeoutMs` | `0` → `15000` | 单次登录尝试的超时。登录要带密码、可能被限流，所以与 `consoleTimeoutMs` **不是同一个数**。`requestTimeoutMs` 是它的旧名，只在只设旧名时仍然生效 |
 | `fallbackExpiresInSeconds` | `0` → `604800` | access token 不是可读 JWT 时假定的寿命（7 天）。**方向是刻意的**：估短了每轮轮询都要花一次真实登录，而 Agnes 有失败次数锁定 |

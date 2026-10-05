@@ -14,7 +14,7 @@
 | `AgnesCode2Api/` | git 仓库 | `vibe-coding-labs/AgnesCode2Api` | `6d5228b`（2026-08-04） | Apache-2.0 | Go 协议翻译代理（AgnesCode → Anthropic/OpenAI）；`pkg/auth/credentials.go` 是 macOS `state.vscdb` 采集路径的出处 |
 | `AgnesCode/` | git 仓库 | `AgnesAI-Labs/AgnesCode` | `7e6bc45`（2026-07-13） | 未标注 | **官方** release 与反馈中心，**不含源码**；桌面端安装包在它的 Releases 里 |
 | `AgnesCode-desktop-1.0.68/` | 本机快照（非 git） | 本机安装的桌面端 `app.asar` 解包 | `1.0.68`（buildNumber 8） | 闭源第三方 | 全部 BFF 调用的真实出处（`.vite/renderer/.../App-*.js`）。**比线上逆向件（基于 1.0.17）新两个多月**——引用其事实前先在这里复核版本漂移。另归档两个形状探针：`probe-agnescode-models.mjs`（目录字段面 / 倍率候选端点）与 `probe-agnescode-credits.mjs`（积分端点，2026-10-01）；二者的原始输出（如 `credits-probe-output.json`）带**账号级数据，只进本机文件**，永不进提交 / 粘贴公开渠道（形状结论已提炼进 ROADMAP §6.3.1） |
-| `agnescode-cli/` | git 仓库 | `ViviQuan/agnescode` | `c587e85`（2026-09-30） | MIT | 终端原生 coding agent，内置 Agnes AI provider（TypeScript） |
+| `agnescode-cli/` | git 仓库 | `ViviQuan/agnescode` | `c587e85`（2026-10-01） | MIT | 终端原生 coding agent，内置 Agnes AI provider（TypeScript） |
 | `agnescodex/` | git 仓库 | `minchieh-fay/agnescodex` | `aa803ed`（2026-07-07） | Apache-2.0 | 把 Agnes API 接到 Codex 的适配件，作协议对照 |
 
 `agnescode-cli/` 的目录名与官方 `AgnesCode/` 在大小写不敏感的文件系统（Windows）上不能同名并排，故加 `-cli` 后缀。
@@ -28,7 +28,7 @@
 ## 3. 纪律
 
 - **只吸收事实，不复制代码。** 对这些参照件的用法一律是「读出协议事实 → 用自有的 Node/TypeScript 实现重写」。参考件多为「个人学习与技术研究」定位，其作者明确禁止商业转售与中转服务——本插件不做这两件事，也**不 vendor 任何源码**。
-- **绝不 `git add upstream/`**，也不把参照件里的明文凭据文件（如 `accounts.json`）带进版本库。桌面端快照的 `node_modules` 里 10 个 `.pdb` 调试符号约占 60M+ 死重，可随时删。
+- **绝不 `git add upstream/`**，也不把参照件里的明文凭据文件（如 `accounts.json`）带进版本库。桌面端快照的 `node_modules` 里 `node-pty\prebuilds\` 的 10 个 `.pdb` 调试符号合计约 53 MB 死重，可随时删。
 - **凭据的边界不变**：参照件只提供「凭据存在哪、怎么解」的事实；解出的 token / 密码永不落盘、不进日志，见 [CONTRIBUTING.md](./CONTRIBUTING.md) 与 [PITFALLS.md](./PITFALLS.md)。
 - **版本漂移优先于文档结论。** 任何参照件的事实都带「它当时看的是哪个版本」；线上逆向文档基于 1.0.17，而本机快照已是 1.0.68——冲突时以**本机快照 + 带凭据的实测**为准。
 

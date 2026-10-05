@@ -7,7 +7,7 @@
  * isomorphism the docs name as a design fact (video.ts mirrors draw.ts by
  * intent) — so the gate pins that floor and fails only when a NEW large copy
  * pushes src above it. Threshold is in DUPLICATED-TOKEN percent; the 2026-10-02
- * baseline is ~1.0% over 78 files at `--min-tokens 70`, so 3% leaves headroom
+ * baseline is ~1.0% over 81 files at `--min-tokens 70`, so 3% leaves headroom
  * for legitimate shared helpers while still catching a wholesale paste.
  *
  * Same skip rule as test/build-gate.mjs and test/e2e-gate.mjs: if jscpd is not

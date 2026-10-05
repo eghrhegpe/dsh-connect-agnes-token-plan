@@ -28,10 +28,10 @@
 
 | # | 事实 | 取证位置（本机 runtime） |
 |---|---|---|
-| 1 | 本插件出图/出视频经 `ctx.tools.register(defineTool({…}))` 落地；`dsh-tools` 的 `defineTool` 只有 `name / description / parameters / output / execute`，**无 `category` / `kind` / `tags` 等能表达「图像类工具」的分类字段** —— 即 DSH 没有「图像工具大统一面」，只有一个「工具大统一面」。 | `@deepseek-ai/dsh-tools`（README + `defineTool` 契约） |
-| 2 | `@deepseek-ai` 作用域**没有**第一方 image / video 服务：无 `dsh-image` / `dsh-draw` / `dsh-video` / `dsh-media-gen`。`images/generations` 端点只出现在 `@earendil-works/pi-ai`（推理 peer 底层）与 `openai` SDK 内部，**均非 DSH 自己的服务**。 | runtime 全量 grep 结果 |
+| 1 | 本插件出图/出视频经 `ctx.tools.register(defineTool({…}))` 落地；`dsh-tools` 的 `defineTool` 可接受的字段共 14 个（`name / description / parameters / output / execute` 之外还有 `timeoutMs / deferLoading / finalizeContent / projectContent / presentCall / presentResult / isConcurrencySafe`，`output` 下另有 `render / presentationMeta`），**其中无 `category` / `kind` / `tags` 等能表达「图像类工具」的分类字段** —— 即 DSH 没有「图像工具大统一面」，只有一个「工具大统一面」。 | `@deepseek-ai/dsh-tools`（README + `defineTool` 契约） |
+| 2 | `@deepseek-ai` 作用域**没有**第一方 image / video 服务：无 `dsh-image` / `dsh-draw` / `dsh-video` / `dsh-media-gen`。`images/generations` 端点只出现在 `openai` SDK 内部（`@earendil-works/pi-ai` 经它间接到达、自身无该字面量），**均非 DSH 自己的服务**。 | runtime 全量 grep 结果 |
 | 3 | `pi-ai` 内部确实存在图像注册面：`images-api-registry.js` 导出 `registerImagesApiProvider(api, { generateImages })` + `getImagesApiProvider(api)`，`register-builtins.js` 已将 OpenRouter 自注册进去（签名 `generateImages(model, context, options)`）。**但该面仅在 `pi-ai` 内部被引用**，`@deepseek-ai/dsh-llm-pi-ai` 与 `dsh-llm` 都没有桥接它给外部 provider。 | `@earendil-works/pi-ai/dist/images-api-registry.js`、`providers/images/register-builtins.js`；`@deepseek-ai` 作用域 grep 零命中 |
-| 4 | `pi-ai` 的 `package.json` exports **没有 `./images` 子路径导出**（仅 `.` / `./compat` / `./providers/*` / `./api/*` / `./utils/*` / `./oauth` 等）。即使想 `import`，合法入口也不存在。 | `@earendil-works/pi-ai/package.json` |
+| 4 | `pi-ai` 的 `package.json` exports **没有 `./images` 子路径导出**（仅 `.` / `./compat` / `./providers/*` / `./api/*` / `./utils/*` / `./oauth` 等）。即使想 `import`，`./images` 子路径不存在；但 `./providers/images/register-builtins.js` 可合法 import（只导出 OpenRouter 生成器，不含 registry 本体）。 | `@earendil-works/pi-ai/package.json` |
 | 5 | **视频侧连内部面都没有**：runtime 内不存在 `registerVideoApiProvider` / `videoApiProviderRegistry`。Agnes 的 `agnes_video_generate` 是异步任务协议（create→poll），更无现成大统一面可挂。 | runtime 全量 grep 零命中 |
 | 6 | 本插件走的那条 provider 注册通道**不收 image/video**：`dsh-llm-pi-ai` 给外部 provider 暴露的只有 `ctx.llm.registerAdapter` / `registerConfigurableProviders` / `registerModelDiscovery` / `ctx.authorization.registerFlow`，**无 image / video 注册入口**。 | `@deepseek-ai/dsh-llm-pi-ai/lib/index.js` 导出面 |
 
@@ -64,7 +64,7 @@
 ## 4. 与既有文档的关系
 
 - 本文件不复制 ARCHITECTURE.md §5.4 的「出图对接点源码对照表」与「接法 A/B 决策表」
-  （那两张表是其唯一出处，按 [docs.test.mjs](./README.md) 跨文件重复表规则保持单源）；
+  （那两张表是其唯一出处，按 [docs.test.mjs](../test/docs.test.mjs) 跨文件重复表规则保持单源）；
   本文只补 §5.4 未覆盖的事实——**「DSH 无第一方大统一 image/video 面」的 runtime 取证**，
   以及「接法 A 被否决」的明确裁定。
 - 若未来 §5.4 修订出图路线（例如上游真暴露 image 注册面），本文应随同更新或直接归档。
