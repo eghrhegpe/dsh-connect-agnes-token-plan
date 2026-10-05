@@ -553,3 +553,13 @@ SenseNova 另留 `tsconfig.strict-null.json` 作冗余双查、本仓直接全�
 modality.ts}`、`test/contract.test.mjs` §10 的**本仓实测**；对照侧结论来自姊妹插件的
 0.4.7 形态，未在本机复核，仅作**方向**参照，不作本仓事实。落地状态随实现漂移，
 当前执行进度一律以 [ROADMAP.md](./ROADMAP.md) 为准（开篇约定）。
+
+---
+
+## 9. 快照聚合纯度边界（2026-10-05 已落地）
+
+`buildSnapshotBody`（`src/host/snapshot-aggregate.ts`）在 §2.3 被记为"已把最重的聚合抽走"，但它头注释自述的"纯聚合（no filesystem writes）"当时并未兑现——函数体内仍内联了 catalog 持久化（`catalogStore.replace`，PITFALLS §40 的写失败处理）与 provider 重注册（`publisher.publish`）两处真实 I/O（实测 509–540）。本次把它抽成同文件 `applyCatalogEffects({catalogStore, publisher, providerState, catalog, enabledIds, unavailableModelIds})`，`buildSnapshotBody` 现在只剩"抓取 wiring 字段 + 纯投影出 quota/usage/llm 块"，真正匹配其头注释。签名推进逻辑与调用顺序逐字照搬，零行为变更；`test/routes.test.mjs` 钉死 catalog 重发布路径（196/196）作为护栏。与 §4.1 的"底层原语统一"、§2.3 的"接线层抽离"同脉——都是把"纯计算"与"挂载期副作用"的边界锚进命名函数，而非靠注释假装。
+
+- **落地状态（2026-10-05）**：已提交（`ae6cd87`），`src/host/snapshot-aggregate.ts` 改动 +138 −51（含 lib 重建）；`routes`/`parsers`/`agnescode`/`switch-store`/`panel` 五套件全绿。副作用边界约定另立 `docs/PITFALLS.md` §51（护栏形态，供改快照者第一站扫到）。
+- **门禁**：`test/routes.test.mjs`（catalog 重发布路径，196/196）、`docs.test.mjs`（本文行数/链接护栏）。
+- **不做（与 §5「不做」一致）**：不造 `registerUpstream` 工厂——ROADMAP §2.1 冻结"大统一下一块吸收"（§2.1 完成前不接第三个上游）+ 当前只有 Token Plan + AgnesCode 两个 upstream、无具体第三上游 epic + YAGNI。若将来确有第三上游，正确顺序是先立控制面/契约护栏**解冻**，再设计工厂，而非预售架构。
