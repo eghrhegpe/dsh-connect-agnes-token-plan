@@ -7,11 +7,12 @@
  * 收敛成一份之后，语义必须就地钉住，而不是靠两个 publisher 各自的套件间接覆盖
  * —— 间接覆盖的问题正是：两边都绿，共享层里那半句仍可能谁都没测到。
  *
- * 本套件钉四组：
+ * 本套件钉五组：
  *   1. 队列（串行、慢者不再赢、被拒的链节不毒后续）
  *   2. 释放与注销（幂等、容忍抛错、**`built` 必须一起清**）
  *   3. 注册与回滚（单点 registerPair、失败还原上一对、domain 字段交回调还原）
  *   4. 构建失败的描述与告警（脱敏、ERR_MODULE_NOT_FOUND 的补救提示）
+ *   5. 工厂加载的 memo 语义（**失败不被 memo**、成功只加载一次）
  */
 import { installNetworkGuard } from "./peer-roots.mjs";
 import { name as pluginName } from "../src/host/host-config.ts";
@@ -182,6 +183,38 @@ const makeLlm = () => {
   check("the reason is the shared constant", state.error === NO_LLM_SERVICE_ERROR, String(state.error));
   check("the stale built adapter was cleared (no dead rollback target)",
     state.built === null, JSON.stringify(state.built));
+}
+
+// ── 2c. 工厂加载的失败**不得**被 memo 死 ────────────────────────────────────
+// Memo 的对象曾是 promise 本身，于是 rejection 被钉在槽里直到进程结束：一次
+// 失败的 `import()`（典型 `ERR_MODULE_NOT_FOUND`，peer 不在解析路径里）之后，
+// 每次 publish 都重抛同一个错，provider 再也注册不上。要命的是
+// `describeBuildFailure` 的补救提示恰好叫人「把 peer 装到能解析的位置」——
+// 照提示修好之后**依然无效**，可恢复的安装问题代价却是重启 Host。
+// 判据两条：失败之后下一次调用是真重试；happy path 仍然只加载一次。
+{
+  section("a failed factory load is not memoized");
+  let attempts = 0;
+  const resolver = createAdapterFactoryResolver(async () => {
+    attempts += 1;
+    if (attempts < 2) throw new Error("Cannot find module '@earendil-works/pi-ai'");
+    return { createAgnesAdapter: "factory" };
+  }, "createAgnesAdapter");
+
+  let firstError = null;
+  try { await resolver(); } catch (error) { firstError = error; }
+  check("the first load failure surfaces", firstError !== null, String(firstError));
+
+  let second = null;
+  let secondError = null;
+  try { second = await resolver(); } catch (error) { secondError = error; }
+  check("the next call retries instead of replaying the pinned rejection",
+    second === "factory" && secondError === null,
+    `value=${String(second)} error=${String(secondError)}`);
+
+  const third = await resolver();
+  check("the happy path still loads the module once",
+    attempts === 2 && third === "factory", `attempts=${attempts}`);
 }
 
 // ── 3. 注册与回滚 ──────────────────────────────────────────────────────────

@@ -206,6 +206,15 @@ export function registerProviderPair(
  *
  * The module is loaded once and the factory is read off it once, so a Host
  * whose peers resolve slowly pays that cost one time, not per publish.
+ *
+ * Only the SUCCESS is memoized. The memoized value used to be the promise
+ * itself, which pinned a rejection in the slot for the life of the process:
+ * after one failed `import()` every later publish rethrew the same error and
+ * the provider could never register again — even after the operator fixed the
+ * missing peer, which is exactly the remedy this file's own
+ * `describeBuildFailure` prints for `ERR_MODULE_NOT_FOUND`. A recoverable
+ * install problem cost a Host restart. Clearing the slot on failure keeps
+ * "loaded once" for the happy path and gives the next publish a real retry.
  * @param {() => Promise<unknown>} loadModule - resolves the adapter module.
  * @param {string} exportName - the factory export to read off the module.
  * @returns {() => Promise<any>} the memoized factory resolver.
@@ -218,7 +227,11 @@ export function createAdapterFactoryResolver(
   return async () => {
     if (adapterFactoryPromise === undefined) {
       adapterFactoryPromise = Promise.resolve(loadModule())
-        .then((mod) => (mod as Record<string, unknown> | undefined)?.[exportName]);
+        .then((mod) => (mod as Record<string, unknown> | undefined)?.[exportName])
+        .catch((error: unknown) => {
+          adapterFactoryPromise = undefined;
+          throw error;
+        });
     }
     return adapterFactoryPromise;
   };
