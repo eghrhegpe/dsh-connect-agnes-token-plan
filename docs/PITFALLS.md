@@ -497,7 +497,7 @@
 
 ## 45. 平台给了权威值，客户端却自算，还顺手把它钳住了
 
-- **现象**：面板进度条画的是客户端自己算的 `(used / limit) * 100`，而 **Host 早就解析出平台原值 `usage_pct` 一路下发到了 wire**（`parsers.ts:471` → `snapshot-aggregate.ts:225`（`buildQuotaBlock`）→ `wire.ts:37` 声明 `usagePct`），**`src/client/` 里读取它的点 0 处**。更刺眼的是两处文档都写着相反的话——`AGNES-API.md:109`「进度条是逐字转写，不是计算」、`API.md:47`「面板画进度条用 usagePct」。三处事实里文档是对的，客户端是那个「分头走路」的。
+- **现象**：面板进度条画的是客户端自己算的 `(used / limit) * 100`，而 **Host 早就解析出平台原值 `usage_pct` 一路下发到了 wire**（`parsers.ts:471` → `snapshot-aggregate.ts:225`（`buildQuotaBlock`）→ `wire.ts:37` 声明 `usagePct`），**`src/client/` 里读取它的点 0 处**。更刺眼的是两处文档都写着相反的话——`AGNES-API.md:109`「进度条是逐字转写，不是计算」、`API.md:50`「面板画进度条用 usagePct」。三处事实里文档是对的，客户端是那个「分头走路」的。
 - **根因**：`wire.ts` 声明了字段，但**声明不等于消费**；契约门禁 `contract.test.mjs` 钉的是「host ⊆ client 的键集」（Host 有、client 也声明了 `usagePct`），**它不检查 client 是否真的读了那个值**。而客户端自算那行不仅「多此一举」，还**钳制**了结果：`Math.min(100, …)` 把平台报的 `>100`（超额窗口）封顶成 100%。所以这不是「等价实现」，是**悄悄改写了平台口径**——平台说 130，面板说 100。
 - **修法**（`cards.ts`）：优先用平台 `usagePct`；**仅当它缺失或为 null 时**才回退 `used/limit` 的算术值（老 Host / 某窗口读不到百分比），并撤掉 `Math.min`。与 `used` 已有的「缺失不是零」纪律同源。
 - **验证**：`render.test.mjs` 新增 A1b 组——① 平台值与算术值分歧时（`used/limit=25%` 但 `usagePct=33`）必须显示 33.0%；② 超额窗口（`usagePct=130`）**不被封顶**成 100%、且仍取 danger 色；③ `usagePct: null` 回退到算术、不渲染 NaN。**负向**：把优先级退回自算 → 该套件 `4/235 FAILED`。既有 A1 组的 fixture 不带 `usagePct`，因此**回退路径仍被原有断言钉住**（未被新行为顶掉）。
