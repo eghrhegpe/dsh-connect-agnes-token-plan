@@ -298,3 +298,44 @@ export function viewOf(
 export function shouldShowAccountManagement(auth: AuthData | null): boolean {
   return auth !== null;
 }
+
+/**
+ * The wait the HOST is already serving, in epoch millis, or `0` for none.
+ *
+ * WHY THIS EXISTS. The Host's `state()` reads the persisted throttle and
+ * serves it as `auth.retryAfterMs` — a REMAINING window (`held.until - now`,
+ * `inForceWaitMs` in `token-store/throttle.ts`), not the whole window the
+ * refusal originally stated. Its own comment says why: "a second Host process
+ * shows the same countdown rather than inviting an attempt that would be
+ * refused." The throttle file is deliberately NOT per-profile
+ * (`throttle-store.ts`), so a lockout taken on the desktop profile is real on
+ * the web profile too.
+ *
+ * The panel had no consumer for it. `AccountForm` seeded its countdown from
+ * component state alone (`useState(0)`), so the window was honoured only for
+ * the process that made the failed attempt — and after a page refresh, a
+ * second profile, or a second Host process, the button read ENABLED while the
+ * Host was still inside the wait. `saveAccount` deliberately clears the
+ * throttle ("a deliberate resubmit is the user acting on what the panel told
+ * them"), so that click was not merely futile: it cleared the record the other
+ * process was obeying and spent a real attempt against a possibly-locked
+ * account. The one field the Host went out of its way to serve was the one
+ * field the panel dropped.
+ *
+ * A PARKED refusal (`needsUserAction`) returns `0` on purpose: a wrong
+ * password or a captcha has no deadline to count down, and pretending
+ * otherwise would show a countdown ending in another attempt that can only
+ * fail. `AccountForm` renders that state as a sentence instead.
+ *
+ * @param auth - the snapshot's `auth` block, or `null` when it carried none.
+ * @param now - the current clock, injected so the countdown is testable.
+ * @returns epoch millis to wait until, or `0` when nothing is being waited out.
+ */
+export function servedWaitUntil(auth: AuthData | null, now: number): number {
+  if (auth === null) return 0;
+  // Parked: no clock will clear it, so there is nothing to count down.
+  if (auth.needsUserAction === true) return 0;
+  const remaining = auth.retryAfterMs;
+  if (typeof remaining !== "number" || !Number.isFinite(remaining) || remaining <= 0) return 0;
+  return now + remaining;
+}

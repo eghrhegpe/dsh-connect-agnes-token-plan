@@ -18,7 +18,7 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md) | 提供方注册开关：从「配置字段 + 重启」到「面板开关 + 立即生效」的设计决策与同类插件调研 | 改 provider 注册、理解开关语义 |
 | [TESTING.md](./TESTING.md) | 离线测试体系、`panel-decision.js` 机制、已知缺口 | 跑测试、理解测试为什么这样写 |
 | [AGNES-API.md](./AGNES-API.md) | **现行接口事实源**：控制台额度侧（端点表、响应信封、四窗口额度模型、套餐目录与 uuid 匹配）＋推理侧（provider `agnes-token-plan`、key `AGNES_TOKEN_PLAN_API_KEY`、思考档位 safe-set、live-contract 护栏） | 改额度/推理接口、排「打到错网关」、对 live-contract 基线 |
-| [PITFALLS.md](./PITFALLS.md) | 51 条真实踩坑（现象→根因→修法） | 改代码前避坑、理解防御性代码的来由 |
+| [PITFALLS.md](./PITFALLS.md) | 53 条真实踩坑（现象→根因→修法） | 改代码前避坑、理解防御性代码的来由 |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | 提交约定、红线（凭据/`upstream/` 不进库）、仓库整洁 | 准备提交、清理历史误跟踪 |
 | [REFERENCES.md](./REFERENCES.md) | **参照件索引与纪律**：`upstream/` 容器里谁是谁（来源 / 版本 / 许可 / 承重在哪）——AgnesCode 线六件参照件与本机桌面端快照、只吸收事实不复制代码的红线 | 查「这条事实当初从哪来」、新增参照件、防再次「纯探测不落盘」 |
 | [CHANGELOG.md](../CHANGELOG.md) | 公开行为变化的版本记录（非 git log 替代） | 看「这个版本改了什么」 |

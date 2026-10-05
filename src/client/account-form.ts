@@ -17,7 +17,7 @@ import { format } from "./format.ts";
 import { postJson } from "./http.ts";
 import { h, useCallback, useEffect, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
-import { CLIENT_CODE, COOLDOWN_TEXT, REFUSAL_TEXT } from "./snapshot.ts";
+import { CLIENT_CODE, COOLDOWN_TEXT, REFUSAL_TEXT, servedWaitUntil } from "./snapshot.ts";
 import { S } from "./styles.ts";
 import type { AuthData } from "./wire.ts";
 
@@ -64,8 +64,29 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
   // Epoch millis until which the platform asked us not to retry. While
   // this is in the future the submit button stays disabled, because a
   // retry inside the window is what extends a lockout.
-  const [cooldownUntil, setCooldownUntil] = useState(0);
+  //
+  // Seeded from the HOST's throttle, not only from this component's own
+  // history: the throttle file is shared across profiles and processes
+  // (`throttle-store.ts`), so a lockout taken elsewhere is real here too, and
+  // the very first render after a page refresh used to show an enabled button
+  // inside a window the Host was still serving. `servedWaitUntil` is the
+  // single source for that (and returns 0 for a parked refusal, which has no
+  // deadline to count down and is spoken about in words instead).
+  const [cooldownUntil, setCooldownUntil] = useState(() => servedWaitUntil(auth ?? null, Date.now()));
   const [now, setNow] = useState(() => Date.now());
+
+  // Adopt a window the Host started serving after this form mounted (another
+  // process parked a refusal, or the account route answered a different
+  // profile's throttle). Monotonic on purpose: a snapshot whose remaining
+  // window is SHORTER must not re-arm a countdown the user is already inside
+  // — only a later deadline moves the button back to disabled.
+  useEffect(() => {
+    const until = servedWaitUntil(auth ?? null, Date.now());
+    if (until > cooldownUntil) {
+      setCooldownUntil(until);
+      setNow(Date.now());
+    }
+  }, [auth, cooldownUntil]);
 
   // One ticking clock drives the countdown; it stops when the wait ends.
   useEffect(() => {
@@ -254,6 +275,18 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
           : null,
       formError ? h("p", { style: S.formError, role: "alert" }, formError) : null,
       formError && formDetail ? h("p", { style: S.formNote }, formDetail) : null,
+      // A refusal no clock can fix (a wrong password, a captcha) is PARKED:
+      // the Host stops retrying and says so, rather than showing a countdown
+      // that would tick down into another attempt that can only fail. Served
+      // as `auth.needsUserAction` with no countdown, and readable after a
+      // refresh or from another profile — the throttle is shared, so a lockout
+      // taken on one profile is a lockout on both. Distinct from
+      // `auth.locked` (the platform says the account itself is locked) and
+      // from `formError` (one attempt's own refusal, which does have a
+      // countdown above).
+      auth?.needsUserAction === true
+        ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } }, tt("auth.parked"))
+        : null,
       // the button is greyed out is never a mystery.
       cooling
         ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } },

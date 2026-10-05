@@ -177,10 +177,17 @@ const SRC = join(import.meta.dirname, "..", "src", "host");
     `仍在手抄：[${handRolled.join(", ")}]`);
 
   const users = files.filter((rel) => {
-    const body = readFileSync(join(SRC, rel), "utf8");
+    // 同样要剥注释：模块头与 `CONFIG_DEFAULTS.writeImageModelIds` 的说明里
+    // 引用了本模块的名字（"它刻意不在 switch-precedence.ts 里"），那是给读者
+    // 的说明，不是新的依赖边。第一版没剥，把 9 数成了 10。
+    const body = stripComments(readFileSync(join(SRC, rel), "utf8"));
     return body.includes("switch-precedence.ts");
   });
-  check("改用本模块的文件数量符合预期（9 个）", users.length === 9,
+  // 数量不写死在这里：新增一个消费方是正常演进，钉死数字只会让人去改断言
+  // 而不是想清楚新文件为什么需要它。真正要守的是"手抄"与"被裁决"两条，
+  // 上面已经各自钉了；这条只证明收敛没有回退——从"曾经手抄 11 处"退回到
+  // 9 个都走本模块，是重犯旧错。
+  check("改用本模块的消费方至少覆盖曾手抄过的 9 个文件", users.length >= 9,
     `实到 [${users.sort().join(", ")}]`);
 
   // 反过来：AgnesCode 的三处必须传"无默认"，否则它哪天会自己注册起来。
@@ -192,6 +199,43 @@ const SRC = join(import.meta.dirname, "..", "src", "host");
   });
   check("AgnesCode 三处都按「无配置默认」解析", wrongDefault.length === 0,
     `传了配置默认：[${wrongDefault.join(", ")}]`);
+
+  // ── 6. `writeImageModelIds` 刻意不在这 9 个消费方里 ──────────────────
+  // 上面那 9 个是**有面板一半**的开关：从 `switch-store` 的文件与补丁默认值两处
+  // 仲裁，所以需要本模块。`writeImageModelIds` 只有补丁一个来源——面板侧
+  // （`src/client/`）零引用，没有 state 文件、没有路由——把它塞进来只会造出一个
+  // `panel → null → config` 的空转折叠，看上去齐整、什么也不决定。
+  //
+  // 它因此**看起来**像第五个开关（同样"默认关、失败降级、只碰自己那一份"），
+  // 分类不落地就会有人去"补齐"它。这条检查是那句注释的存活守卫：真去改的那天，
+  // 它会在这里红，并要求先想清楚面板 affordance 到底存不存在。
+  {
+    // 判据是"不经由本模块裁决"，不是"代码里不许读"——`lifecycle.ts` 当然要读
+    // `settings.writeImageModelIds`，那正是这个 opt-in 的执行点。要禁的是
+    // 把它接进 `resolveSwitchEnabled`（面板 → null → config 的空转折叠）。
+    const consumers = users.filter((rel) => rel !== "host-config.ts");
+    const arbitrated = consumers.filter((rel) => {
+      const body = stripComments(readFileSync(join(SRC, rel), "utf8"));
+      // 与 `writeImageModelIds` 出现在同一次调用里，即被当开关仲裁了。
+      return /resolveSwitch(?:Enabled|Value)\([^)]*writeImageModelIds/.test(body);
+    });
+    check("writeImageModelIds 不经由开关裁决（它没有面板一半）", arbitrated.length === 0,
+      `被当开关仲裁了：[${arbitrated.join(", ")}]`);
+
+    // 执行点仍在（`visionPublish` 读它决定是否写回），钉住"没被顺手删掉"。
+    const lifecycle = stripComments(readFileSync(join(SRC, "lifecycle.ts"), "utf8"));
+    check("它的执行点仍在（visionPublish 仍读这个 opt-in）",
+      lifecycle.includes("settings.writeImageModelIds"), "lifecycle.ts 不再读它了");
+
+    // 前提本身也要钉：面板侧真的没有这个开关。没有它，上面那条检查会因为
+    // "反正没人用"而恒绿——而那正是它要防的沉默。
+    const clientDir = join(import.meta.dirname, "..", "src", "client");
+    const clientHits = readdirSync(clientDir)
+      .filter((f) => f.endsWith(".ts"))
+      .filter((f) => readFileSync(join(clientDir, f), "utf8").includes("writeImageModelIds"));
+    check("面板确实没有这个开关（所以它没有面板一半）", clientHits.length === 0,
+      `面板里出现了：[${clientHits.join(", ")}]`);
+  }
 }
 
 console.log(JSON.stringify(results, null, 2));

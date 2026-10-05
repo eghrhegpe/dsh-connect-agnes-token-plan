@@ -63,6 +63,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"auth.autoRecoverOn": "自动恢复：已开启，令牌失效后 Host 会用环境变量 AGNES_PASSWORD 里的密码自动重新登录",
 			"auth.autoRecoverOff": "自动恢复：未开启，令牌失效后需手动重登",
 			"auth.badCredentials": "账号或密码不正确",
+			"auth.parked": "Host 已停止自动重试：上一次登录被拒，且等待不能解决。请核对账号与密码后手动登录；面板不会在后台再试，以免触发锁定。",
 			"auth.locked": "账号已被锁定。Agnes 会在多次登录失败后锁定账号——请稍后在 Agnes 控制台确认账号状态后再试，期间面板不会自动重试。",
 			"auth.retryAfter": "平台要求等待约 {minutes} 分钟后再试；等待期间面板不会自动重试，避免再次触发锁定。",
 			"auth.rateLimited": "尝试过于频繁，请稍后再试。",
@@ -284,6 +285,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"auth.autoRecoverOn": "Auto-recover: on (a dead token re-signs in using the email and the AGNES_PASSWORD environment value)",
 			"auth.autoRecoverOff": "Auto-recover: off (a dead token means signing in again manually)",
 			"auth.badCredentials": "That email or password is not right",
+			"auth.parked": "The Host has stopped retrying on its own: the last sign-in was refused and waiting cannot fix it. Check the account and password, then sign in manually — the panel will not keep trying in the background, so the lock is not extended.",
 			"auth.locked": "This account is locked. Agnes locks an account after repeated failed sign-ins — check the account in the Agnes console before retrying; the panel will not retry on its own in the meantime.",
 			"auth.retryAfter": "The platform asks to wait about {minutes} more minutes. The panel will not retry on its own during that window, so the lock is not extended.",
 			"auth.rateLimited": "Too many attempts. Wait a moment and try again.",
@@ -741,6 +743,45 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	*/
 	function shouldShowAccountManagement(auth) {
 		return auth !== null;
+	}
+	/**
+	* The wait the HOST is already serving, in epoch millis, or `0` for none.
+	*
+	* WHY THIS EXISTS. The Host's `state()` reads the persisted throttle and
+	* serves it as `auth.retryAfterMs` — a REMAINING window (`held.until - now`,
+	* `inForceWaitMs` in `token-store/throttle.ts`), not the whole window the
+	* refusal originally stated. Its own comment says why: "a second Host process
+	* shows the same countdown rather than inviting an attempt that would be
+	* refused." The throttle file is deliberately NOT per-profile
+	* (`throttle-store.ts`), so a lockout taken on the desktop profile is real on
+	* the web profile too.
+	*
+	* The panel had no consumer for it. `AccountForm` seeded its countdown from
+	* component state alone (`useState(0)`), so the window was honoured only for
+	* the process that made the failed attempt — and after a page refresh, a
+	* second profile, or a second Host process, the button read ENABLED while the
+	* Host was still inside the wait. `saveAccount` deliberately clears the
+	* throttle ("a deliberate resubmit is the user acting on what the panel told
+	* them"), so that click was not merely futile: it cleared the record the other
+	* process was obeying and spent a real attempt against a possibly-locked
+	* account. The one field the Host went out of its way to serve was the one
+	* field the panel dropped.
+	*
+	* A PARKED refusal (`needsUserAction`) returns `0` on purpose: a wrong
+	* password or a captcha has no deadline to count down, and pretending
+	* otherwise would show a countdown ending in another attempt that can only
+	* fail. `AccountForm` renders that state as a sentence instead.
+	*
+	* @param auth - the snapshot's `auth` block, or `null` when it carried none.
+	* @param now - the current clock, injected so the countdown is testable.
+	* @returns epoch millis to wait until, or `0` when nothing is being waited out.
+	*/
+	function servedWaitUntil(auth, now) {
+		if (auth === null) return 0;
+		if (auth.needsUserAction === true) return 0;
+		const remaining = auth.retryAfterMs;
+		if (typeof remaining !== "number" || !Number.isFinite(remaining) || remaining <= 0) return 0;
+		return now + remaining;
 	}
 	var GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, CLIENT_CODE, COOLDOWN_TEXT, REFUSAL_TEXT;
 	var init_snapshot = __esmMin((() => {
@@ -1361,8 +1402,15 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const [formDetail, setFormDetail] = useState(null);
 		const [saved, setSaved] = useState(false);
 		const [forgotten, setForgotten] = useState(false);
-		const [cooldownUntil, setCooldownUntil] = useState(0);
+		const [cooldownUntil, setCooldownUntil] = useState(() => servedWaitUntil(auth ?? null, Date.now()));
 		const [now, setNow] = useState(() => Date.now());
+		useEffect(() => {
+			const until = servedWaitUntil(auth ?? null, Date.now());
+			if (until > cooldownUntil) {
+				setCooldownUntil(until);
+				setNow(Date.now());
+			}
+		}, [auth, cooldownUntil]);
 		useEffect(() => {
 			if (cooldownUntil <= Date.now()) return void 0;
 			const timer = setInterval(() => {
@@ -1515,7 +1563,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, tt("auth.working")) : null, formError ? h("p", {
 			style: S.formError,
 			role: "alert"
-		}, formError) : null, formError && formDetail ? h("p", { style: S.formNote }, formDetail) : null, cooling ? h("p", { style: {
+		}, formError) : null, formError && formDetail ? h("p", { style: S.formNote }, formDetail) : null, auth?.needsUserAction === true ? h("p", { style: {
+			...S.formNote,
+			color: "var(--dsw-alias-state-warn-primary)"
+		} }, tt("auth.parked")) : null, cooling ? h("p", { style: {
 			...S.formNote,
 			color: "var(--dsw-alias-state-warn-primary)"
 		} }, format(tt("auth.retryAfter"), { minutes: coolingMinutes })) : null, h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved")), h("p", { style: S.formNote }, auth?.autoRecoverArmed === true ? tt("auth.autoRecoverOn") : tt("auth.autoRecoverOff"))));

@@ -11,6 +11,7 @@
  */
 import { readFile, readdir } from "node:fs/promises";
 import { decidePanelView, agnescodeView, dictionaries, interpretSnapshot, tables, RENDER, viewOf as clientSurfaceViewOf } from "./panel-decision.js";
+import { servedWaitUntil } from "../src/client/snapshot.ts";
 import { AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS, NO_LOGIN_CODES } from "../src/host/codes.ts";
 
 const results = [];
@@ -564,6 +565,83 @@ const healthy = {
 /** The client's own `viewOf`, called on a healthy body, for the roster check. */
 function viewOfKeysProbe() {
   return clientSurfaceViewOf({ ok: true, auth: { configured: true }, quota: { consoleConnected: true } }, null, (k) => k);
+}
+
+// === P. the SERVED wait, which is what the form actually obeys ============
+// Sections A–F assert the panel's VIEW MODEL: that a served `retryAfterMs`
+// reaches `decidePanelView`'s `coolingMs`. What they could not reach is the
+// form's own seed, which is what decides whether the submit button is enabled
+// on a FRESH page — and that is the case that loses an account.
+//
+// The Host serves the throttle because it is shared: `throttle-store.ts` keeps
+// it in ONE file for every profile and process, on purpose, so a 429 taken on
+// the desktop profile is honoured on the web profile too (`token-store.ts`
+// spells out the reason: "a second Host process shows the same countdown
+// rather than inviting an attempt that would be refused"). `AccountForm` seeded
+// `cooldownUntil` from `useState(0)` and only ever learned about a window from
+// its OWN failed POST, so after a refresh — or on the other profile — the
+// button read enabled inside a window the Host was still serving. Because
+// `saveAccount` deliberately CLEARS the throttle ("a deliberate resubmit is the
+// user acting on what the panel told them"), that click did not merely fail: it
+// erased the record the other process was obeying and spent a real attempt
+// against a possibly-locked account.
+//
+// `servedWaitUntil` is the single source for that seed, imported from the real
+// module (ADR-006 judgement 1: a pure rule, importable from Node), so these
+// cases fail on BEHAVIOUR — rename the export or change the arithmetic and
+// they go red, rather than quietly matching edited source text.
+{
+  const T0 = 1_700_000_000_000;
+  const served = (auth) => servedWaitUntil(auth, T0);
+
+  // The bug's exact shape: a positive window the Host is serving.
+  check("a served window becomes an absolute deadline",
+    served({ configured: false, hasAccount: true, retryAfterMs: 8 * 60_000, needsUserAction: false }) === T0 + 8 * 60_000,
+    String(served({ retryAfterMs: 8 * 60_000 })));
+  check("no window means no deadline (the button stays usable)",
+    served({ configured: true, hasAccount: true, retryAfterMs: null }) === 0,
+    String(served({ retryAfterMs: null })));
+  check("no auth block at all means no deadline",
+    served(null) === 0, String(served(null)));
+  check("a missing field is not read as a wait", served({ configured: true }) === 0, String(served({})));
+
+  // The distinctions that keep a countdown from being a lie. A PARKED refusal
+  // (wrong password, captcha, invented waits spent) has no deadline: showing
+  // one would tick down into an attempt that can only fail again.
+  check("a parked refusal is not given a countdown",
+    served({ configured: false, hasAccount: true, retryAfterMs: 60_000, needsUserAction: true }) === 0,
+    String(served({ retryAfterMs: 60_000, needsUserAction: true })));
+  // The window the wire type declares is `number | null` and the Host computes
+  // it as `max(0, until - now)`, so 0 and negatives are reachable shapes, not
+  // typos. They must read as "no wait" rather than as a deadline in the past
+  // that flips the button back on for a millisecond.
+  check("an elapsed window reads as no wait", served({ retryAfterMs: 0 }) === 0, String(served({ retryAfterMs: 0 })));
+  check("a negative window reads as no wait", served({ retryAfterMs: -5_000 }) === 0, String(served({ retryAfterMs: -5_000 })));
+  check("a non-numeric window reads as no wait", served({ retryAfterMs: "60000" }) === 0, String(served({ retryAfterMs: "60000" })));
+  check("a NaN window reads as no wait", served({ retryAfterMs: Number.NaN }) === 0, String(served({ retryAfterMs: Number.NaN })));
+
+  // The seed is `now + remaining`, NOT the raw `remaining`. Getting that
+  // backwards would put the deadline decades in the past — the button would
+  // read enabled forever, which is the bug again wearing a different hat. The
+  // arithmetic is pinned because only the sum is correct.
+  check("the deadline is now PLUS the remaining window",
+    served({ retryAfterMs: 1_000 }) - T0 === 1_000,
+    `delta=${served({ retryAfterMs: 1_000 }) - T0}`);
+
+  // The dictionary line the parked branch renders. Asserted against the REAL
+  // dictionaries the browser uses, because a key that exists in one language
+  // only shows as a raw key in the other — invisible in the language that has
+  // it, which is why `panel.test.mjs` pins parity separately.
+  check("the parked sentence exists in both dictionaries",
+    typeof dictionaries.zh["auth.parked"] === "string" && dictionaries.zh["auth.parked"] !== "" &&
+    typeof dictionaries.en["auth.parked"] === "string" && dictionaries.en["auth.parked"] !== "",
+    JSON.stringify({ zh: dictionaries.zh["auth.parked"], en: dictionaries.en["auth.parked"] }));
+  // It must be its OWN sentence, not a reuse of one that names a different
+  // fact: `auth.locked` says the platform locked the ACCOUNT (a state the
+  // panel cannot clear), and parked covers every non-waitable refusal.
+  check("the parked sentence is not the account-locked one",
+    dictionaries.zh["auth.parked"] !== dictionaries.zh["auth.locked"] &&
+    dictionaries.en["auth.parked"] !== dictionaries.en["auth.locked"]);
 }
 
 console.log(JSON.stringify(results, null, 2));

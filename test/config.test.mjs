@@ -286,6 +286,97 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
   check("a non-numeric usageDays falls back to default", nanFall === CONFIG_DEFAULTS.usageDays, String(nanFall));
 }
 
+// --- 8b. the catch branch carries the SAME settings as the success branch ----
+// `resolveSettings` is the ONE function that can take the whole plugin down at
+// mount: `apply` calls it before anything is built, so a throw here is not a
+// degraded panel but a plugin that never loads. That is why the try block
+// exists — and why the catch branch hand-writes a second full settings object
+// instead of spreading the first.
+//
+// A hand-written second copy is exactly the shape that rots. The comment above
+// it PROMISES the fallback carries the same settings ("minus the malformed
+// field"), but nothing asserted it: the only input that reaches the catch is a
+// nested `auth:` block, and the one test for that (`check 4` above) calls
+// `resolveAuthOverrides` DIRECTLY — so the very branch the promise lives in had
+// zero coverage. Adding a config key to the success branch and forgetting the
+// fallback would leave a consumer reading `undefined` from a row that is
+// perfectly valid, with every suite green. That is PITFALLS §39's exact shape
+// (naming the guardian, not checking it), committed by the file that diagnosed
+// it.
+//
+// These checks close it. The key list is DERIVED from both branches (never
+// hand-written — a hand-written list is a third copy of the same contract), and
+// the values are checked against `CONFIG_DEFAULTS` key by key, so a fallback
+// that carries a plausible-but-wrong value is caught as loudly as one missing a
+// key entirely.
+{
+  // The one input that reaches the catch: `resolveAuthOverrides` throws on a
+  // nested `auth:` block (red line 3). Driven through `resolveSettings` this
+  // time, so the branch is entered the way a real malformed row enters it.
+  const malformed = { auth: { loginPath: "/api/user/login" } };
+  const fell = resolveSettings(malformed);
+  check("a malformed row reports a config error instead of throwing", fell.configError !== null,
+    String(fell.configError));
+  check("the config error names the refused nested key",
+    typeof fell.configError === "string" && fell.configError.includes("loginPath"),
+    String(fell.configError));
+
+  const ok = resolveSettings({});
+  const successKeys = Object.keys(ok.settings).sort();
+  const fallbackKeys = Object.keys(fell.settings).sort();
+  check("the fallback row carries every key the success branch does",
+    successKeys.join(",") === fallbackKeys.join(","),
+    `only in success: ${successKeys.filter((k) => !fallbackKeys.includes(k)).join(",") || "none"}; ` +
+    `only in fallback: ${fallbackKeys.filter((k) => !successKeys.includes(k)).join(",") || "none"}`);
+
+  // `allowedHosts` is the one renamed key (`admittedHosts` is the schema name,
+  // `allowedHosts` the resolved one), so it is compared against the schema.
+  // `auth` is skipped here and checked on its own below: it is the one nested
+  // value, and the fallback carries a DIFFERENT shape by design (just the
+  // origin, no overrides) — comparing it to the three-key schema default would
+  // be comparing two different contracts.
+  const defaultOf = (key) => (key === "allowedHosts" ? CONFIG_DEFAULTS.admittedHosts : CONFIG_DEFAULTS[key]);
+  const mismatched = [];
+  for (const key of successKeys) {
+    if (key === "auth") continue;
+    const expected = defaultOf(key);
+    if (expected === undefined) continue;
+    const actual = fell.settings[key];
+    const same = key === "allowedHosts"
+      ? [...actual].join(",") === [...expected].join(",")
+      : JSON.stringify(actual) === JSON.stringify(expected);
+    if (!same) mismatched.push(`${key}: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`);
+  }
+  check("every fallback value is the shipped default, not a plausible guess",
+    mismatched.length === 0, mismatched.join(" | ") || "all keys match CONFIG_DEFAULTS");
+
+  // The fallback's own `auth` shape: the origin it was given and nothing else.
+  // An override set on the row is dropped along with the rest of the row — the
+  // row is malformed as a whole, so carrying part of it would be worse than
+  // carrying none.
+  check("the fallback auth block carries the origin alone",
+    Object.keys(fell.settings.auth).join(",") === "consoleOrigin",
+    Object.keys(fell.settings.auth).join(","));
+  check("the fallback auth origin is the row's own consoleBase",
+    fell.settings.auth.consoleOrigin === fell.settings.consoleBase,
+    `${fell.settings.auth.consoleOrigin} vs ${fell.settings.consoleBase}`);
+
+  // The two endpoints resolve BEFORE the try (they cannot throw), so the
+  // fallback keeps the operator's configured hosts rather than reverting them
+  // to the shipped ones. Pinning it because it is the single place the fallback
+  // deliberately does NOT carry the default — a "fix" that made it uniform
+  // would send a local-stub deployment back to the real platform. (The trailing
+  // slash is stripped by the resolver, so the expectation spells it that way.)
+  const stub = "http://127.0.0.1:9";
+  const stubbed = resolveSettings({ ...malformed, consoleBase: `${stub}/`, apiBase: `${stub}/v1` });
+  check("a malformed row keeps the operator's configured endpoints (no silent revert to the real platform)",
+    stubbed.settings.consoleBase === stub && stubbed.settings.apiBase === `${stub}/v1`,
+    `${stubbed.settings.consoleBase} / ${stubbed.settings.apiBase}`);
+  check("a malformed row keeps the auth overrides on the same (configured) origin",
+    stubbed.settings.auth.consoleOrigin === stub,
+    stubbed.settings.auth.consoleOrigin);
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.pass);
 if (failed.length > 0) {
