@@ -6,6 +6,7 @@ import { MODELS_PATH } from "./const.ts";
 import { format, tokenSize } from "./format.ts";
 import { postJsonOrThrow } from "./http.ts";
 import { modelIsOn } from "./models.ts";
+import { RosterCheckbox, RosterTools } from "./roster-shared.ts";
 import { useRosterDraft } from "./roster-draft.ts";
 import { h, useCallback } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
@@ -64,33 +65,22 @@ export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
         "li",
         { key: id, style: { ...S.modelRow, ...(on ? {} : S.modelRowOff) } },
         h("div", { style: S.modelRowHead },
-          h(
-            "label",
-            {
-              style: {
-                display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto",
-                minWidth: 0, cursor: busy ? "default" : "pointer"
-              }
-            },
-            h("input", {
-              type: "checkbox",
-              checked: on,
-              disabled: busy === true,
-              style: S.modelCheck,
-              "aria-label": label,
-              // The roster is hook-free, so the handler is handed in from the
-              // picker. Without it this box is display-only and the allow-list
-              // cannot be edited by a single row at all.
-              onChange: onToggle ? () => onToggle(id) : undefined
-            }),
-            h("span", { style: S.modelName, title: id }, label),
+          // The checkbox is the shared roster row (see `roster-shared.ts`):
+          // one tickable head, the same in every roster. Only what follows the
+          // name is this roster's — the pseudo rate below.
+          RosterCheckbox({
+            id,
+            label,
+            on,
+            busy,
+            onToggle,
             // The pseudo rate rides directly after the name like WorkBuddy's
             // `(0.29x)`: the Host matched it through the same operator config
             // that labels the trend chart, so badge and chart cannot diverge.
-            rate !== null
+            tail: rate !== null
               ? h("span", { style: S.modelRate, title: tt("llm.rosterRateTitle") }, `×${rate}`)
               : null
-          ),
+          }),
           // A badge marks a NOTABLE state: image input is the exception worth
           // quoting, and `quota exhausted` says why a ticked row still will
           // not show up in the DSH picker (the buildDescriptors parity rule).
@@ -171,53 +161,12 @@ export function ModelPicker({ llm, onDone, tt }: {
           null,
           h(
             "div",
-            { style: S.rosterTools },
-            h("input", {
-              type: "search",
-              style: { ...S.input, flex: "1 1 200px", width: "auto" },
-              value: query,
-              placeholder: tt("llm.rosterSearchPlaceholder"),
-              "aria-label": tt("llm.rosterSearchPlaceholder"),
-              // Without this the browser's password manager typed a saved
-              // console ACCOUNT into this box. It is not a keyword being
-              // detected — it is a gap: the API-key form on the same tab holds
-              // a `type="password"` field with NO username field inside it, and
-              // Chromium's own guidance ("Password Form Styles that Chromium
-              // Understands", point 2) says that when username and password are
-              // split across forms, the password form must carry a username
-              // field — otherwise it goes looking for one. This box was the
-              // only text input on the page with no `autocomplete` and no
-              // `name`, so it got picked.
-              //
-              // `off` is the direct instruction, and it is honoured here: the
-              // well-known "Chrome ignores autocomplete=off" problem is about
-              // PASSWORD fields and address autofill, not a plain search input.
-              // `render.test.mjs` group I2 walks every rendered component and
-              // fails if any other text input is left unlabelled this way.
-              autoComplete: "off",
-              name: "model-search",
-              disabled: busy,
-              onChange: (event: { target: { value: string } }) => setQuery(event.target.value)
-            }),
-            // The count LEADS the right-hand cluster - state, then actions -
-            // and the bulk buttons share the search box's 32px height, so the
-            // row reads as one grouped control instead of four loose ones.
-            h("span", {
-              style: S.rosterCount,
-              title: format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })
-            }, format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })),
-            h("button", {
-              type: "button",
-              style: S.rosterBulk,
-              disabled: busy === true || visible.length === 0,
-              onClick: () => bulk(true)
-            }, tt("llm.rosterAll")),
-            h("button", {
-              type: "button",
-              style: S.rosterBulk,
-              disabled: busy === true || visible.length === 0,
-              onClick: () => bulk(false)
-            }, tt("llm.rosterNone"))
+            null,
+            // The search / bulk row is the shared roster tools row — the only
+            // per-roster bit is the `name`, which is what keeps this box from
+            // being where the browser's password manager types a saved console
+            // ACCOUNT (the full reasoning travels with the shared part).
+            RosterTools({ query, setQuery, name: "model-search", busy, tickedCount, visible, bulk, tt }),
           ),
           visible.length === 0
             ? h("p", { style: S.empty }, tt("llm.rosterNoMatch"))

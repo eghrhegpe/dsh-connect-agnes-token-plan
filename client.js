@@ -1689,6 +1689,120 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	}));
 
 //#endregion
+//#region src/client/roster-shared.ts
+/**
+	* The tickable head of a model roster row: a labelled checkbox over the model
+	* name. A roster is hook-free, so the handler is handed in — without it the box
+	* is display-only and the allow-list could not be edited one model at a time.
+	*
+	* @param {object} props
+	* @param {string} props.id - the model id, also the row's key and the span's title.
+	* @param {string} props.label - the visible name (`aria-label` too, so a screen
+	*   reader announces what the box ticks).
+	* @param {boolean} props.on - the checkbox state.
+	* @param {boolean} [props.busy] - disable the box while a save is in flight.
+	* @param {(id: string) => void} [props.onToggle] - hand the edit back.
+	* @param {unknown} [props.tail] - extra children to carry INSIDE the label (a
+	*   sibling roster's pseudo rate, built by the caller because it translates
+	*   through its own dictionary). The label wraps whatever follows the name, so
+	*   a click on it ticks the box — which is why it rides in here rather than
+	*   outside.
+	* @returns {unknown} the label element.
+	*/
+	function RosterCheckbox({ id, label, on, busy, onToggle, tail }) {
+		return h("label", { style: {
+			display: "flex",
+			alignItems: "center",
+			gap: 10,
+			flex: "1 1 auto",
+			minWidth: 0,
+			cursor: busy ? "default" : "pointer"
+		} }, h("input", {
+			type: "checkbox",
+			checked: on,
+			disabled: busy === true,
+			style: S.modelCheck,
+			"aria-label": label,
+			onChange: onToggle ? () => onToggle(id) : void 0
+		}), h("span", {
+			style: S.modelName,
+			title: id
+		}, label), tail ?? null);
+	}
+	/**
+	* The search / count / tick-all / untick-all row a model picker puts above its
+	* rows. The count LEADS the right-hand cluster — state, then actions — and the
+	* bulk buttons share the search box's 32px height, so the row reads as one
+	* grouped control instead of four loose ones.
+	*
+	* `name` is handed in, not hard-coded: it is the one thing the browser's
+	* password manager notices about a text input. Without a `name` and
+	* `autoComplete="off"`, this box was where Chromium typed a saved console
+	* ACCOUNT — the API-key form on the same tab holds a `type="password"` field
+	* with NO username field inside it, and Chromium's own guidance ("Password Form
+	* Styles that Chromium Understands", point 2) says that when username and
+	* password are split across forms, the password form must carry a username
+	* field — otherwise it goes looking for one. This box was the only text input on
+	* the page with no `autocomplete` and no `name`, so it got picked. `off` is the
+	* direct instruction, and it is honoured here: the well-known "Chrome ignores
+	* autocomplete=off" problem is about PASSWORD fields and address autofill, not
+	* a plain search input.
+	*
+	* @param {object} props
+	* @param {string} props.query - the filter text.
+	* @param {(value: string) => void} props.setQuery - the filter write.
+	* @param {string} props.name - this roster's search-box name.
+	* @param {boolean} [props.busy] - disable the row while a save is in flight.
+	* @param {number} props.tickedCount - how many rows are on.
+	* @param {unknown[]} props.visible - the rows the filter left (drives the count
+	*   and whether the bulk buttons are worth pressing).
+	* @param {(on: boolean) => void} props.bulk - tick all / untick all.
+	* @param {import("./runtime.ts").Tt} props.tt - the dictionary.
+	* @returns {unknown} the tools row element.
+	*/
+	function RosterTools({ query, setQuery, name, busy, tickedCount, visible, bulk, tt }) {
+		return h("div", { style: S.rosterTools }, h("input", {
+			type: "search",
+			style: {
+				...S.input,
+				flex: "1 1 200px",
+				width: "auto"
+			},
+			value: query,
+			placeholder: tt("llm.rosterSearchPlaceholder"),
+			"aria-label": tt("llm.rosterSearchPlaceholder"),
+			autoComplete: "off",
+			name,
+			disabled: busy,
+			onChange: (event) => setQuery(event.target.value)
+		}), h("span", {
+			style: S.rosterCount,
+			title: format(tt("llm.rosterCount"), {
+				selected: tickedCount,
+				total: visible.length
+			})
+		}, format(tt("llm.rosterCount"), {
+			selected: tickedCount,
+			total: visible.length
+		})), h("button", {
+			type: "button",
+			style: S.rosterBulk,
+			disabled: busy === true || visible.length === 0,
+			onClick: () => bulk(true)
+		}, tt("llm.rosterAll")), h("button", {
+			type: "button",
+			style: S.rosterBulk,
+			disabled: busy === true || visible.length === 0,
+			onClick: () => bulk(false)
+		}, tt("llm.rosterNone")));
+	}
+	var init_roster_shared = __esmMin((() => {
+		init_format();
+		init_runtime();
+		init_styles();
+	}));
+
+//#endregion
 //#region src/client/roster-draft.ts
 /**
 	* The shared draft machine for a curated model roster.
@@ -1798,27 +1912,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					...S.modelRow,
 					...on ? {} : S.modelRowOff
 				}
-			}, h("div", { style: S.modelRowHead }, h("label", { style: {
-				display: "flex",
-				alignItems: "center",
-				gap: 10,
-				flex: "1 1 auto",
-				minWidth: 0,
-				cursor: busy ? "default" : "pointer"
-			} }, h("input", {
-				type: "checkbox",
-				checked: on,
-				disabled: busy === true,
-				style: S.modelCheck,
-				"aria-label": label,
-				onChange: onToggle ? () => onToggle(id) : void 0
-			}), h("span", {
-				style: S.modelName,
-				title: id
-			}, label), rate !== null ? h("span", {
-				style: S.modelRate,
-				title: tt("llm.rosterRateTitle")
-			}, `×${rate}`) : null), model?.vision === true ? h("span", { style: S.modelBadge }, tt("llm.rosterVision")) : null, model?.quotaExhausted === true ? h("span", { style: {
+			}, h("div", { style: S.modelRowHead }, RosterCheckbox({
+				id,
+				label,
+				on,
+				busy,
+				onToggle,
+				tail: rate !== null ? h("span", {
+					style: S.modelRate,
+					title: tt("llm.rosterRateTitle")
+				}, `×${rate}`) : null
+			}), model?.vision === true ? h("span", { style: S.modelBadge }, tt("llm.rosterVision")) : null, model?.quotaExhausted === true ? h("span", { style: {
 				...S.modelBadge,
 				color: "var(--dsw-alias-state-error-primary)"
 			} }, tt("llm.rosterExhausted")) : null), meta === "" ? null : h("div", { style: S.modelMeta }, meta));
@@ -1876,40 +1980,16 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			fontSize: 12,
 			whiteSpace: "nowrap",
 			flex: "none"
-		} }, format(tt("llm.rosterThinkingDefault"), { level: tt(`llm.level.${llm.thinkingDefault}`) })) : null), models.length === 0 ? h("p", { style: S.empty }, tt("llm.rosterEmpty")) : h("div", null, h("div", { style: S.rosterTools }, h("input", {
-			type: "search",
-			style: {
-				...S.input,
-				flex: "1 1 200px",
-				width: "auto"
-			},
-			value: query,
-			placeholder: tt("llm.rosterSearchPlaceholder"),
-			"aria-label": tt("llm.rosterSearchPlaceholder"),
-			autoComplete: "off",
+		} }, format(tt("llm.rosterThinkingDefault"), { level: tt(`llm.level.${llm.thinkingDefault}`) })) : null), models.length === 0 ? h("p", { style: S.empty }, tt("llm.rosterEmpty")) : h("div", null, h("div", null, RosterTools({
+			query,
+			setQuery,
 			name: "model-search",
-			disabled: busy,
-			onChange: (event) => setQuery(event.target.value)
-		}), h("span", {
-			style: S.rosterCount,
-			title: format(tt("llm.rosterCount"), {
-				selected: tickedCount,
-				total: visible.length
-			})
-		}, format(tt("llm.rosterCount"), {
-			selected: tickedCount,
-			total: visible.length
-		})), h("button", {
-			type: "button",
-			style: S.rosterBulk,
-			disabled: busy === true || visible.length === 0,
-			onClick: () => bulk(true)
-		}, tt("llm.rosterAll")), h("button", {
-			type: "button",
-			style: S.rosterBulk,
-			disabled: busy === true || visible.length === 0,
-			onClick: () => bulk(false)
-		}, tt("llm.rosterNone"))), visible.length === 0 ? h("p", { style: S.empty }, tt("llm.rosterNoMatch")) : h(ModelRoster, {
+			busy,
+			tickedCount,
+			visible,
+			bulk,
+			tt
+		})), visible.length === 0 ? h("p", { style: S.empty }, tt("llm.rosterNoMatch")) : h(ModelRoster, {
 			models: visible,
 			enabledIds: ids,
 			busy,
@@ -1948,6 +2028,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_format();
 		init_http();
 		init_models();
+		init_roster_shared();
 		init_roster_draft();
 		init_runtime();
 		init_styles();
@@ -3322,24 +3403,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					...S.modelRow,
 					...on ? {} : S.modelRowOff
 				}
-			}, h("div", { style: S.modelRowHead }, h("label", { style: {
-				display: "flex",
-				alignItems: "center",
-				gap: 10,
-				flex: "1 1 auto",
-				minWidth: 0,
-				cursor: busy === true ? "default" : "pointer"
-			} }, h("input", {
-				type: "checkbox",
-				checked: on,
-				disabled: busy === true,
-				style: S.modelCheck,
-				"aria-label": label,
-				onChange: onToggle ? () => onToggle(id) : void 0
-			}), h("span", {
-				style: S.modelName,
-				title: id
-			}, label)), h("span", { style: S.spacer }), promo === null ? null : h("span", { style: S.modelPromo }, promo), rate === null ? null : h("span", {
+			}, h("div", { style: S.modelRowHead }, RosterCheckbox({
+				id,
+				label,
+				on,
+				busy,
+				onToggle
+			}), h("span", { style: S.spacer }), promo === null ? null : h("span", { style: S.modelPromo }, promo), rate === null ? null : h("span", {
 				style: S.modelRate,
 				title: tt("agnescode.rateTitle")
 			}, `×${rate}`), row.memberOnly === true ? h("span", { style: S.modelBadge }, tt("agnescode.memberOnly")) : null), meta === "" ? null : h("div", { style: S.modelMeta }, meta));
@@ -3384,40 +3454,16 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				setSaving(false);
 			}
 		};
-		const tools = h("div", { style: S.rosterTools }, h("input", {
-			type: "search",
-			style: {
-				...S.input,
-				flex: "1 1 200px",
-				width: "auto"
-			},
-			value: query,
-			placeholder: tt("llm.rosterSearchPlaceholder"),
-			"aria-label": tt("llm.rosterSearchPlaceholder"),
-			autoComplete: "off",
+		const tools = RosterTools({
+			query,
+			setQuery,
 			name: "agnescode-model-search",
-			disabled: saving,
-			onChange: (event) => setQuery(event.target.value)
-		}), h("span", {
-			style: S.rosterCount,
-			title: format(tt("llm.rosterCount"), {
-				selected: tickedCount,
-				total: visible.length
-			})
-		}, format(tt("llm.rosterCount"), {
-			selected: tickedCount,
-			total: visible.length
-		})), h("button", {
-			type: "button",
-			style: S.rosterBulk,
-			disabled: saving === true || visible.length === 0,
-			onClick: () => bulk(true)
-		}, tt("llm.rosterAll")), h("button", {
-			type: "button",
-			style: S.rosterBulk,
-			disabled: saving === true || visible.length === 0,
-			onClick: () => bulk(false)
-		}, tt("llm.rosterNone")));
+			busy: saving,
+			tickedCount,
+			visible,
+			bulk,
+			tt
+		});
 		return h("div", null, h(AgnescodeRoster, {
 			models: visible,
 			registered,
@@ -3459,6 +3505,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_http();
 		init_models();
 		init_roster_draft();
+		init_roster_shared();
 		init_runtime();
 		init_switch();
 		init_styles();

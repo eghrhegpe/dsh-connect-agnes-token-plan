@@ -29,6 +29,7 @@ import { clockLong, count, format, tokenSize } from "./format.ts";
 import { postJson, postJsonOrThrow } from "./http.ts";
 import { modelIsOn } from "./models.ts";
 import { useRosterDraft } from "./roster-draft.ts";
+import { RosterCheckbox, RosterTools } from "./roster-shared.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { Switch } from "./switch.ts";
@@ -606,24 +607,7 @@ export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, to
           h(
             "div",
             { style: S.modelRowHead },
-            h(
-              "label",
-              {
-                style: {
-                  display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto",
-                  minWidth: 0, cursor: busy === true ? "default" : "pointer"
-                }
-              },
-              h("input", {
-                type: "checkbox",
-                checked: on,
-                disabled: busy === true,
-                style: S.modelCheck,
-                "aria-label": label,
-                onChange: onToggle ? () => onToggle(id) : undefined
-              }),
-              h("span", { style: S.modelName, title: id }, label)
-            ),
+            RosterCheckbox({ id, label, on, busy, onToggle }),
             h("span", { style: S.spacer }),
             promo === null ? null : h("span", { style: S.modelPromo }, promo),
             rate === null
@@ -691,40 +675,19 @@ export function AgnescodeModelPicker({ models, hostIds, registered, tt, onSave }
     }
   };
 
-  const tools = h(
-    "div",
-    { style: S.rosterTools },
-    h("input", {
-      type: "search",
-      style: { ...S.input, flex: "1 1 200px", width: "auto" },
-      value: query,
-      placeholder: tt("llm.rosterSearchPlaceholder"),
-      "aria-label": tt("llm.rosterSearchPlaceholder"),
-      // Same Chromium autofill hazard as the sibling picker: this is the only
-      // text input on the tab, so without `autocomplete="off"` it would be
-      // where the browser's password manager typed a saved console ACCOUNT.
-      autoComplete: "off",
-      name: "agnescode-model-search",
-      disabled: saving,
-      onChange: (event: { target: { value: string } }) => setQuery(event.target.value)
-    }),
-    h("span", {
-      style: S.rosterCount,
-      title: format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })
-    }, format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })),
-    h("button", {
-      type: "button",
-      style: S.rosterBulk,
-      disabled: saving === true || visible.length === 0,
-      onClick: () => bulk(true)
-    }, tt("llm.rosterAll")),
-    h("button", {
-      type: "button",
-      style: S.rosterBulk,
-      disabled: saving === true || visible.length === 0,
-      onClick: () => bulk(false)
-    }, tt("llm.rosterNone"))
-  );
+  const tools = RosterTools({
+    query, setQuery,
+    // The `name` is the one per-roster bit: without `autocomplete="off"` and a
+    // `name`, this is the only text input on the tab and the browser's password
+    // manager would type a saved console ACCOUNT into it — the same hazard the
+    // sibling picker names in full.
+    name: "agnescode-model-search",
+    busy: saving,
+    tickedCount,
+    visible,
+    bulk,
+    tt
+  });
 
   return h(
     "div",
