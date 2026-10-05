@@ -81,12 +81,12 @@ export function isProfileSegment(value) {
  * **怎么读它**：`ctx.get(name)` —— Cordis 自己的 "read a service without the
  * inject requirement" 入口，未提供时安静返回 `undefined`。注意**别用属性访问**
  * 去探：`ctx.profileContext` 会在服务缺失时**抛错**（`cannot get property
- * "profileContext" without inject`，cordis `lib/index.js:676`）——这是本插件
+ * "profileContext" without inject`——cordis 的原文案）——这是本插件
  * 实测踩到的，不是推测。`readOptionalService` 把两个入口都包了，属性访问只作为
  * 测试桩的兜底留在最后。
  *
- * **为什么不用 `inject` 声明它**：`inject` 里的是**硬依赖**（`lib/index.js:688`
- * 的报错文案就叫 "cannot get required service"），缺了 Cordis 根本不加载本插件。
+ * **为什么不用 `inject` 声明它**：`inject` 里的是**硬依赖**（报错文案就叫
+ * "cannot get required service"），缺了 Cordis 根本不加载本插件。
  * 而 `profileContext` 在官方 runtime 里是**可选**的（`@linxin666/
  * dsh-client-ui-plugin-manager` 明确处理了"host 隐藏了它"的情形，
  * `dsh-better-sidebar` 同理）。把它变成硬依赖，会让那些主机上整个插件消失
