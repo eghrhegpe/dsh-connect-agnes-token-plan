@@ -15,7 +15,7 @@
 | 维度 | `dsh-connect-agnes-token-plan`（本仓库） | `sensenova-usage-dashboard`（历史上的游 Python 工具，现不在本机） |
 |---|---|---|
 | 形态 | DSH 插件（Host 半边 + Client 半边） | 独立 Python 桌面应用（pywebview 原生窗口） |
-| 语言 | Host 半边与 Client 半边均为 **TypeScript 源码**（`src/host/*.ts` + `src/client/*.ts`），经 `npm run build`（tsdown）构建为 `lib/`（Host 单条 ESM bundle + 动态切分 chunk）与根 `client.js`（Client IIFE 产物）；`lib/` 与 `client.js` 为纯构建产物、**随库提交**（git/市场直装克隆即可用——pnpm 的 `packageShouldBeBuilt` 见 main 在克隆里即跳过整条构建管线），删后可从 `src/` 重建 | Python（`dashboard.py` + `auth_login.py`） |
+| 语言 | Host 半边与 Client 半边均为 **TypeScript 源码**（`src/host/*.ts` + `src/client/*.ts`），经 `npm run build`（tsdown）构建为 `lib/`（Host 单条 ESM bundle + 动态切分 chunk）与根 `client.js`（Client IIFE 产物）；`lib/` 与 `client.js` 为纯构建产物、**随库提交**（git/市场直装克隆即可用——pnpm 对 git 依赖一律拒绝执行构建脚本，见根 `.gitignore`「构建产物」说明块与 ADR-008），删后可从 `src/` 重建 | Python（`dashboard.py` + `auth_login.py`） |
 | 账号凭据 | 走 **DSH 凭据服务**（`~/.dsh/.credentials.yaml`），无明文文件 | 明文存 `accounts.json`（为支持自动重登） |
 | 令牌续期 | **Agnes 不发 refresh token**：令牌失效即用存下的账号名 + 密码**重登一次** | JWT 过期后用明文账号密码**重登** |
 | 登录节流 | 区分时间型 / 凭据型拒绝，防锁号 | 仅基础重试 |

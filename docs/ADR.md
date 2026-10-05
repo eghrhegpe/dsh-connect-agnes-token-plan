@@ -142,3 +142,21 @@
   - **④ 基线可冻结**：行为基线能不能写进 store/routes 测试（ADR-005「冻结行为基线再实现」）？写不进基线的吸收，禁止开始。
   - 这四问任一带「引入新承重面 / 新 state 窝点 / 失败域外溢 / 基线不可冻」，都先回到 ADR-005 的拆分蓝图或降级改造，而不是带债落地。
 - **与既有条目的关系**：继承 ADR-001（大统一定位）与 ADR-003（Agnes 线收窄）；具体化 ADR-005「整体内聚 ≠ 每块都 opt-in 合规」那句——准入门槛管的是「新块往哪放」，本条管的是「放进来之后整包爆炸半径的已知上限」。不影响红线①～⑦任何一条。
+
+## ADR-013 产物命名不含内容哈希；build-gate 改为「暂存重建 + 双向比对」
+
+- **日期**：2026-10-06
+- **状态**：现行（补充 ADR-008；不改变 ADR-008「产物入库」本身，也不改变 ADR-001～012 任何裁定）
+- **裁定**：① `tsdown.config.mjs` 的 host 条目加 `outputOptions.entryFileNames: "index.js"` 与 `chunkFileNames: "[name].js"`——chunk 名只由模块名决定，**不含内容哈希**。② `test/build-gate.mjs` 重写：把 `tsdown.config.mjs` **原样**复制、只改两处 `outDir` 指向 gitignored 的暂存目录，跑真实构建，再与入库产物逐字节比对（`lib/` 与根 `client.js` **两边都查**）；不再在工作树里跑 `npm run build`。
+- **理由（四条独立成立，任一条都足以驱动改动）**：
+  1. **改名噪音**：哈希命名下改一次源码 = git 里一对 `D` + `??`，diff 全是重命名，review 与 blame 都读不动。实测（2026-10-06）：改名后给 `src/host/codes.ts` 做一次内容变更再构建，`lib/` 6 个文件全部**原地修改**，0 个新增、0 个删除。一次性迁移成本是 5 个文件改名，此后不再发生。
+  2. **CI 断言的依赖被简化**：`artifacts` job 靠「第二次构建必须无变化」验可复现。哈希命名下这条断言还依赖 chunk 内联顺序；`[name]` 下文件名与内容都只依赖源码内容。实测两次独立构建：文件名集合与逐文件 sha256 全同（0/6 差异）。
+  3. **门禁不该修复它测量的东西**：旧门禁在**工作树里**跑 `npm run build`——测试跑到一半改写了它守护的入库产物；构建半途失败则留下半成品，且没有任何信号表明工作树被碰过。
+  4. **旧门禁只查 `client.js`，`lib/` 的漂移完全没有门禁覆盖**：「改了 src 忘 build」在本机是绿的，只有 CI 的 `artifacts` job 会红。ADR-008 把产物变成入库承重面之后，这是该模式**唯一没有别的信号兜底**的失效模式（工作树干净、离线套件绿、typecheck 绿，装出去的是昨天的代码）。
+- **为什么不是别的修法**：① 保留哈希命名、让门禁容忍改名——噪音在 diff 里，门禁消除不了它。② 内联回单文件以消灭 chunk 命名问题——peer 依赖必须 `external`，且 `lib/` 需要按模块切分。③ 给门禁加 `--fix` 自动重建工作树——那就回到了「门禁修复被测量物」，红信号消失。④ 让 CI 单独负责 `lib/` 新鲜度——CI 红之前产物已经进过 tag。
+- **一条必须留痕的自我更正**（避免后来人把手抄第二份当成正确做法）：`test/build-gate.mjs` 早期版本从 `tsdown.config.mjs` **用正则提取命名方案**再重建一份暂存配置当判定基准——那仍是第二份。配置一旦漂移，门禁会报「入库有 / 新构建无」，读起来像「改了 src 忘 build」，白烧一轮排查。现行做法是直接跑**同一份**配置（只改 `outDir`）；若配置丢了门禁依赖的形状（两处 `outDir` 锚点），失败时点名缺失锚点（「0 个 host outDir 锚点，本门禁没有基准可比对」），而不是拿错基准静默比对。这条与 PITFALLS §39「探测器失配 → 两侧集合双双缩水 → 零违规假绿」是同一类病。
+- **为什么 `splitting` 不是解法**：tsdown 顶层没有 `splitting` 选项（实测 2026-10-06：加 `splitting: false` 后 chunk 数与文件集完全不变，选项被静默忽略），所以「用 splitting 关掉切分」这条路不存在——`chunkFileNames` 是唯一的命名手段。
+- **验证**：`test/build-gate.mjs` 16/16 通过；负向对照 4 例全红——① 改一个 chunk 的字节 → `content changed: llm-adapter.js`；② 删掉入库 chunk → `tracked but absent from the rebuild` + `in the rebuild but not tracked`；③ 删掉 `client.js` → 存在性与新鲜性两条同时红；④ 改 host 的 `outDir` → 响亮报锚点缺失。
+- **受影响文件**：`tsdown.config.mjs`（host 条目加 `outputOptions`）、`lib/*.js`（5 个改名 + `index.js` 内容）、`test/build-gate.mjs`（重写）、`.gitignore`（忽略 `.build-gate.config.mjs`，暂存目录落在已忽略的 `tmp/`）、`docs/ARCHITECTURE.md`、`docs/DSH-PLUGIN.md`、`docs/TESTING.md`、`docs/ROADMAP.md` §6.2、`.github/workflows/ci.yml`（两处 pnpm 理由措辞 + 可复现性表述）。
+- **与既有条目的关系**：不改变 ADR-008 任何一项——产物仍随库提交、仍**不加 `prepare`**、`prepack` 仍保留、CI 仍有 `artifacts` job。本条只降低该模式的日常维护成本，并把它唯一的失效模式（`lib/` 漂移）补进门禁覆盖。
+

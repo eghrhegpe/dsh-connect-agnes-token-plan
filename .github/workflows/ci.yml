@@ -36,13 +36,14 @@ name: CI
 #                  too and never gates the offline job.
 #   artifacts    — rebuilds src/ and proves the COMMITTED lib/ + client.js equal
 #                  a fresh rebuild (`git diff --exit-code` after the build; a
-#                  second build must change nothing — reproducible, content-hash
-#                  chunks). Since the artifacts are tracked in git (a
-#                  git/marketplace install clones them ready to load — pnpm's
-#                  packageShouldBeBuilt skips the build pipeline when the main
-#                  file is present), this is the fence that keeps a "src changed
-#                  but nobody rebuilt + committed" commit from shipping a stale
-#                  plugin to every git-install user.
+#                  second build must change nothing — reproducible: chunk names
+#                  are `[name].js`, not content hashes). Since the artifacts are
+#                  tracked in git (a git/marketplace install clones them ready to
+#                  load — pnpm refuses to run build scripts for git dependencies,
+#                  `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, and the `allowBuilds`
+#                  allowlist is not an install-time knob), this is the fence that
+#                  keeps a "src changed but nobody rebuilt + committed" commit
+#                  from shipping a stale plugin to every git-install user.
 #
 # The e2e suite runs through the SAME test/e2e-gate.mjs locally (`npm test`) and
 # here, so both share one skip shape and one verdict. A suite that passes only in
@@ -156,12 +157,13 @@ jobs:
       - name: Install dev dependencies (tsdown, for the rebuild)
         run: npm install --legacy-peer-deps --no-audit --no-fund
       # lib/ and the root client.js are TRACKED in git: a git/marketplace install
-      # clones them ready to load — pnpm's `packageShouldBeBuilt` sees the main
-      # file present and skips the whole build pipeline. So "src changed but
+      # clones them ready to load — pnpm refuses to run build scripts for git
+      # dependencies (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`), and the
+      # `allowBuilds` allowlist is not an install-time knob. So "src changed but
       # nobody rebuilt + committed" would ship a stale plugin to every
       # git-install user; this gate is the fence. A second build must change
-      # nothing — the artifacts are reproducible (deterministic content-hash
-      # chunks: same src in, byte-identical out).
+      # nothing — the artifacts are reproducible (chunk names are `[name].js`,
+      # not content hashes: same src in, byte-identical out).
       - name: Freshness gate — committed artifacts equal a rebuild of src/
         run: |
           set -e

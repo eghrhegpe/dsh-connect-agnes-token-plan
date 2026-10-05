@@ -7,7 +7,7 @@
 ## 1. 运行
 
 ```powershell
-npm test                    # 全量离线门禁：请见 `test/_roster.mjs` 与 `node test/run.mjs --list`（磁盘所有 *.test.mjs 自动构成名册）；末尾 4 道 gate：tsc-gate（类型层——i18n 的 `en: typeof zh`、`wire.ts` 镜像与 tsconfig 严格标志，探 `tsc`，无则 SKIP）+ build-gate（重建 src/ 全部源码并验证 lib/ 与 client.js 产物，探 tsdown，无则 SKIP）+ dup-gate（jscpd 重复度 3% 阈值，探 `jscpd`，无则 SKIP）+ e2e-gate（探 dsh CLI，无则 SKIP）
+npm test                    # 全量离线门禁：请见 `test/_roster.mjs` 与 `node test/run.mjs --list`（磁盘所有 *.test.mjs 自动构成名册）；末尾 4 道 gate：tsc-gate（类型层——i18n 的 `en: typeof zh`、`wire.ts` 镜像与 tsconfig 严格标志，探 `tsc`，无则 SKIP）+ build-gate（把 src/ 重建到 gitignored 的暂存目录，与入库的 lib/ 与 client.js 逐字节比对，只读不碰工作树，探 tsdown，无则 SKIP）+ dup-gate（jscpd 重复度 3% 阈值，探 `jscpd`，无则 SKIP）+ e2e-gate（探 dsh CLI，无则 SKIP）
 npm run test:e2e            # 只跑端到端：真 Host + 假平台，需 dsh CLI 在 PATH
 npm run test:live:contract  # 仅 live-contract.mjs，需联网 + AGNES_TOKEN_PLAN_API_KEY，重放推理契约
 npm run test:live:agnescode # 仅 live-agnescode.mjs，需联网 + 凭据服务的 AGNESCODE_CREDENTIAL（或 $AGNESCODE_CREDENTIAL 环境变量），默认 2 只读请求；`--chat` 追加 2 条计费思考探针

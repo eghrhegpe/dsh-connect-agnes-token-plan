@@ -222,8 +222,9 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
   （`deps.neverBundle` 钉住）。三世界尾巴保留在源码里，CJS require 世界照旧声明。
 - **门禁**：`test/build-gate.mjs`（npm test 链尾、e2e-gate 之前；文件名不含
   `.test.`，不入 `package.test.mjs` 三方名册，同 e2e-gate 范式）——**freshness**
-  （重建与产物做换行归一化的逐字节比对，**过期即红**：`src/client/` 变了没重建会被
-  门禁拦住；`lib/` 与根 `client.js` **随库提交**（不 ignore，见根 `.gitignore`「构建产物」），所以红就是「改了 src 没重建」，需把产物与源码放**同一个 commit** 提交）
+  （把 `src/` 全部重建到 gitignored 的暂存目录，与入库产物做换行归一化的逐字节比对，
+  **过期即红**：`src/` 变了没重建就会被门禁拦住，`lib/` 与根 `client.js` 两边都查；
+  门禁只读，不碰工作树；`lib/` 与根 `client.js` **随库提交**（不 ignore，见根 `.gitignore`「构建产物」），所以红就是「改了 src 没重建」，需把产物与源码放**同一个 commit** 提交）
   + **形状**
   （无顶层 import/export、ESM 导入恰好注册一份、react-only 替身可物化、panel 测试面
   键齐全）。tsdown 缺席则醒目 SKIP 退出 0。
@@ -232,7 +233,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
   `--legacy-peer-deps`（peer 包不在 registry；本仓刻意无 lockfile）。
 - **【当晚已被取代】「Host 半边不动」**：随后按 workbuddy 规范完成全仓归一——Host 源码迁
   `src/host/*.ts`（Host 模块），tsdown 多入口构建 `lib/`（ESM bundle + 切分 chunk）；`lib/` 与根
-  `client.js` 当时一并 `.gitignore`、**产物不入库**（上文「产物与源码同 commit」纪律随之作废）——**该口径已于 2026-10-03 被推翻**：现 `.gitignore` 让 `lib/` 与根 `client.js` **随库提交**（DSH 市场 / `dsh plugin add` 的 git 直装走 pnpm git-dep 管线，`packageShouldBeBuilt` 按 `main` 在克隆里是否存在决定是否构建，产物入库则克隆**零构建、零 devDeps、零 allowBuilds 审批**，加回 ignore 会让插件卡失效），上文「产物与源码同 commit」纪律随之恢复；见根 `.gitignore`「构建产物」与 CI 的 artifacts 新鲜度门禁，
+  `client.js` 当时一并 `.gitignore`、**产物不入库**（上文「产物与源码同 commit」纪律随之作废）——**该口径已于 2026-10-03 被推翻**：现 `.gitignore` 让 `lib/` 与根 `client.js` **随库提交**（DSH 市场 / `dsh plugin add` 的 git 直装走 pnpm git-dep 管线，pnpm 对 git 依赖一律拒绝执行构建脚本——`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，唯一解法是把包名加进 `allowBuilds` 白名单，而装插件的用户没有这个入口；产物入库则克隆**零构建、零 devDeps、零 allowBuilds 审批**，加回 ignore 会让插件卡失效），上文「产物与源码同 commit」纪律随之恢复；见根 `.gitignore`「构建产物」与 CI 的 artifacts 新鲜度门禁，
   测试面与门禁已适配；全量套件 + build-gate + e2e + tsc 全绿，「删 lib 可重建」验收通过。
   checkJs 的 JSDoc 投入随 .ts 化自然并入类型标注。
 

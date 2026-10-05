@@ -18,6 +18,10 @@ tmp/
 # `probe-asar/` 那次事故同一类：未被忽略的目录，一次 `git add -A` 就进历史。
 /report/
 
+# build-gate 跑完即删的临时构建配置（防御性忽略：万一中途被强杀，残留物不该进
+# 版本库，也不该让人误以为那是手工产物）。其暂存产物落在上面已忽略的 `tmp/`。
+.build-gate.config.mjs
+
 # 依赖与构建（link 安装下通常没有实体目录，保险起见）
 node_modules/
 dist/
@@ -29,16 +33,21 @@ build/
 package-lock.json
 
 # 构建产物：lib/ 与根 client.js 由 `npm run build`（tsdown）从 src/ 重建，**随库提交**
-# （不忽略；qoder 同款裁定，本仓 2026-10-03 起生效，推翻上面旧的「绝不进版本库」）。
-# 为什么版本化 lib：DSH 市场 / `dsh plugin add` 的 git 直装走 pnpm git-dep 管线，
-# pnpm 的 packageShouldBeBuilt 按「main（./lib/index.js）在克隆里是否存在」决定是否跑
-# 构建脚本——产物入库则克隆即可用：零构建、零 devDeps、零 allowBuilds 审批；
-# 一旦把 /lib/ 加回 ignore，main 缺失会翻回「需要构建」，装出的插件没有宿主入口，
-# 卡片直接失效。
+# （不忽略；qoder 同款裁定，本仓 2026-10-03 起生效，推翻上面旧的「绝不进版本库」；
+# 账本条目 docs/ADR.md 的 ADR-008）。
+# 为什么必须入库（完整理由，别只记半句）：DSH 市场 / `dsh plugin add` 的 git 直装走
+# pnpm git-dep 管线，而 pnpm 对 git 依赖**一律拒绝执行构建脚本**——报
+# ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED，唯一解法是把包名加进 `allowBuilds` 白名单，
+# 而装插件的用户没有这个入口。所以「把 prepack 换成 prepare、让安装时自构建」是死路
+# （npm 在 git 安装时确实会跑 prepare，pnpm 不会）。lib/ 不入库，装出来的包缺 main
+# 入口（./lib/index.js），卡片直接失效。
 # ⚠️ 不要把 /lib/ 或 /client.js 加回本文件。
 # 纪律：产物只由构建生成、禁止手改——改 src/ 后必跑 `npm run build`，把 lib/ 与
-# client.js 和 src/ 同一 commit 提交；CI 新鲜度门禁（.github/workflows/ci.yml 的
-# artifacts job）以 `git diff --exit-code -- lib client.js` 拦「改了 src 没重建」。
+# client.js 和 src/ 同一 commit 提交；本地门禁 test/build-gate.mjs 把 src/ 重建到
+# gitignored 的暂存目录与入库产物逐字节比对（不碰工作树），CI 另有 artifacts job
+# 以 `git diff --exit-code -- lib client.js` 拦「改了 src 没重建」。
+# 产物命名用 `chunkFileNames: "[name].js"`（不含内容哈希，见 tsdown.config.mjs）：
+# 改源码是**原地修改**而非删旧加新，diff 只出 1 个 M，不出 D + ?? 对。
 
 # 编辑器与系统
 .DS_Store

@@ -2,10 +2,24 @@
 /**
  * Build configuration. `src/` holds ALL sources (host + client); `lib/` and
  * the root `client.js` are pure build artifacts, fully rebuildable from
- * `src/`, and are TRACKED in git (committed so a git/marketplace install
- * clones them ready to load — pnpm's `packageShouldBeBuilt` skips the build
- * pipeline when the main file is present). Nothing hand-edited in `lib/`:
- * rebuild after every src change and commit the artifacts with it.
+ * `src/`, and are TRACKED in git (ADR-008). DSH installs plugins with
+ * **pnpm**, and pnpm refuses to run build scripts for git dependencies
+ * outright — `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, whose only escape is the
+ * `allowBuilds` allowlist, a knob plugin installers cannot reach. So the "swap
+ * `prepack` for `prepare` and let the install build itself" route is DEAD:
+ * npm does run `prepare` on a git install, pnpm does not. Without a committed
+ * `lib/index.js` a git install has no host entry point and the card dies.
+ * Nothing hand-edited in `lib/`: rebuild after every src change and commit the
+ * artifacts with it.
+ *
+ * `chunkFileNames: "[name].js"` (no content hash): editing `src/` MODIFIES a
+ * chunk in place instead of deleting it and adding a renamed one, so a source
+ * edit shows as a single `M` rather than a `D` + `??` pair. `test/build-gate.mjs`
+ * runs THIS file VERBATIM (only the two `outDir` values are redirected into a
+ * staging dir), so no second copy of the naming scheme exists anywhere — a
+ * hand-copied baseline would make the gate report "tracked but absent from
+ * the rebuild" on a config drift, which reads like "changed src, forgot to
+ * build" and burns a round of the wrong investigation.
  *
  * Two entries:
  *
@@ -61,12 +75,24 @@ export default defineConfig([
     // runtime nor the tests. Code splitting stays on (the rolldown default for
     // the sources' dynamic `import()`s); a single-bundle build would need
     // `outputOptions.inlineDynamicImports` instead — don't add a top-level
-    // `splitting` key, tsdown has no such option and it is silently ignored.
+    // `splitting` key, tsdown has no such option and it is silently ignored
+    // (measured 2026-10-06: a top-level `splitting: false` leaves the chunk
+    // count and file set unchanged, so it cannot be used to "fix" either the
+    // chunk count or the chunk names).
     clean: true,
     minify: false,
     sourcemap: false,
     dts: false,
     outExtensions: () => ({ js: ".js" }),
+    // The ONE copy of the artifact naming scheme. `entryFileNames` is pinned
+    // by `package.json#main`; `chunkFileNames` drops the content hash so a
+    // source edit is an in-place modification (see the header).
+    // `test/build-gate.mjs` runs this block as-is, so it is the single source
+    // of truth — do not restate it anywhere.
+    outputOptions: {
+      entryFileNames: "index.js",
+      chunkFileNames: "[name].js"
+    },
     deps: { neverBundle: [...NEVER_BUNDLE] },
   },
   {
@@ -98,3 +124,4 @@ export default defineConfig([
     dts: false,
   },
 ]);
+
