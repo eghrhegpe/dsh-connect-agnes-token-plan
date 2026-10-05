@@ -42,7 +42,7 @@ node test/store-baseline.test.mjs # token-store 全行为冻结基线：拆分/�
 node test/panel.test.mjs    # 面板决策、中英字典一致性
 node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shape 漂移、分桶求和、四窗口
 node test/switch-store.test.mjs # 四个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」）
-node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）
+node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）；新增 docs/ 顶层文件必须进 docs/README.md 索引表，否则 ORPHAN_DOCS 判红
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
 npm test                    # 全量离线测试门禁 + 末尾 4 道 gate：tsc-gate / build-gate / dup-gate / e2e-gate（各自探到 tsc / tsdown / jscpd / dsh CLI 才实跑，否则 SKIP；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）
 npm run build               # 改 src/（host 或 client）后必跑：重建 lib/ 与根 client.js（两者是入库产物：重建后必须与 src/ 同一 commit 提交；build-gate 拦构建失败/产物缺失/漂移，CI 新鲜度门禁拦「改了 src 没重建」；别把 /lib/ 加回 .gitignore）
@@ -128,9 +128,12 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 动桌面端上游（AgnesCode / `agnescode`） | `docs/ROADMAP.md` §6.3（契约探针 + 隔离裁定）→ `src/host/agnescode*.ts` |
 | 给用户看的文案（README / `cordis.patch.yml`）改了 | `test/docs.test.mjs` 检查 `README_TABS`/`SELF_DESCRIPTION`（tab 全覆盖 + 槽位一致），两者都进 npm 包 |
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
+| 理解「这是一个 DSH 插件」（bundle 结构、Loader 条目、`cordis.patch.yml`、安装重启、peer 分工） | `docs/DSH-PLUGIN.md` |
 | 拍/改裁定、回溯边界与定位沿革（现行表述 vs 历史依据） | `docs/ADR.md`（决策账本；取代关系与举证链在此，现行规则见 `docs/ARCHITECTURE.md` §5）；**现行正文禁内联「修订（日期）」补丁**，`docs.test.mjs` 检查 `ARCHAEOLOGY` 把关 |
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md`；提供方开关见 `docs/PROVIDER-HOT-RELOAD.md` |
 | 接/改 LLM provider（descriptor、`maxTokens`、注册三件套、adapter 组装） | `docs/DSH-LLM-DEVELOP.md`（peer 分工 → 注册 → descriptor 契约 → 探针纪律 → 排查速查） |
+| 动刀 `token-store.ts` / provider publisher 这类大文件（先冻结行为基线，再按蓝图搬） | `docs/TOKEN-STORE-SPLIT.md`、`docs/PUBLISH-CORE-SPLIT.md`（ADR-005 准入门槛的两份先例蓝图） |
+| 查「为何不退回通用 image/video 接口、为何自己造工具」的 runtime 取证 | `docs/DSH-UNIFIED-INTERFACE-AUDIT.md`（观察存档，不作执行依据） |
 | 改测试前 | `docs/TESTING.md` |
 | 改任何代码前扫一眼 | `docs/PITFALLS.md`（55 条现象→根因→修法） |
 | 排查「面板说令牌失效 / 让你重新登录，但重登没用」 | `docs/PITFALLS.md` §46（Host 唯一的 403 是同源闸，不是凭据；客户端曾把它读成 `jwt_expired`） |
@@ -139,6 +142,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 排查「市场页截图裂 / 清单指的东西不在包里」 | `docs/PITFALLS.md` §47（`files` 白名单与 `screenshots.json` 是两条独立门禁，交集处无人看） |
 | 排查「浏览器/控制台看不到插件报错」「有没有环形日志」 | `docs/PITFALLS.md` §42（两半进程 + 有意降级：Host 报错在 `dsh web` 终端 stdout 与 `$DSH_HOME/logs/`，不在浏览器 F12） |
 | 查某条事实「当初从哪来」 / 要落盘新参照件 | `docs/REFERENCES.md`（`upstream/` 容器清单：来源 / 版本 / 许可 / 承重在哪） |
+| 回溯已失效的边界裁定 / 2026-09 研究原稿（**不作现行依据**，待办状态已腐烂） | `docs/ARCHIVE-BOUNDARY-DECISIONS.md`、`docs/ARCHIVE-IMPROVEMENTS-2026-09.md` |
 | 排查「这条配置到底生效没」 / 改了源码却没变 | `docs/PITFALLS.md` §22（bundles 装载 → patch overlay → `$DSH_HOME/state/<profile>/<name>/` 三层，desktop 是安装副本、web 是 symlink） |
 | 加/改 **state 文件**、读 `profileContext`、判断某状态该不该按 profile 分段 | `docs/PITFALLS.md` §23（catalog/provider/draw 分段；throttle 与凭据 grant **故意共享**，别统一） |
 | 提交约定、`upstream/` 红线 | `docs/CONTRIBUTING.md` |

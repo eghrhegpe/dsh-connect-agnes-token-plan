@@ -97,6 +97,7 @@ npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本�
 
 ## 文档
 
+- [docs/README.md](docs/README.md) — 全量文档索引（每篇按「内容 / 何时查」路由；本表只列主文档）
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 架构与数据流
 - [docs/SETUP.md](docs/SETUP.md) — 配置字段、改动后重启、常见信号
 - [docs/AUTH.md](docs/AUTH.md) — 登录 / 重登 / 节流设计
