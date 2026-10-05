@@ -35,11 +35,12 @@
 
 | 原节 | 去向 | 理由 |
 |---|---|---|
-| §1.1 生态对照表 | **删**（不归档） | 兄弟插件行数是一次性快照且原文自承不作门禁；本机那批插件一个都没装，无从复核 |
+| §1.1 生态对照表 | **删**（不归档） | 原文自承「数字不作门禁」，且实测已漂：`dsh-connect-trae` 6803 行 / `dsh-connect-workbuddy` 11545 行（表里写 ≈5.9k / ≈5.9k，后者差近一倍），`@eghrhegpe/dsh-connect-qoder` 亦已装。**定性结论（同族全是单包 connect）仍成立**，但那张表既不可复现也无可操作性——`~/.dsh/profiles` 下的实际形态以 `docs/ARCHITECTURE.md` §5.3 的当次核实为准 |
 | §1.2 `agent-default-model` 撤销 | → ARCHIVE-BOUNDARY-DECISIONS.md | 撤销结论的现行表述已在 [ROADMAP.md](./ROADMAP.md) §0 |
 | §2 `index.js` 接线方案与行号清单 | → ARCHIVE-BOUNDARY-DECISIONS.md | 方案已落地并被二次拆分取代（`routes/` 8 模块 + `lifecycle.ts`），行号全漂 |
 | §3.1 / §3.2 / §3.3 429 误判与护栏 | → **ADR-011** | 仍是活判据，且有 5 处源码/测试注释引用 |
-| §4.1 第二步（`dsh-atomic-write` 跨进程写锁） | → ARCHIVE-BOUNDARY-DECISIONS.md | 第一步已落地（`state-store.ts`），只剩未做的第二步 |
+| §4.1 第一步（状态原语统一 → `state-store.ts`） | 留档 + **代码已引用它** | 已落地且是当前实现（`state-store.ts:1-4` 直接引本节），四个 store 全走 `temporaryOf` / `writeStateFile`；收敛过程见本文件 §4.1「落地状态」段 |
+| §4.1 第二步（`dsh-atomic-write` 跨进程写锁） | → ARCHIVE-BOUNDARY-DECISIONS.md A3 | 已落地的第一步让三处原子写统一，**只剩未做的第二步**（新 peer 依赖，收益仅 `catalog-store` 的读改写，见 A3 的校正说明） |
 | §4.2 CI live-contract job | → ARCHIVE-BOUNDARY-DECISIONS.md | 已落地，仍待 owner 配 secret；执行状态看 [ROADMAP.md](./ROADMAP.md) |
 | §4.3 `autoRecoverArmed` | **删** | 已落地且无争议，`state()` 与面板自证 |
 | §4.4 Loader 不支持相对 import | → **ADR-011** 关系段 | 硬约束实测，与 ADR-006 的 client 分层裁定同源 |
