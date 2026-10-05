@@ -473,7 +473,7 @@ peer 误判的**官方依据**：
 
 > **live probe（2026-10-01，子代理真机）**：用真实 Key 实跑确认了四点——① `n` **必须为 1**，传 `n:2` 直接 `400 n 必须为 1`，故 `buildDrawBody` 现在只转发 `1`；② 不传 `model` 时自动发现选中 `agnes-image-2.1-flash` 并成功出图，证明「省略 model 走目录默认」逻辑是对的；③ 顶层 `response_format:"url"` **仍返回 url**（与本节真机记录一致），故维持顶层写法、不迁 `extra_body`；④ `agnes-u1-fast` 在真机是 **chat 模型**（报 400「是 chat 模型，请使用 /v1/chat/completions」），印证旧描述里的示例 id 是错的——已在上轮提交移除。
 >
-> **live probe ⑤（本次补全，`test/probe-draw-fields.mjs` 真机 5/5 通过）**：上一版「⏳ 待补」清单里的四个字段全部转正——
+> **live probe ⑤（本次补全，真机 5/5 通过；探针脚本未入库）**：上一版「⏳ 待补」清单里的四个字段全部转正——
 > `size: "1024x1024"`（精确 `WIDTHxHEIGHT`）、`size: "2K"`、`size: "4K"`（档位常量，即 2026-10 版工具描述误判「未确认」的那条——SenseNova U1.5 档位表在这端点确实有效）、
 > `extra_body.ratio: "16:9"`、`extra_body.image`（参考图，任务段由 `/t2i/` 切到 `/i2i/`，证明 img2img 真实生效）、`extra_body.return_base64: true`（返回形态切实变化：`url` 空串 + `b64_json` 载荷）——
 > 均为 200 + 成功出图。四个字段在 Agnes 出图端点的接受性全部确证，无需删除或改写法。

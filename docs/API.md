@@ -6,7 +6,7 @@
 
 ## 1. 本插件路由（Host 半边注册）
 
-这些路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号或 Key。请求体上限：账号 / api-key 主链路 **4096 字节**（`MAX_ACCOUNT_BODY_BYTES`，`src/host/routes/http.ts:30`），AgnesCode 路由 **2048 字节**（`MAX_AGNESCODE_BODY_BYTES`，`src/host/routes/agnescode.ts:44`）。
+这些路由都经过**同源校验**：带 `Origin` 的请求必须与 Host 同源，因此只有本机 DSH 自己提供的页面能写入账号或 Key。请求体上限：账号 / api-key 主链路 **4096 字节**（`src/host/routes/http.ts` 的 `MAX_ACCOUNT_BODY_BYTES`），AgnesCode 路由 **2048 字节**（`src/host/routes/agnescode.ts` 的 `MAX_AGNESCODE_BODY_BYTES`）。
 
 ### `GET /api/dsh-connect-agnes-token-plan/snapshot`
 

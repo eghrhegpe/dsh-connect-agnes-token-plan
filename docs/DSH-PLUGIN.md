@@ -104,7 +104,7 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
         # loginPath / loginTimeoutMs / fallbackExpiresInSeconds ... 都是可选覆盖，留注释=用平台默认
 ```
 
-- 这里的 `id: dsh-connect-agnes-token-plan` 至关重要：DSH 的「设置 → 模型」页、命名空间推导都基于这个条目 id（参见 `dsh-connect-qoder` README 里「设置命名空间由宿主决定，不能自选」那条踩坑——本插件是硬编码 `name`，见 `src/host/host-config.ts:27`，其注释自述不能从这里 import 的只有 `package.json#name` 与 `cordis.patch.yml` 的 `id`/`name`）。
+- 这里的 `id: dsh-connect-agnes-token-plan` 至关重要：DSH 的「设置 → 模型」页、命名空间推导都基于这个条目 id（参见 `dsh-connect-qoder` README 里「设置命名空间由宿主决定，不能自选」那条踩坑——本插件是硬编码 `name`，见 `src/host/host-config.ts`，其注释自述不能从这里 import 的只有 `package.json#name` 与 `cordis.patch.yml` 的 `id`/`name`）。
 - `config` 是插件的配置面，**改完要重装/重载 Host 才生效**；也可以在 profile 的 `cordis.patch.yml` 里用同名 `id` 覆盖。
 - 端点类字段若不是合法 http(s) 绝对地址，挂载时直接报 `config_error`，而不是第一次轮询才炸。
 

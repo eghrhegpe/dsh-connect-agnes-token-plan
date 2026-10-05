@@ -94,10 +94,10 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 4. **`consoleOrigin` 必须是后端源站** `https://platform-backend.agnes-ai.cn`，不是控制台
    前端 `platform.agnes-ai.cn`。前端源站的 `/api/*` 是 Next.js 404 外壳，打到那里会以
    「路径不对」的样子失败，而真实原因是「主机不对」。后端源站字面量有**两处**且必须
-   保持一致——`AUTH_DEFAULTS.consoleOrigin`（`src/host/agnes-auth.ts:47`）与
-   `CONFIG_DEFAULTS.consoleBase`（`src/host/host-config.ts:41`）——运行时由配置边界
-   `host-config.ts:323`（`resolveAuthOverrides` 在 `:384` 以 `consoleOrigin: consoleBase`
-   汇流）合并为**单一 `consoleOrigin`**。别在别处再写第三处字面量，也别让两处值分叉。
+   保持一致——`AUTH_DEFAULTS.consoleOrigin`（`src/host/agnes-auth.ts`）与
+   `CONFIG_DEFAULTS.consoleBase`（`src/host/host-config.ts`）——运行时由配置边界
+   （`resolveAuthOverrides` 以 `consoleOrigin: consoleBase`）汇流，合并为**单一
+   `consoleOrigin`**。别在别处再写第三处字面量，也别让两处值分叉。
 5. **登录路径的每次尝试（成功也算）必须经 `onTrace` 落盘**。没有成功 trace，
    "浏览器能登、面板不能"就无法对照排查。
 6. **五个额度源一律软失败**（`overview` / `series` / `subscription` / `plans` / `/v1/models`），

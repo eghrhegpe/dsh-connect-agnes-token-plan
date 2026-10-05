@@ -6,7 +6,8 @@
 //   文档结构：LINKS 内部链接可解析、TABLES 跨文件表格去重、README_LINES 根 README
 //                    行数上限、SNAPSHOT DSH-PLUGIN.md 教学快照同步、API_SNAPSHOT
 //                    API.md 快照契约、ORPHAN_DOCS docs/ 孤儿文件
-//   事实引用：PITFALLS_REFS 条目数/条号引用有效、SRC_COMMENT_REFS src/ 注释里的模块名引用完整（含伪文件名扫描）
+//   事实引用：PITFALLS_REFS 条目数/条号引用有效、SRC_COMMENT_REFS src/ 注释里的模块名引用完整（含伪文件名扫描）、
+//            SRC_SECTION_REFS src/ 注释里的 docs/ 段号指向真实节、DOC_SRC_PATHS 现行文档的 src/ 引用可解析且不带写死行号
 //   自述面与实际一致：README_TABS README 覆盖每个 tab、SELF_DESCRIPTION 声明的 UI 位置
 //                    与 client 槽位注册一致、SCREENSHOTS 声明的图真实存在于磁盘。这三条
 //                    与前两组有本质区别：前两组验的是「文档格式对不对」，它们验的是
@@ -146,6 +147,8 @@ const CHECK_IDS = new Map([
   ["ORPHAN_DOCS", "docs/ 孤儿文件"],
   ["PITFALLS_REFS", "PITFALLS 条目数/条号引用有效"],
   ["SRC_COMMENT_REFS", "src/ 注释里的模块名引用完整"],
+  ["SRC_SECTION_REFS", "src/ 注释里的 docs/ 段号引用指向真实节"],
+  ["DOC_SRC_PATHS", "现行文档的 src/ 引用可解析且不带写死行号"],
   ["README_TABS", "README 覆盖面板每一个 tab"],
   ["SELF_DESCRIPTION", "自述 UI 位置与 client 槽位注册一致"],
   ["SCREENSHOTS", "screenshots.json 声明的图真实存在于磁盘"],
@@ -493,6 +496,116 @@ const CHECK_IDS = new Map([
   else note(`注释伪文件名 ${pseudo} 处（已在上方逐条列出）`);
   note(`注释模块引用 ${checked} 条全部可解析${known ? `（含 ${known} 条架构名词白名单）` : ""}`);
   guard("SRC_COMMENT_REFS", checked, 50);
+}
+
+// 8b) src/ 注释里的 docs/ 段号引用必须指向真实节（与 8) 同族：注释引用完整性）
+//
+// 8) 管「注释指到的文件存在」，这里管「注释指到的节存在」。src 注释里写着
+// `PITFALLS §23` / `ROADMAP §6.3` 这类引用；docs 的编号会重排，重排之后这些 §N
+// 静默失效——读者跳到的会是讲另一件事的节，而形式上完全看不出。判据只取**文档名
+// 紧贴 §N** 的显式形态：注释块内承前的裸 `§5.5` 归属不可判（同一块里可能已经换过
+// 文档），只跳过不查——猜出来的判红比漏检更伤信任。
+{
+  const srcTs = [];
+  const walkTs = (dir) => {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) { if (name !== "node_modules") walkTs(p); }
+      else if (name.endsWith(".ts")) srcTs.push(p);
+    }
+  };
+  walkTs(join(ROOT, "src"));
+  const docHead = new Map();
+  for (const d of readdirSync(join(ROOT, "docs"))) {
+    if (!d.endsWith(".md")) continue;
+    docHead.set(
+      d.slice(0, -3),
+      new Set(
+        [...readFileSync(join(ROOT, "docs", d), "utf8").matchAll(/^#{2,4}\s+(\d+(?:\.\d+)*)/gm)].map(
+          (h) => h[1],
+        ),
+      ),
+    );
+  }
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sectRe = new RegExp(
+    "(?<![\\w.-])(" +
+      [...docHead.keys()]
+        .sort((a, b) => b.length - a.length)
+        .map(escapeRe)
+        .join("|") +
+      ")(?:\\.md)?\\s*§(\\d+(?:\\.\\d+)*)",
+    "g",
+  );
+  let sections = 0;
+  for (const f of srcTs) {
+    for (const m of readFileSync(f, "utf8").matchAll(sectRe)) {
+      sections++;
+      if (!docHead.get(m[1]).has(m[2])) {
+        bad(`${rel(f)} 注释引用 ${m[1]}.md §${m[2]}，该文档没有这个节`);
+      }
+    }
+  }
+  note(`注释文档段号引用 ${sections} 处全部指向真实节`);
+  guard("SRC_SECTION_REFS", sections, 30);
+}
+
+// 8c) 现行文档里的 `src/…` 反引号引用必须能解析，且不得写死行号
+//
+// COUNT_GUARD 管「活文档不写死会漂移的数字」，这里管它另一根轴上的同类：路径里的
+// 行号。行号在每次编辑后都会漂，而同句里本来就有符号名——留行号等于给自己埋一个
+// 必然过期的锚（AGENTS.md / docs/API.md / docs/DSH-PLUGIN.md 三处就是人工发现后才摘
+// 掉的）。三处例外：
+//   a) 版本历史（CHANGELOG）与存档（ARCHIVE-*）整文件跳过——不可变正是它们的价值；
+//   b) 已声明删除的历史坐标不查——判据是「该引用所在引用块内出现过『均已删除』/
+//      『已随…删除』/『已随…移除』」（ROADMAP §6.1 的 raccoon 坐标就是这么标的）。
+//      按声明放行而非按名字白名单：漏标声明就在这个检查里现形，比白名单更抗遗忘。
+{
+  const rel = (p) => p.replace(ROOT + "\\", "").replace(/\\/g, "/");
+  const isHistory = (n) => n === "CHANGELOG.md" || n.startsWith("ARCHIVE-");
+  const srcRefs = [];
+  const blockOf = new Map();
+  for (const f of mdFiles) {
+    if (isHistory(basename(f))) continue;
+    const lines = readFileSync(f, "utf8").split(/\r?\n/);
+    let runStart = -1;
+    for (let i = 0; i <= lines.length; i++) {
+      const inBlock = i < lines.length && /^\s*>/.test(lines[i]);
+      if (inBlock && runStart === -1) runStart = i;
+      if (!inBlock && runStart !== -1) {
+        for (let k = runStart; k < i; k++) {
+          if (/均已删除|已随[^，。；]*删除|已随[^，。；]*移除/.test(lines[k])) {
+            for (let t = runStart; t < i; t++) blockOf.set(`${f}#${t}`, true);
+          }
+        }
+        runStart = -1;
+      }
+    }
+    lines.forEach((line, i) => {
+      for (const m of line.matchAll(/`(src\/[\w./-]+?\.(?:ts|js|mjs|json|ya?ml))(?::(\d+))?`/g)) {
+        srcRefs.push({ f, i, name: m[1], line: m[2] });
+      }
+    });
+  }
+  const anchored = [];
+  const dangling = [];
+  for (const r of srcRefs) {
+    if (r.line) {
+      anchored.push(`${rel(r.f)} -> \`${r.name}:${r.line}\``);
+    }
+    if (!existsExact(join(ROOT, r.name)) && !blockOf.get(`${r.f}#${r.i}`)) {
+      dangling.push(`${rel(r.f)} -> \`${r.name}\``);
+    }
+  }
+  if (anchored.length === 0) note(`现行文档的 src/ 引用不带写死的行号`);
+  else bad(`现行文档把行号写进引用：${anchored.join(", ")}——行号每次编辑都会漂，改引符号名`);
+  if (dangling.length === 0) note(`现行文档 src/ 引用 ${srcRefs.length} 处全部可解析`);
+  else
+    bad(
+      `现行文档引用了不存在的 src/ 路径：${dangling.join(", ")}——文件已删则改口或移入存档；历史坐标需在所属引用块内写明「均已删除」`,
+    );
+  guard("DOC_SRC_PATHS", srcRefs.length, 15);
 }
 
 // 9) README 必须覆盖面板的每一个 tab
