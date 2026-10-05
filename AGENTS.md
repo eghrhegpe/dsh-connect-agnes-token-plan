@@ -12,7 +12,7 @@ Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/u
 
 1. 「积分额度」tab 是地基，走 Host 登录 + 自动重登，只读 Agnes 控制台（`platform-backend.agnes-ai.cn`）。
 2. 「接入 API」tab 与出图工具会把本插件**升级为推理通道**——注册 provider `agnes-token-plan`、给 agent 挂 `agnes_draw_image`。它们都是 **opt-in 默认关**，任何失败必须降级为「面板照常用、该模块缺席」。
-3. **「AgnesCode」tab 是桌面端上游**：接的是 AgnesCode 桌面端的登录态——本插件第一条**本机登录态采集**线（workbuddy 族先例）：微信登录发生在桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（DPAPI + AES-GCM，注入式可离线测），provider `agnescode`，接口地址**按账号跟随**会话文件且钉死在 Agnes 域名族内。**它没有刷新端点（JWT 约 28 天）——这是已知限制，不是特性**：续期没有自动路径，必须用户手动重开桌面 App、再点「检测本机登录态」重新采集，约每 28 天一次；插件无法在后台自动续期。隔离纪律与主 provider 同款：两边 publisher、store、凭据引用全部隔离（见 `docs/ROADMAP.md` §6.3）。
+3. **「AgnesCode」tab 是桌面端上游**：接的是 AgnesCode 桌面端的登录态——本插件第一条**本机登录态采集**线（workbuddy 族先例）：微信登录发生在桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（Chromium os_crypt + DPAPI + AES-256-GCM，逐文件 9 档分诊：file_missing / format_drift / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform，注入式可离线测，见 `test/agnescode.test.mjs`），provider `agnescode`，接口地址**按账号跟随**会话文件且钉死在 Agnes 域名族内。**它没有刷新端点（JWT 约 28 天）——这是已知限制，不是特性**：续期没有自动路径，必须用户手动重开桌面 App、再点「检测本机登录态」重新采集，约每 28 天一次；插件无法在后台自动续期。隔离纪律与主 provider 同款：两边 publisher、store、凭据引用全部隔离（见 `docs/ROADMAP.md` §6.3）。
 
 **定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计裁定见 docs/ADR.md，2026-09 的研究原稿已归档为 docs/ARCHIVE-IMPROVEMENTS-2026-09.md（不作现行依据）。
 

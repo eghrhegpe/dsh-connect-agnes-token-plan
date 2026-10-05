@@ -123,6 +123,8 @@ client.js: interpretSnapshot(body) → {data, error}
 
 ## 5. 生态定位：大统一——商汤全过程集成的单点入口（2026-09-29 定位变更）
 
+> 本章只写**当前**定位与三条不变量（现状）；历次划界的裁定、举证与取代链进 [ADR.md](./ADR.md)（ADR-001～ADR-003），失效裁定原文在 [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md)，生态核实快照在 [ROADMAP.md](./ROADMAP.md) §6.1.1 / §6.3。改动定位前先回账本，勿在本章内联修订补丁。
+
 **决议（2026-09-29）**：插件定位从「只做信息、不做执行、n 个插件分层分散行动」
 改为**大统一**：额度/登录/模型清单（现状）+ 视觉信息下发（§5.1）+ LLM provider
 注册（§5.2）+ 出图路由对接 + 429 自愈（退避/分诊），逐块吸收进本插件，

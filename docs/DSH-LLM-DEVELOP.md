@@ -18,6 +18,8 @@ DSH 的 LLM 栈不是一个大包，是三层，职责分得很清楚。**写 pr
 
 **承重纪律**：把「依赖 peer 的组装」与「peer-free 的 descriptor 映射」拆成两个模块（本插件是 `llm-adapter.ts` 与 `llm-models.ts`）。后者不得 `import` 任何 `@deepseek-ai/*`，这样纯逻辑层才能被离线套件在干净检出下跑起来（peer 由 Host 运行时提供，装不到也解析不到，见 [PITFALLS.md](./PITFALLS.md) §16）。
 
+> **改完跑哪些测试**：provider 纯逻辑（`llm-models.ts` / `catalog-store` / `provider-store` / `api-key-store`）与推理契约由 [TESTING.md](./TESTING.md) §2 的 `provider.test.mjs` / `contract.test.mjs` 覆盖；真实 Cordis 容器里的注册/卸载/opt-in 关由 `wiring.test.mjs` 钉死。peer 解析不到时这些套件会 SKIP 而非红，先读 `test/peer-roots.mjs` 的查找路径再下结论。
+
 ---
 
 ## 2. 注册三件套：把 provider 接进选择器

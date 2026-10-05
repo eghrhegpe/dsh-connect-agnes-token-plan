@@ -19,7 +19,7 @@
 
 ## 积分额度
 
-将 Agnes 的 Token Plan 接入dsh，，用超了只能等窗口重置。这个 tab 把数字搬进 DSH，写代码时不用切网页就能盯住：
+将 Agnes 的 Token Plan 接入 DSH，用超了只能等窗口重置。这个 tab 把数字搬进 DSH，写代码时不用切网页就能盯住：
 
 - **额度窗口**：模型请求（5 小时滚动）、每周请求、生图与视频（各 24 小时），**平台报出已用量**、独立滚动，（含百分比与重置时间）
 - **账号累计用量**：控制台口径的累计请求 / 文本 Token / 生图 / 视频秒数 / 活跃天数，以及近 N 天的分桶柱图
@@ -67,7 +67,7 @@
 
 1. 在 DSH「插件」页搜索 `dsh-connect-agnes-token-plan` 点击安装，或运行：
 
-   ```powershell
+   ```bash
    dsh plugin --profile web add dsh-connect-agnes-token-plan       # Web 端
    dsh plugin --profile desktop add dsh-connect-agnes-token-plan  # 桌面端
    ```
@@ -106,7 +106,7 @@ npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本�
 - [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑（55 条）
 - [CHANGELOG.md](CHANGELOG.md) — 版本变化
 
-AI 协作会话请先读 [AGENTS.md](AGENTS.md)。
+AI 协作会话请先读 [AGENTS.md](AGENTS.md)。人类贡献者先读 [SETUP.md](docs/SETUP.md) 与 [ARCHITECTURE.md](docs/ARCHITECTURE.md) §2 理解结构与改动代价，改代码前再读 [AGENTS.md](AGENTS.md) 的红线与 [TESTING.md](docs/TESTING.md) 的 `npm test` 门禁。
 
 ## 诚实声明
 
