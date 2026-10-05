@@ -30,7 +30,7 @@ import { surface } from "./client-surface.js";
 // compile time), so Node imports and calls it directly — no bundle scraping,
 // no re-declaration. When `panel-page.ts` stops calling this function, the
 // change is one edit in one place and the next check below says so.
-import { shouldShowAccountManagement } from "../src/client/snapshot.ts";
+import { shouldShowAccountManagement, servedWaitMs } from "../src/client/snapshot.ts";
 
 /** What the panel can render in its empty state. */
 export const RENDER = {
@@ -121,6 +121,22 @@ export function decidePanelView(data, error) {
   // than duplicating that expression. ADR-006 records this residue; the fix is
   // the import, because ADR-006's judgement 1 is that a pure rule module must
   // be callable from Node directly (PITFALLS §42).
+  //
+  // `coolingMs` is the SECOND field that residue named, and it was the one that
+  // could disagree: it used to re-derive "is a wait in force" as
+  // `typeof retryAfterMs === "number" && > 0`, which ignores the parked flag,
+  // while `servedWaitUntil` — the function `AccountForm` actually obeys —
+  // counts nothing for a parked refusal. One auth block, two verdicts. It now
+  // reads `servedWaitMs`, so "is anything pending" has one implementation.
+  //
+  // The three fields below are NOT residues and stay as they are. `render` is a
+  // three-state coarsening for assertions — `PanelPage` gates on
+  // `needsSetup && loadedOnce`, a first-frame state this view model has no
+  // notion of — so the two are structurally different questions rather than two
+  // copies of one. `consoleConnected` is a field read, not a verdict: the three
+  // places that branch on it (`panel-page.ts:298` / `:404`, `snapshot.ts:261`)
+  // each mean something different by it. ADR-006's "same source, written
+  // twice" list over-reached on those two, and its residual note now says so.
   return {
     failure: view.failure,
     auth: view.auth,
@@ -130,9 +146,7 @@ export function decidePanelView(data, error) {
     render: view.needsSetup ? RENDER.FORM : (data === null ? RENDER.TEXT : RENDER.PANELS),
     consoleConnected: data?.quota?.consoleConnected ?? null,
     canManageAccount: shouldShowAccountManagement(view.auth),
-    coolingMs: typeof view.auth?.retryAfterMs === "number" && view.auth.retryAfterMs > 0
-      ? view.auth.retryAfterMs
-      : null,
+    coolingMs: servedWaitMs(view.auth ?? null),
     needsUserAction: view.auth?.needsUserAction === true
   };
 }

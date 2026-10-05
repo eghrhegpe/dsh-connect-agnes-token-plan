@@ -300,7 +300,7 @@ export function shouldShowAccountManagement(auth: AuthData | null): boolean {
 }
 
 /**
- * The wait the HOST is already serving, in epoch millis, or `0` for none.
+ * The wait the HOST is already serving, in REMAINING millis, or `null` for none.
  *
  * WHY THIS EXISTS. The Host's `state()` reads the persisted throttle and
  * serves it as `auth.retryAfterMs` — a REMAINING window (`held.until - now`,
@@ -322,20 +322,47 @@ export function shouldShowAccountManagement(auth: AuthData | null): boolean {
  * account. The one field the Host went out of its way to serve was the one
  * field the panel dropped.
  *
- * A PARKED refusal (`needsUserAction`) returns `0` on purpose: a wrong
+ * A PARKED refusal (`needsUserAction`) returns `null` on purpose: a wrong
  * password or a captcha has no deadline to count down, and pretending
  * otherwise would show a countdown ending in another attempt that can only
  * fail. `AccountForm` renders that state as a sentence instead.
+ *
+ * THE VERDICT, NOT THE ARITHMETIC. `null` means "not waiting out anything" and
+ * is what every caller branches on; converting that to a deadline is a separate
+ * step ({@link servedWaitUntil}) because the two consumers want different
+ * units. `test/panel-decision.js` reports this value as `coolingMs` and used to
+ * re-derive it with `typeof retryAfterMs === "number" && > 0`, which is the same
+ * question with a DIFFERENT answer — it ignored the parked flag, so one input
+ * produced two verdicts across the repo. ADR-006 records that pair as a
+ * residue; the duplication is what this split removes.
+ *
+ * @param auth - the snapshot's `auth` block, or `null` when it carried none.
+ * @returns remaining millis, or `null` when nothing is being waited out.
+ */
+export function servedWaitMs(auth: AuthData | null): number | null {
+  if (auth === null) return null;
+  // Parked: no clock will clear it, so there is nothing to count down.
+  if (auth.needsUserAction === true) return null;
+  const remaining = auth.retryAfterMs;
+  if (typeof remaining !== "number" || !Number.isFinite(remaining) || remaining <= 0) return null;
+  return remaining;
+}
+
+/**
+ * {@link servedWaitMs} as an absolute deadline, for a countdown to count down
+ * to. `0` when nothing is being waited out (the non-countdown sentinel a
+ * `useState` seed wants).
+ *
+ * Split from the verdict so the "is anything pending" decision stays in one
+ * place: an earlier version returned the deadline from the same function the
+ * tests read as a remaining count, and the two units drifted into disagreeing
+ * about parked refusals.
  *
  * @param auth - the snapshot's `auth` block, or `null` when it carried none.
  * @param now - the current clock, injected so the countdown is testable.
  * @returns epoch millis to wait until, or `0` when nothing is being waited out.
  */
 export function servedWaitUntil(auth: AuthData | null, now: number): number {
-  if (auth === null) return 0;
-  // Parked: no clock will clear it, so there is nothing to count down.
-  if (auth.needsUserAction === true) return 0;
-  const remaining = auth.retryAfterMs;
-  if (typeof remaining !== "number" || !Number.isFinite(remaining) || remaining <= 0) return 0;
-  return now + remaining;
+  const remaining = servedWaitMs(auth);
+  return remaining === null ? 0 : now + remaining;
 }

@@ -64,7 +64,7 @@
 | sensenova | `models.ts` / `format.ts` / `snapshot.ts`，已可直 import 并调用 | 达标 | 无 |
 | qoder | `controller.ts` 已达标；`card-model.ts` **已抽出但未提交**（`card.tsx` 工作树减重） | 部分 | 仍在 `client-bundle.test.js` / `protocol-shape-card.test.js` 用 `new Function` 抠 `offPeakState` / `refreshNoticeKey` |
 
-- **残留（如实记录，不得包装成已完成）**：① qoder 的 `card-host-parity.test.js` 已改为 import 真模块，但 `client-bundle.test.js` 与 `protocol-shape-card.test.js` **仍从产物抠刚被抽出去的那两个函数**——抽取只做了一半；② 本仓 `panel.test.mjs` 有两处**接线类**源码正则（`setInterval` 无字面量、`title: tt(...)` 顺序），属「effect 无法被 hook-less 替身驱动，只能拒绝第二份副本」的诚实取舍，**不属本条的打击面**；但 `panel-decision.js` 对 `render` / `consoleConnected` / `canManageAccount` / `coolingMs` / `needsUserAction` 的再推导，与 `panel-page.ts` 同源而分写，是本条判据 1 的**真残留**（同一句 `auth !== null` 存在两份）。
+- **残留（如实记录，不得包装成已完成）**：① qoder 的 `card-host-parity.test.js` 已改为 import 真模块，但 `client-bundle.test.js` 与 `protocol-shape-card.test.js` **仍从产物抠刚被抽出去的那两个函数**——抽取只做了一半；② 本仓 `panel.test.mjs` 有两处**接线类**源码正则（`setInterval` 无字面量、`title: tt(...)` 顺序），属「effect 无法被 hook-less 替身驱动，只能拒绝第二份副本」的诚实取舍，**不属本条的打击面**；③ `panel-decision.js` 对 `canManageAccount` 与 `coolingMs` 的再推导曾是本条判据 1 的真残留——两者已改为 import 真模块（`shouldShowAccountManagement` / `servedWaitMs`），**本仓这一项已清**，逐项核实与取代关系见 [ADR-010](./ADR.md)。同段落曾把 `render` / `consoleConnected` / `needsUserAction` 一并列为残留，经核实那是**误判**：前两者是结构不同的另一个问题与纯字段读取（后者三处使用语义各不相同），`needsUserAction` 则从未分叉——清单与结论均以 ADR-010 为准。
 - **判据落地（2026-10-03）**：判据 1/2 已成机器可验——`docs.test.mjs` 检查 `RULE_LAYER_BOUNDARY`：① 纯模块（`snapshot.ts` / `models.ts` / `format.ts` 等）必须能被 Node 直 import，且不得**值位置** import `runtime.ts`（`import type` 编译期擦除，不算耦合）；② 测试不得用「模板串定位函数头 + 花括号配平」从 client 产物抠函数体，也不得 `new Function(<产物片段>)`。探测器**锚惯用法而非函数名清单**——按名清单会误伤合法用法（把规则名当 surface 键断言是引用模块面），也会随改名静默失效；并自带负向对照证明探测器本身有效（PITFALLS §39）。判据 3 无法机械化，仍靠 review。
 - **未完成**：qoder 两个残留测试的收敛——属另一仓库，需在该会话内完成（本仓只能记录；`RULE_LAYER_BOUNDARY` 一旦在 qoder 落地会当场点名那两处）。
 - **与既有条目的关系**：本条不改变 ADR-005 的准入门槛，而是给「client 侧新规则放哪」补上事前决策点；PITFALLS §39「点名守护物而不校验守护物」是本条判据 2 的直接依据——抓产物文本的检查看着像守护，实则守护的是排版。
@@ -101,3 +101,17 @@
 - **为什么不是别的修法**：① 走 `request_params` 需要 pi-ai 支持按档位注入 provider-specific body 字段，当前档位映射模型表达不了；② `off → "none"` 是最小改动，但会制造误导性开关；③ `xhigh`/`max` 未对 BFF 实测，按「钉死值须以 live 探针为准」的纪律保持关闭，等补探后再开。
 - **受影响的文档**：`src/host/agnescode-models.ts`（模块头决策 1 + 新 `agnescodeThinkingLevelMap`）、`src/host/agnescode-llm-adapter.ts`（profile 钉 reasoning）、`test/agnescode.test.mjs`（断言从 `reasoning===false` 改为 4 条）、`docs/ROADMAP.md` §6.3（新增 2026-10-03 探针行）、`CHANGELOG.md [0.8.1]`。历史表述 `docs/ROADMAP.md` §6.3 旧「thinking wire channel is unverified」按考古纪律保留，现行以本条为准。
 - **与既有条目的关系**：具体化 ADR-003（Agnes 线）里 AgnesCode 那条「wire 未验证」的已知限制——探针补齐后收窄为「`request_params` 级思考开关（含 `off`）未接入」，而非「思考契约整体未验证」；不改变 ADR-001~008 任何裁定，也不改变 `docs/DSH-LLM-DEVELOP.md` §4 的通用裁法（那是对 Token Plan 侧「off→`none`」的既有裁定，此处不适用，因为两个网关行为不同）。
+
+## ADR-010 client 视图模型的残留收敛：只有 `coolingMs` 是真分叉，另两项是原记录误判
+
+- **日期**：2026-10-05
+- **状态**：现行（取代 ADR-006「残留」段对 `panel-decision.js` 的五项指控；不改变 ADR-006 判据 1/2/3 任何一条）
+- **裁定**：`test/panel-decision.js` 的 `decidePanelView` 改为调 `snapshot.ts` 导出的 **`servedWaitMs(auth)`** 报 `coolingMs`，与 `AccountForm`  obeying 的 `servedWaitUntil` 同一份判定（后者由前者换算而来）。同时候选两项**明确不改**并说明理由：`render` 与 `consoleConnected` 不是分叉。
+- **为什么只有 `coolingMs` 是分叉**（逐项核实，不是印象）：
+  - `coolingMs` 此前自推 `typeof retryAfterMs === "number" && > 0`，**不看 parked 标志**；而 `AccountForm` 真正 obey 的 `servedWaitUntil` 对 parked 返回「无等待」。同一份 auth 块两个答案，**实测**。且 `servedWaitMs` 与 `servedWaitUntil` 的拆法本身就是这条裁定的产物：判定（剩余毫秒）与换算（绝对期限）单位不同，合在一处时两个消费者各自漂移。
+  - `render` **不是分叉**：`PanelPage` 的门是 `needsSetup && loadedOnce`（`panel-page.ts:311`），带一个本视图模型根本没有的「首帧」状态；`decidePanelView` 的三态是为断言做的**粗化**，两者是结构不同的两个问题，不是同一判定的两份。
+  - `consoleConnected` **不是判定而是字段读取**：三处分叉使用它——`panel-page.ts:298`（展开账户卡）、`:404`（显示未连接提示）、`snapshot.ts:261`（是否需要 setup）——**三处语义各不相同**，把它算成「同源分写」是把「都读了这个字段」误当成「都判了同一件事」。
+- **这条的净效果**：ADR-006 残留段列的五项里，`canManageAccount`（上一轮已改）与 `coolingMs`（本条）**两项是真残留并已清**，`render` / `consoleConnected` / `needsUserAction` **三项经核实不需要改**。`needsUserAction` 尤其要注意：它在 `panel-decision.js:136` 与 `account-form.ts:312` 是**同一个表达式、无分叉**，此前被一并列进残留清单属连带误判。
+- **验证**：`test/panel.test.mjs` 88 → **91**（新增 §F1 三条）。新增的 §F1 是**负向对照**：E 段用「窗口 + `needsUserAction: false`」、F 段用「`null` + `needsUserAction: true`」，**两段恰好都碰不到两者分歧的那份输入**——这正是它能活下来的原因。§F1 补的输入是 `retryAfterMs: 2h + needsUserAction: true`，并额外断言视图模型与规则同源。**负向验证**：把 `coolingMs` 退回旧的自推实现 → **2/91 红**（正是 §F1 那两条），还原后全绿。
+- **为什么这条分叉此前不产生用户可见错误**（诚实注记，不包装成「无害」）：Host 自己**不会**下发这种形状——`inForceWaitMs` 在 parked 时恒返回 `null`（`token-store/throttle.ts`），且 parked 记录的 `until` 就是 `null`。真正可达的是**面板自己的 POST 路径**：`routes/account.ts` 把平台声明的窗口复制进响应体，而 `needsUserAction` 来自节流的 `parked` 标志，于是「验证码 + `Retry-After: 7200`」会同体给出两者（该路径已由 `a85f4b3` 修掉矛盾 UI）。所以这是**结构债而非活 bug**，但 ADR-006 已把它挂在账上，挂着不销就是账本失效。
+- **与既有条目的关系**：不改变 ADR-006 判据 1（纯模块可 Node 直 import）——本条正是它的应用，`panel-decision.js` 早就在 import `snapshot.ts`（`shouldShowAccountManagement`），所以「`.js` 文件不经 import 路径」曾被当作推迟的理由是**未核实的推断**（2026-10-05 核实后更正）。也不改变判据 3（仍靠 review），但本条把 review 的结论**落成机器可验的负向对照**，缩小了判据 3 的适用面。

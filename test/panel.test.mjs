@@ -11,7 +11,7 @@
  */
 import { readFile, readdir } from "node:fs/promises";
 import { decidePanelView, agnescodeView, dictionaries, interpretSnapshot, tables, RENDER, viewOf as clientSurfaceViewOf } from "./panel-decision.js";
-import { servedWaitUntil } from "../src/client/snapshot.ts";
+import { servedWaitUntil, servedWaitMs } from "../src/client/snapshot.ts";
 import { AUTH_FAILURE_CODES, CODE, CREDENTIAL_REFUSALS, NO_LOGIN_CODES } from "../src/host/codes.ts";
 
 const results = [];
@@ -152,6 +152,45 @@ const healthy = {
   check("a parked refusal asks the user to act", result.needsUserAction === true);
   check("a parked refusal leaves the submit button usable", result.coolingMs === null);
   check("a wrong password still reaches the form", result.render === RENDER.FORM, result.render);
+}
+
+// === F1. THE SHAPE THAT SPLIT THE TWO COPIES =============================
+// Sections E and F both pass against either implementation, and that is
+// exactly why the duplication survived: E pairs a window with
+// `needsUserAction: false`, F pairs `null` with `needsUserAction: true`, so
+// neither one reaches the case where the two halves disagree.
+//
+// The Host itself never SERVES that shape — `inForceWaitMs` returns `null`
+// whenever the throttle is parked, and `until` is `null` for a parked record —
+// but the panel's own POST path does: `routes/account.ts` copies the platform's
+// stated window into the response body while `needsUserAction` comes from the
+// throttle's `parked` flag, so a captcha answered with `Retry-After: 7200`
+// produces `parked: true` AND a two-hour window in the same body. That
+// combination is what `AccountForm` now obeys, so it is the combination the
+// view model has to answer for.
+//
+// Before the fix, this one input got two verdicts: `coolingMs` said "cooling,
+// 2 hours" (it only looked at `retryAfterMs`) while the function the button
+// actually obeys said "nothing pending" (it returns nothing for parked). The
+// assertions below are the negative control that would have caught it.
+{
+  const both = {
+    ok: false,
+    error: "login failed: verification required",
+    code: "verification_required",
+    auth: { configured: false, hasAccount: true, retryAfterMs: 2 * 3600_000, needsUserAction: true }
+  };
+  const result = view(both);
+  check("a parked refusal carrying a window counts down nothing (the two copies used to disagree)",
+    result.coolingMs === null, String(result.coolingMs));
+  // The wait is real on the wire and the button must be usable anyway: no clock
+  // reaching zero will satisfy a captcha. This is the pair that says so out
+  // loud, so it must be present even when the countdown is absent.
+  check("that same refusal asks the user to act, not to wait",
+    result.needsUserAction === true, String(result.needsUserAction));
+  check("the view model agrees with the rule the button obeys",
+    (result.coolingMs === null) === (servedWaitMs(both.auth) === null),
+    `view=${String(result.coolingMs)} rule=${String(servedWaitMs(both.auth))}`);
 }
 
 // === F2. a console failure must NOT hide behind the login form ===========
