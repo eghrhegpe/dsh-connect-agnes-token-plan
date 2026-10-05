@@ -665,14 +665,14 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
     const envelope = obj(await response.json().catch(() => ({})));
     if (str(envelope.code, "") !== "000000" || envelope.data === null || typeof envelope.data !== "object") return null;
     const data = obj(envelope.data);
-    const total = numOrNullSafe(data.total_balance);
+    const total = numZeroOk(data.total_balance) ?? null;
     if (total === null) return null;
     return {
       totalBalance: total,
-      timeSensitiveBalance: numOrNullSafe(data.time_sensitive_balance) ?? 0,
-      permanentBalance: numOrNullSafe(data.permanent_balance) ?? 0,
-      subscriptionCredits: numOrNullSafe(data.subscription_credits) ?? 0,
-      dailyFreeCredits: numOrNullSafe(data.daily_free_credits) ?? 0,
+      timeSensitiveBalance: numZeroOk(data.time_sensitive_balance) ?? 0,
+      permanentBalance: numZeroOk(data.permanent_balance) ?? 0,
+      subscriptionCredits: numZeroOk(data.subscription_credits) ?? 0,
+      dailyFreeCredits: numZeroOk(data.daily_free_credits) ?? 0,
       level: num(data.level)
     };
   } catch {
@@ -680,11 +680,8 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
   }
 }
 
-/** Read a finite non-negative number, else `null`. */
-function numOrNullSafe(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-}
+// numOrNullSafe was merged into util.numZeroOk (PITFALLS §49): the credits API
+// returns real numbers, so the typeof-strict reader is correct and the duplicate is gone.
 
 /**
  * The static fallback roster: the eight models the CN BFF listed at probe time

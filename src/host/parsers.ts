@@ -411,8 +411,17 @@ const USAGE_WINDOW_MAP = Object.freeze({
   "videoDaily": ["video_generation", "daily"]
 });
 
-/** A finite number, or null — so an absent figure never reads as a measurement. */
-function numOrNull(value) {
+/**
+ * A finite number, or `null` — so an absent figure never reads as a measurement.
+ *
+ * Local reader; deliberately NOT `util.numOrNull`, which rejects `<= 0`. Here a
+ * zero is a REAL console reading: `used: 0` means the account spent nothing this
+ * window and `usage_pct: 0` is a genuine 0%. Routing through `util.numOrNull`
+ * would silently collapse both into `null`, making the panel render "no bar"
+ * where the console shows a real zero. If these readers are ever unified, do
+ * NOT point this at `util.numOrNull`.
+ */
+function finiteOrNull(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -455,13 +464,13 @@ export function parseSubscriptionUsage(subscription: unknown): Record<string, Su
     const cell = obj(obj(usage[group])[slot]);
     if (Object.keys(cell).length === 0) continue;
     out[windowKey] = {
-      used: numOrNull(cell.used),
+      used: finiteOrNull(cell.used),
       limit: countOf(cell.limit),
-      usagePct: numOrNull(cell.usage_pct),
+      usagePct: finiteOrNull(cell.usage_pct),
       rangeStart: shanghaiSeconds(cell.time_range_start),
       rangeEnd: shanghaiSeconds(cell.time_range_end),
       resetAt: shanghaiSeconds(cell.reset_at),
-      resetInSeconds: numOrNull(cell.reset_in_seconds)
+      resetInSeconds: finiteOrNull(cell.reset_in_seconds)
     };
   }
   return Object.keys(out).length === 0 ? null : out;
