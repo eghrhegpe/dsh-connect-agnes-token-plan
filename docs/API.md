@@ -239,7 +239,13 @@
 
 ### `GET|POST /api/dsh-connect-agnes-token-plan/agnescode`
 
-桌面端上游（AgnesCode 桌面端登录态）的开关与状态，独立存证与凭据，与主链路完全隔离。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, balance, models, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是会话文件里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久），不是 Token Plan 的窗口语义；`models` 行带 `memberOnly` 标记（门槛是账号状态，标记而不隐藏）。`POST` 动作两种：`{action:"switch", enabled}`、`{action:"harvest"}`（重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**——tier 代码 + 形状事实，令牌永不进响应）。**无 `logout`**：凭据刷新靠 `harvest` 覆盖写入（不是登出），注销 provider 靠 `switch:false`——「解除关联」按钮已移除，它删本地 JWT 之外没有 `harvest`/`switch` 做不了的事，而桌面 App 自己的登录态本就不归本插件管。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
+桌面端上游（AgnesCode 桌面端登录态）的开关与状态，独立存证与凭据，与主链路完全隔离。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, balance, models, enabledModelIds, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是会话文件里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久），不是 Token Plan 的窗口语义；`models` 是**整份**花名册（有凭据取实时目录、否则用静态兜底，行带 `memberOnly` 标记，门槛是账号状态，标记而不隐藏），`enabledModelIds` 是面板勾选的**当前推送允许清单**（空列表 = 全推，与 Token Plan 侧同一约定）。`POST` 三个动作：
+
+- `{action:"switch", enabled}` —— 注册 / 注销 AgnesCode provider（`switch:false` 即注销，无 `logout`）。
+- `{action:"harvest"}` —— 重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**（tier 代码 + 形状事实，令牌永不进响应）；凭据刷新靠 `harvest` 覆盖写入（非登出），「解除关联」按钮已移除——它删本地 JWT 之外没有 `harvest`/`switch` 做不了的事，桌面 App 自己的登录态本就不归本插件管。
+- `{action:"saveModels", enabledModelIds: string[]}` —— 持久化花名册勾选（profile 级 `agnescode-models.json`，空列表 = 不筛选 = 全推），并**立即**重发一次过滤后的 roster（不必等下次轮询；过滤只在发布前裁剪，不与 Token Plan 的 `enabledModelIds` 或 publisher 状态串味）。非数组返回 400。
+
+**无 `logout`**：凭据刷新靠 `harvest` 覆盖写入，注销 provider 靠 `switch:false`。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
 
 ---
 

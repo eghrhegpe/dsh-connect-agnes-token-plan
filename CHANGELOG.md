@@ -90,6 +90,11 @@
 
 **AgnesCode 面板从「只读花名册」升级为「可勾选的模型推送给」**：每个模型一行勾选框，决定哪些模型注册进 DSH 模型列表，改动即时生效；配套搜索 + 全部勾选/取消 + 已勾选计数，与 Token Plan 那套同一形状。勾选存在独立的 profile 级状态文件，**空 = 不筛选 = 全推**，所以没勾过的安装行为完全不变。面板信息架构另有一刀（额度 / 累计 / 套餐拆成三个 section）。另修掉一个「删注释时误删三元条件行、构建失败、插件无法加载」的问题。
 
+### 评审整改：API.md §1 补上 `/agnescode` 的 `saveModels` 动作与 `enabledModelIds` 字段
+
+- **`/agnescode` 契约文档漏记已上线能力**：代码（`routes/agnescode.ts:248`、`lib/index.js`、`client.js`、`agnescode-tab.ts`、`agnescode.test.mjs`）早已实现第三个 POST 动作 `saveModels`（持久化花名册勾选并即时重发过滤后 roster），且 GET 响应含 `enabledModelIds` 推送允许清单，但 `docs/API.md` §1 仍写「POST 动作两种」、GET 形状也未列 `enabledModelIds`。本次把 POST 改为三种动作、GET 形状补 `enabledModelIds`，与 CHANGELOG「AgnesCode：模型勾选」那条及路由代码对齐。
+- 影响面：`docs/API.md`（§1 agnescode 块）、本文件。
+
 ### AgnesCode：模型勾选决定哪些模型推送进 DSH
 
 - **能力**：AgnesCode tab 的模型花名册每行加勾选框（未勾选行降低透明度），决定哪些模型注册进 DSH 模型列表；保存后**立刻**重发一次过滤后的 roster，不必等下一次轮询。
