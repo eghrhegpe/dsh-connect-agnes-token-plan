@@ -124,7 +124,7 @@ legacy-namespace adoption），旧寄居节流记录不再做一次性 marker �
       `saveAccount` 的「先 set ref、清节流、再 login」与 `state()` 的六步读序。
 - [x] 错误对象：`throttleError(held, cause)` 的 cause 语义（窗口期内报平台原话、
       过窗后报本模块话术）原样保留；`state().error` 先过 `isFresh(stored)` 闸门，
-      对非 Error 值有 `String()` 兜底（`token-store.ts:331-333`）。
+      对非 Error 值有 `String()` 兜底（`token-store.ts` 的 `state()`）。
 - [x] `state()` 九键 + `autoRecoverArmed` 布尔，键集与取值规则不变（S 帧 result 逐值）。
 - [x] 密码不落盘：`saveAccount` 只 `set` username ref；`readAccount` 的密码来源只有
       env 与显式入参。`store.test.mjs` 8/10 组独立守住，基线 S10/S11 帧同。

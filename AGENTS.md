@@ -52,7 +52,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
   CI 里它是独立 best-effort job。手工排查用 `node test/e2e.mjs` 单跑即可。
 - **e2e 只跑一次**。它要启动真实 Host 进程；需要看两段输出就跑一次落盘再读文件，
   不要把同一条命令串两遍。
-- **peer 套件红 ≠ 回归**。`store/routes/wiring.test.mjs` 依赖
+- **peer 套件红 ≠ 回归**。`test/wiring.test.mjs` 依赖
   `@deepseek-ai/dsh-credentials`（随 DSH runtime 发行，不在插件目录）。
   报 `cannot resolve the peer dependency` 是环境问题，先查 `test/peer-roots.mjs`
   的查找路径（`$DSH_HOME` → 仓库 `node_modules` → `~/.dsh` 解包 runtime →

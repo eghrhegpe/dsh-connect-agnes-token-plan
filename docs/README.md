@@ -23,7 +23,7 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [REFERENCES.md](./REFERENCES.md) | **参照件索引与纪律**：`upstream/` 容器里谁是谁（来源 / 版本 / 许可 / 承重在哪）——AgnesCode 线六件参照件与本机桌面端快照、只吸收事实不复制代码的红线 | 查「这条事实当初从哪来」、新增参照件、防再次「纯探测不落盘」 |
 | [CHANGELOG.md](../CHANGELOG.md) | 公开行为变化的版本记录（非 git log 替代） | 看「这个版本改了什么」 |
 | [ARCHIVE-IMPROVEMENTS-2026-09.md](./ARCHIVE-IMPROVEMENTS-2026-09.md) | **存档**：2026-09 的改进研究原稿（定位对齐 / `index.js` 收编 / peer 契约护栏 / 状态·契约·UX·client 四块债）。2026-10-05 拆分：活判据升 [ADR-011](./ADR.md)（429 实证链与到期日纪律）与 [PITFALLS §51/§55](./PITFALLS.md)，失效原文进 [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md) | 回溯「当初怎么判的、错在哪」——**不可作现行依据**，待办状态已腐烂 |
-| [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md) | `token-store.ts` 拆分蓝图（登录/续期/节流/迁移四块 + 显式 state 容器）：状态归属表、迁移块退役条件、7 步落地计划（每步门禁=行为基线零漂移）、红线核对表 | 动刀 token-store 之前先读这份 |
+| [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md) | `token-store.ts` 拆分蓝图（登录/续期/节流/迁移四块 + 显式 state 容器）：状态归属表、迁移块退役条件、6 步落地计划（每步门禁=行为基线零漂移）、红线核对表 | 动刀 token-store 之前先读这份 |
 | [PUBLISH-CORE-SPLIT.md](./PUBLISH-CORE-SPLIT.md) | 两个 provider publisher 的共享控制面（`publish-core.ts`）拆分蓝图：共享「机制」/ 不共享「判定与状态形状」的划线、原语清单、收敛同时修掉的两处 `state.built` 残留、逐步落地与红线核对表 | 动刀 `provider-publish.ts` / `agnescode-publish.ts` 之前先读这份 |
 | [ADR.md](./ADR.md) | **决策账本**：一条裁定一个条目（日期 / 状态现行或已被取代 / 取代链）——边界、定位、流程的每次改判只在这里记账，现行正文只保留现状表述 | 拍新裁定、改既有边界、回溯「为什么现在是这个样子」 |
 | [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md) | **已失效裁定存档**（两类来源）：① 小浣熊边界裁定（ADR-002）的原文（该线已于 2026-10-01 移出本插件，见 ADR-003）；② A1–A4：2026-09 研究档案里已失效 / 已过期 / 已落地的判断（「默认推理通道」撤销论断、`index.js` 接线方案、落地顺序表与总判断、姊妹插件对比结论） | 查历史边界决策与「当初错在哪」、不复用为现行依据 |

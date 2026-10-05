@@ -350,7 +350,7 @@
 
 - **现象**：从 2026-09-30 仓库首次 push 起，GitHub Actions **每次都是红的**（6/6，33–48s 结束），而同一提交在本机 `npm test` 全绿。红的样子还各不相同——offline job 在**第 2 个套件**就退出（`agnes-auth` 47/47 通过之后），e2e job 报 `50/61 check(s) FAILED`——看上去像两处真回归。
 - **根因**（两条，互不相干，都是「本机有、runner 没有」）：
-  - **offline（hard gate）**：`store/routes/wiring` 要加载**真** peer 包，而 `test/peer-roots.mjs` 的候选根只列了 `$DSH_HOME` / 仓库 `node_modules` / `~/.dsh` 解包 runtime / Windows 安装目录——**没有「全局装了一个 `dsh` CLI」这条**。runner 上四者皆无，`loadPeer` 直接抛 `cannot resolve the peer dependency @deepseek-ai/dsh-credentials`；`set -e` 让套件链断在这里，后面 20 个套件（含 build-gate）**一个都没跑**。
+  - **offline（hard gate）**：`wiring.test.mjs` 要加载**真** peer 包，而 `test/peer-roots.mjs` 的候选根只列了 `$DSH_HOME` / 仓库 `node_modules` / `~/.dsh` 解包 runtime / Windows 安装目录——**没有「全局装了一个 `dsh` CLI」这条**。runner 上四者皆无，`loadPeer` 直接抛 `cannot resolve the peer dependency @deepseek-ai/dsh-credentials`；`set -e` 让套件链断在这里，后面 20 个套件（含 build-gate）**一个都没跑**。
   - **e2e（best effort）**：workflow 装了全局 CLI，却没**构建插件**。`lib/` 与 `client.js` 都是 gitignore，fresh checkout 里 `main: ./lib/index.js` 不存在 → Host 报 `dsh: warning: 1 entry did not activate` → 第一条断言就红，其余 50 条级联。本机绿只是因为手边有 `npm run build` 的产物。
 - **修法**：`test/peer-roots.mjs` 增加最后一位候选——`npm root -g` 锚定的 `<prefix>/@deepseek-ai/dsh/node_modules`（与 `test/e2e.mjs` 启动真 Host 用的是同一处，标记为 `@deepseek-ai/dsh-base`），且**只在更便宜的候选都没带标记时**才去探它（dev 机不为此付一次子进程）；CI 的 offline job 增加一步装全局 `dsh`，e2e job 在跑套件前 `npm install --legacy-peer-deps && npm run build`。
 - **验证**：把 `HOME`/`USERPROFILE`/`LOCALAPPDATA` 指到空目录（模拟 runner：无桌面 runtime、无本地 link）后，`findPeerRoot()` 回落到全局 CLI 的 runtime，`node test/store.test.mjs` 仍全绿；本机常态下仍走 `~/.dsh` 解包 runtime。
@@ -553,7 +553,7 @@
 
 ## 52. 服务端下发了共享状态，面板却从组件本地 state 起步——刷新一次就把防撞锁的门禁清零
 
-- **现象**：登录节流是**跨 profile、跨进程共享**的（`throttle-store.ts:90-93` 明说：刻意不按 profile 分段，一个 profile 吃到 429，另一个 profile 的 Host 也该停）。Host 的 `state()` 因此把窗口下发到 `auth.retryAfterMs`（`token-store.ts:313`），注释写明用途：「让**第二个** Host 进程显示同一个倒计时，而不是 inviting an attempt that would be refused」。而面板**没有任何消费者**：`AccountForm` 的 `cooldownUntil` 初始值是 `useState(0)`，只有本进程那次 POST 失败才 `setCooldown`。于是**刷新页面、换 profile、换 Host 进程**三种再正常不过的操作，都会让按钮在一个 Host 仍在服务的窗口里显示为可用。
+- **现象**：登录节流是**跨 profile、跨进程共享**的（`throttle-store.ts:90-93` 明说：刻意不按 profile 分段，一个 profile 吃到 429，另一个 profile 的 Host 也该停）。Host 的 `state()` 因此把窗口下发到 `auth.retryAfterMs`（`token-store.ts` 的 `state()`），注释写明用途：「让**第二个** Host 进程显示同一个倒计时，而不是 inviting an attempt that would be refused」。而面板**没有任何消费者**：`AccountForm` 的 `cooldownUntil` 初始值是 `useState(0)`，只有本进程那次 POST 失败才 `setCooldown`。于是**刷新页面、换 profile、换 Host 进程**三种再正常不过的操作，都会让按钮在一个 Host 仍在服务的窗口里显示为可用。
 - **根因**：不是「忘了读」，是**那个字段从未成为渲染的输入**。它有生产者（`state()`）、有类型（`wire.ts:169`）、有 wire 契约、有断言（`panel.test.mjs` 断言 `decidePanelView` 的 `coolingMs` 正确）——**唯独没有消费者**。而 `panel.test.mjs` 的断言是自指的：它验的是**视图模型**，视图模型不是**渲染**。这条链上缺的正是中间那一环，于是全绿。**更糟的是它不只是观感问题**：`saveAccount` 刻意清节流（`token-store.ts:241-244`，理由是「用户是在按面板的指示操作」），而面板恰恰没告诉他有窗口——那次点击不但白费，还会**抹掉另一个进程正在遵守的记录**，并把一次真实尝试打进可能已锁的账号。
 - **修法**：`servedWaitUntil(auth, now)`（`snapshot.ts`）作为**唯一出处**，`AccountForm` 用它给 `cooldownUntil` 播种，并用一个 `useEffect` 单调地吸收 Host 后续开始服务的窗口（只允许延后，不允许缩短——否则会在用户已经在等的窗口里把按钮提前解锁）。**parked 拒绝（`needsUserAction`）刻意返回 0**：错密码 / 验证码没有可倒数的期限，假装有就是撒谎，所以另给一句 `auth.parked` 文案把状态说出来。规则落在纯模块、组件只接线（ADR-006 判据 1），因此可从 Node 直测。
 - **验证**：`test/panel.test.mjs` 新增 12 条，全部直调真模块——正窗口变绝对期限、缺席 / `0` / 负数 / 字符串 / `NaN` 一律读成「无等待」、**parked 不给倒计时**、以及 `delta === 1000` 这一条**钉住"now + 剩余"而非"剩余"**（写反了就是 bug 换顶帽子）。**负向**：把实现改成返回原始 `remaining`，对应断言立刻红。

@@ -269,7 +269,7 @@ OpenAI 兼容 provider，用户不再需要手写 `llm-pi-ai` patch 行。
 - **peer 依赖懒加载**：`llm-adapter.ts` 直接静态 import Host 发行的
   `@earendil-works/pi-ai` / `@deepseek-ai/dsh-llm`（`@deepseek-ai/dsh-llm-pi-ai`
   是经 `pi-ai-adapter-core.ts` 间接依赖，不在此文件的直接 import 面），
-  干净检出解析不到，所以 index.js 只在开关开启
+  干净检出解析不到，所以 `index.ts` 只在开关开启
   且 `ctx.get("llm")` 存在时动态 `import("./llm-adapter.ts")`；无 llm
   服务、peer 加载失败都降级为「面板照常用、provider 缺席」，并把
   去密错误带进快照 `llm.providerError`。图片两 hook
