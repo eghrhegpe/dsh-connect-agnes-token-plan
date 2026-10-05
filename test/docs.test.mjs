@@ -149,6 +149,7 @@ const CHECK_IDS = new Map([
   ["SRC_COMMENT_REFS", "src/ 注释里的模块名引用完整"],
   ["SRC_SECTION_REFS", "src/ 注释里的 docs/ 段号引用指向真实节"],
   ["DOC_SRC_PATHS", "现行文档的 src/ 引用可解析且不带写死行号"],
+  ["DOC_LINE_ANCHORS", "现行文档不写死行号锚（file.ext:NNN 一律改引符号名）"],
   ["README_TABS", "README 覆盖面板每一个 tab"],
   ["SELF_DESCRIPTION", "自述 UI 位置与 client 槽位注册一致"],
   ["SCREENSHOTS", "screenshots.json 声明的图真实存在于磁盘"],
@@ -606,6 +607,43 @@ const CHECK_IDS = new Map([
       `现行文档引用了不存在的 src/ 路径：${dangling.join(", ")}——文件已删则改口或移入存档；历史坐标需在所属引用块内写明「均已删除」`,
     );
   guard("DOC_SRC_PATHS", srcRefs.length, 15);
+}
+
+// 8d) 现行文档不得写死行号锚：`file.ext:NNN` / `file.ext:N-M` / `file.ext:N/M` / 续写的 `:NNN`
+//
+// 8c) 只扫 `src/` 前缀的引用，裸文件名（`util.ts:35`、`test/routes.test.mjs:466-471`、
+// peer 的 `dsh-llm/lib/index.js:1376`）落在它的视野外——那 30 处裸锚因此一直没被任何
+// 门禁看到，直到人工翻到 §40/§45 才查出 444→407、85→89、469→471、47→50 四处已漂
+// （§48 的 23:00 窗口是同一病因的另一例：锚指向的注释已在修复中改写）。行号每次编辑
+// 都会漂，而同句里本来就有符号名——留行号等于给自己埋一个必然过期的锚。范围与 8c)
+// 对齐（版本历史与存档整文件跳过）；不加白名单例外，需要历史坐标时按 8c) 的声明制
+// 在所属引用块内写明。
+{
+  const rel = (p) => p.replace(ROOT + "\\", "").replace(/\\/g, "/");
+  const isHistory = (n) => n === "CHANGELOG.md" || n.startsWith("ARCHIVE-");
+  // [/-] 可重复：`account-form.ts:166/175/190/192` 这类「一段锚点管多处」的写法
+  // 也要抓——只吃两段会在第三段处断掉，让整个锚点静默漏检。
+  const FILE_RE = /`([\w./-]+\.(?:ts|js|mjs|json|ya?ml|md))(?::(\d+(?:[/-]\d+)*))?`/g;
+  const BARE_RE = /`:(\d+(?:[/-]\d+)*)`/g;
+  let scanned = 0;
+  const anchored = [];
+  for (const f of mdFiles) {
+    if (isHistory(basename(f))) continue;
+    scanned++;
+    const lines = readFileSync(f, "utf8").split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      for (const m of lines[i].matchAll(FILE_RE)) {
+        if (m[2]) anchored.push(`${rel(f)}:${i + 1} -> \`${m[1]}:${m[2]}\``);
+      }
+      for (const m of lines[i].matchAll(BARE_RE)) {
+        anchored.push(`${rel(f)}:${i + 1} -> \`…:${m[1]}\``);
+      }
+    }
+  }
+  if (anchored.length === 0) note(`现行文档不带写死的行号锚（受检 ${scanned} 篇现行文档）`);
+  else
+    bad(`现行文档把行号写进引用：${anchored.join(", ")}——行号每次编辑都会漂，改引符号名（版本历史与存档档豁免）`);
+  guard("DOC_LINE_ANCHORS", scanned, 20);
 }
 
 // 9) README 必须覆盖面板的每一个 tab

@@ -51,7 +51,7 @@ F3（并发 publish「最后发起者最终注册」门控）依赖对 `index.js
 |---|---|---|
 | ① 抽模块 | 新建 `provider-publish.js`：`createProviderPublisher({ settings, panelSwitch, loadAdapterModule, getLlm, resolveApiKey, emit, logger })` 返回 `{ publish, release, dispose, state }`；内部持有 `publishChain` / `disposed` / `registerPair` 单点定义（PITFALLS §18/§19 语义原样迁移） | `test/wiring.test.mjs` F3 改为对新模块注入（gate 语义不变），原 F3 红→绿即完成 |
 | ② 瘦 router | `index.js` 只留路由 handler + 快照组装 + 各 store 接线；`providerState` 改为 `publisher.state` 只读引用；目标 `index.js` < 700 行 | `test/routes.test.mjs` + `test/provider.test.mjs` 全绿；快照 14 键契约零改动（`docs.test.mjs` §5 门禁） |
-| ③ 第二个 IIFE 收编 | draw 注册（`index.js:558-597` 的 `void (async () => {...})()`）改走 publisher 的 `emit` 钩子或独立 `draw-register.js`，与 ① 同批评审 | `test/draw.test.mjs` 全绿；快照契约仍零改动（工具缺席时 14 键不变） |
+| ③ 第二个 IIFE 收编 | draw 注册（`index.js` 里的 `void (async () => {...})()` IIFE）改走 publisher 的 `emit` 钩子或独立 `draw-register.js`，与 ① 同批评审 | `test/draw.test.mjs` 全绿；快照契约仍零改动（工具缺席时 14 键不变） |
 
 **不变量**：① 并发语义（`publishChain` 串行、`disposed` 闸、慢者赢修复）与 ② 回滚语义
 （`registerPair` 单点、factory 结果 await + 形状校验）必须**原样**迁过去，不是重写；
@@ -103,7 +103,7 @@ live 档在 `package.json` 有 `test:live:contract` 脚本。
 
 | 检查点 | 结论 |
 |---|---|
-| `retryPolicy` 落点 | `llm-adapter.ts:103`（profiles 里唯一那条，`LLM_PROVIDER_ID`），**provider 全局级**，非 model 级 |
+| `retryPolicy` 落点 | `llm-adapter.ts` 的 `retryPolicy`（profiles 里唯一那条，`LLM_PROVIDER_ID`），**provider 全局级**，非 model 级 |
 | descriptor 是否带 per-model retry | `llm-models.ts` `toPiDescriptor` 无 retry/quota 字段，全局策略即全 model 一刀切 |
 | quota 数据源粒度 | `parsers.ts` 的 `quotaWindows(plan)` 与 `parseSubscriptionUsage(subscription)` 把额度归到**账号级四窗口**（`requests5h` / `requestsWeekly` / `imagesDaily` / `videoDaily`），model 级差异化无数据支撑（旧 `parsePools` 已随迁移删除） |
 | 推论 | 保持**全局** retry 策略（最低侵入）+ **per-model 可用性标记**（descriptor 重建时按 pool 耗尽打标） |
@@ -113,12 +113,12 @@ per-model 可用性标记即用户要的「清单自带识别」——但它是 
 ### 3.2 落地分层（peer-free 与 peer 依赖分离）
 
 > spike 已查实：429 的「配额超限 vs 限频」**分类已由 peer 完成**，不需要我们重写。
-> `dsh-llm-pi-ai/lib/index.js:1376` 的 `classifyPiAiError` 把 429 消息分成
+> `dsh-llm-pi-ai/lib/index.js` 的 `classifyPiAiError` 把 429 消息分成
 > `QUOTA_EXCEEDED_CODE`（`isQuotaExceededError`）与 `RATE_LIMIT`（正则 `\b429\b|rate.?limit`）。
 > 因此我们的工作只剩两件：**(a) 决定这两类错误的重试策略**；**(b) 把 pool 状态转成模型可用性**。
 
 > ⚠️ **纠偏（2026-09-30 实测）**：上述 spike 假设"peer 分类正确"，但实际 `isQuotaExceededError`
-> （`dsh-llm/lib/index.js:181`）命中面过宽——含 `out of ... budget`、`balance/credits exhausted`、
+> （`dsh-llm/lib/index.js`）命中面过宽——含 `out of ... budget`、`balance/credits exhausted`、
 > `usage limit (exceeded|exhausted|reached)` 等。Agnes 限频 429 体常带 `rate limit budget` /
 > `out of rate budget` 这类字眼，于是被**抢判为 `QUOTA`**（而纯 `RATE_LIMIT` 正则因排在 `isQuotaExceededError`
 > 之后成了死代码）。后果：本应退避重试的限频被按"配额耗尽"快速失败、且模型被面板静默下线呈现"额度已用尽"。
@@ -128,7 +128,7 @@ per-model 可用性标记即用户要的「清单自带识别」——但它是 
 
 - **重试策略（全局，1 行 peer 改动）— 已实现**：`llm-retry.ts` 导出 peer-free 的
   `buildRetryPolicyConfig()`（显式 `mode:"normal"`、`retryableCodes` 排除 `QUOTA`/`ACCOUNT_QUOTA`、保留
-  `RATE_LIMIT` 并略调 backoff 对共享池更温和），`llm-adapter.ts:127` 改为
+  `RATE_LIMIT` 并略调 backoff 对共享池更温和），`llm-adapter.ts` 改为
   `resolveRetryPolicy(buildRetryPolicyConfig(), ...)`。peer 已默认对 `RATE_LIMIT` 退避、对 `QUOTA` 快速失败，本改动是把意图固定下来并防未来 peer 默认漂移。
 - **quota→provider 桥 — 机制在，实现已撤**：机制仍全通（`publishProvider(entries, enabledIds, unavailableModelIds)`
   透传给 adapter，由 `buildDescriptors` 在 picker 侧排除；`quotaSignature` 去抖，仅在额度跨越零点时触发一次
@@ -144,7 +144,7 @@ per-model 可用性标记即用户要的「清单自带识别」——但它是 
 
 ### 3.3 spike 结论（已查证）：memoize → 走 re-registration
 
-`PiAiAdapter.current()`（`dsh-llm-pi-ai/lib/index.js:1759`）用
+`PiAiAdapter.current()`（`dsh-llm-pi-ai/lib/index.js`）用
 `if (this.snapshot?.profiles === profiles) return this.snapshot;` 做记忆化，**key 是
 profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => profiles` 每次返回同一引用，
 所以 retryPolicy 在首次构建后被冻结——**运行时改 Map 内的字段不会被拾取**，必须让 Map 引用变化。
@@ -155,7 +155,7 @@ profiles Map 的引用身份，不是内容**。本插件的 `profiles: () => pr
 **两个能力共用一个重注册信号，全局、低侵入**。
 
 **已排除的 C 路（精确窗口退避）**：peer 的 `dsh-llm-retry` 在 `failure.providerRetryAfterMs`
-存在时会用它做精确退避（`dsh-llm-retry/lib/index.js:171`），且 `LlmFailure` 支持该字段。但 grep
+存在时会用它做精确退避（`dsh-llm-retry/lib/index.js`），且 `LlmFailure` 支持该字段。但 grep
 `dsh-llm-pi-ai` 未发现它在 Agnes 429 路径上提取 HTTP `Retry-After` 并附到 `LlmError`——
 即默认 `RATE_LIMIT` 走的是通用指数退避，而非按平台窗口。要把「按 `resetAt` 精确退避」做出来，需要
 推理侧响应钩子把 `Retry-After` 转成 `providerRetryAfterMs`，而该钩子面本次未在 peer 中查证到公开

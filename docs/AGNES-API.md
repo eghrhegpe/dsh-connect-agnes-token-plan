@@ -396,7 +396,7 @@ peer 误判的**官方依据**：
 1. **Agnes 没有 `quota_exceeded_error` 这个错误码名**——那是 SenseNova 时代的
    API 错命名，Agnes 官方文档从未出现过。之前 README/源码里「Agnes 把速率上限
    错命名为 `quota_exceeded_error`」的说法**无依据**，已删除。真正根因是 peer 的
-   `isQuotaExceededError` 正则命中面过宽（`dsh-llm/lib/types/error.js:76-82`），
+   `isQuotaExceededError` 正则命中面过宽（`dsh-llm/lib/types/error.js`），
    把 Agnes 限频 429 body 里带 `quota exceeded` / `out of rate budget` 的措辞抢判
    成 `QUOTA`——**这是 peer 分类器的问题，不是 Agnes 的行为**。
 2. **Agnes 429 = RPM 限频，应退避重试**（官方明说「等待 1 分钟后重试」）；

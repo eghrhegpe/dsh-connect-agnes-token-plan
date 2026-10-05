@@ -73,9 +73,9 @@
 
 - **日期**：2026-10-03
 - **状态**：现行（取代旧裁决「overview 唯一致命源」）
-- **裁定**：控制台四源（`overview` / `series` / `subscription` / `plans`）一律软失败——失败时写入 `quota.error` 并显示来源，但不冒泡到路由的 catch；`overview` 失败时设置 `quota.consoleConnected:false` 且 `quota.totals=null`（而非零值块）。第五个源 `/v1/models`（Key 侧目录）同样软失败，但**只降级、不写 `quota.error`**：目录拉不到置 `catalogAvailable:false`（面板「可看图」行随目录缺席），这是 Key 侧语义，故意与配额侧的四源错开（`snapshot-aggregate.ts:289-291` 的 `errors: allFailures(...)` 注释钉住这个方向）。面板据此说明「控制台未连接」，其他 tab 不受影响。
-- **理由**：旧文曾写 `usage/overview` 是唯一致命源（[SETUP.md](./SETUP.md):117、[AGNES-API.md](./AGNES-API.md):66-69 旧表述），与代码实现相反。代码与测试（`test/routes.test.mjs:466-471`、`test/e2e.mjs:396-404`）早已钉死新行为。为避免读者按旧文档排查误判代码回归，需把旧裁决入账本，并在正文统一为新表述。此裁定已在 [ARCHITECTURE.md](./ARCHITECTURE.md):76-77/107-108、[API.md](./API.md):268-271 体现，现补入账本以方便后续追溯。
-- **受影响的文档**：`docs/SETUP.md:117`、`docs/AGNES-API.md:66-69` 已同步为新表述；`docs/AGENTS.md` 红线 6 亦已改为现行表述（「overview 唯一致命源」旧裁决废止一句即见），本条待办行随 2026-10-03 核销。
+- **裁定**：控制台四源（`overview` / `series` / `subscription` / `plans`）一律软失败——失败时写入 `quota.error` 并显示来源，但不冒泡到路由的 catch；`overview` 失败时设置 `quota.consoleConnected:false` 且 `quota.totals=null`（而非零值块）。第五个源 `/v1/models`（Key 侧目录）同样软失败，但**只降级、不写 `quota.error`**：目录拉不到置 `catalogAvailable:false`（面板「可看图」行随目录缺席），这是 Key 侧语义，故意与配额侧的四源错开（`snapshot-aggregate.ts` 里 `errors: allFailures(...)` 的注释钉住这个方向）。面板据此说明「控制台未连接」，其他 tab 不受影响。
+- **理由**：旧文曾写 `usage/overview` 是唯一致命源（[SETUP.md](./SETUP.md):117、[AGNES-API.md](./AGNES-API.md):66-69 旧表述），与代码实现相反。代码与测试（`test/routes.test.mjs`、`test/e2e.mjs`）早已钉死新行为。为避免读者按旧文档排查误判代码回归，需把旧裁决入账本，并在正文统一为新表述。此裁定已在 [ARCHITECTURE.md](./ARCHITECTURE.md):76-77/107-108、[API.md](./API.md):268-271 体现，现补入账本以方便后续追溯。
+- **受影响的文档**：`docs/SETUP.md`、`docs/AGNES-API.md` 已同步为新表述；`docs/AGENTS.md` 红线 6 亦已改为现行表述（「overview 唯一致命源」旧裁决废止一句即见），本条待办行随 2026-10-03 核销。
 - **与既有条目的关系**：继承 ADR-004「一个模块缺席不许埋掉别的模块」，将之具体化为五个额度源的软失败策略。
 
 ## ADR-008 构建产物入库：取消忽略 lib/ 与根 client.js
@@ -85,8 +85,8 @@
 - **裁定**：`lib/`（Host ESM bundle + 切分 chunk）与根 `client.js`（Client IIFE）由 `npm run build`（tsdown）从 `src/` 重建，**随库提交**——`.gitignore` 不再忽略它们。改 `src/` 后必须重建，并把产物与源码放进**同一个 commit**；CI 新增 `artifacts` job：`npm run build` + `git diff --exit-code -- lib client.js`（双跑验可复现），拦「改了 src 没重建」。`prepack` 保留（registry 发布 tarball 新鲜度不变）；**不加 `prepare`**。
 - **理由**：DSH 市场 / `dsh plugin add` 的 git 直装走 pnpm git-dep 管线，pnpm 11 的 `packageShouldBeBuilt` 按「`main`（`./lib/index.js`）在克隆里是否存在」决定是否跑构建脚本——产物在库则克隆即可用（零构建、零 devDeps、零 `allowBuilds` 审批）；产物缺失则翻回「需要构建」，而 pnpm 未经 `allowBuilds` 批准不跑构建脚本，直接 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，装出来的插件没有宿主入口、卡片失效。2026-10-03 实测：`pnpm add git+https://github.com/eghrhegpe/dsh-connect-agnes-token-plan`（全新工作区、无 `allowBuilds`）在入库前撞该错、入库后 `exit 0` 且 `lib/index.js` + `client.js` 齐备。兄弟插件 `dsh-connect-qoder` 同款做法（`.gitignore` 不忽略 `lib/`，并留警告别加回）。
 - **为什么不是别的修法**：加 `prepare` 会让 `packageShouldBeBuilt` 翻回 true，零配置作废（`prepare` 本身还要 `allowBuilds` 批准）；建 `pnpm-workspace.yaml` 只影响本机、改不了市场用户侧 pnpm 的行为；只修文档不解决问题。唯一可靠解是产物入库。
-- **受影响的文档**：`.gitignore`（取消 `/lib/` `/client.js`，加 qoder 同款警告块）；`AGENTS.md` 验证段；`test/build-gate.mjs` 措辞（freshness 语义不变，但现在它就是「入库产物 vs 重建」的比对）；`docs/ARCHITECTURE.md:18`、`docs/DSH-PLUGIN.md:31/147`、`tsdown.config.mjs` 头注释、`test/docs.test.mjs:446` 注释已改为现行表述。
-- **历史条目不改写**：`docs/ROADMAP.md:217/224-227`、`docs/PITFALLS.md:353` 保留 2026-09-30 / 2026-10-01 当时的记录——按考古纪律不在原文盖内联修订补丁，现行规则以本条为准。
+- **受影响的文档**：`.gitignore`（取消 `/lib/` `/client.js`，加 qoder 同款警告块）；`AGENTS.md` 验证段；`test/build-gate.mjs` 措辞（freshness 语义不变，但现在它就是「入库产物 vs 重建」的比对）；`docs/ARCHITECTURE.md`、`docs/DSH-PLUGIN.md`、`tsdown.config.mjs` 头注释、`test/docs.test.mjs` 的 `SRC_COMMENT_REFS` 注释已改为现行表述。
+- **历史条目不改写**：`docs/ROADMAP.md` 的历史条目、`docs/PITFALLS.md` §32 保留 2026-09-30 / 2026-10-01 当时的记录——按考古纪律不在原文盖内联修订补丁，现行规则以本条为准。
 - **与既有条目的关系**：恢复并强化 ROADMAP §6.2「新纪律」（2026-09-30 当晚被自己取代的那条「产物与源码同 commit」，见 ROADMAP.md:221-223），但动机从「build-gate 红」扩展为「git/市场直装零构建」；不改变 ADR-001~007 任何裁定。
 
 ## ADR-009 AgnesCode 思考契约：档位可用、`off` 诚实不提供
@@ -109,9 +109,9 @@
 - **裁定**：`test/panel-decision.js` 的 `decidePanelView` 改为调 `snapshot.ts` 导出的 **`servedWaitMs(auth)`** 报 `coolingMs`，与 `AccountForm`  obeying 的 `servedWaitUntil` 同一份判定（后者由前者换算而来）。同时候选两项**明确不改**并说明理由：`render` 与 `consoleConnected` 不是分叉。
 - **为什么只有 `coolingMs` 是分叉**（逐项核实，不是印象）：
   - `coolingMs` 此前自推 `typeof retryAfterMs === "number" && > 0`，**不看 parked 标志**；而 `AccountForm` 真正 obey 的 `servedWaitUntil` 对 parked 返回「无等待」。同一份 auth 块两个答案，**实测**。且 `servedWaitMs` 与 `servedWaitUntil` 的拆法本身就是这条裁定的产物：判定（剩余毫秒）与换算（绝对期限）单位不同，合在一处时两个消费者各自漂移。
-  - `render` **不是分叉**：`PanelPage` 的门是 `needsSetup && loadedOnce`（`panel-page.ts:311`），带一个本视图模型根本没有的「首帧」状态；`decidePanelView` 的三态是为断言做的**粗化**，两者是结构不同的两个问题，不是同一判定的两份。
-  - `consoleConnected` **不是判定而是字段读取**：三处分叉使用它——`panel-page.ts:298`（展开账户卡）、`:404`（显示未连接提示）、`snapshot.ts:261`（是否需要 setup）——**三处语义各不相同**，把它算成「同源分写」是把「都读了这个字段」误当成「都判了同一件事」。
-- **这条的净效果**：ADR-006 残留段列的五项里，`canManageAccount`（上一轮已改）与 `coolingMs`（本条）**两项是真残留并已清**，`render` / `consoleConnected` / `needsUserAction` **三项经核实不需要改**。`needsUserAction` 尤其要注意：它在 `panel-decision.js:150` 与 `account-form.ts:312` 是**同一个表达式、无分叉**，此前被一并列进残留清单属连带误判。
+  - `render` **不是分叉**：`PanelPage` 的门是 `showSetupForm = needsSetup && loadedOnce`（`panel-page.ts`），带一个本视图模型根本没有的「首帧」状态；`decidePanelView` 的三态是为断言做的**粗化**，两者是结构不同的两个问题，不是同一判定的两份。
+  - `consoleConnected` **不是判定而是字段读取**：三处分叉使用它——`panel-page.ts` 的 `openedAccountOnce` 早退（展开账户卡）、`consoleConnected === false` 三元（显示未连接提示）、`snapshot.ts` 的 `needsSetup`（是否需要 setup）——**三处语义各不相同**，把它算成「同源分写」是把「都读了这个字段」误当成「都判了同一件事」。
+- **这条的净效果**：ADR-006 残留段列的五项里，`canManageAccount`（上一轮已改）与 `coolingMs`（本条）**两项是真残留并已清**，`render` / `consoleConnected` / `needsUserAction` **三项经核实不需要改**。`needsUserAction` 尤其要注意：它在 `panel-decision.js` 与 `account-form.ts` 的 `needsUserAction` 是**同一个表达式、无分叉**，此前被一并列进残留清单属连带误判。
 - **验证**：`test/panel.test.mjs` 88 → **91**（新增 §F1 三条）。新增的 §F1 是**负向对照**：E 段用「窗口 + `needsUserAction: false`」、F 段用「`null` + `needsUserAction: true`」，**两段恰好都碰不到两者分歧的那份输入**——这正是它能活下来的原因。§F1 补的输入是 `retryAfterMs: 2h + needsUserAction: true`，并额外断言视图模型与规则同源。**负向验证**：把 `coolingMs` 退回旧的自推实现 → **2/91 红**（正是 §F1 那两条），还原后全绿。
 - **为什么这条分叉此前不产生用户可见错误**（诚实注记，不包装成「无害」）：Host 自己**不会**下发这种形状——`inForceWaitMs` 在 parked 时恒返回 `null`（`token-store/throttle.ts`），且 parked 记录的 `until` 就是 `null`。真正可达的是**面板自己的 POST 路径**：`routes/account.ts` 把平台声明的窗口复制进响应体，而 `needsUserAction` 来自节流的 `parked` 标志，于是「验证码 + `Retry-After: 7200`」会同体给出两者（该路径已由 `a85f4b3` 修掉矛盾 UI）。所以这是**结构债而非活 bug**，但 ADR-006 已把它挂在账上，挂着不销就是账本失效。
 - **与既有条目的关系**：不改变 ADR-006 判据 1（纯模块可 Node 直 import）——本条正是它的应用，`panel-decision.js` 早就在 import `snapshot.ts`（`shouldShowAccountManagement`），所以「`.js` 文件不经 import 路径」曾被当作推迟的理由是**未核实的推断**（2026-10-05 核实后更正）。也不改变判据 3（仍靠 review），但本条把 review 的结论**落成机器可验的负向对照**，缩小了判据 3 的适用面。
@@ -133,7 +133,7 @@
 
 - **日期**：2026-10-05
 - **状态**：现行（取代 ADR-001「爆炸半径教训收敛为 §5 不变量」那句留白；不改变 ADR-001～011 任何裁定）
-- **裁定**：ADR-001 把插件从「额度信息面板」升级为「商汤全过程集成的单点入口」后，同进程现在一手握着四类本不该共处的东西——① LLM provider 注册与生命周期、② 出图执行体、③ 视频异步状态机、④ **解密第三方桌面端 AgnesCode 的 os_crypt/DPAPI + AES-GCM 会话文件**（攻击面最敏感的一块，见 `docs/ROADMAP.md` §6.3）。隔离纪律是真实的：agnescode 与主线 publisher 共用 `publish-core.ts` 机制、**不共用状态**；`kind:"grant"` 单点构造（`token-store/grant.ts:120`）单点判定（`:31`）；throttle 与凭据 grant **刻意共享、不统一**（PITFALLS §23）。但「隔离到位」不等于「爆炸半径没变大」——把解密另一个 App 秘密的钥匙、provider 生命周期、出图/视频执行全部收进一个跑在用户 DSH 进程里的额度面板插件，**结构性爆炸半径被重新集中了**。
+- **裁定**：ADR-001 把插件从「额度信息面板」升级为「商汤全过程集成的单点入口」后，同进程现在一手握着四类本不该共处的东西——① LLM provider 注册与生命周期、② 出图执行体、③ 视频异步状态机、④ **解密第三方桌面端 AgnesCode 的 os_crypt/DPAPI + AES-GCM 会话文件**（攻击面最敏感的一块，见 `docs/ROADMAP.md` §6.3）。隔离纪律是真实的：agnescode 与主线 publisher 共用 `publish-core.ts` 机制、**不共用状态**；`kind:"grant"` 单点构造（`grant.ts` 的 `storeGrant`）单点判定（`grant.ts` 的 `parseGrant`）；throttle 与凭据 grant **刻意共享、不统一**（PITFALLS §23）。但「隔离到位」不等于「爆炸半径没变大」——把解密另一个 App 秘密的钥匙、provider 生命周期、出图/视频执行全部收进一个跑在用户 DSH 进程里的额度面板插件，**结构性爆炸半径被重新集中了**。
 - **理由（这是 ADR-001 那句「爆炸半径教训」的现代重演形态，非新事故）**：PITFALLS §6 的历史教训是「私有状态误进凭据服务，一条 typo 就会炸掉整台机器」——那次是把错东西放进了共享的承重服务。本条目把同一类教训钉在当前形态上：共享承重面从「凭据服务」换成了「本插件自身这个进程 + 它手里的解密密钥与 provider 通道」。本次是**设计张力，不是缺陷**——§5 不变量（五源一律软失败、一个模块缺席不许埋掉别的模块，ADR-004/007）正是为此而设的主动缓解，让任何一个上游炸了都不波及无关 tab。
 - **债务控制阀（可执行的术前自查，非口号）**：ADR-005 准入门槛（新能力先申报容器、装不下先出拆分蓝图、冻结行为基线再实现）是把这类结构债「从事后锐评变成事前决策点」的机制；video 吸收成本超预估一个数量级（视频执行体 80 行 → 单文件 993 行）的账单正是它拦下来的。本条目不要求拆回分散插件，但要求**任何新能力在走 ADR-005「申报容器」那一步时，先填下面这张爆炸半径对照表**——它把「大统一重新集中了爆炸半径」从账本里的已知权衡变成吸收决策的实际闸门：
   - **① 承重面归类**：新能力落在四类既有承重面（provider 注册 / 出图执行 / 视频状态机 / 桌面端密钥采集）里的哪一类？还是引入了**第五类共享承重面**？引入新类 = 自动触发 ADR-005 拆分蓝图（同 video）。
