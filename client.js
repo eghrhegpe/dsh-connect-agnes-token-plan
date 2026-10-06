@@ -1092,40 +1092,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			},
 			barFillWarn: { background: "var(--dsw-alias-state-warn-primary)" },
 			barFillError: { background: "var(--dsw-alias-state-error-primary)" },
-			details: {
-				marginTop: 12,
-				paddingTop: 10,
-				borderTop: "1px solid var(--dsw-alias-border-l1)"
-			},
-			detailsSummary: {
-				fontSize: 12,
-				color: "var(--dsw-alias-label-secondary)",
-				cursor: "pointer",
-				userSelect: "none"
-			},
-			detailsBody: {
-				display: "flex",
-				flexDirection: "column",
-				gap: 10,
-				marginTop: 10
-			},
-			grant: {
-				fontSize: 12,
-				color: "var(--dsw-alias-label-secondary)"
-			},
-			models: {
-				display: "flex",
-				flexWrap: "wrap",
-				gap: 6
-			},
-			modelTag: {
-				fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-				fontSize: 11,
-				padding: "2px 6px",
-				borderRadius: 6,
-				background: "var(--dsw-alias-bg-layer-2)",
-				border: "1px solid var(--dsw-alias-border-l1)"
-			},
 			trendHead: {
 				display: "flex",
 				alignItems: "baseline",
@@ -1138,39 +1104,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				fontSize: 12,
 				color: "var(--dsw-alias-label-secondary)",
 				fontWeight: 500
-			},
-			trendRow: {
-				display: "flex",
-				flexDirection: "column",
-				gap: 8,
-				padding: "10px 0",
-				borderBottom: "1px solid var(--dsw-alias-border-l1)"
-			},
-			trendRowHead: {
-				display: "flex",
-				alignItems: "baseline",
-				justifyContent: "space-between",
-				gap: 12,
-				minWidth: 0
-			},
-			trendModel: {
-				fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-				fontSize: 12,
-				minWidth: 0,
-				overflow: "hidden",
-				textOverflow: "ellipsis",
-				whiteSpace: "nowrap"
-			},
-			trendCredits: {
-				fontSize: 13,
-				fontWeight: 600,
-				fontVariantNumeric: "tabular-nums"
-			},
-			trendBar: {
-				height: 6,
-				borderRadius: 3,
-				background: "var(--dsw-alias-bg-layer-2)",
-				overflow: "hidden"
 			},
 			trendLegend: {
 				marginTop: 10,
@@ -1293,7 +1226,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				color: "var(--dsw-alias-label-primary-foreground)",
 				cursor: "pointer"
 			},
-			primaryHover: { background: "var(--dsw-alias-button-primary-hover)" },
 			primaryBusy: {
 				opacity: .6,
 				cursor: "default"
