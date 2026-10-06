@@ -138,6 +138,13 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
               // is non-fatal (the harvest itself succeeded and is stored), but
               // it must not vanish: the picker would keep pointing at the old
               // base with no trace of why.
+              // This path publishes the fallback roster, NOT the live catalogue
+              // — deliberately, unlike the route's `publishFromStore`. It runs
+              // inside `resolveToken`, the adapter's credential hot path, and a
+              // live catalogue fetch carries a 30 s network timeout that would
+              // block a user's inference call. The picker converges to the live
+              // list on the next route-driven publish (switch toggle / saveModels
+              // / the panel's entry GET self-heal).
               await pub.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), walk.session.bffBase).catch((why: unknown) => {
                 logger?.warn?.(`agnescode: re-harvest moved the BFF base to ${walk.session.bffBase} but republishing the adapter failed (the picker still points at the previous base): ${redactSecrets(str((why as { message?: unknown })?.message ?? why, "unknown"))}`);
               });
