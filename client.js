@@ -550,11 +550,16 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* Why two bases: the catalogue mixes them — windows and ceilings arrive as
 	* powers of two (1048576), while the plugin's own 128k fallback is the round
 	* decimal 128 000. A flat /1000 rounding once printed "1049k" for the 1M
-	* window and it read like a placeholder bug; so figures divisible by 1000 keep
-	* the decimal reading they were written with, binary-only figures (262144 →
-	* 256K, 65536 → 64K) get the binary one, anything ≥ 1M goes to M and anything
-	* ≥ 1G goes to G — the account-lifetime token total (billions) must not print
-	* as a four-digit "5214M".
+	* window and it read like a placeholder bug. The guards below therefore run
+	* in the order the code checks them, largest first:
+	*
+	*   - anything ≥ 1G goes to G — the account-lifetime token total (billions)
+	*     must not print as a four-digit "5214M";
+	*   - anything ≥ 1M goes to M — a 1M window (1048576) reads "1M", never
+	*     "1049k" or "1024k";
+	*   - below 1M, figures divisible by 1000 keep the decimal reading they were
+	*     written with (128000 → "128K");
+	*   - binary-only figures get the binary one (262144 → "256K", 65536 → "64K").
 	*/
 	function tokenSize(value) {
 		const number = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : 0;
