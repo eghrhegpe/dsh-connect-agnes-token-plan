@@ -324,38 +324,6 @@ function buildShapeWarnings(
 }
 
 /**
- * Fetch the four console sources plus the model catalog and aggregate them
- * into the snapshot body the route writes.
- *
- * All five are fetched in parallel through the shared `cache` + `inflight`
- * maps (a single-flight per URL so concurrent polls share one call) and the
- * `tokenStore` (so a 401 triggers one renewal before the call). Only the
- * catalog is authenticated by the API key instead; a missing key degrades the
- * model lists, not the quota — resolved per poll so a key that arrives after
- * the plugin mounted still lights the lists on the next poll.
- *
- * @param {object} context
- * @param {object} context.settings - the resolved settings row.
- * @param {Map} context.cache - the console-response cache (shared across polls).
- * @param {Map} context.inflight - the single-flight map (shared across polls).
- * @param {object} context.tokenStore - the `createTokenStore` instance.
- * @param {object} context.apiKeyStore - the `createApiKeyStore` instance.
- * @param {object} context.publisher - the `createProviderPublisher` instance.
- * @param {object} context.catalogStore - the `createFileCatalogStore` instance.
- * @param {() => Promise<boolean|null>} context.panelSwitch - the panel-saved
- *   provider switch (`provider-store.enabled()`); null when untouched.
- * @param {() => Promise<boolean|null>} context.drawSwitch - the panel-saved
- *   draw-tool switch (`draw-store.enabled()`), same shape and precedence.
- * @param {() => Promise<string|null>} context.drawModelId - the panel-saved
- *   draw-model preference (`draw-store.modelId()`); null when untouched.
- * @param {() => Promise<boolean|null>} context.videoSwitch - the panel-saved
- *   video-tool switch (`video-store.enabled()`). A SEPARATE opt-in from the
- *   draw switch: the two modalities are independent.
- * @param {() => Promise<string|null>} context.videoModelId - the panel-saved
- *   video-model preference (`video-store.modelId()`); null when untouched.
- * @returns {Promise<object>} the snapshot body.
- */
-/**
  * The ONLY side effects `buildSnapshotBody` performs, isolated here so the
  * aggregator above stays a pure projection of the console results.
  *
@@ -424,6 +392,38 @@ async function applyCatalogEffects({
   return { offered, catalogChanged };
 }
 
+/**
+ * Fetch the four console sources plus the model catalog and aggregate them
+ * into the snapshot body the route writes.
+ *
+ * All five are fetched in parallel through the shared `cache` + `inflight`
+ * maps (a single-flight per URL so concurrent polls share one call) and the
+ * `tokenStore` (so a 401 triggers one renewal before the call). Only the
+ * catalog is authenticated by the API key instead; a missing key degrades the
+ * model lists, not the quota — resolved per poll so a key that arrives after
+ * the plugin mounted still lights the lists on the next poll.
+ *
+ * @param {object} context
+ * @param {object} context.settings - the resolved settings row.
+ * @param {Map} context.cache - the console-response cache (shared across polls).
+ * @param {Map} context.inflight - the single-flight map (shared across polls).
+ * @param {object} context.tokenStore - the `createTokenStore` instance.
+ * @param {object} context.apiKeyStore - the `createApiKeyStore` instance.
+ * @param {object} context.publisher - the `createProviderPublisher` instance.
+ * @param {object} context.catalogStore - the `createFileCatalogStore` instance.
+ * @param {() => Promise<boolean|null>} context.panelSwitch - the panel-saved
+ *   provider switch (`provider-store.enabled()`); null when untouched.
+ * @param {() => Promise<boolean|null>} context.drawSwitch - the panel-saved
+ *   draw-tool switch (`draw-store.enabled()`), same shape and precedence.
+ * @param {() => Promise<string|null>} context.drawModelId - the panel-saved
+ *   draw-model preference (`draw-store.modelId()`); null when untouched.
+ * @param {() => Promise<boolean|null>} context.videoSwitch - the panel-saved
+ *   video-tool switch (`video-store.enabled()`). A SEPARATE opt-in from the
+ *   draw switch: the two modalities are independent.
+ * @param {() => Promise<string|null>} context.videoModelId - the panel-saved
+ *   video-model preference (`video-store.modelId()`); null when untouched.
+ * @returns {Promise<object>} the snapshot body.
+ */
 export async function buildSnapshotBody({
   settings,
   cache,

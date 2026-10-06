@@ -165,12 +165,19 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
     // paid for, and even a narrow twin card fits this pair. The counts need a
     // real fraction: a zero limit has none, and "已用 0 / 0" would read as a
     // measurement of a window the platform never sized.
-    pct === null && resetLine === null
+    //
+    // They also need a real `used`, which is a SEPARATE condition from `pct`:
+    // the Host parses `used` and `usagePct` from two independent fields, so a
+    // window can carry a percentage and no reading at all. `count(null)`
+    // renders "0", and "已用 0 / N" is exactly the "the window is untouched"
+    // claim the `used` guard above refuses. Keep the bar and the percentage
+    // (both are the platform's own word), drop only the count row.
+    (pct === null || used === null) && resetLine === null
       ? null
       : h(
           "div",
           { style: S.quotaFoot },
-          pct === null
+          pct === null || used === null
             ? null
             : h("span", { style: S.quotaUsed }, `${tt("quota.used")} ${count(used)} / ${count(limit)}`),
           resetLine === null ? null : h("span", { style: { ...S.muted, fontSize: 11 } }, resetLine)

@@ -143,6 +143,10 @@ export const AGNESCODE_HARVEST_TIER = Object.freeze({
  * a non-model in the picker. Keyed by id on purpose: a rule tied to "has no
  * multiplier" would silently start leaking `auto` back in the day the platform
  * prices it.
+ *
+ * Matched as a SET (`includes`), never by index: comparing against `[0]` would
+ * make a second entry dead the moment it was added, and that failure would be
+ * silent.
  */
 export const AGNESCODE_CATALOGUE_EXCLUDED_IDS = Object.freeze(["auto"]);
 
@@ -635,8 +639,10 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
       if (id === "" || seen.has(id)) continue;
       // A routing alias, not a model: present only in v2, carries no
       // multiplier. Excluded by id so the rule stays a statement about what
-      // this row IS, not about what it happens to be priced at today.
-      if (id === AGNESCODE_CATALOGUE_EXCLUDED_IDS[0]) continue;
+      // this row IS, not about what it happens to be priced at today. Matched
+      // as a SET: comparing against `[0]` would silently stop excluding the
+      // day a second alias is added to the list.
+      if (AGNESCODE_CATALOGUE_EXCLUDED_IDS.includes(id)) continue;
       // `model_type: "text"` and `supported_endpoint_types: ["openai"]` are the
       // only modality facts the row declares — an image-input claim would be
       // invented, so vision is false until the platform says otherwise.
@@ -715,12 +721,26 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
 // returns real numbers, so the typeof-strict reader is correct and the duplicate is gone.
 
 /**
- * The static fallback roster: the eight models the CN BFF listed at probe time
- * (2026-10-01 night re-probe, ROADMAP §6.3.1). All `model_type: text`, no
- * multiplier concept — confirmed by that re-probe: no model row carries a
- * credit/rate/price/cost key and all five rate-candidate endpoints 404
- * (billing is the account-level credit pool, not per-model rates). Used ONLY
- * when `fetchAgnescodeCatalog` comes back empty; a fresh catalogue always wins.
+ * The static fallback roster: the eight models the CN BFF's `/v2/models`
+ * listed at probe time (2026-10-01 night re-probe; rows and rates re-probed
+ * 2026-10-04 against v2, ROADMAP §6.3.1). Used ONLY when
+ * `fetchAgnescodeCatalog` comes back empty; a fresh catalogue always wins.
+ *
+ * `multiplier` is the BFF's `points_cost_multiplier` — a rate the PLATFORM
+ * publishes per model, read once through `numZeroOk()`. A `0` is a published
+ * price ("free"), NOT an absence: `num()` would turn it into "unpriced" and
+ * the panel would lose the chip. The one v2 row with no rate at all is the
+ * `auto` routing alias, which this list does not contain.
+ *
+ * `displayLabel` is the BFF's `display_label` promotional tag, present on one
+ * row only, and passed through verbatim.
+ *
+ * SUPERSEDED READING, kept so the reversal is auditable: the 2026-10-01 v1
+ * snapshot genuinely had "no multiplier concept — no row carries a rate key,
+ * and all five rate-candidate endpoints 404". That was `/v1/models`, which
+ * omits the field; the plugin reads v2 since 2026-10-04, where 8 of 9 rows
+ * carry it. The lesson is the one in ROADMAP §6.3.1: deciding a field is
+ * absent from a whole table requires scanning every row, not reading `rows[0]`.
  */
 export const AGNESCODE_FALLBACK_MODELS = Object.freeze([
   { id: "agnes-3.0-flash", name: "Agnes 3.0 Flash", memberOnly: false, vision: false, multiplier: 0, contextWindow: 512_000, maxOutputLength: 65_536 },

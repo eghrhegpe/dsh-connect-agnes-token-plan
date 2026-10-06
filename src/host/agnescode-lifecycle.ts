@@ -116,7 +116,6 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
       if (harvest.inFlight === null && Date.now() >= harvest.blockedUntil) {
         harvest.inFlight = harvestAgnescodeLocalSession()
           .then(async (walk) => {
-            harvest.inFlight = null;
             if (walk?.ok !== true) {
               harvest.blockedUntil = Date.now() + AGNESCODE_REHARVEST_BACKOFF_MS;
               logger?.warn?.(`agnescode: re-harvest found no usable session (${walk?.attempts?.length ?? 0} probed files); riding the stored token until ${new Date(harvest.blockedUntil).toISOString()}`);
@@ -146,9 +145,17 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
             return walk;
           })
           .catch(() => {
-            harvest.inFlight = null;
             harvest.blockedUntil = Date.now() + AGNESCODE_REHARVEST_BACKOFF_MS;
             return null;
+          })
+          .finally(() => {
+            // Cleared here, not inside the `.then` body: the walk's bookkeeping
+            // (`store.save`, the cross-base republish) is part of the flight,
+            // and clearing on entry to it let a concurrent `resolveToken` see
+            // `null` mid-save and open a second walk — which defeats the
+            // single-flight this object exists for. `.finally` clears it once,
+            // for either outcome.
+            harvest.inFlight = null;
           });
       }
       await Promise.resolve(harvest.inFlight).catch(() => null);
@@ -227,4 +234,3 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
   return { publisher, seed };
 }
 
-export { AGNESCODE_FALLBACK_MODELS };

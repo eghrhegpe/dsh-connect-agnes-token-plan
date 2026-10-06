@@ -261,32 +261,6 @@ export function maxOutputLengthOf(entry: Record<string, unknown>) {
 export { isChatModel };
 
 /**
- * The picker's 思考强度 levels, pinned to platform-valid wire spellings.
- *
- * DSH's picker offers levels from `getSupportedThinkingLevels(model)`
- * (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`), and pi-ai's
- * openai-completions dispatch sends `reasoning_effort = map[level] ?? level`.
- * Agnes's OpenAI-compat gateway rejects `off` (the OpenAI spelling) and
- * `minimal`; the extended levels are PER-MODEL, per the 2026-10-01 live
- * ladder (see PROBED_EFFORT): `xhigh` only on agnes-3.0-flash, `max` on
- * every Agnes chat model. So:
- *
- * - `off: "none"` — the picker's "关闭" must send `none`, not `off`;
- *   - `low`/`medium` — 200 on every known chat model; a model ABSENT from
- *     the table (an unknown id) still gets them via the Agnes safe-set so
- *     the picker is never empty. A model PRESENT in the table with a level
- *     set `false` keeps it closed. The live-contract replay
- *     (`test/live-contract.mjs`) probes the per-model levels and flips the
- *     table cells once a model's 200 is recorded.
- * - `xhigh`/`max` — per the table; the safe-set keeps both closed for
- *   unknown ids.
- *
- * A value of `null` means "the picker must not offer this level"; a string is
- * the wire spelling the level dispatches to.
- * @param {object} entry - one normalized catalog entry.
- * @returns {object} the thinkingLevelMap.
- */
-/**
  * Per-model 思考档位 probe table (frozen 2026-10-01 from the live ladder
  * replay, mirrored from `test/baselines/agnes-contract.json`
  * §reasoningEffort — every cell is a platform answer, not a guess).
@@ -322,6 +296,32 @@ const PROBED_EFFORT = Object.freeze({
   "agnes-3.0-flash": { low: true, medium: true, high: true, xhigh: true, max: true }
 });
 
+/**
+ * The picker's 思考强度 levels, pinned to platform-valid wire spellings.
+ *
+ * DSH's picker offers levels from `getSupportedThinkingLevels(model)`
+ * (`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`), and pi-ai's
+ * openai-completions dispatch sends `reasoning_effort = map[level] ?? level`.
+ * Agnes's OpenAI-compat gateway rejects `off` (the OpenAI spelling) and
+ * `minimal`; the extended levels are PER-MODEL, per the 2026-10-01 live
+ * ladder (see PROBED_EFFORT): `xhigh` only on agnes-3.0-flash, `max` on
+ * every Agnes chat model. So:
+ *
+ * - `off: "none"` — the picker's "关闭" must send `none`, not `off`;
+ *   - `low`/`medium` — 200 on every known chat model; a model ABSENT from
+ *     the table (an unknown id) still gets them via the Agnes safe-set so
+ *     the picker is never empty. A model PRESENT in the table with a level
+ *     set `false` keeps it closed. The live-contract replay
+ *     (`test/live-contract.mjs`) probes the per-model levels and flips the
+ *     table cells once a model's 200 is recorded.
+ * - `xhigh`/`max` — per the table; the safe-set keeps both closed for
+ *   unknown ids.
+ *
+ * A value of `null` means "the picker must not offer this level"; a string is
+ * the wire spelling the level dispatches to.
+ * @param {object} entry - one normalized catalog entry.
+ * @returns {object} the thinkingLevelMap.
+ */
 export function thinkingLevelMapFor(entry: Record<string, unknown>) {
   const id = str(entry?.id, "");
   const probed = (PROBED_EFFORT as Record<string, { low: boolean; medium: boolean; high: boolean; xhigh: boolean; max: boolean }>)[id];

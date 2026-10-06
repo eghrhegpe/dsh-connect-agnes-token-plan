@@ -15,7 +15,7 @@
  *
  * Nothing here imports a Host peer or opens a socket.
  */
-import { mkdtemp, rm, writeFile, mkdir, copyFile, chmod, stat, readdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, copyFile, chmod, stat, readdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -241,6 +241,41 @@ function check(name, condition, detail = "") {
     JSON.stringify({ shared: report.shared, scopes: report.scopes.length, profiled: report.profiled }));
   const lines = renderReport(report);
   check("the human report says so plainly", lines.includes("no state found"), lines);
+  await rm(home, { recursive: true, force: true });
+}
+
+// --- 4e. one unreadable profile entry must not collapse the whole survey ----
+// `listProfiles` used to wrap the entire walk in a single `try`, so ONE entry
+// whose `stat` throws (an ACL that blocks it, a broken link) collapsed the
+// survey to an EMPTY list. An empty walk reads downstream as both "a clean
+// machine" (`renderReport`) and "skip the shared scope" (`diagnose`) — the one
+// direction a survey must never lie in: it must not turn "I could not read
+// everything" into "this machine is clean".
+{
+  const home = await mkdtemp(join(tmpdir(), "dsh-doctor-unread-"));
+  const stateRoot = join(home, "state");
+  const goodDir = join(stateRoot, "web", PLUGIN_NAME);
+  await mkdir(goodDir, { recursive: true });
+  await writeFile(join(goodDir, "provider.json"), JSON.stringify({ version: 1, enabled: true }));
+  // A name `readdir` still lists but `stat` refuses. Windows: a junction to a
+  // target that does not exist (no elevation needed). POSIX: the same shape as
+  // a dangling symlink. Either way it is a name under `state/`, not a profile.
+  const unstatable = join(stateRoot, "unstatable");
+  await symlink(join(stateRoot, "no-such-target"), unstatable,
+    process.platform === "win32" ? "junction" : "dir");
+
+  const report = await diagnose({ dshHome: home });
+  check("one unreadable entry does not collapse the survey to an empty walk",
+    report.scopes.some((s) => s.profile === "web") === true,
+    JSON.stringify(report.scopes.map((s) => s.profile)));
+  check("the unreadable entry is dropped, not reported as a profile",
+    report.scopes.length === 1 && report.scopes[0].profile === "web",
+    JSON.stringify(report.scopes.map((s) => s.profile)));
+  check("the human report does not call a partially unreadable machine clean",
+    !renderReport(report).includes("no state found"), renderReport(report));
+  check("the readable profile's own values still reach the report",
+    report.scopes[0].providerPanel === true, JSON.stringify(report.scopes[0]));
+  await rm(unstatable);
   await rm(home, { recursive: true, force: true });
 }
 

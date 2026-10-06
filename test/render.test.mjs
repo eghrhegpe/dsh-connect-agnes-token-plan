@@ -134,6 +134,44 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     texts(nullPct).join("\n").includes("25.0%"), texts(nullPct).join("\n"));
 }
 
+// === A1c. a `usagePct` WITHOUT a `used` is not a reading of zero used ===
+// The Host parses `used` and `usage_pct` out of two INDEPENDENT fields, so a
+// window can carry a percentage and no reading at all (`parsers.ts` reads them
+// separately). `count(null)` renders "0", so a count row gated on `pct` alone
+// would print "已用 0 / 400" — the exact "the window is untouched" claim the
+// `used` guard in block A refuses. The percentage and the bar are the
+// platform's own word and stay; only the count row drops.
+{
+  const pctOnly = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 400, windowHours: 5, used: null, usagePct: 33 },
+    tt
+  });
+  const pctOnlyMeta = texts(pctOnly).join("\n");
+  check("a percentage without a used still leads with the platform's percentage",
+    pctOnlyMeta.includes("33.0%"), pctOnlyMeta);
+  check("a missing used is never printed as zero used",
+    !pctOnlyMeta.includes("quota.used 0") && !pctOnlyMeta.includes(" 0 /"), pctOnlyMeta);
+  check("the bar still draws the platform's percentage",
+    bar(pctOnly)?.props["aria-valuenow"] === "33.0", String(bar(pctOnly)?.props["aria-valuenow"]));
+  check("the countless foot row is dropped entirely rather than rendered empty",
+    findAll(pctOnly, (props) => props.style === S.quotaFoot).length === 0,
+    pctOnlyMeta);
+
+  // With a reset stamp the foot row must still render: it carries the reset
+  // line alone, never a fabricated count beside it.
+  const pctOnlyWithReset = treeOf(render.QuotaWindowCard, {
+    label: "quota.win.requests5h",
+    window: { key: "requests5h", unit: "requests", limit: 400, windowHours: 5, used: null, usagePct: 33, resetAt: 1790866800, resetInSeconds: 692 },
+    tt
+  });
+  const pctOnlyResetMeta = texts(pctOnlyWithReset).join("\n");
+  check("a missing used keeps the reset line instead of dropping the whole foot",
+    pctOnlyResetMeta.includes("quota.resetAt"), pctOnlyResetMeta);
+  check("the reset line travels alone when the counts are dropped",
+    pctOnlyResetMeta.includes("quota.resetAt") && !pctOnlyResetMeta.includes("quota.used"), pctOnlyResetMeta);
+}
+
 // === A2. a stated reset instant is printed; an absent one prints nothing ===
 // The reset moment is a fact the platform states inside `subscription.usage`,
 // so the card quotes it verbatim — and it quotes ONLY it: the line was once

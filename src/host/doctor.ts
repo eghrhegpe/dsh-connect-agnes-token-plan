@@ -10,10 +10,10 @@
  *
  * @module dsh-connect-agnes-token-plan/doctor
  */
-import { readdir, stat, readFile, writeFile, rm } from "node:fs/promises";
+import { readdir, stat, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { name } from "./host-config.ts";
-import { isProfileSegment, dshHome as defaultDshHome } from "./state-store.ts";
+import { isProfileSegment, dshHome as defaultDshHome, readStateJson } from "./state-store.ts";
 import { parseAgnescodePayload } from "./agnescode-switch-store.ts";
 
 /**
@@ -115,14 +115,10 @@ export interface DoctorReport {
   admission: { count: number; lastAt: number; lastMethod: string } | null;
 }
 
-/** Read a state JSON, or `null` when absent / unreadable / not JSON. */
-async function readJson(file: string) {
-  try {
-    return JSON.parse(await readFile(file, "utf8"));
-  } catch {
-    return null;
-  }
-}
+// State-file JSON is read through the store's own `readStateJson`
+// (`state-store.ts`), never a survey-local copy — the same second-opinion
+// discipline the parser re-exports above obey. Absent, unreadable, or not
+// JSON all read as `null`, which is the safe direction for every row here.
 
 /**
  * Can this plugin actually WRITE its state directory right now?
@@ -211,13 +207,13 @@ async function readScope(stateDir: string, profile: string | null) {
 
   const providerFile = join(stateDir, "provider.json");
   if (await present(providerFile)) {
-    const parsed = parseProviderPayload(await readJson(providerFile));
+    const parsed = parseProviderPayload(await readStateJson(providerFile));
     if (parsed !== null) scope.providerPanel = parsed.enabled;
     else scope.unreadable.push("provider.json");
   }
   const drawFile = join(stateDir, "draw.json");
   if (await present(drawFile)) {
-    const parsed = parseDrawPayload(await readJson(drawFile));
+    const parsed = parseDrawPayload(await readStateJson(drawFile));
     if (parsed !== null) {
       scope.drawPanel = parsed.enabled;
       scope.drawModelPanel = parsed.modelId;
@@ -225,7 +221,7 @@ async function readScope(stateDir: string, profile: string | null) {
   }
   const videoFile = join(stateDir, "video.json");
   if (await present(videoFile)) {
-    const parsed = parseVideoPayload(await readJson(videoFile));
+    const parsed = parseVideoPayload(await readStateJson(videoFile));
     if (parsed !== null) {
       scope.videoPanel = parsed.enabled;
       scope.videoModelPanel = parsed.modelId;
@@ -235,13 +231,13 @@ async function readScope(stateDir: string, profile: string | null) {
   // model preference) — same unreadable discipline as the files above.
   const agnescodeFile = join(stateDir, "agnescode-provider.json");
   if (await present(agnescodeFile)) {
-    const parsed = parseAgnescodePayload(await readJson(agnescodeFile));
+    const parsed = parseAgnescodePayload(await readStateJson(agnescodeFile));
     if (parsed !== null) scope.agnescodePanel = parsed.enabled;
     else scope.unreadable.push("agnescode-provider.json");
   }
   const catalogFile = join(stateDir, "catalog.json");
   if (await present(catalogFile)) {
-    const parsed = parseCatalogPayload(await readJson(catalogFile));
+    const parsed = parseCatalogPayload(await readStateJson(catalogFile));
     if (parsed !== null) {
       scope.catalogEntries = parsed.entries;
       scope.catalogEnabledIds = parsed.enabledModelIds;
@@ -253,7 +249,7 @@ async function readScope(stateDir: string, profile: string | null) {
   // until now.
   const agnescodeModelsFile = join(stateDir, "agnescode-models.json");
   if (await present(agnescodeModelsFile)) {
-    const parsed = parseAgnescodeModelsPayload(await readJson(agnescodeModelsFile));
+    const parsed = parseAgnescodeModelsPayload(await readStateJson(agnescodeModelsFile));
     if (parsed !== null) scope.agnescodeEnabledIds = parsed.enabledModelIds;
     else scope.unreadable.push("agnescode-models.json");
   }
@@ -265,21 +261,29 @@ async function readScope(stateDir: string, profile: string | null) {
 
 /** List the profile-segment names under a `$DSH_HOME/state` directory. */
 async function listProfiles(stateRoot: string) {
+  let entries: string[];
   try {
-    const entries = await readdir(stateRoot);
-    const profiles: string[] = [];
-    for (const entry of entries) {
-      // The shared (pre-§23) layout lives at `state/<plugin>/`; that directory
-      // is a PLUGIN, not a profile, so it must not be read back as one.
-      if (entry === name) continue;
-      if (!isProfileSegment(entry)) continue;
-      const abs = join(stateRoot, entry);
-      if ((await stat(abs)).isDirectory()) profiles.push(entry);
-    }
-    return profiles;
+    entries = await readdir(stateRoot);
   } catch {
     return [];
   }
+  const profiles: string[] = [];
+  for (const entry of entries) {
+    // The shared (pre-§23) layout lives at `state/<plugin>/`; that directory
+    // is a PLUGIN, not a profile, so it must not be read back as one.
+    if (entry === name) continue;
+    if (!isProfileSegment(entry)) continue;
+    const abs = join(stateRoot, entry);
+    try {
+      if ((await stat(abs)).isDirectory()) profiles.push(entry);
+    } catch {
+      // Per-entry, deliberately: one unreadable entry must not collapse the
+      // whole survey to an empty list. An empty list reads downstream as both
+      // "a clean machine" (`renderReport`) and "skip the shared scope"
+      // (`diagnose`) — the one direction a survey must not lie in.
+    }
+  }
+  return profiles;
 }
 
 /**
@@ -319,7 +323,7 @@ export async function diagnose(options: { dshHome?: string; env?: any; platform?
   // AgnesCode 盘点同理：读不出来不能把整份报告带走。
   let admission: DoctorReport["admission"] = null;
   try {
-    admission = parseAdmissionAudit(await readJson(join(sharedDir, ADMISSION_AUDIT_FILE)));
+    admission = parseAdmissionAudit(await readStateJson(join(sharedDir, ADMISSION_AUDIT_FILE)));
   } catch {
     admission = null;
   }

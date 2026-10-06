@@ -428,6 +428,17 @@ function finiteOrNull(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** One subscription usage cell: the platform's per-window reading. */
+export interface SubscriptionUsageCell {
+  used: number | null;
+  limit: number;
+  usagePct: number | null;
+  rangeStart: number | null;
+  rangeEnd: number | null;
+  resetAt: number | null;
+  resetInSeconds: number | null;
+}
+
 /**
  * Read `subscription.usage` into the panel's per-window facts.
  *
@@ -442,19 +453,8 @@ function finiteOrNull(value) {
  * has never consumed anything simply may not report one, and that absence
  * must read as "no bar", never as "used 0".
  * @param {unknown} subscription - the unwrapped `/api/cn/user/subscription` data.
- * @returns {Record<string, {used: number|null, limit: number, usagePct: number|null, rangeStart: number|null, rangeEnd: number|null, resetAt: number|null, resetInSeconds: number|null}>|null}
+ * @returns {Record<string, SubscriptionUsageCell>|null}
  */
-/** One subscription usage cell: the platform's per-window reading. */
-export interface SubscriptionUsageCell {
-  used: number | null;
-  limit: number;
-  usagePct: number | null;
-  rangeStart: number | null;
-  rangeEnd: number | null;
-  resetAt: number | null;
-  resetInSeconds: number | null;
-}
-
 export function parseSubscriptionUsage(subscription: unknown): Record<string, SubscriptionUsageCell> | null {
   const usage = obj(obj(subscription).usage);
   if (Object.keys(usage).length === 0) return null;

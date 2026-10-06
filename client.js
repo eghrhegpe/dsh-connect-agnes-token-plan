@@ -2777,7 +2777,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, h("div", { style: {
 			...tone.fill,
 			width: `${pct}%`
-		} })), pct === null && resetLine === null ? null : h("div", { style: S.quotaFoot }, pct === null ? null : h("span", { style: S.quotaUsed }, `${tt("quota.used")} ${count(used)} / ${count(limit)}`), resetLine === null ? null : h("span", { style: {
+		} })), (pct === null || used === null) && resetLine === null ? null : h("div", { style: S.quotaFoot }, pct === null || used === null ? null : h("span", { style: S.quotaUsed }, `${tt("quota.used")} ${count(used)} / ${count(limit)}`), resetLine === null ? null : h("span", { style: {
 			...S.muted,
 			fontSize: 11
 		} }, resetLine)));
