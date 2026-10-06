@@ -14,7 +14,7 @@ import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { redactError } from "../util.ts";
-import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
@@ -40,7 +40,7 @@ export function registerProviderRoute(ctx: HostCtx, wiring: HostWiring) {
         refuseOrigin(response);
         return;
       }
-      const method = request.method === undefined ? "GET" : request.method;
+      const method = requestMethod(request, "GET");
       // Secret-free by construction: the effective switch, where it came from,
       // and whether a provider is registered right now.
       const answer = async (extra = {}) => {

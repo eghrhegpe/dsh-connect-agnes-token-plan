@@ -13,7 +13,7 @@
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { redactError } from "../util.ts";
-import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The inference API-key route (`sk-…`), step three of the one-stop plan. */
@@ -39,7 +39,7 @@ export function registerApiKeyRoute(ctx: HostCtx, wiring: HostWiring) {
         refuseOrigin(response);
         return;
       }
-      const method = request.method === undefined ? "GET" : request.method;
+      const method = requestMethod(request, "GET");
       // The secret-free state is all the form ever gets: present or not, and
       // whether it came from the credentials service or the environment.
       const answer = async (extra = {}) =>

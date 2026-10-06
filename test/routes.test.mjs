@@ -1671,6 +1671,36 @@ async function withNetwork(stub, body) {
   } catch (error) { fail("S: the video switch route", error); }
 }
 
+// === T. a methodless request falls back to the ROUTE's own default ========
+// The web server always supplies a method, so the fallback exists only for
+// tests and in-process callers — and it is the ROUTE's choice, not a family
+// constant: a write route defaults to POST, a read route to GET. These checks
+// are the first coverage of that branch, which before had no test at all, so
+// either default value would have shipped unnoticed.
+{
+  try {
+    const call = await mount(makeCredentials(null));
+    // No `method`, an empty body: the shape a real HTTP request has, minus
+    // the method the web server always sets.
+    const methodless = {
+      headers: { host: "127.0.0.1:19387", "content-type": "application/json" },
+      async *[Symbol.asyncIterator]() {}
+    };
+    const readDefault = await call(API_KEY_PATH, methodless);
+    check("T a methodless read route falls back to GET, not to a refusal",
+      readDefault.statusCode === 200 && readDefault.payload.ok === true &&
+        readDefault.payload.hasApiKey === false,
+      JSON.stringify(readDefault.payload));
+    const writeDefault = await call(ACCOUNT_PATH, methodless);
+    check("T a methodless write route falls back to POST and asks for its body",
+      writeDefault.statusCode === 400 && writeDefault.payload.ok === false &&
+        writeDefault.payload.error === "a JSON body is required",
+      JSON.stringify({ status: writeDefault.statusCode, payload: writeDefault.payload }));
+    check("T the two routes keep their own defaults rather than one shared one",
+      readDefault.statusCode === 200 && writeDefault.statusCode === 400);
+  } catch (error) { fail("T: the methodless fallback", error); }
+}
+
 // The Host routes are exercised against a stubbed console; nothing here may
 // reach the real one. See the same guard in test/auth.test.mjs.
 const unstubbed = releaseNetworkGuard();

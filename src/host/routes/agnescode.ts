@@ -34,7 +34,7 @@ import {
   AGNESCODE_FALLBACK_MODELS
 } from "../agnescode.ts";
 import { filterAgnescodeRows } from "../agnescode-models.ts";
-import { writeJson, refuseOrigin, refuseMethod, readJsonBody } from "./http.ts";
+import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBody } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
 /** One row of the harvest diagnosis the panel shows: which file was probed, how
@@ -103,6 +103,12 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         let expiresAtMs: number | null = null;
         let balance: unknown = null;
         let error: string | null = null;
+        // Resolved ONCE and reused for both BFF calls. Each was its own
+        // `resolve()`, so a walk landing between the two (the re-harvest is a
+        // live path, not a rare one) could leave one account's balance beside
+        // another account's catalogue in the SAME payload — which the panel
+        // presents as a single identity.
+        let credential: { accessToken: string; bffBase?: string } | null = null;
         try {
           if (agnescodeStore !== null && agnescodeStore !== undefined) {
             const state = await agnescodeStore.state().catch(() => null);
@@ -110,11 +116,9 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
             nickname = state?.nickname ?? "";
             bffBase = state?.bffBase ?? "";
             expiresAtMs = state?.expiresAtMs ?? null;
-            if (loggedIn) {
-              const { credential } = await agnescodeStore.resolve().catch(() => ({ credential: null }));
-              if (credential?.accessToken) {
-                balance = await fetchAgnescodeBalance(credential).catch(() => null);
-              }
+            credential = (await agnescodeStore.resolve().catch(() => ({ credential: null }))).credential ?? null;
+            if (loggedIn && credential?.accessToken) {
+              balance = await fetchAgnescodeBalance(credential).catch(() => null);
             }
           }
         } catch (why) {
@@ -125,11 +129,8 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // known models.
         let models: unknown = null;
         try {
-          if (agnescodeStore !== null && agnescodeStore !== undefined) {
-            const { credential } = await agnescodeStore.resolve().catch(() => ({ credential: null }));
-            if (credential?.accessToken) {
-              models = await fetchAgnescodeCatalog(credential).catch(() => null);
-            }
+          if (credential?.accessToken) {
+            models = await fetchAgnescodeCatalog(credential).catch(() => null);
           }
         } catch {
           models = null;
@@ -191,7 +192,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         await agnescodePublisher.publish(filterAgnescodeRows(rows, enabledIds), bffBase);
       };
 
-      const method = request.method === undefined ? "GET" : request.method;
+      const method = requestMethod(request, "GET");
       if (method === "GET") {
         let state = await agnescodeState();
         // Self-heal: an UNREGISTERED state alongside a stored credential is a

@@ -1192,6 +1192,9 @@ const GOOD_SESSION = {
     // Every non-AgnesCode route stays untouched; a stub that answers `null`
     // keeps their registration cheap and proves they are not on this path.
     const unused = new Proxy({}, { get: () => async () => null });
+    // Counted: the balance and the catalogue are both fetched with the
+    // credential this returns, so one resolve must serve both.
+    let resolveCalls = 0;
     registerRoutes(ctx, {
       settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
       configError: null,
@@ -1216,6 +1219,7 @@ const GOOD_SESSION = {
           return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
         },
         async resolve() {
+          resolveCalls += 1;
           return { credential: null, source: null };
         },
         async save() {},
@@ -1241,6 +1245,7 @@ const GOOD_SESSION = {
       JSON.stringify({ loggedIn: body.loggedIn, nickname: body.nickname, enabled: body.enabled }));
     check("the GET payload carries no token (the panel only ever sees shape facts)",
       !("accessToken" in body) && !JSON.stringify(body).includes("access_token"));
+    check("one resolve serves both the balance and the catalogue", resolveCalls === 1, String(resolveCalls));
   } catch (error) {
     fail("route surface", error);
   }

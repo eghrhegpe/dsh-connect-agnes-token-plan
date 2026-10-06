@@ -156,10 +156,12 @@ export async function recordOriginlessWrite(method: unknown, options: { dir?: st
       lastMethod
     };
     const temporary = temporaryOf(dir, FILE);
-    // `writeStateFile` 要的是**已序列化**的字符串（它内部是 `${payload}`）——
-    // 直接传对象会静默落一个 "[object Object]" 文件，读回来是 null，看起来
-    // 就像"从没发生过"。这正是审计最危险的失败方向。
-    await writeStateFile(file, JSON.stringify(payload), { temporary });
+    // `writeStateFile` 自己序列化：字符串原样落，对象 `JSON.stringify`，其余
+    // 抛错而不是落成字面量——PITFALLS §36 那个「`[object Object]` 静默落盘、
+    // 读回是 null、看起来像从没发生过」的陷阱已在它内部堵住，所以这里不需要
+    // 预序列化。审计最危险的失败方向仍是「落了一个读不回来的文件」，那条由
+    // `parseAudit` 的缺值方向兜住。
+    await writeStateFile(file, payload, { temporary });
   } catch {
     // 审计失败就当没记：见上。
   }

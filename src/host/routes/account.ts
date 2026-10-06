@@ -16,7 +16,7 @@ import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { CODE } from "../codes.ts";
 import { writeLoginTrace } from "../trace.ts";
 import { redactError, redactSecrets, str } from "../util.ts";
-import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The account route: the panel configures itself without editing `.env`. */
@@ -41,7 +41,7 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
         refuseOrigin(response);
         return;
       }
-      const method = request.method === undefined ? "POST" : request.method;
+      const method = requestMethod(request, "POST");
       if (method === "GET") {
         // The form needs to know whether an account is already stored, and
         // must never be told the password.

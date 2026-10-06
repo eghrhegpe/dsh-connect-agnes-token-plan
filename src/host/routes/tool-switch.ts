@@ -16,7 +16,7 @@ import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled, resolveSwitchValue } from "../switch-precedence.ts";
 import { redactError } from "../util.ts";
-import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring, SwitchStore } from "../types.ts";
 
 /** One tool switch's route wiring: the two tools differ only in these. */
@@ -81,7 +81,7 @@ export function registerToolSwitchRoute(
         refuseOrigin(response);
         return;
       }
-      const method = request.method === undefined ? "GET" : request.method;
+      const method = requestMethod(request, "GET");
       const answer = async (extra = {}) => {
         // Read each value ONCE. The previous lines asked the store twice for
         // the same fact (once for the value, once for the source), so a flip

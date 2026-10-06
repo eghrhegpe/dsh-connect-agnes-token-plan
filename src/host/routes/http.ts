@@ -78,6 +78,23 @@ export function refuseOrigin(response) {
 }
 
 /**
+ * The request's method, with the route's own fallback for a caller that omits
+ * it.
+ *
+ * The web server always supplies a method, so the fallback is for the route
+ * tests and any in-process caller. It is the ROUTE's choice, not a family
+ * constant: a write route falls back to POST, a read route to GET, and the
+ * wrong one turns a methodless request into a write. Shared here rather than
+ * repeated, so the family's fallback wording has one home.
+ * @param request - the incoming HTTP request.
+ * @param fallback - the method to assume when the caller sent none.
+ * @returns {string} the method.
+ */
+export function requestMethod(request, fallback: "GET" | "POST") {
+  return request.method === undefined ? fallback : request.method;
+}
+
+/**
  * Refuse a disallowed method with the family's 405 shape.
  *
  * The 405 carries no `cache-control`: unlike a snapshot, a method refusal is

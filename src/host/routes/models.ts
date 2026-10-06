@@ -16,7 +16,7 @@ import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
 import { normalizeEnabledIds } from "../catalog-store.ts";
 import { catalogSignature } from "../provider-publish.ts";
 import { redactError } from "../util.ts";
-import { writeJson, refuseOrigin, refuseMethod, readJsonBodyOr400 } from "./http.ts";
+import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
 /** The model-roster route (docs/API.md). */
@@ -45,7 +45,7 @@ export function registerModelsRoute(ctx: HostCtx, wiring: HostWiring) {
         refuseOrigin(response);
         return;
       }
-      const method = request.method === undefined ? "POST" : request.method;
+      const method = requestMethod(request, "POST");
       if (method !== "POST") {
         refuseMethod(response);
         return;
