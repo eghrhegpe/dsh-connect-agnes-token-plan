@@ -517,6 +517,11 @@ const CHECK_IDS = new Map([
     }
   };
   walkTs(join(ROOT, "src"));
+  // `rel` lives in check 8)'s own scope; this block is a sibling `{}`, so it
+  // needs its own. Without it the enforcement path (line 547) throws a
+  // ReferenceError the moment a §N reference is actually broken — which is
+  // exactly the §39 shape: a gate that has never fired looks green forever.
+  const rel = (p) => p.replace(ROOT + "\\", "").replace(/\\/g, "/");
   const docHead = new Map();
   for (const d of readdirSync(join(ROOT, "docs"))) {
     if (!d.endsWith(".md")) continue;
