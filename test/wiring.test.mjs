@@ -263,6 +263,12 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // existed. Silence here is what makes that possible, so it must be loud.
 {
   const { webServer, stop } = await bootPlugin({
+    // The value is DECORATIVE: this test asserts a config_error and never
+    // reaches the network, so no fake platform needs to listen. It must still
+    // track `test/fake-platform.mjs`'s `PORT` default (19399) for a reader who
+    // assumes it is live. Importing that module is NOT an option here — it
+    // calls `server.listen()` at module top level (fake-platform.mjs:348), so
+    // it is e2e-only by construction.
     config: { consoleBase: "http://127.0.0.1:19399", auth: { loginPath: "/api/user/login" } }
   });
   const res = response();

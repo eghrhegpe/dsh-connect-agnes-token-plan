@@ -68,6 +68,11 @@ export const VIDEO_POLL_INTERVAL_MS = 5_000;
  */
 export const VIDEO_MAX_POLLS = 1_000;
 
+/** How many times a REFUSED query endpoint is retried inside the poll loop.
+ * A transient 429/5xx on the query path should not cost the agent the task id;
+ * after this many failures the loop hands the id back so it can re-query later. */
+export const VIDEO_QUERY_RETRIES = 2;
+
 /** The poll budget for one generation; video tasks run for minutes, not seconds. */
 export const VIDEO_DEFAULT_TIMEOUT_MS = 600_000;
 

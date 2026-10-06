@@ -33,7 +33,7 @@ export function registerApiKeyRoute(ctx: HostCtx, wiring: HostWiring) {
     kind: "exact",
     path: API_KEY_PATH,
     handler: async (request, response) => {
-      // Same trust fence as the other two routes: a foreign page must not be
+      // Same trust fence as every write route: a foreign page must not be
       // able to plant or wipe an inference key.
       if (!isAdmittedWithAudit(request, settings.allowedHosts)) {
         refuseOrigin(response);

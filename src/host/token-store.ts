@@ -58,7 +58,7 @@
  */
 
 import { CODE } from "./codes.ts";
-import { str, obj, verbatim, pluginError } from "./util.ts";
+import { str, obj, verbatim, pluginError, redactSecrets } from "./util.ts";
 import { name as RECORD_SCOPE } from "./host-config.ts";
 import { createStoreContext } from "./token-store/state.ts";
 import {
@@ -329,9 +329,17 @@ export function createTokenStore(options) {
         // Gated on the OUTCOME rather than patching every writer: if we hold a
         // token the console has not refused, there is no current error to
         // report, whatever the last attempt happened to say.
+        //
+        // The surviving error is red-line #1 material the moment it leaves this
+        // store: it is what `routes/account.ts` spreads into a panel answer.
+        // The console-client error text does not carry request bodies today,
+        // but that is a fact about today's callers, not a guarantee — so the
+        // value is redacted here, at the single choke point, rather than
+        // trusting every route to remember.
         error: isFresh(stored)
           ? null
-          : state.lastError === null ? null : state.lastError instanceof Error ? state.lastError.message : String(state.lastError)
+          : state.lastError === null ? null
+            : redactSecrets(state.lastError instanceof Error ? state.lastError.message : String(state.lastError))
       };
     }
   };

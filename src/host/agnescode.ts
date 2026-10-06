@@ -311,6 +311,31 @@ export async function unwrapAgnescodeLocalStateKey(localStateRaw: string | Buffe
 }
 
 /**
+ * The env names that carry credentials. A spawned helper does not need them,
+ * and must not be able to read them off its own process environment.
+ */
+const DPAPI_CHILD_SECRET_ENV = [
+  "AGNES_PASSWORD",
+  "AGNES_USERNAME",
+  "AGNES_TOKEN_PLAN_API_KEY",
+  "AGNESCODE_CREDENTIAL"
+];
+
+/**
+ * The environment handed to the DPAPI PowerShell child: everything the shell
+ * actually needs (SystemRoot, PATH, TEMP, …) survives, only the credential
+ * names go. `spawn` inherits `process.env` by default; this is the explicit
+ * exception to that default.
+ * @param {object} [env] - the parent env (defaults to `process.env`).
+ * @returns {object} a copy with the credential names removed.
+ */
+export function dpapiChildEnv(env: any = process.env): any {
+  const out: any = { ...env };
+  for (const name of DPAPI_CHILD_SECRET_ENV) delete out[name];
+  return out;
+}
+
+/**
  * The production DPAPI unwrap: a PowerShell child process. No native addon and
  * no build step (the Host half is build-free, ROADMAP §6.2), and the unwrapped
  * key transits the stdout pipe IN MEMORY — it is never printed, logged, or
@@ -332,7 +357,13 @@ export async function defaultDpapiUnprotect(wrapped: Buffer) {
   return new Promise((resolve, reject) => {
     const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      // The child runs a fixed script that reads stdin and writes stdout — it
+      // has no use for the parent's secrets, and must not be able to read them
+      // off its own process environment (a crash dump, a diagnostic, or a
+      // third-party PowerShell profile could). `-NoProfile` already blocks
+      // user-run profiles; this closes the env half of the same gap.
+      env: dpapiChildEnv()
     });
     const chunks: Buffer[] = [];
     let failure = "";

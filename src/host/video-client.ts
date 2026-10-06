@@ -29,6 +29,7 @@ import {
   VIDEO_DEFAULT_TIMEOUT_MS,
   VIDEO_POLL_INTERVAL_MS,
   VIDEO_MAX_POLLS,
+  VIDEO_QUERY_RETRIES,
   parseVideoTask,
   videoTaskIdOf,
   parseVideoQuery,
@@ -136,6 +137,8 @@ function defaultSleep(ms) {
  * @param {string} [options.model] - sent as `model_name`.
  * @param {number} [options.timeoutMs] - the poll budget.
  * @param {number} [options.pollIntervalMs] - the gap between queries.
+ * @param {number} [options.queryRetries] - how many times a REFUSED query is
+ *   retried before the task id is handed back to the agent (default 2).
  * @param {Function} [options.sleep] - injected sleeper.
  * @param {Function} [options.now] - injected clock.
  * @param {Function} [options.isDisposed] - `() => boolean`, true after unmount.
@@ -150,12 +153,14 @@ export async function pollVideoResult({
   model,
   timeoutMs = VIDEO_DEFAULT_TIMEOUT_MS,
   pollIntervalMs = VIDEO_POLL_INTERVAL_MS,
+  queryRetries = VIDEO_QUERY_RETRIES,
   sleep = defaultSleep,
   now = Date.now,
   isDisposed = () => false
 }) {
   const budget = Math.max(1_000, Math.floor(num(timeoutMs, VIDEO_DEFAULT_TIMEOUT_MS)));
   const interval = Math.max(100, Math.floor(num(pollIntervalMs, VIDEO_POLL_INTERVAL_MS)));
+  const retries = Math.max(0, Math.floor(num(queryRetries, VIDEO_QUERY_RETRIES)));
   const deadline = now() + budget;
   let attempts = 0;
   for (;;) {
@@ -165,7 +170,30 @@ export async function pollVideoResult({
         `视频生成轮询超过 ${VIDEO_MAX_POLLS} 次仍未结束（video_id=${videoId}）——任务仍在平台侧运行，请稍后用 video_id 重新查询，不要重复提交`
       );
     }
-    const value = await queryVideoTask({ fetchImpl, queryEndpoint, apiKey, videoId, model });
+    let value;
+    let retried = 0;
+    for (;;) {
+      try {
+        value = await queryVideoTask({ fetchImpl, queryEndpoint, apiKey, videoId, model });
+        break;
+      } catch (queryError) {
+        // A REFUSED query is not a terminal task: the platform still holds it,
+        // and a transient 429/5xx on the query endpoint should not cost the
+        // agent the task id. Retry a bounded number of times, then hand the id
+        // back so it can re-query instead of re-generating. Without this the
+        // query-refused path (unlike timeout / over-poll, which both carry the
+        // id) left the agent with a bare "video failed: HTTP 429 — …" and no
+        // way to come back for a task that was still running.
+        const cause = queryError instanceof Error ? queryError.message : String(queryError);
+        if (retried >= retries || isDisposed() || deadline - now() <= 0) {
+          throw new Error(
+            `视频生成查询被拒（video_id=${videoId}）：${cause}——任务仍在平台侧运行，可用 video_id=${videoId} 稍后重新查询，不要重复提交`
+          );
+        }
+        retried += 1;
+        await sleep(Math.min(interval, deadline - now()));
+      }
+    }
     if (isVideoTerminal(value.status)) return value;
     const remaining = deadline - now();
     if (remaining <= 0) {

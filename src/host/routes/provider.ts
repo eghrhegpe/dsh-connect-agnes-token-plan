@@ -34,7 +34,7 @@ export function registerProviderRoute(ctx: HostCtx, wiring: HostWiring) {
     kind: "exact",
     path: PROVIDER_PATH,
     handler: async (request, response) => {
-      // Same trust fence as the other three routes: a foreign page must not be
+      // Same trust fence as every write route: a foreign page must not be
       // able to flip model routing for the whole Host.
       if (!isAdmittedWithAudit(request, settings.allowedHosts)) {
         refuseOrigin(response);

@@ -37,6 +37,17 @@ import { filterAgnescodeRows } from "../agnescode-models.ts";
 import { writeJson, refuseOrigin, refuseMethod, readJsonBody } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
 
+/** One row of the harvest diagnosis the panel shows: which file was probed, how
+ * it was classified, and why. `detail` is an error string, not a token — but it
+ * is still red-line #1 material the moment it leaves the route, so every
+ * detail is redacted before the rows can be answered. */
+type HarvestAttempt = { file: string | null; tier: string; detail: string };
+
+/** Map the harvest rows through `redactSecrets`, at the single choke point. */
+function redactHarvestAttempts(attempts: HarvestAttempt[]): HarvestAttempt[] {
+  return attempts.map((attempt) => ({ ...attempt, detail: redactSecrets(attempt.detail) }));
+}
+
 /** The AgnesCode provider route (ROADMAP §6.3 "third upstream provider"). */
 export const AGNESCODE_PATH = `/api/${name}/agnescode`;
 
@@ -278,8 +289,13 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           if (agnescodeHarvestInFlight === null) {
             agnescodeHarvestInFlight = (async () => {
               const walk = await harvestAgnescodeLocalSession();
-              lastHarvest = { ok: walk.ok, attempts: walk.attempts };
-              if (walk.ok !== true) return { ok: false, attempts: walk.attempts };
+              // The rows carry tier codes and shape facts — never the token —
+              // but each `detail` is an error string (a file path, a fs reason)
+              // that reaches the panel, so it is redacted at this single choke
+              // point rather than trusting the harvest to remember.
+              const attempts = redactHarvestAttempts(walk.attempts);
+              lastHarvest = { ok: walk.ok, attempts };
+              if (walk.ok !== true) return { ok: false, attempts };
               const expMs = decodeAgnescodeJwtExpMs(walk.session.accessToken);
               await agnescodeStore.save({
                 accessToken: walk.session.accessToken,
@@ -288,7 +304,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
                 ...(walk.session.nickname !== "" ? { nickname: walk.session.nickname } : {}),
                 ...(expMs !== undefined ? { expiresAtMs: expMs } : {})
               });
-              return { ok: true, attempts: walk.attempts };
+              return { ok: true, attempts };
             })().finally(() => {
               agnescodeHarvestInFlight = null;
             });

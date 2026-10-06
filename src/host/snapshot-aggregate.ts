@@ -403,7 +403,7 @@ async function applyCatalogEffects({
       // the write that would fix it, and the disk would keep the old catalog
       // until a restart re-seeds it (PITFALLS §40). Not persisted → retry next
       // poll, which is the abnormal case anyway.
-      const persisted = await catalogStore.replace(catalog, enabledIds).catch(() => false);
+      const persisted = await catalogStore.replace(catalog, enabledIds);
       if (persisted) providerState.signature = freshSignature;
       await publisher.publish(catalog, enabledIds, unavailableModelIds);
     }

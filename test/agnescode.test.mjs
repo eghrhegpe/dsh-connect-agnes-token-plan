@@ -37,6 +37,7 @@ import {
   decryptAgnescodeSessionBlob,
   unwrapAgnescodeLocalStateKey,
   harvestAgnescodeLocalSession,
+  dpapiChildEnv,
   classifyAgnescodeSessionFiles,
   surveyAgnescodeStorage,
   fetchAgnescodeCatalog,
@@ -377,6 +378,42 @@ const GOOD_SESSION = {
     rmSync(rootMalformed, { recursive: true, force: true });
   } catch (error) {
     fail("harvest walk", error);
+  }
+}
+
+// The DPAPI child is handed an env WITHOUT the credential names: it runs a fixed
+// script over stdin/stdout and has no use for them, so a crash dump, a
+// diagnostic, or a third-party PowerShell profile must not find them there.
+{
+  const clean = dpapiChildEnv({
+    SystemRoot: "C:\\Windows",
+    PATH: "C:\\Windows\\System32",
+    AGNES_PASSWORD: "p",
+    AGNES_USERNAME: "u",
+    AGNES_TOKEN_PLAN_API_KEY: "sk-x",
+    AGNESCODE_CREDENTIAL: "jwt"
+  });
+  check("the DPAPI child env drops every credential name",
+    clean.SystemRoot === "C:\\Windows" && clean.PATH === "C:\\Windows\\System32"
+      && !("AGNES_PASSWORD" in clean) && !("AGNES_USERNAME" in clean)
+      && !("AGNES_TOKEN_PLAN_API_KEY" in clean) && !("AGNESCODE_CREDENTIAL" in clean),
+    JSON.stringify(clean));
+  check("the DPAPI child env keeps everything the shell needs",
+    Object.keys(clean).length === 2, JSON.stringify(clean));
+  {
+    // The default is `process.env` — the shape `spawn` inherits by default. Pin
+    // that the credential names are gone even when the real environment carries
+    // them, so a future edit cannot re-inherit a secret by dropping the argument.
+    const previous = process.env.AGNESCODE_CREDENTIAL;
+    try {
+      process.env.AGNESCODE_CREDENTIAL = "jwt-default";
+      const out = dpapiChildEnv();
+      check("the default branch still strips the credential names",
+        typeof out === "object" && out !== null && !("AGNESCODE_CREDENTIAL" in out), JSON.stringify(out));
+    } finally {
+      if (previous === undefined) delete process.env.AGNESCODE_CREDENTIAL;
+      else process.env.AGNESCODE_CREDENTIAL = previous;
+    }
   }
 }
 

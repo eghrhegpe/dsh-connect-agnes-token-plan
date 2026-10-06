@@ -2881,29 +2881,34 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			{
 				key: "requests",
 				label: tt("quota.total.requests"),
-				value: count(source.totalRequests)
+				value: count(source.totalRequests),
+				on: typeof source.totalRequests === "number"
 			},
 			{
 				key: "tokens",
 				label: tt("quota.total.tokens"),
-				value: tokenSize(source.totalTokens) || count(source.totalTokens)
+				value: tokenSize(source.totalTokens) || count(source.totalTokens),
+				on: typeof source.totalTokens === "number"
 			},
 			{
 				key: "images",
 				label: tt("quota.total.images"),
-				value: count(source.totalImages)
+				value: count(source.totalImages),
+				on: typeof source.totalImages === "number"
 			},
 			{
 				key: "video",
 				label: tt("quota.total.video"),
-				value: `${count(source.totalVideoSeconds)} ${tt("quota.unit.seconds")}`
+				value: `${count(source.totalVideoSeconds)} ${tt("quota.unit.seconds")}`,
+				on: typeof source.totalVideoSeconds === "number"
 			},
-			...typeof source.activeDays === "number" ? [{
+			{
 				key: "days",
 				label: tt("quota.total.activeDays"),
-				value: count(source.activeDays)
-			}] : []
-		];
+				value: count(source.activeDays),
+				on: typeof source.activeDays === "number"
+			}
+		].filter((cell) => cell.on);
 		return h("div", null, h("div", { style: {
 			...S.muted,
 			fontSize: 12,

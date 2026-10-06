@@ -80,8 +80,10 @@ export function createApiKeyStore({
      * @returns {Promise<void>}
      */
     async save(apiKey: string) {
+      // `verbatim(apiKey, "")` is string-or-fallback, so `value` is always a
+      // string here; only the emptiness test is live.
       const value = verbatim(apiKey, "");
-      if (typeof value !== "string" || value.trim() === "") {
+      if (value.trim() === "") {
         throw new Error("an API key is required");
       }
       const service = resolveService();

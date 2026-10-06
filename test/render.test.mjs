@@ -340,6 +340,13 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const sparse = rendered(render.UsageTotals, { totals: { totalRequests: 1 }, label: "l", tt });
   check("a missing activeDays cell is not drawn as a zero",
     !sparse.includes("quota.total.activeDays"), sparse.join("\n"));
+  // The same rule for the four main counters: `count(undefined)` returns "0",
+  // so a shape drift upstream would otherwise read as "0 requests / 0 tokens /
+  // 0 images" — a figure nobody reported — rather than an absent cell.
+  check("a partially-present totals block omits the missing cells, not a zero",
+    !sparse.includes("quota.total.tokens") && !sparse.includes("quota.total.images")
+      && !sparse.includes("quota.total.video") && sparse.includes("quota.total.requests"),
+    sparse.join("\n"));
 
   const missing = rendered(render.UsageTotals, { totals: null, label: "l", tt });
   check("a totals block that never arrived names the label it could not read",

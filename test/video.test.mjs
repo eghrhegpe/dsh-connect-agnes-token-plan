@@ -771,6 +771,65 @@ function errResponse(status, text) {
     check("a non-advancing clock cannot make the poll loop spin forever",
       /轮询超过/.test(message ?? "") && /video_id=v-1/.test(message ?? ""), message);
   }
+  {
+    // A REFUSED query is not a terminal task — the platform still holds the job.
+    // The failure must therefore name the video_id, as the timeout and
+    // over-poll paths already do, instead of leaving the agent with a bare
+    // "video failed: HTTP 429 …" and no way to come back for a task that is
+    // still running.
+    let refusedCalls = 0;
+    const message = await rejects(() => pollVideoResult({
+      ...base,
+      fetchImpl: async () => { refusedCalls += 1; return errResponse(429, "rate limit exceeded"); },
+      queryRetries: 1,
+      sleep: async () => {},
+      now: () => 0
+    }));
+    check("a refused query retries then names the video_id",
+      /视频生成查询被拒/.test(message ?? "") && /video_id=v-1/.test(message ?? ""), message);
+    // The counter closes the loop the message alone could not: without it the
+    // check above would also pass if the retry were dead and the loop threw on
+    // the first refusal. `retries=1` means one re-query, i.e. two fetch calls.
+    check("the exhausted path really did retry before throwing",
+      refusedCalls === 2, `calls=${refusedCalls}`);
+    check("the query-refused error keeps the platform's own words",
+      /rate limit exceeded/.test(message ?? ""), message);
+    check("the query-refused error tells the agent not to re-submit",
+      /不要重复提交/.test(message ?? ""), message);
+  }
+  {
+    // `queryRetries=0` is the lower bound of the retry parameter: NO re-query,
+    // the task id is handed back on the first refusal. `Math.max(0, …)` clamps
+    // a negative override to this same shape, so the zero case is the whole
+    // "carry the id, never retry" behaviour and must not drift.
+    const message = await rejects(() => pollVideoResult({
+      ...base,
+      fetchImpl: async () => errResponse(429, "rate limit exceeded"),
+      queryRetries: 0,
+      sleep: async () => {},
+      now: () => 0
+    }));
+    check("queryRetries=0 refuses to re-query yet still names the video_id",
+      /视频生成查询被拒/.test(message ?? "") && /video_id=v-1/.test(message ?? ""), message);
+  }
+  {
+    // A transient 429 on the query endpoint must not cost the agent the task:
+    // the loop retries a bounded number of times and, when the platform
+    // answers, returns the result rather than failing.
+    let calls = 0;
+    const value = await pollVideoResult({
+      ...base,
+      fetchImpl: async () => {
+        calls += 1;
+        return calls < 3 ? errResponse(429, "rate limit exceeded") : okResponse({ status: "completed", url: "https://cdn/v.mp4" });
+      },
+      queryRetries: 2,
+      sleep: async () => {},
+      now: () => 0
+    });
+    check("a transient query refusal is retried into a result",
+      value.status === "completed" && calls === 3, `calls=${calls}`);
+  }
 }
 
 // --- 10. defineVideoTool end-to-end ----------------------------------------

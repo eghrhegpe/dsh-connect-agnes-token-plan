@@ -344,18 +344,22 @@ export function UsageTotals({ totals, label, tt }: { totals?: UsageTotalsData | 
   const source = totals ?? null;
   if (source === null) return h("div", { style: S.empty }, format(tt("quota.usageMissing"), { label }));
   const cells = [
-    { key: "requests", label: tt("quota.total.requests"), value: count(source.totalRequests) },
+    { key: "requests", label: tt("quota.total.requests"), value: count(source.totalRequests), on: typeof source.totalRequests === "number" },
     // The account-lifetime token figure runs into the billions; the full
     // thousands-separated digits filled the cell and misbalanced the row
     // against its short neighbours. Same tokenSize() the rosters use.
-    { key: "tokens", label: tt("quota.total.tokens"), value: tokenSize(source.totalTokens) || count(source.totalTokens) },
-    { key: "images", label: tt("quota.total.images"), value: count(source.totalImages) },
+    { key: "tokens", label: tt("quota.total.tokens"), value: tokenSize(source.totalTokens) || count(source.totalTokens), on: typeof source.totalTokens === "number" },
+    { key: "images", label: tt("quota.total.images"), value: count(source.totalImages), on: typeof source.totalImages === "number" },
     // The field IS seconds (totalVideoSeconds — a measured usage figure, not
     // the window cap whose unit the platform never states), so naming the
     // unit is transcription, not invention.
-    { key: "video", label: tt("quota.total.video"), value: `${count(source.totalVideoSeconds)} ${tt("quota.unit.seconds")}` },
-    ...(typeof source.activeDays === "number" ? [{ key: "days", label: tt("quota.total.activeDays"), value: count(source.activeDays) }] : [])
-  ];
+    { key: "video", label: tt("quota.total.video"), value: `${count(source.totalVideoSeconds)} ${tt("quota.unit.seconds")}`, on: typeof source.totalVideoSeconds === "number" },
+    { key: "days", label: tt("quota.total.activeDays"), value: count(source.activeDays), on: typeof source.activeDays === "number" }
+  // An absent field is not a zero measurement. `count(undefined)` returns "0",
+  // so a partially-missing totals block must omit the cell rather than draw a
+  // figure nobody reported — the same rule `activeDays` already followed, now
+  // applied to all four main counters.
+  ].filter((cell) => cell.on);
   return h(
     "div",
     null,
