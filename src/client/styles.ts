@@ -48,12 +48,9 @@ export const S = {
   chevron: { display: "inline-flex", flex: "none", transition: "transform 0.15s ease", color: "var(--dsw-alias-label-secondary)" },
   chevronOpen: { transform: "rotate(180deg)" },
   sectionBody: { borderTop: "1px solid var(--dsw-alias-border-l1)", margin: "0 16px", padding: "12px 0 16px" },
-  // Pool cards live in the responsive `poolsGrid` (gap owns the spacing),
-  // so the card itself carries no bottom margin.
+  // No vertical margin of its own: the pool cards' spacing is the grid's
+  // `gap`, which `pools` and `quotas` both own, so a margin here would double up.
   card: { background: "var(--dsw-alias-bg-layer-1)", border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, padding: 16 },
-  // Responsive deck of pool cards: each column is at least 320px and the
-  // row reflows on narrow panels instead of overflowing.
-  poolsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 12, alignItems: "start" },
   cardHead: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
   poolName: { fontSize: 15, fontWeight: 600 },
   chip: { display: "inline-flex", alignItems: "center", height: 22, padding: "0 8px", borderRadius: 999, fontSize: 12, border: "1px solid var(--dsw-alias-border-l1)", background: "var(--dsw-alias-bg-layer-2)", color: "var(--dsw-alias-label-secondary)" },

@@ -977,12 +977,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				borderRadius: 12,
 				padding: 16
 			},
-			poolsGrid: {
-				display: "grid",
-				gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
-				gap: 12,
-				alignItems: "start"
-			},
 			cardHead: {
 				display: "flex",
 				alignItems: "center",
