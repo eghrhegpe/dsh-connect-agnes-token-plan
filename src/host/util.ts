@@ -36,8 +36,20 @@ export function num(value: unknown, fallback?: any): any {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-/** Read a non-empty string, else the fallback. */
-export function str(value: unknown, fallback?: any): string {
+/**
+ * Read a non-empty string, else the fallback.
+ *
+ * Overloaded so the declared return type does not overstate what the optional
+ * fallback allows: when it is omitted and `value` is not a usable string, the
+ * function returns `undefined`, and a bare `: string` signature would swallow
+ * that and let a future call site treat an absent reading as a value. Every
+ * current call site passes a fallback (mostly `""`), so the two-argument form
+ * is what readers see most — but the one-argument form now reports `undefined`
+ * instead of pretending to be a string.
+ */
+export function str(value: unknown, fallback: any): any;
+export function str(value: unknown): string | undefined;
+export function str(value: unknown, fallback?: any): any {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : fallback;
 }
 
@@ -124,8 +136,15 @@ export function obj(value?: unknown): Record<string, unknown> {
  * sent as typed, because trimming it is a change the user cannot see. A
  * password of only whitespace is still "not filled in", which the caller
  * judges with `.trim()`.
+ *
+ * The same overload discipline as {@link str} applies: the fallback is optional,
+ * and when it is omitted the function returns `undefined` rather than a string.
+ * The two-argument form keeps the loose `any` return because the fallback is the
+ * caller's own value and is passed straight back.
  */
-export function verbatim(value: unknown, fallback?: any): string {
+export function verbatim(value: unknown, fallback: any): any;
+export function verbatim(value: unknown): string | undefined;
+export function verbatim(value: unknown, fallback?: any): any {
   return typeof value === "string" ? value : fallback;
 }
 
