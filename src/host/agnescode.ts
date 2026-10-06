@@ -39,14 +39,19 @@
 import { createDecipheriv } from "node:crypto";
 import { obj, num, numZeroOk, str } from "./util.ts";
 
-/** The model-catalogue request headers the BFF gates on (probed: required). */
-export const AGNESCODE_CATALOG_HEADERS = Object.freeze({
+/** The request headers every BFF call carries, with or without a token. The
+ * `X-App-Id` / `X-Platform` pair is the catalogue gate (probed: required) and
+ * the language header mirrors the desktop client. Declared ONCE here and spread
+ * by both builders — `agnescodeHeaders` (authenticated) and
+ * `agnescodeRequestHeaders` in `agnescode-models.ts` (anonymous) — so the two
+ * cannot drift into disagreeing gate values. */
+export const AGNESCODE_BASE_HEADERS = Object.freeze({
+  Accept: "application/json",
+  "Content-Type": "application/json",
   "X-App-Id": "1",
-  "X-Platform": "1"
+  "X-Platform": "1",
+  "X-User-Language": "zh-Hans"
 });
-
-/** The request-language header the desktop client sends. */
-export const AGNESCODE_LANGUAGE_HEADER = "X-User-Language";
 
 /**
  * The session-file name pattern, matched case-insensitively against the App's
@@ -243,14 +248,10 @@ export function decodeAgnescodeJwtExpMs(token: string) {
  * @returns {object} the header map.
  */
 export function agnescodeHeaders(credential: any) {
-  const headers = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${str(obj(credential).accessToken, "")}`,
-    ...AGNESCODE_CATALOG_HEADERS,
-    [AGNESCODE_LANGUAGE_HEADER]: "zh-Hans"
+  return {
+    ...AGNESCODE_BASE_HEADERS,
+    Authorization: `Bearer ${str(obj(credential).accessToken, "")}`
   };
-  return headers;
 }
 
 /**

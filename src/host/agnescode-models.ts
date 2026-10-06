@@ -31,7 +31,7 @@
  */
 
 import { str, num, numZeroOk } from "./util.ts";
-import { AGNESCODE_FALLBACK_MODELS } from "./agnescode.ts";
+import { AGNESCODE_BASE_HEADERS, AGNESCODE_FALLBACK_MODELS } from "./agnescode.ts";
 import { PROBED_VISION } from "./llm-models.ts";
 import { normalizeEnabledIds } from "./catalog-store.ts";
 
@@ -57,15 +57,13 @@ export const AGNESCODE_DISPLAY_NAME = "AgnesCode";
 /** The zero-cost sentinel: per-token prices are unknowable (credit-gated). */
 const NO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
-/** The catalogue/identity headers every request carries (probed: required). */
+/** The catalogue/identity headers every request carries (probed: required).
+ * The anonymous half of one pair: `agnescodeHeaders`' map with its
+ * `Authorization` line removed. The gate values come from
+ * `AGNESCODE_BASE_HEADERS`, never a second copy here, so the two builders
+ * cannot disagree. */
 export function agnescodeRequestHeaders() {
-  return {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    "X-App-Id": "1",
-    "X-Platform": "1",
-    "X-User-Language": "zh-Hans"
-  };
+  return { ...AGNESCODE_BASE_HEADERS };
 }
 
 /**

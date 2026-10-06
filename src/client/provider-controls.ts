@@ -10,6 +10,7 @@ import { DRAW_PATH, PROVIDER_PATH, VIDEO_PATH } from "./const.ts";
 import { count, format } from "./format.ts";
 import { postJsonOrThrow } from "./http.ts";
 import { ModelPicker } from "./model-picker.ts";
+import { rosterIds } from "./models.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { Radio, Switch } from "./switch.ts";
@@ -323,11 +324,6 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
   );
 }
 
-/** Ids off a snapshot array field, coerced to strings and guarded against `null`. */
-function idList(value: unknown): string[] {
-  return Array.isArray(value) ? value.map((id: unknown) => String(id)) : [];
-}
-
 /**
  * The live draw-tool switch (docs/PROVIDER-HOT-RELOAD.md, same discipline
  * as `ProviderSwitch`). Posts `{ enabled }` / `{ modelId }` to the plugin's
@@ -349,7 +345,7 @@ export function DrawSwitch({ llm, onDone, tt }: {
     modelKey: "drawModelId",
     enabled: llm?.drawEnabled === true,
     hasKey: llm?.hasApiKey === true,
-    candidates: idList(llm?.drawCandidateIds),
+    candidates: rosterIds(llm?.drawCandidateIds),
     preferred: llm?.drawPreferredModel != null ? String(llm.drawPreferredModel) : null,
     effective: String(llm?.drawModel ?? ""),
     onDone,
@@ -375,7 +371,7 @@ export function VideoSwitch({ llm, onDone, tt }: {
   onDone?: () => void;
   tt: Tt;
 }): unknown {
-  const excluded = idList(llm?.video25ModelIds);
+  const excluded = rosterIds(llm?.video25ModelIds);
   const extraNote = excluded.length > 0
     ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 4 } },
         format(tt("video.note25"), { count: count(excluded.length), ids: excluded.join(" · ") }))
@@ -386,7 +382,7 @@ export function VideoSwitch({ llm, onDone, tt }: {
     modelKey: "videoModelId",
     enabled: llm?.videoEnabled === true,
     hasKey: llm?.hasApiKey === true,
-    candidates: idList(llm?.videoCandidateIds),
+    candidates: rosterIds(llm?.videoCandidateIds),
     preferred: llm?.videoPreferredModel != null ? String(llm.videoPreferredModel) : null,
     effective: String(llm?.videoModel ?? ""),
     extraNote,

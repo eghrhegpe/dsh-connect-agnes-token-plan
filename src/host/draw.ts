@@ -72,27 +72,25 @@ export function buildDrawEndpoint(apiBase) {
 /**
  * The draw-capable model ids of one catalog, de-duplicated in first-seen order.
  *
- * Deduping keeps the LAST occurrence at its first-seen position, exactly like
- * `rosterOf` / `buildDescriptors` / `catalog-store.normalizeEntries`, so the
- * draw list and the chat roster can never disagree about which ids exist.
+ * The ids are unique in first-seen order — a `Set` is all this needs. At the
+ * id level there is no "which row survived" question the way `rosterOf` /
+ * `buildDescriptors` / `catalog-store.normalizeEntries` have (they keep the
+ * LAST row for an id, at its first-seen position), so the draw list and the
+ * chat roster agree about which ids exist without sharing that row-level rule.
+ * It WAS copied here, and the duplicate branch re-assigned the same id back to
+ * its own slot — dead code that implied an ordering rule this function cannot
+ * express.
  * @param {object[]} entries - the normalized catalog entries.
  * @returns {string[]}
  */
 export function imageGenModelIds(entries) {
-  const position = new Map();
-  const out: string[] = [];
+  const ids = new Set<string>();
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!isImageGenModel(entry)) continue;
     const id = str(entry?.id, "");
-    if (id === "") continue;
-    if (position.has(id)) {
-      out[position.get(id)] = id;
-    } else {
-      position.set(id, out.length);
-      out.push(id);
-    }
+    if (id !== "") ids.add(id);
   }
-  return out;
+  return [...ids];
 }
 
 /**

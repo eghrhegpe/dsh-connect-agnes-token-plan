@@ -107,6 +107,9 @@ export function RosterTools({ query, setQuery, name, busy, tickedCount, visible,
   bulk: (on: boolean) => void;
   tt: Tt;
 }): unknown {
+  // The count line is both the tooltip and the label, so it is computed once —
+  // the two surfaces read the same string rather than two that could diverge.
+  const countLabel = format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length });
   return h(
     "div",
     { style: S.rosterTools },
@@ -123,8 +126,8 @@ export function RosterTools({ query, setQuery, name, busy, tickedCount, visible,
     }),
     h("span", {
       style: S.rosterCount,
-      title: format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })
-    }, format(tt("llm.rosterCount"), { selected: tickedCount, total: visible.length })),
+      title: countLabel
+    }, countLabel),
     h("button", {
       type: "button",
       style: S.rosterBulk,

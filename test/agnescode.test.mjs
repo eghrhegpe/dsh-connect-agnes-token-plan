@@ -168,6 +168,14 @@ const GOOD_SESSION = {
     check("the headers carry the bearer token", headers.Authorization === "Bearer tok");
     check("the headers carry the catalogue gates", headers["X-App-Id"] === "1" && headers["X-Platform"] === "1");
     check("the headers carry the desktop client's language", headers["X-User-Language"] === "zh-Hans");
+    // One map behind both builders: the anonymous one is the authenticated one
+    // minus Authorization, so a gate value cannot change in one and not the
+    // other. Before this the pair was copied, and nothing compared them.
+    const anonymous = agnescodeRequestHeaders();
+    check("the anonymous builder agrees with the authenticated one on every gate",
+      Object.keys(anonymous).length === Object.keys(headers).length - 1 &&
+        Object.entries(anonymous).every(([k, v]) => headers[k] === v),
+      JSON.stringify(anonymous));
 
     // The os_crypt blob: a real round-trip, plus the two wrong-input refusals.
     const blob = encryptSessionBlob(GOOD_SESSION);

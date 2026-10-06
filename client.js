@@ -1761,6 +1761,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* @returns {unknown} the tools row element.
 	*/
 	function RosterTools({ query, setQuery, name, busy, tickedCount, visible, bulk, tt }) {
+		const countLabel = format(tt("llm.rosterCount"), {
+			selected: tickedCount,
+			total: visible.length
+		});
 		return h("div", { style: S.rosterTools }, h("input", {
 			type: "search",
 			style: {
@@ -1777,14 +1781,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			onChange: (event) => setQuery(event.target.value)
 		}), h("span", {
 			style: S.rosterCount,
-			title: format(tt("llm.rosterCount"), {
-				selected: tickedCount,
-				total: visible.length
-			})
-		}, format(tt("llm.rosterCount"), {
-			selected: tickedCount,
-			total: visible.length
-		})), h("button", {
+			title: countLabel
+		}, countLabel), h("button", {
 			type: "button",
 			style: S.rosterBulk,
 			disabled: busy === true || visible.length === 0,
@@ -2445,10 +2443,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			role: "alert"
 		}, switchError) : null);
 	}
-	/** Ids off a snapshot array field, coerced to strings and guarded against `null`. */
-	function idList(value) {
-		return Array.isArray(value) ? value.map((id) => String(id)) : [];
-	}
 	/**
 	* The live draw-tool switch (docs/PROVIDER-HOT-RELOAD.md, same discipline
 	* as `ProviderSwitch`). Posts `{ enabled }` / `{ modelId }` to the plugin's
@@ -2466,7 +2460,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			modelKey: "drawModelId",
 			enabled: llm?.drawEnabled === true,
 			hasKey: llm?.hasApiKey === true,
-			candidates: idList(llm?.drawCandidateIds),
+			candidates: rosterIds(llm?.drawCandidateIds),
 			preferred: llm?.drawPreferredModel != null ? String(llm.drawPreferredModel) : null,
 			effective: String(llm?.drawModel ?? ""),
 			onDone,
@@ -2487,7 +2481,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* reader wondering why a seconds-based model sits next to a frame-based one.
 	*/
 	function VideoSwitch({ llm, onDone, tt }) {
-		const excluded = idList(llm?.video25ModelIds);
+		const excluded = rosterIds(llm?.video25ModelIds);
 		const extraNote = excluded.length > 0 ? h("div", { style: {
 			...S.muted,
 			fontSize: 12,
@@ -2502,7 +2496,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			modelKey: "videoModelId",
 			enabled: llm?.videoEnabled === true,
 			hasKey: llm?.hasApiKey === true,
-			candidates: idList(llm?.videoCandidateIds),
+			candidates: rosterIds(llm?.videoCandidateIds),
 			preferred: llm?.videoPreferredModel != null ? String(llm.videoPreferredModel) : null,
 			effective: String(llm?.videoModel ?? ""),
 			extraNote,
@@ -2537,6 +2531,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_format();
 		init_http();
 		init_model_picker();
+		init_models();
 		init_runtime();
 		init_switch();
 		init_styles();

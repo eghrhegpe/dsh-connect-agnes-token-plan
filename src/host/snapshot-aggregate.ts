@@ -50,6 +50,7 @@ import {
   parseUsageOverview,
   parseUsageSeries,
   parsePlans,
+  countOf,
   parseSubscriptionUsage,
   matchCurrentPlan,
   quotaWindows,
@@ -121,25 +122,32 @@ async function soft(run: () => Promise<unknown>) {
 /**
  * The panel's projection of one catalogue entry: no `featureTexts`, no
  * envelope leftovers — only the fields the quota screen reads or compares.
+ *
+ * The numeric pass is defensive rather than a conversion: `parsePlans` already
+ * ran `countOf` over every figure, so by the time a row reaches here each
+ * number is a number. `countOf` is kept because a plan may arrive by another
+ * route (the doctor and the tests build rows directly), and `Number(x) || 0`
+ * would let `Infinity` through while `countOf` reads it as 0 — the panel must
+ * show a missing figure, never an unbounded one.
  * @param {object} plan - one {@link parsePlans} entry.
  * @returns {object} the projection.
  */
 export function planSummary(plan: Record<string, unknown> | null | undefined) {
   return {
     uuid: str(plan?.uuid, ""),
-    planId: Number(plan?.planId) || 0,
+    planId: countOf(plan?.planId),
     name: str(plan?.name, ""),
     displayName: str(plan?.displayName, ""),
     billingCycle: str(plan?.billingCycle, ""),
     displayCycle: str(plan?.displayCycle, ""),
-    priceMinor: Number(plan?.priceMinor) || 0,
+    priceMinor: countOf(plan?.priceMinor),
     currency: str(plan?.currency, ""),
     limits: {
-      requests5h: Number(plan?.concurrencyLimit) || 0,
-      requestsWindowH: Number(plan?.concurrencyWindowH) || 0,
-      requestsWeekly: Number(plan?.textWeeklyLimit) || 0,
-      imagesDaily: Number(plan?.imageDailyLimit) || 0,
-      videoDaily: Number(plan?.videoDailyLimit) || 0
+      requests5h: countOf(plan?.concurrencyLimit),
+      requestsWindowH: countOf(plan?.concurrencyWindowH),
+      requestsWeekly: countOf(plan?.textWeeklyLimit),
+      imagesDaily: countOf(plan?.imageDailyLimit),
+      videoDaily: countOf(plan?.videoDailyLimit)
     }
   };
 }

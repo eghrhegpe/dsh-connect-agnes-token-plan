@@ -64,28 +64,24 @@ export function isVideo25Flash(model) {
 }
 
 /**
- * The video-generation model ids of one catalog, de-duplicated in first-seen order.
+ * The video-generation model ids of one catalog, unique in first-seen order.
  *
  * Recognition is delegated to `modality.ts`, so this list and the chat roster
- * can never disagree about which entries exist.
+ * can never disagree about which entries exist. A `Set` is all this needs: at
+ * the id level there is no "which row survived" question, so the row-level
+ * dedupe (`normalizeEntries`) is not copied here — see `imageGenModelIds` for
+ * the same call.
  * @param {object[]} entries - the normalized catalog entries.
  * @returns {string[]}
  */
 export function videoGenModelIds(entries) {
-  const position = new Map();
-  const out: string[] = [];
+  const ids = new Set<string>();
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!isVideoGenModel(entry)) continue;
     const id = str(entry?.id, "");
-    if (id === "") continue;
-    if (position.has(id)) {
-      out[position.get(id)] = id;
-    } else {
-      position.set(id, out.length);
-      out.push(id);
-    }
+    if (id !== "") ids.add(id);
   }
-  return out;
+  return [...ids];
 }
 
 /**
