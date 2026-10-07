@@ -49,7 +49,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -63,8 +63,14 @@ const STAGE_CONFIG = join(ROOT, ".build-gate.config.mjs");
  * walks UP from an imported file looking for a package.json, and a malformed
  * one in `%TEMP%` makes the shape checks blow up with "Invalid package config"
  * instead of inspecting the artifact (measured 2026-10-06). `tmp/` is already
- * gitignored, so the staging dir is invisible to git and is removed on exit. */
+ * gitignored, so the staging dir is invisible to git and is removed on exit.
+ * It is NOT tracked in git, so a clean checkout need not contain it — create it
+ * on demand (recursive) before staging, otherwise `mkdtempSync` fails with
+ * ENOENT on a fresh CI runner and every downstream freshness check fails with a
+ * misleading "build could not be produced" (seen 2026-10-07: offline hard gate
+ * red on both node 22 and 24 from exactly this). */
 const STAGE_ROOT = join(ROOT, "tmp");
+mkdirSync(STAGE_ROOT, { recursive: true });
 
 /** Tracked artifacts and the path each one takes in the staged rebuild.
  * The staged outDirs keep the repo-relative names, so the mapping is 1:1. */
