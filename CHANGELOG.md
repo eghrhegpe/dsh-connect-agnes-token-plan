@@ -2,6 +2,17 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.10.2] — 2026-10-10
+
+### 修复：视频状态轮询断点续查、额度渲染与模型花名册的几处真实缺陷 + 凭据隔离加固
+
+- **修（视频工具）：异步视频轮询被拒时原本不带 `video_id` 且只走「超时 / 超轮次」两路径**，agent 首次查询拿不到 task id 就无法续查，任务卡在「查不到」。`video-client` 现改为携带 `video_id` 并有限重试（`queryRetries=2` → 初查 + 2 次重试 = 3 次调用），与超时 / 超轮次两条路径对齐。新增 `video.test.mjs` 覆盖耗尽路径与 `queryRetries=0` 边界。
+- **修（额度渲染）：`usagePct` 有值而 `used` 缺失时，`count(null)` 被渲染成 `0`，面板会打印「已用 0 / N」**（F1）。`UsageTotals` 四个主计数另加 `typeof` 门：缺席字段不再画成「0」——真实数据流下此门不触发（`countOf` 已把缺席平台字段压成数字 0、`overview` 失败时 `quota.totals:null` 见红线⑥ / ADR-007），属渲染层自防御，防未来 partial 对象被构造出来。
+- **修（AgnesCode 花名册）：两处目录正确性缺陷**。（F5）排除别名 `id === EXCLUDED_IDS[0]` 改为 `.includes(id)`，第二个别名不再静默失效、继续混进花名册；（F10）`provider-controls` 的 `idList` 用 `String(id)` 强转，`null` 会变成字符串 `"null"` 这个假模型 id 出现在候选列表里，改用 `models.ts` 的 `rosterIds`（只收非空字符串）。
+- **修（凭据隔离）：AgnesCode 的 DPAPI PowerShell 子进程不再继承含凭据的父进程 env**，新增 `dpapiChildEnv` 剥除四枚凭据名（`AGNES_PASSWORD` / `AGNES_USERNAME` / `AGNES_TOKEN_PLAN_API_KEY` / `AGNESCODE_CREDENTIAL`），与全仓凭据 REF 集合逐字一致——降低解密第三方桌面端会话文件那一步的凭据泄漏半径（红线①）。`harvest attempts[].detail` 与 `state().error` 出口统一过 `redactSecrets`。
+- **内部加固 / 清理（不属公开行为变化，详见 `git log`）**：收敛三轮四域代码审查的约 22 项缺陷与计数器 / 方法归一化 / 单飞泄漏 / JSDoc 归位等低危项；删除 25 个零读者 style token（`details*` / `grant*` / `models*` / `trend*` / `poolsGrid` / `primaryHover`）与全仓零引用的孤儿 `jsqr` devDependency；统一 `countOf` 与 `Number(x)||0` 两处数值惯用法、`requestMethod` 六路由共用、BFF 门控头收敛为单一 `AGNESCODE_BASE_HEADERS`；CI `build-gate` 确保暂存目录存在再 `mkdtemp`。上述均以新增断言钉住，无破坏性改动。
+- 影响面：`src/{host,client}/`（多文件）、`lib/`、`client.js`（随 src 同 commit 重建，构建零漂移）、`test/`（多套件 + 断言）、`package.json`（版本 + 去孤儿依赖）。`npm test` 全绿：28 套件 + tsc / build / dup / e2e 四门禁通过，e2e 66/66 PASSED。
+
 ## [0.10.1] — 2026-10-06
 
 ### 修复：AgnesCode 截图里的真实账号昵称已脱敏（该图曾随 0.10.0 发布）
