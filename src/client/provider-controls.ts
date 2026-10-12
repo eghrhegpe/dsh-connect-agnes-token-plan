@@ -14,7 +14,7 @@ import { rosterIds } from "./models.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { Radio, Switch } from "./switch.ts";
-import type { LlmData } from "./wire.ts";
+import type { LlmData, LlmEchoPatch } from "./wire.ts";
 import { S } from "./styles.ts";
 
 /**
@@ -126,12 +126,16 @@ export function RpmNote({ tt }: { tt: Tt }): unknown {
  * restart. Hook-based like `ApiKeyForm`, so the render suite (which
  * cannot mount hooks) exercises the secret-free status lines instead;
  * the route itself is covered by `routes.test.mjs`. The state shown is
- * the SNAPSHOT's effective value, never local optimism — the poll after
- * `onDone` repaints whatever the Host actually reports.
+ * the SNAPSHOT's effective value, never local optimism: the flip's OWN
+ * POST answer (the Host's post-write state) is merged into that snapshot
+ * by `onEcho`, and the plain `onDone` full reload is only the fallback
+ * for mounts without an echo hook.
  */
-export function ProviderSwitch({ llm, onDone, tt }: {
+export function ProviderSwitch({ llm, onDone, onEcho, tt }: {
   llm?: LlmData | null;
   onDone?: () => void;
+  /** Merge the POST answer into the current snapshot's `llm` block. */
+  onEcho?: (patch: LlmEchoPatch) => void;
   tt: Tt;
 }): unknown {
   const [busy, setBusy] = useState(false);
@@ -141,14 +145,27 @@ export function ProviderSwitch({ llm, onDone, tt }: {
     setBusy(true);
     setSwitchError(null);
     try {
-      await postJsonOrThrow(PROVIDER_PATH, { enabled: !enabled });
-      onDone?.();
+      const body = await postJsonOrThrow(PROVIDER_PATH, { enabled: !enabled });
+      // The answer carries the card's post-write state (`registerProvider`,
+      // `providerRegistered`, `providerError` — the same keys the snapshot's
+      // `llm` block reports), so an echo lands the flip on screen without a
+      // second round-trip to the (possibly slow) snapshot route.
+      if (onEcho) {
+        onEcho({
+          registerProvider: body.registerProvider === true,
+          registerSource: typeof body.registerSource === "string" ? body.registerSource : "",
+          providerRegistered: body.providerRegistered === true,
+          providerError: typeof body.providerError === "string" ? body.providerError : ""
+        });
+      } else {
+        onDone?.();
+      }
     } catch (error) {
       setSwitchError(format(tt("llm.switchError"), { error: error instanceof Error ? error.message : String(error) }));
     } finally {
       setBusy(false);
     }
-  }, [enabled, onDone, tt]);
+  }, [enabled, onDone, onEcho, tt]);
   return h(
     "div",
     null,
@@ -183,7 +200,7 @@ export function ProviderSwitch({ llm, onDone, tt }: {
  * `useCallback` through, so `render.test.mjs` pins the picker's row markup —
  * the `modelRowHead` wrap below is that contract.
  */
-function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, preferred, effective, extraNote, onDone, tt }: {
+function ToolSwitch({ path, prefix, modelKey, enabledKey, sourceKey, preferredKey, enabled, hasKey, candidates, preferred, effective, extraNote, onDone, onEcho, tt }: {
   /** The plugin route the two actions post to. */
   path: string;
   /** Dictionary namespace: `"draw"` or `"video"`. */
@@ -194,6 +211,12 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
    * `body[`${label}ModelId`]` so one route can never write the other's store.
    */
   modelKey: string;
+  /** The response key carrying the switch's boolean (`drawEnabled` / `videoEnabled`). */
+  enabledKey: "drawEnabled" | "videoEnabled";
+  /** The response key carrying the switch's source (`drawSource` / `videoSource`). */
+  sourceKey: "drawSource" | "videoSource";
+  /** The snapshot `llm` key the model pick writes (`drawPreferredModel` / `videoPreferredModel`). */
+  preferredKey: "drawPreferredModel" | "videoPreferredModel";
   /** Effective switch value from the SNAPSHOT (never local optimism). */
   enabled: boolean;
   /** Whether an inference key is saved — the tool is inert without one. */
@@ -207,6 +230,8 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
   /** Optional line under the list — used by video for the excluded 2.5 family. */
   extraNote?: unknown;
   onDone?: () => void;
+  /** Merge a POST answer into the current snapshot's `llm` block (see `ProviderSwitch`). */
+  onEcho?: (patch: LlmEchoPatch) => void;
   tt: Tt;
 }): unknown {
   const [busy, setBusy] = useState(false);
@@ -218,14 +243,26 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
     setBusy(true);
     setSwitchError(null);
     try {
-      await postJsonOrThrow(path, { enabled: !enabled });
-      onDone?.();
+      const body = await postJsonOrThrow(path, { enabled: !enabled });
+      // Echo the switch's own post-write state (same keys the snapshot's `llm`
+      // block reports); the model's EFFECTIVE pick (`drawModel` / `videoModel`)
+      // is a Host-computed figure and stays with the next full snapshot.
+      if (onEcho) {
+        const patch: LlmEchoPatch = {};
+        if (enabledKey === "drawEnabled") patch.drawEnabled = body[enabledKey] === true;
+        else patch.videoEnabled = body[enabledKey] === true;
+        if (sourceKey === "drawSource") patch.drawSource = typeof body[sourceKey] === "string" ? body[sourceKey] : "";
+        else patch.videoSource = typeof body[sourceKey] === "string" ? body[sourceKey] : "";
+        onEcho(patch);
+      } else {
+        onDone?.();
+      }
     } catch (error) {
       setSwitchError(format(k("switchError"), { error: error instanceof Error ? error.message : String(error) }));
     } finally {
       setBusy(false);
     }
-  }, [path, prefix, enabled, onDone, tt]);
+  }, [path, prefix, enabledKey, sourceKey, enabled, onDone, onEcho, tt]);
   // Pick a model from the panel: `null` returns to auto-pick. The Host
   // validates the id against the same catalog precedence the tool uses, so a
   // stale id degrades to the config default rather than a broken tool.
@@ -233,14 +270,28 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
     setBusy(true);
     setSwitchError(null);
     try {
-      await postJsonOrThrow(path, { [modelKey]: id });
-      onDone?.();
+      const body = await postJsonOrThrow(path, { [modelKey]: id });
+      // Echo what the Host REPORTED back (its `*ModelId` answer carries the
+      // validated value — a stale pick already degraded to the config
+      // default there), not what we SENT: `""` is the "no pin" sentinel,
+      // which the echo clears into `undefined` (the key's auto state). The
+      // EFFECTIVE figure it drives (which model the auto-pick addresses)
+      // stays Host-computed and comes with the next full snapshot.
+      if (onEcho) {
+        const patch: LlmEchoPatch = {};
+        const picked = typeof body[modelKey] === "string" ? body[modelKey] : "";
+        if (preferredKey === "drawPreferredModel") patch.drawPreferredModel = picked === "" ? undefined : picked;
+        else patch.videoPreferredModel = picked === "" ? undefined : picked;
+        onEcho(patch);
+      } else {
+        onDone?.();
+      }
     } catch (error) {
       setSwitchError(format(k("switchError"), { error: error instanceof Error ? error.message : String(error) }));
     } finally {
       setBusy(false);
     }
-  }, [path, modelKey, prefix, onDone, tt]);
+  }, [path, modelKey, prefix, preferredKey, onDone, onEcho, tt]);
   const statusText = enabled
     ? (hasKey ? k("onList") : k("needsKey"))
     : k("off");
@@ -334,21 +385,26 @@ function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, prefe
  * shows the effective value immediately. The route is covered by
  * `routes.test.mjs`.
  */
-export function DrawSwitch({ llm, onDone, tt }: {
+export function DrawSwitch({ llm, onDone, onEcho, tt }: {
   llm?: LlmData | null;
   onDone?: () => void;
+  onEcho?: (patch: LlmEchoPatch) => void;
   tt: Tt;
 }): unknown {
   return h(ToolSwitch, {
     path: DRAW_PATH,
     prefix: "draw",
     modelKey: "drawModelId",
+    enabledKey: "drawEnabled",
+    sourceKey: "drawSource",
+    preferredKey: "drawPreferredModel",
     enabled: llm?.drawEnabled === true,
     hasKey: llm?.hasApiKey === true,
     candidates: rosterIds(llm?.drawCandidateIds),
     preferred: llm?.drawPreferredModel != null ? String(llm.drawPreferredModel) : null,
     effective: String(llm?.drawModel ?? ""),
     onDone,
+    onEcho,
     tt
   });
 }
@@ -366,9 +422,10 @@ export function DrawSwitch({ llm, onDone, tt }: {
  * nearest whole second. The card's note line says so, rather than leaving a
  * reader wondering why a seconds-based model sits next to a frame-based one.
  */
-export function VideoSwitch({ llm, onDone, tt }: {
+export function VideoSwitch({ llm, onDone, onEcho, tt }: {
   llm?: LlmData | null;
   onDone?: () => void;
+  onEcho?: (patch: LlmEchoPatch) => void;
   tt: Tt;
 }): unknown {
   const excluded = rosterIds(llm?.video25ModelIds);
@@ -380,6 +437,9 @@ export function VideoSwitch({ llm, onDone, tt }: {
     path: VIDEO_PATH,
     prefix: "video",
     modelKey: "videoModelId",
+    enabledKey: "videoEnabled",
+    sourceKey: "videoSource",
+    preferredKey: "videoPreferredModel",
     enabled: llm?.videoEnabled === true,
     hasKey: llm?.hasApiKey === true,
     candidates: rosterIds(llm?.videoCandidateIds),
@@ -387,6 +447,7 @@ export function VideoSwitch({ llm, onDone, tt }: {
     effective: String(llm?.videoModel ?? ""),
     extraNote,
     onDone,
+    onEcho,
     tt
   });
 }
@@ -399,9 +460,10 @@ export function VideoSwitch({ llm, onDone, tt }: {
  * constituents (`ProviderSwitch`, `ProviderRegStatus`, and the `ModelPicker`
  * it composes) rather than in the key editor's file.
  */
-export function ProviderForm({ llm, onDone, tt }: {
+export function ProviderForm({ llm, onDone, onEcho, tt }: {
   llm?: LlmData | null;
   onDone?: () => void;
+  onEcho?: (patch: LlmEchoPatch) => void;
   tt: Tt;
 }): unknown {
   return h(
@@ -411,8 +473,8 @@ export function ProviderForm({ llm, onDone, tt }: {
     // registration status — a diagnostic echo of what the Host reports —
     // closes the card. At the top it competed with the title and
     // duplicated the roster's own counts out of reading order.
-    h(ProviderSwitch, { llm, onDone, tt }),
-    h(ModelPicker, { llm, onDone, tt }),
+    h(ProviderSwitch, { llm, onDone, onEcho, tt }),
+    h(ModelPicker, { llm, onDone, onEcho, tt }),
     h(ProviderRegStatus, { llm, tt })
   );
 }

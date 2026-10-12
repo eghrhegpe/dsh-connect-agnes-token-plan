@@ -63,7 +63,7 @@
 **唯一无需登录**的额度来源：面板可以在没有账号时照常回答"升级能买到什么"，也是
 认证半边整体失败时唯一还能显示的内容。
 
-**overview 曾是唯一致命源，现已改为五源软失败**。它是认证探针——最便宜的认证调用，任何已登录账号都能发。它的失败是"令牌不可用"的强信号：当它失败时面板会显示 `consoleConnected:false` 且 `quota.totals=null`（而非把失败伪装成测量值）；series / subscription / plans 三者失败则降级为 `quota.error`，overview 与这三者的失败都在 `firstFailure` / `allFailures` 中标记来源，由 `viewOf` 决定面板渲染哪一类提示；`/v1/models` 失败只表现为 `catalogModels` 缺席，**不进** `quota.error`（ADR-007 明写这是刻意设计）。旧文曾写「必须冒泡到路由的 catch（那里才决定显示登录表单）」与「五个源的失败都在 `firstFailure` 中标记来源」，均已过时。详细决策见 [ADR-007](./ADR.md) 及 [ARCHITECTURE.md §3](./ARCHITECTURE.md)。
+**overview 曾是唯一致命源，现已改为五源软失败**。它是认证探针——任何已登录账号都能发的调用（旧串行形状里它还是「最便宜」的省往返点，五源并行后该角色只剩 401 时先行愈合令牌）。它的失败是"令牌不可用"的强信号：当它失败时面板会显示 `consoleConnected:false` 且 `quota.totals=null`（而非把失败伪装成测量值）；series / subscription / plans 三者失败则降级为 `quota.error`，overview 与这三者的失败都在 `firstFailure` / `allFailures` 中标记来源，由 `viewOf` 决定面板渲染哪一类提示；`/v1/models` 失败只表现为 `catalogModels` 缺席，**不进** `quota.error`（ADR-007 明写这是刻意设计）。旧文曾写「必须冒泡到路由的 catch（那里才决定显示登录表单）」与「五个源的失败都在 `firstFailure` 中标记来源」，均已过时。详细决策见 [ADR-007](./ADR.md) 及 [ARCHITECTURE.md §3](./ARCHITECTURE.md)。
 
 ## 3. 响应信封
 

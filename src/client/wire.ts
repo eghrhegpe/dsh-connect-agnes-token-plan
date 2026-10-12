@@ -213,6 +213,19 @@ export interface LlmData {
   videoPreferredModel?: string;
 }
 
+/**
+ * The echo patch a write route's answer merges into the snapshot's `llm`
+ * block (see `PanelPage`'s `echoLlm`).
+ *
+ * A plain `Partial<LlmData>` is not the shape: under
+ * `exactOptionalPropertyTypes`, `Partial` forbids an explicit `undefined`,
+ * and the one write that NEEDS it is "return to auto" — a model pick of
+ * `null` must CLEAR the `*PreferredModel` key, not leave the stale pick on
+ * screen. So every key accepts its snapshot type OR `undefined`, and the
+ * merge squashes the `undefined`s (which is exactly what clearing means).
+ */
+export type LlmEchoPatch = { [key in keyof LlmData]?: LlmData[key] | undefined };
+
 /** One shape-drift report line, keyed by upstream contract. */
 export interface ShapeWarningData {
   api?: string;

@@ -135,7 +135,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 动刀 `token-store.ts` / provider publisher 这类大文件（先冻结行为基线，再按蓝图搬） | `docs/TOKEN-STORE-SPLIT.md`、`docs/PUBLISH-CORE-SPLIT.md`（ADR-005 准入门槛的两份先例蓝图） |
 | 查「为何不退回通用 image/video 接口、为何自己造工具」的 runtime 取证 | `docs/DSH-UNIFIED-INTERFACE-AUDIT.md`（观察存档，不作执行依据） |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（55 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（56 条现象→根因→修法） |
 | 排查「面板说令牌失效 / 让你重新登录，但重登没用」 | `docs/PITFALLS.md` §46（Host 唯一的 403 是同源闸，不是凭据；客户端曾把它读成 `jwt_expired`） |
 | 排查「进度条数字和控制台对不上 / 超额窗口显示成 100%」 | `docs/PITFALLS.md` §45（进度条用平台自己的 `usage_pct`，不是 `used/limit`；钳制即改写平台口径） |
 | 排查「凭据疑似漏进 agent 对话 / 日志」 | `docs/PITFALLS.md` §44（agent 工具 execute 错误是红线①第四张脱敏表面；同族漏一条就漏凭据） |

@@ -463,39 +463,55 @@ export async function buildSnapshotBody({
   const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
 
   const { startDate, endDate } = usageWindow(settings.usageDays);
-  // THE AUTH PROBE — and, since the panel learned to degrade, one source among
-  // five rather than the gate on all of them.
+  // THE AUTH PROBE — one source among five, fetched with the others IN
+  // PARALLEL (2026-10-10; it used to run first and alone).
   //
-  // It still runs FIRST and ALONE, for the reason it always did. It is the one
-  // call that heals a dead token — the store renews on its 401, so by the time
-  // the batch below goes out the token is live again — and it is the cheapest
-  // way to learn that nobody is signed in, because that failure is a local
-  // `not_configured` with no network round-trip and therefore costs the batch
-  // nothing. Folding it into the `Promise.all` would present the same dead
-  // token to three authenticated endpoints at once and buy back a single
-  // round-trip on a path that is usually served from cache anyway;
-  // `test/routes.test.mjs` group B pins that trade ("the dead token is
-  // presented exactly once").
+  // It is still the auth probe: its outcome is `quota.consoleConnected`, it
+  // carries the code that says whether a login or patience is the fix, and
+  // `soft` turns its failure into `{value: null, error}` instead of rejecting
+  // the snapshot (red line ⑥). What used to serialize it ahead of the batch
+  // was "by the time the batch goes out, the store has healed the token" — a
+  // trade that costs NOTHING when the token is fresh (cache or a live JWT)
+  // and everything when it is not: on a dead account the login timeout
+  // stacked onto the batch timeout (~15 s + ~15 s, the 401-dance chain up to
+  // ~45 s), so every poll ran that whole chain — and the API tab's save/switch
+  // feedback rode the SAME route (the echo was a full snapshot reload), with
+  // the AgnesCode tab adding its own serial balance+catalog BFF reads on top.
+  // The two tabs' feedback waited behind the slow path; nothing else.
   //
-  // What changed is only that it no longer THROWS. `soft` turns its failure
-  // into `{value: null, error}`, so the batch runs regardless: a signed-out
-  // Host still serves the public catalogue, the plan list and the API-key
-  // half instead of rejecting the whole snapshot and blanking every tab.
-  // `quota.consoleConnected` is this outcome, and `auth` says whether a login
-  // would fix it.
-  const overview = await soft(() => fetchConsole(
-    settings,
-    USAGE_OVERVIEW_PATH,
-    undefined,
-    settings.cacheSeconds * 1000,
-    cache,
-    inflight,
-    tokenStore
-  ));
-  const [series, subscription, plans, catalog] = await Promise.all([
-    // Everything below degrades. A signed-in account that simply has no plan,
+  // Parallel is safe against the lockout the serial order was partly there to
+  // prevent, and NOT because a dead token never reaches more than one
+  // endpoint — it can now reach all three authenticated sources at once
+  // (`test/routes.test.mjs` group B re-pins the new shape: ≤1 presentation per
+  // source, ≤1 login per poll). The real guards:
+  //   * `tokenStore.getToken` single-flights `acquire` (token-store.ts):
+  //     concurrent acquisitions share one login, never a stampede;
+  //   * `invalidate(token)` records the refused token in the bounded
+  //     `rejected` set and clears the in-memory grant only — a later
+  //     source's invalidate that wipes the healed cached grant re-reads the
+  //     persisted fresh one from the credentials service (`readStored`), and
+  //     `isFresh` refuses only tokens that ARE in `rejected` (grant.ts), so
+  //     the healed grant passes instead of a second login;
+  //   * each `fetchConsole` flight does the 401 dance itself: present once,
+  //     renew once, retry once, never recursively.
+  //   * `not_configured` costs zero network per source — it fails locally in
+  //     `getToken` before any request is sent, so "nobody is signed in"
+  //     still costs the batch nothing in the parallel shape.
+  const [overview, series, subscription, plans, catalog] = await Promise.all([
+    // Everything here degrades. A signed-in account that simply has no plan,
     // or a console whose series endpoint is having a bad day, must still show
-    // the numbers that DID arrive rather than a full-screen error.
+    // the numbers that DID arrive rather than a full-screen error. The
+    // overview's failure mode is additionally what says WHY (`auth`, and the
+    // code on `quota.error` — which `firstFailure` still reads first below).
+    soft(() => fetchConsole(
+      settings,
+      USAGE_OVERVIEW_PATH,
+      undefined,
+      settings.cacheSeconds * 1000,
+      cache,
+      inflight,
+      tokenStore
+    )),
     soft(() => fetchConsole(
       settings,
       USAGE_SERIES_PATH,

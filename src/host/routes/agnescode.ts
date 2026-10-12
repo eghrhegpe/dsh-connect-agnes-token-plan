@@ -117,23 +117,27 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
             bffBase = state?.bffBase ?? "";
             expiresAtMs = state?.expiresAtMs ?? null;
             credential = (await agnescodeStore.resolve().catch(() => ({ credential: null }))).credential ?? null;
-            if (loggedIn && credential?.accessToken) {
-              balance = await fetchAgnescodeBalance(credential).catch(() => null);
-            }
           }
         } catch (why) {
           error = redactSecrets(why instanceof Error ? why.message : String(why));
         }
-        // The roster the adapter offers: the live catalogue when a credential
-        // exists, else the static fallback so the panel still shows the
-        // known models.
+        // Both BFF reads share the ONE resolved credential above, and they run
+        // IN PARALLEL (2026-10-10; they used to await one after the other).
+        // Each carries its own 30 s ceiling, so the serial shape held this
+        // route — and a browser connection — for up to ~60 s whenever the
+        // upstream was slow or unreachable; the parallel shape bounds the GET
+        // to the SLOWER of the two. (A DEAD token is the fast case: the BFF
+        // refuses it in seconds, so it never reaches either ceiling.)
         let models: unknown = null;
-        try {
-          if (credential?.accessToken) {
-            models = await fetchAgnescodeCatalog(credential).catch(() => null);
-          }
-        } catch {
-          models = null;
+        if (credential?.accessToken) {
+          const [b, m] = await Promise.all([
+            // Balance stays gated on `loggedIn` as before: no stored identity,
+            // no balance call.
+            loggedIn ? fetchAgnescodeBalance(credential).catch(() => null) : Promise.resolve(null),
+            fetchAgnescodeCatalog(credential).catch(() => null)
+          ]);
+          balance = b;
+          models = m;
         }
         const roster = models !== null && Array.isArray(models) && models.length > 0
           ? models

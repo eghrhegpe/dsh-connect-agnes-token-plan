@@ -13,6 +13,11 @@
 - **内部加固 / 清理（不属公开行为变化，详见 `git log`）**：收敛三轮四域代码审查的约 22 项缺陷与计数器 / 方法归一化 / 单飞泄漏 / JSDoc 归位等低危项；删除 25 个零读者 style token（`details*` / `grant*` / `models*` / `trend*` / `poolsGrid` / `primaryHover`）与全仓零引用的孤儿 `jsqr` devDependency；统一 `countOf` 与 `Number(x)||0` 两处数值惯用法、`requestMethod` 六路由共用、BFF 门控头收敛为单一 `AGNESCODE_BASE_HEADERS`；CI `build-gate` 确保暂存目录存在再 `mkdtemp`。上述均以新增断言钉住，无破坏性改动。
 - 影响面：`src/{host,client}/`（多文件）、`lib/`、`client.js`（随 src 同 commit 重建，构建零漂移）、`test/`（多套件 + 断言）、`package.json`（版本 + 去孤儿依赖）。`npm test` 全绿：28 套件 + tsc / build / dup / e2e 四门禁通过，e2e 66/66 PASSED。
 
+### 面板操作体感：快照取数并行 + 保存回显不再拖全量快照（ADR-014）
+
+- **可感变化（账号失效 / 控制台降级场景）**：① 快照五源取数全部并行（原 `overview` 先行再批量；失效账号下两条 15 s 超时链叠加，单次快照最坏 30 s 起，现压到 ~15 s）；② 接入 API tab 的 provider 开关 / 模型清单 / 出图·视频工具卡的「保存后全量快照 reload」改为把 POST 响应体就地并入快照 `llm` 块——关模型、切开关的反馈不再等下一轮慢轮询；③ AgnesCode 三动作（开关 / 检测本机登录态 / 保存模型清单）直接应用 POST 的完整响应，harvest 成功即时翻出已关联卡片（此前要再排一次最长 30 s 的 GET）；④ `/agnescode` 路由的 balance / catalog 两个 30 s 上游读改并行（最坏 60 s → 30 s）。工具卡「实际生效模型」徽标与额度数字仍随 30 s 轮询更新（Host 计算值，本地不造数）。
+- 影响面：`src/host/snapshot-aggregate.ts`、`src/host/routes/agnescode.ts`、`src/client/{panel-page,provider-controls,model-picker,wire,agnescode-tab}.ts`、`test/routes.test.mjs`（B 组新钉：每源至多一次出示 / 每 poll 一次登录）、`docs/`（ARCHITECTURE §3、PROVIDER-HOT-RELOAD、AGNES-API、ADR-014）、`lib/` + `client.js`（随 src 重建）。
+
 ## [0.10.1] — 2026-10-06
 
 ### 修复：AgnesCode 截图里的真实账号昵称已脱敏（该图曾随 0.10.0 发布）

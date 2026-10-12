@@ -11,7 +11,7 @@ import { clock, format } from "./format.ts";
 import { errorOfStatus, interpretSnapshot, viewOf, shouldShowAccountManagement } from "./snapshot.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
-import type { SnapshotData, VisionModelData } from "./wire.ts";
+import type { LlmData, LlmEchoPatch, SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PlanCard, CatalogueCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
 import { DrawSwitch, RpmNote, VideoSwitch, ProviderForm } from "./provider-controls.ts";
@@ -220,6 +220,29 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       if (inFlight.current === controller) inFlight.current = null;
     }
   }, []);
+
+  // Merge a write route's OWN answer into the snapshot on screen, so a
+  // just-saved switch / roster / tool pick paints IMMEDIATELY instead of
+  // waiting for the next full snapshot round-trip — the very round-trip
+  // that, on a degraded console, is the slow one holding a browser
+  // connection for the whole login-timeout chain. The `llm` block is the
+  // write routes' own reporting surface (`enabledModelIds`, `registerProvider`,
+  // `drawEnabled` …), so the patch is Host-reported state, never local
+  // optimism. When no snapshot has landed yet there is nothing to merge
+  // into, and the fallback is a plain full load (the numbers cannot be
+  // conjured, only fetched).
+  const dataRef = useRef<SnapshotData | null>(null);
+  dataRef.current = data;
+  const echoLlm = useCallback((patch: LlmEchoPatch) => {
+    if (dataRef.current === null) {
+      void load();
+      return;
+    }
+    // An `undefined` value in the patch is a CLEAR (a "return to auto" model
+    // pick); spreading it over the current block and casting keeps the
+    // `llm` reading's own type, which the echo itself must not widen.
+    setData((current) => (current === null ? current : { ...current, llm: { ...(current.llm ?? {}), ...patch } as LlmData }));
+  }, [load]);
 
   const toggleSection = useCallback((key: string) => {
     setOpenSections((current) => ({ ...current, [key]: !current[key as keyof typeof current] }));
@@ -511,17 +534,17 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                 h(
                   SectionCard,
                   { title: tt("llm.providerTitle"), open: openSections.provider, onToggle: () => toggleSection("provider"), tt },
-                  h(ProviderForm, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+                  h(ProviderForm, { llm: data?.llm ?? null, onDone: () => void load(), onEcho: echoLlm, tt })
                 ),
                 h(
                   SectionCard,
                   { title: tt("draw.title"), open: openSections.draw, onToggle: () => toggleSection("draw"), tt },
-                  h(DrawSwitch, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+                  h(DrawSwitch, { llm: data?.llm ?? null, onDone: () => void load(), onEcho: echoLlm, tt })
                 ),
                 h(
                   SectionCard,
                   { title: tt("video.title"), open: openSections.video, onToggle: () => toggleSection("video"), tt },
-                  h(VideoSwitch, { llm: data?.llm ?? null, onDone: () => void load(), tt })
+                  h(VideoSwitch, { llm: data?.llm ?? null, onDone: () => void load(), onEcho: echoLlm, tt })
                 ),
                 h(
                   SectionCard,

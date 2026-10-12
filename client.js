@@ -1868,7 +1868,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* only what this roster does differently — it POSTs to `MODELS_PATH` itself
 	* and words its errors with the `llm.roster*` keys.
 	*/
-	function ModelPicker({ llm, onDone, tt }) {
+	function ModelPicker({ llm, onDone, onEcho, tt }) {
 		const models = Array.isArray(llm?.models) ? llm.models : [];
 		const hostIds = Array.isArray(llm?.enabledModelIds) ? llm.enabledModelIds : [];
 		const { ids, busy, setBusy, query, setQuery, setSavedKey, notice, setNotice, dirty, justSaved, visible, tickedCount, bulk, toggle, discard } = useRosterDraft(models, hostIds);
@@ -1878,9 +1878,15 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setNotice(null);
 			const posted = JSON.stringify(ids);
 			try {
-				await postJsonOrThrow(MODELS_PATH, { enabledModelIds: ids });
+				const body = await postJsonOrThrow(MODELS_PATH, { enabledModelIds: ids });
 				setSavedKey(posted);
-				onDone?.();
+				if (onEcho) onEcho({
+					enabledModelIds: Array.isArray(body.enabledModelIds) ? body.enabledModelIds : ids,
+					registerProvider: body.registerProvider === true,
+					providerRegistered: body.providerRegistered === true,
+					providerError: typeof body.providerError === "string" ? body.providerError : ""
+				});
+				else onDone?.();
 			} catch (error) {
 				setNotice(format(tt("llm.rosterError"), { error: error instanceof Error ? error.message : String(error) }));
 			} finally {
@@ -1890,6 +1896,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			busy,
 			ids,
 			onDone,
+			onEcho,
 			tt,
 			setBusy,
 			setNotice,
@@ -2213,10 +2220,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* restart. Hook-based like `ApiKeyForm`, so the render suite (which
 	* cannot mount hooks) exercises the secret-free status lines instead;
 	* the route itself is covered by `routes.test.mjs`. The state shown is
-	* the SNAPSHOT's effective value, never local optimism — the poll after
-	* `onDone` repaints whatever the Host actually reports.
+	* the SNAPSHOT's effective value, never local optimism: the flip's OWN
+	* POST answer (the Host's post-write state) is merged into that snapshot
+	* by `onEcho`, and the plain `onDone` full reload is only the fallback
+	* for mounts without an echo hook.
 	*/
-	function ProviderSwitch({ llm, onDone, tt }) {
+	function ProviderSwitch({ llm, onDone, onEcho, tt }) {
 		const [busy, setBusy] = useState(false);
 		const [switchError, setSwitchError] = useState(null);
 		const enabled = llm?.registerProvider === true;
@@ -2224,8 +2233,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setBusy(true);
 			setSwitchError(null);
 			try {
-				await postJsonOrThrow(PROVIDER_PATH, { enabled: !enabled });
-				onDone?.();
+				const body = await postJsonOrThrow(PROVIDER_PATH, { enabled: !enabled });
+				if (onEcho) onEcho({
+					registerProvider: body.registerProvider === true,
+					registerSource: typeof body.registerSource === "string" ? body.registerSource : "",
+					providerRegistered: body.providerRegistered === true,
+					providerError: typeof body.providerError === "string" ? body.providerError : ""
+				});
+				else onDone?.();
 			} catch (error) {
 				setSwitchError(format(tt("llm.switchError"), { error: error instanceof Error ? error.message : String(error) }));
 			} finally {
@@ -2234,6 +2249,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, [
 			enabled,
 			onDone,
+			onEcho,
 			tt
 		]);
 		return h("div", null, h(Switch, {
@@ -2267,7 +2283,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* `useCallback` through, so `render.test.mjs` pins the picker's row markup —
 	* the `modelRowHead` wrap below is that contract.
 	*/
-	function ToolSwitch({ path, prefix, modelKey, enabled, hasKey, candidates, preferred, effective, extraNote, onDone, tt }) {
+	function ToolSwitch({ path, prefix, modelKey, enabledKey, sourceKey, preferredKey, enabled, hasKey, candidates, preferred, effective, extraNote, onDone, onEcho, tt }) {
 		const [busy, setBusy] = useState(false);
 		const [switchError, setSwitchError] = useState(null);
 		const k = (suffix) => tt(`${prefix}.${suffix}`);
@@ -2275,8 +2291,15 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setBusy(true);
 			setSwitchError(null);
 			try {
-				await postJsonOrThrow(path, { enabled: !enabled });
-				onDone?.();
+				const body = await postJsonOrThrow(path, { enabled: !enabled });
+				if (onEcho) {
+					const patch = {};
+					if (enabledKey === "drawEnabled") patch.drawEnabled = body[enabledKey] === true;
+					else patch.videoEnabled = body[enabledKey] === true;
+					if (sourceKey === "drawSource") patch.drawSource = typeof body[sourceKey] === "string" ? body[sourceKey] : "";
+					else patch.videoSource = typeof body[sourceKey] === "string" ? body[sourceKey] : "";
+					onEcho(patch);
+				} else onDone?.();
 			} catch (error) {
 				setSwitchError(format(k("switchError"), { error: error instanceof Error ? error.message : String(error) }));
 			} finally {
@@ -2285,16 +2308,25 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, [
 			path,
 			prefix,
+			enabledKey,
+			sourceKey,
 			enabled,
 			onDone,
+			onEcho,
 			tt
 		]);
 		const saveModel = useCallback(async (id) => {
 			setBusy(true);
 			setSwitchError(null);
 			try {
-				await postJsonOrThrow(path, { [modelKey]: id });
-				onDone?.();
+				const body = await postJsonOrThrow(path, { [modelKey]: id });
+				if (onEcho) {
+					const patch = {};
+					const picked = typeof body[modelKey] === "string" ? body[modelKey] : "";
+					if (preferredKey === "drawPreferredModel") patch.drawPreferredModel = picked === "" ? void 0 : picked;
+					else patch.videoPreferredModel = picked === "" ? void 0 : picked;
+					onEcho(patch);
+				} else onDone?.();
 			} catch (error) {
 				setSwitchError(format(k("switchError"), { error: error instanceof Error ? error.message : String(error) }));
 			} finally {
@@ -2304,7 +2336,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			path,
 			modelKey,
 			prefix,
+			preferredKey,
 			onDone,
+			onEcho,
 			tt
 		]);
 		const statusText = enabled ? hasKey ? k("onList") : k("needsKey") : k("off");
@@ -2384,17 +2418,21 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* shows the effective value immediately. The route is covered by
 	* `routes.test.mjs`.
 	*/
-	function DrawSwitch({ llm, onDone, tt }) {
+	function DrawSwitch({ llm, onDone, onEcho, tt }) {
 		return h(ToolSwitch, {
 			path: DRAW_PATH,
 			prefix: "draw",
 			modelKey: "drawModelId",
+			enabledKey: "drawEnabled",
+			sourceKey: "drawSource",
+			preferredKey: "drawPreferredModel",
 			enabled: llm?.drawEnabled === true,
 			hasKey: llm?.hasApiKey === true,
 			candidates: rosterIds(llm?.drawCandidateIds),
 			preferred: llm?.drawPreferredModel != null ? String(llm.drawPreferredModel) : null,
 			effective: String(llm?.drawModel ?? ""),
 			onDone,
+			onEcho,
 			tt
 		});
 	}
@@ -2411,7 +2449,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* nearest whole second. The card's note line says so, rather than leaving a
 	* reader wondering why a seconds-based model sits next to a frame-based one.
 	*/
-	function VideoSwitch({ llm, onDone, tt }) {
+	function VideoSwitch({ llm, onDone, onEcho, tt }) {
 		const excluded = rosterIds(llm?.video25ModelIds);
 		const extraNote = excluded.length > 0 ? h("div", { style: {
 			...S.muted,
@@ -2425,6 +2463,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			path: VIDEO_PATH,
 			prefix: "video",
 			modelKey: "videoModelId",
+			enabledKey: "videoEnabled",
+			sourceKey: "videoSource",
+			preferredKey: "videoPreferredModel",
 			enabled: llm?.videoEnabled === true,
 			hasKey: llm?.hasApiKey === true,
 			candidates: rosterIds(llm?.videoCandidateIds),
@@ -2432,6 +2473,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			effective: String(llm?.videoModel ?? ""),
 			extraNote,
 			onDone,
+			onEcho,
 			tt
 		});
 	}
@@ -2443,14 +2485,16 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* constituents (`ProviderSwitch`, `ProviderRegStatus`, and the `ModelPicker`
 	* it composes) rather than in the key editor's file.
 	*/
-	function ProviderForm({ llm, onDone, tt }) {
+	function ProviderForm({ llm, onDone, onEcho, tt }) {
 		return h("div", null, h(ProviderSwitch, {
 			llm,
 			onDone,
+			onEcho,
 			tt
 		}), h(ModelPicker, {
 			llm,
 			onDone,
+			onEcho,
 			tt
 		}), h(ProviderRegStatus, {
 			llm,
@@ -3084,11 +3128,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					action: "switch",
 					enabled
 				});
-				if (alive.current) setState((current) => current ? {
-					...current,
-					enabled: body.enabled === true,
-					providerRegistered: body.providerRegistered === true
-				} : current);
+				if (alive.current) setState(body);
 			} catch (why) {
 				if (alive.current) setNote(format(tt("agnescode.switchError"), { error: why instanceof Error ? why.message : String(why) }));
 			}
@@ -3099,32 +3139,23 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			try {
 				const body = await postJson(AGNESCODE_PATH, { action: "harvest" });
 				if (alive.current) {
-					const harvestBlock = body?.harvest;
-					const attempts = Array.isArray(harvestBlock?.attempts) ? harvestBlock.attempts : [];
-					setState((current) => current ? {
-						...current,
-						harvest: {
-							ok: body?.ok === true,
-							attempts
-						}
-					} : current);
+					if (body !== null) setState(body);
 					if (body?.ok === true) setNote(tt("agnescode.harvestOk"));
 					else setNote(tt("agnescode.harvestFail"));
-					load();
 				}
 			} catch (why) {
 				if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
 			} finally {
 				if (alive.current) setHarvestBusy(false);
 			}
-		}, [load, tt]);
+		}, [tt]);
 		const saveModels = useCallback(async (ids) => {
-			await postJsonOrThrow(AGNESCODE_PATH, {
+			const body = await postJsonOrThrow(AGNESCODE_PATH, {
 				action: "saveModels",
 				enabledModelIds: ids
 			});
-			if (alive.current) load();
-		}, [load]);
+			if (alive.current) setState(body);
+		}, []);
 		const enabled = state?.enabled === true;
 		const view = agnescodeView(state, error);
 		const loggedIn = view.linked;
@@ -3560,6 +3591,21 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				if (inFlight.current === controller) inFlight.current = null;
 			}
 		}, []);
+		const dataRef = useRef(null);
+		dataRef.current = data;
+		const echoLlm = useCallback((patch) => {
+			if (dataRef.current === null) {
+				load();
+				return;
+			}
+			setData((current) => current === null ? current : {
+				...current,
+				llm: {
+					...current.llm ?? {},
+					...patch
+				}
+			});
+		}, [load]);
 		const toggleSection = useCallback((key) => {
 			setOpenSections((current) => ({
 				...current,
@@ -3749,6 +3795,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, h(ProviderForm, {
 			llm: data?.llm ?? null,
 			onDone: () => void load(),
+			onEcho: echoLlm,
 			tt
 		})), h(SectionCard, {
 			title: tt("draw.title"),
@@ -3758,6 +3805,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, h(DrawSwitch, {
 			llm: data?.llm ?? null,
 			onDone: () => void load(),
+			onEcho: echoLlm,
 			tt
 		})), h(SectionCard, {
 			title: tt("video.title"),
@@ -3767,6 +3815,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, h(VideoSwitch, {
 			llm: data?.llm ?? null,
 			onDone: () => void load(),
+			onEcho: echoLlm,
 			tt
 		})), h(SectionCard, {
 			title: tt("llm.title"),

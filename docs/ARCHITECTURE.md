@@ -73,8 +73,8 @@
    ▼
 GET /api/dsh-connect-agnes-token-plan/snapshot   ← Host 半边
    │  1) 取令牌；临近过期或控制台回 401 时重登一次（Agnes 没有 refresh token）
-   │  2) 先单独取 /api/usage/overview —— 认证探针（五个源之一，失败不再致命）
-   │     再并行取 series / subscription / 公开 plans / GET /v1/models（五个源一律可降级）
+   │  2) 五源同一 Promise.all 并行取：overview（认证探针，失败不再致命）/
+   │     series / subscription / 公开 plans / GET /v1/models（一律可降级）
    │  3) 按 consoleBase 等配置聚合，Host 缓存 cacheSeconds 秒
    ▼
 {snapshot}  ──HTTP 200，body 内 ok:true/false 区分成败──►
@@ -104,7 +104,7 @@ client.js: interpretSnapshot(body) → {data, error}
 
 关键点：**HTTP 永远 200**，成败靠 body 里的 `ok` 与 `code` 区分；`auth` 块会随失败一起下发，所以连不上控制台时面板也能说出「令牌是否能自愈」。
 
-**为什么 `overview` 仍然单独先取、却不再是唯一致命的**：单独先取的理由没变——它是认证探针（最便宜的认证调用，任何已登录账号都能发），且**串行**放在其余取数之前，是因为它 401 时会先把令牌换新，后面的批量才拿着活令牌出门（`test/routes.test.mjs` B 组钉死了「死令牌只被出示一次」）；未登录时它失败在本地（`not_configured`，不发请求），所以这个串行不花任何往返，稳态下也通常命中缓存。
+**为什么 `overview` 与其余取数并行、却仍不是唯一致命的**：认证探针的角色没变——它的结果是 `quota.consoleConnected`，401 时 store 换新令牌，各源带着活令牌重试。变的是执行形状：它曾**串行**放在批量之前（「批量拿着活令牌出门」的交换），代价是账号失效时登录超时链（15 s）与批量超时链（15 s）叠加——单次快照最坏 30 s 起（401-dance 全超时链 ~45 s），而 API tab 的保存/开关切反馈又走这条同路由的全量 reload（回显耦合），AgnesCode 侧另加一次 30 s + 30 s 的顺序 BFF 读，两个 tab 的操作反馈全被拖在慢路径后面。现在五源并行：最坏从「和」压到「max」；串行给的两样好处各自保留——换新靠 `getToken` 单飞（`token-store.ts`，并发 401 收敛成一次 sign-in，防锁号纪律不变），`not_configured` 仍是各源本地失败、零往返。`test/routes.test.mjs` B 组钉住新形状：每个认证源至多出示一次死令牌、每次轮询至多一次登录。账本见 [ADR-014](./ADR.md)。
 
 变的是它**不再把失败变成整个快照的失败**。它曾经是唯一致命源：失败即冒泡到路由的 catch，整个 body 走 `ok:false`，面板只剩登录表单——把 API Key tab（不读控制台）和 AgnesCode tab（连的是另一个上游、有自己的凭据）一起埋掉，正是 §5 不变量 3 禁止的形状。现在它失败只意味着 `quota.consoleConnected:false`：`quota.totals` 是 `null` 而不是零值块（否则一次读取失败会被渲染成「0 次请求」——把失败伪装成测量），面板在额度 tab 内点名「控制台未连接」，另外两个 tab 一个点击之外。
 

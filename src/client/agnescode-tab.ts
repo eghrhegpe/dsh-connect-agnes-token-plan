@@ -37,7 +37,6 @@ import { S } from "./styles.ts";
 import {
   AGNESCODE_ERROR_NOT_CONFIGURED,
   AGNESCODE_TIER_OK,
-  type AgnescodeHarvestAttemptData,
   type AgnescodeModelData,
   type AgnescodeStateData
 } from "./wire.ts";
@@ -246,7 +245,12 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     setNote(null);
     try {
       const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "switch", enabled });
-      if (alive.current) setState((current) => (current ? { ...current, enabled: body.enabled === true, providerRegistered: body.providerRegistered === true } : current));
+      // The POST answer is the Host's FULL post-write state (the route's
+      // `answer()` spreads `agnescodeState()` under every POST branch, see
+      // `routes/agnescode.ts`) — apply it whole: a two-field patch would
+      // leave the balance/roster the write just re-published stale, and a
+      // patch-onto-null would be a no-op on a tab whose first GET failed.
+      if (alive.current) setState(body as unknown as AgnescodeState);
     } catch (why) {
       if (alive.current) setNote(format(tt("agnescode.switchError"), { error: why instanceof Error ? why.message : String(why) }));
     }
@@ -262,31 +266,32 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       // the refusal payload the same way the Host writes it.
       const body = await postJson(AGNESCODE_PATH, { action: "harvest" });
       if (alive.current) {
-        const harvestBlock = body?.harvest;
-        const attempts: AgnescodeHarvestAttemptData[] = Array.isArray((harvestBlock as { attempts?: unknown })?.attempts)
-          ? (harvestBlock as { attempts: AgnescodeHarvestAttemptData[] }).attempts
-          : [];
-        setState((current) => (current ? { ...current, harvest: { ok: body?.ok === true, attempts } } : current));
+        // The same full post-write state — its `harvest` block carries the
+        // walk's diagnosis rows, so a successful walk flips the credential
+        // card right here and the tab no longer queues a second GET (the one
+        // that can hold the upstream's 30 s timeout) to learn what the POST
+        // just answered. The 60 s poll re-syncs on its own.
+        if (body !== null) setState(body as unknown as AgnescodeState);
         if (body?.ok === true) {
           setNote(tt("agnescode.harvestOk"));
         } else {
           setNote(tt("agnescode.harvestFail"));
         }
-        void load();
       }
     } catch (why) {
       if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
     } finally {
       if (alive.current) setHarvestBusy(false);
     }
-  }, [load, tt]);
+  }, [tt]);
 
-  // The curation write: persist the allow-list, then reload so the picker's
-  // next echo matches what was saved — the edit is live the moment it lands.
+  // The curation write: persist the allow-list. The POST answer is the full
+  // post-write state, so the picker's `hostIds` echo lands from the response
+  // itself rather than a reload through the upstream-holding GET.
   const saveModels = useCallback(async (ids: string[]) => {
-    await postJsonOrThrow(AGNESCODE_PATH, { action: "saveModels", enabledModelIds: ids });
-    if (alive.current) void load();
-  }, [load]);
+    const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "saveModels", enabledModelIds: ids });
+    if (alive.current) setState(body as unknown as AgnescodeState);
+  }, []);
 
   const enabled = state?.enabled === true;
   const view = agnescodeView(state, error);

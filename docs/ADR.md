@@ -160,3 +160,14 @@
 - **受影响文件**：`tsdown.config.mjs`（host 条目加 `outputOptions`）、`lib/*.js`（5 个改名 + `index.js` 内容）、`test/build-gate.mjs`（重写）、`.gitignore`（忽略 `.build-gate.config.mjs`，暂存目录落在已忽略的 `tmp/`）、`docs/ARCHITECTURE.md`、`docs/DSH-PLUGIN.md`、`docs/TESTING.md`、`docs/ROADMAP.md` §6.2、`.github/workflows/ci.yml`（两处 pnpm 理由措辞 + 可复现性表述）。
 - **与既有条目的关系**：不改变 ADR-008 任何一项——产物仍随库提交、仍**不加 `prepare`**、`prepack` 仍保留、CI 仍有 `artifacts` job。本条只降低该模式的日常维护成本，并把它唯一的失效模式（`lib/` 漂移）补进门禁覆盖。
 
+## ADR-014 快照取数并行化：`overview` 折进批量（取代 §3「串行先取」表述）
+
+- **日期**：2026-10-10
+- **状态**：现行（取代 `docs/ARCHITECTURE.md` §3 的「`overview` 串行单独先取」表述；不改变 ADR-007「五个额度源一律软失败」与 ADR-004 不变量 3）
+- **裁定**：`snapshot-aggregate.ts` 的五源取数由「`overview` 先行 + 四源 `Promise.all`」改为**五源同一 `Promise.all`**；`test/routes.test.mjs` B 组的钉从「死令牌恰好被出示一次」换成「**每个认证源至多出示一次死令牌 + 每次轮询至多一次登录**」。连带同族的两处慢点一并并掉：`/agnescode` 路由的 balance 与 catalog 两个上游读改并行（最坏 60 s → 30 s）；**API tab 三个写卡片（provider 开关 / 模型清单 / 两个工具卡）与 AgnesCode 三动作**的「保存后全量 `load()` 回显」改为把 POST 响应体（Host 写后态）就地并入快照 `llm` 块（`PanelPage.echoLlm`）或整包 `setState`；AccountForm 与 ApiKeyForm **有意保留**全量 load（登录与换 Key 是真正需要整体重取的时刻）。
+- **理由（两条独立成立）**：① **串行形状在失效账号下把超时链叠加**：`overview` 的登录链（`requestTimeoutMs` 15 s）叠在批量超时（`consoleTimeoutMs` 15 s）之上——单次快照最坏 30 s 起（401-dance 全超时链 ~45 s），轮询周期却是 30 s；叠加 API tab 的保存/开关回显走同一条全量路由、AgnesCode 侧 30 s + 30 s 顺序 BFF 读，两个 tab 的操作反馈全被拖在慢路径后面（用户实测：积分刷新失败前其它两 tab 无视觉反馈）。并行把最坏从「和」压到「max」。（早期排查一度归因到浏览器 6-connections 连接池排队——**经 grep 不采纳**：GUI 主 bundle（`dsh-web-frontend` 的 index / vendor 各 ~600–740 KB）长连接句型零命中，`dsh-client-hmr` 的 EventSource 仅 dev watcher 下运行，池是否吃紧不可证实；可证因果只有上面两项。）② **串行给的两样好处在并行下各有承接**：换新令牌靠 `getToken` 单飞（`token-store.ts`——并发 acquire 共享一次 login，防锁号纪律不变）；`not_configured` 仍是各源本地失败、零往返（并行不产生新请求）。
+- **竞态核实（不是推断）**：`invalidate(token)` 只把被拒令牌记入有界 `rejected` 集并清空内存 grant——后到的源 invalidate 误清已愈合缓存时，`acquire` 的 `readStored` 从凭据服务读回已持久化的新鲜 grant，且 `isFresh` 只拒 `rejected` 集内的令牌（新令牌不在集内），**不会**触发第二次登录（已对 `invalidate`（token-store.ts:203）/ `readStored` 持久读（grant.ts）/ `isFresh` 的 rejected 过滤（grant.ts:173）/ `acquire` 快路径（acquire.ts:77）逐处核实）；`fetchConsole` 的 401 舞蹈每飞行至多一次（present → renew → retry，不递归），所以「每源一次出示」在并行下依然成立。
+- **验证**：`routes` 200/200（B 组新钉：3 出示 / 1 登录）、`agnescode` 180/180、`panel` 91/91、`render` 273/273、`contract` 122/122、`provider` 220/220、e2e 66/66；typecheck 与 build-gate 绿。
+- **受影响文件**：`src/host/snapshot-aggregate.ts`（五源并行 + 注释）、`src/host/routes/agnescode.ts`（balance/catalog 并行）、`src/client/{panel-page,provider-controls,model-picker,wire,agnescode-tab}.ts`（`echoLlm` / `LlmEchoPatch` / 各卡片回显 / AgnesCode 整包应用）、`test/routes.test.mjs`（B 组新钉）、`docs/ARCHITECTURE.md` §3（框图 + 段改写）、`docs/PROVIDER-HOT-RELOAD.md`（回显形状注记）、`docs/AGNES-API.md`（探针句修正）、`CHANGELOG.md` [0.10.2] 段、本账本条目、`lib/` + `client.js`（随 src 同 commit 重建）。
+- **与既有条目的关系**：继承 ADR-004/007（软失败形状不变：`overview` 失败仍只落到 `quota.consoleConnected:false` + `quota.error`，tab 栏无条件渲染不动）。B 组旧钉「恰好一次」保护的是**登录次数**——该不变量改由「登录至多一次 + 单飞」承载（真守卫），「出示次数」降为旧串行形状的痕迹，随本条退役。不影响红线①～⑦。
+

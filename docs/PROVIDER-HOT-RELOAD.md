@@ -31,6 +31,7 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 2. **优先级**：面板保存过的值 > `cordis.patch.yml` 的 `registerProvider`（后者降级为「出厂默认」）。从未动过面板开关的部署，行为与 0.3.0 完全一致。
 3. **面板开关 → `POST /api/<name>/provider`**（同源围栏 + body 上限，与账号/api-key 路由同一信任形状）→ 存状态 → **立即** `publishProvider(当前目录, 当前允许清单)` → 返回去密状态。不用等下一个轮询周期。
 4. 快照 `llm.registerProvider` 回显**生效值**（不再是 patch 直读），新增 `registerSource`（`"panel"` / `"config"`）说明当前值来自哪一侧。
+5. **回显形状（现行）**：写路由 POST 之后，面板不再触发一次全量快照 reload——Host 的 POST 响应体（写后态）就地并入快照的 `llm` 块（`PanelPage` 的 `echoLlm`），开关 / 清单的翻面即时可见（ADR-014）；§4 上表「改动清单（0.3.1）」里「POST 后刷新快照」是**当时**的形状。
 
 不选 volatile 的另一条理由：volatile 是「配置文档可写」机制，而「是否向 Host 注册一个模型源」是运维意图而非配置项——把它放进 patch 层正是 0.3.0 文案混乱的根源。状态文件让它归位为「插件自己的运行时状态」。
 

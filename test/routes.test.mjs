@@ -427,15 +427,29 @@ async function withNetwork(stub, body) {
       const response = await (await mount(credentials))(SNAPSHOT_PATH, makeRequest());
       check("401 is recovered", response.payload.ok === true, JSON.stringify(response.payload).slice(0, 160));
       check("a fresh sign-in recovered it", logins === 1, `logins=${logins}`);
-      // EXACTLY ONE rejection, not one per endpoint. The usage overview is the
-      // auth probe and runs alone, so the dead token is presented once; by the
-      // time the series and the subscription are fetched the store has already
-      // healed. The catalogue is anonymous and never carries a token at all.
-      // A number above 1 here means the probe stopped gating the batch, and the
-      // plugin is spending a rejected platform call per source.
+      // The parallel shape (2026-10-10): the auth probe no longer gates the
+      // batch, so each of the three AUTHENTICATED sources (usage overview,
+      // series, subscription) may present the dead token at most ONCE before
+      // the store heals it — the `fetchConsole` 401 dance is bounded per
+      // flight (present once, renew once, retry once, never recursively).
+      // The two pins divide the work: `logins === 1` above is the ACCOUNT
+      // guard — `getToken` single-flights the renewal (token-store.ts: "a
+      // panel poll storm must not trigger a login stampede"), so three
+      // concurrent 401s collapse onto one sign-in instead of the
+      // repeated-bad-attempt storm the platform turns into an account
+      // lockout (acquire.ts). `rejected === 3`, and the per-source ≤1 below,
+      // pin the DANCE shape — that no source ever re-presents a refused
+      // token, which the serial probe's "exactly one presentation" pin can
+      // no longer state. The catalogue is anonymous and never carries a
+      // token at all.
       const rejected = stub.calls.filter((c) => c.auth === `Bearer ${dead}`);
-      check("the dead token is presented exactly once",
-        rejected.length === 1, `rejected=${rejected.length}`);
+      const perTarget = {};
+      for (const call of rejected) perTarget[call.target] = (perTarget[call.target] ?? 0) + 1;
+      check("no authenticated source presents the dead token more than once",
+        Object.values(perTarget).every((n) => n <= 1), JSON.stringify(perTarget));
+      check("each of the three authenticated sources presented the dead token exactly once",
+        rejected.length === 3 && Object.keys(perTarget).length === 3,
+        `rejected=${rejected.length} targets=${JSON.stringify(perTarget)}`);
     }).catch((error) => fail("B: 401 recovery", error));
   } finally {
     if (savedUser === undefined) delete process.env.AGNES_USERNAME; else process.env.AGNES_USERNAME = savedUser;

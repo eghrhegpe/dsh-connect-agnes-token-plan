@@ -11,7 +11,7 @@ import { useRosterDraft } from "./roster-draft.ts";
 import { h, useCallback } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
-import type { LlmData, ModelData } from "./wire.ts";
+import type { LlmData, LlmEchoPatch, ModelData } from "./wire.ts";
 
 /**
  * The model picker's row list - hook-free, so the Node render suite
@@ -108,9 +108,11 @@ export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
  * only what this roster does differently — it POSTs to `MODELS_PATH` itself
  * and words its errors with the `llm.roster*` keys.
  */
-export function ModelPicker({ llm, onDone, tt }: {
+export function ModelPicker({ llm, onDone, onEcho, tt }: {
   llm?: LlmData | null;
   onDone?: () => void;
+  /** Merge the save's POST answer into the current snapshot's `llm` block. */
+  onEcho?: (patch: LlmEchoPatch) => void;
   tt: Tt;
 }): unknown {
   const models = Array.isArray(llm?.models) ? llm.models : [];
@@ -128,16 +130,30 @@ export function ModelPicker({ llm, onDone, tt }: {
     setNotice(null);
     const posted = JSON.stringify(ids);
     try {
-      await postJsonOrThrow(MODELS_PATH, { enabledModelIds: ids });
-      // Matches hostKey as soon as the poll after onDone() echoes it.
+      const body = await postJsonOrThrow(MODELS_PATH, { enabledModelIds: ids });
+      // Echo the answer's own state into the snapshot (`hostKey` matches as
+      // soon as `llm.enabledModelIds` turns into what was just posted) instead
+      // of waiting for a full snapshot round-trip — on a degraded console that
+      // round-trip is the slow one. The roster's model rows are catalogue
+      // facts, not something this write changes, so the echo only touches the
+      // keys the answer carries.
       setSavedKey(posted);
-      onDone?.();
+      if (onEcho) {
+        onEcho({
+          enabledModelIds: Array.isArray(body.enabledModelIds) ? body.enabledModelIds : ids,
+          registerProvider: body.registerProvider === true,
+          providerRegistered: body.providerRegistered === true,
+          providerError: typeof body.providerError === "string" ? body.providerError : ""
+        });
+      } else {
+        onDone?.();
+      }
     } catch (error) {
       setNotice(format(tt("llm.rosterError"), { error: error instanceof Error ? error.message : String(error) }));
     } finally {
       setBusy(false);
     }
-  }, [busy, ids, onDone, tt, setBusy, setNotice, setSavedKey]);
+  }, [busy, ids, onDone, onEcho, tt, setBusy, setNotice, setSavedKey]);
 
   return h(
     "div",
