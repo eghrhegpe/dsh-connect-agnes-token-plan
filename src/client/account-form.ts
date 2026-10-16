@@ -9,8 +9,11 @@
  * `bare` strips the inner card and title: the account section card that
  * embeds this form (when a token already works) supplies both itself.
  *
- * Hook-based, so the Node render suite does not mount this form; its
- * secret-free halves are covered via `ProviderStatus` and the route tests.
+ * Hook-based, so the Node render suite (`test/panel-render.js`) does not mount this
+ * form; its secret-free halves are covered via `ProviderStatus` and the route
+ * tests, and the hook path itself (controlled typing, empty-password refusal,
+ * the sign-in POST) is mounted for real by `test/dom-render.test.mjs` —
+ * jsdom + real react-dom over the shipped artifact.
  */
 import { ACCOUNT_PATH, AGNES_SIGNUP_URL } from "./const.ts";
 import { format } from "./format.ts";

@@ -101,12 +101,14 @@ export function ModelRoster({ models, enabledIds, busy, tt, onToggle }: {
  * The curated model allow-list: which of this key's models get pushed to
  * DSH's model list.
  *
- * Hook-based like `ApiKeyForm`, so the render suite exercises the secret-
+ * Hook-based like `ApiKeyForm`, so the Node render suite exercises the secret-
  * free half it draws - `ModelRoster` and the counts - instead of this
- * state machine. The draft/dirty/saved machinery now lives in
- * `roster-draft.ts`, shared with `AgnescodeModelPicker`; what stays here is
- * only what this roster does differently — it POSTs to `MODELS_PATH` itself
- * and words its errors with the `llm.roster*` keys.
+ * state machine. The hook path itself (search filter, tick→dirty footer, save
+ * POST) is mounted for real by `test/dom-render.test.mjs` (jsdom + real
+ * react-dom over the shipped artifact). The draft/dirty/saved machinery now
+ * lives in `roster-draft.ts`, shared with `AgnescodeModelPicker`; what stays
+ * here is only what this roster does differently — it POSTs to `MODELS_PATH`
+ * itself and words its errors with the `llm.roster*` keys.
  */
 export function ModelPicker({ llm, onDone, onEcho, tt }: {
   llm?: LlmData | null;

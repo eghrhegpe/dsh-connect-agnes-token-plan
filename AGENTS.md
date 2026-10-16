@@ -40,6 +40,7 @@ dsh-connect-workbuddy
 node test/agnes-auth.test.mjs  # 一跳登录/失败分类/重登/节流窗口解析
 node test/store-baseline.test.mjs # token-store 全行为冻结基线：拆分/改动续期·节流·迁移前后必须零漂移
 node test/panel.test.mjs    # 面板决策、中英字典一致性
+node test/dom-render.test.mjs # 真 DOM 挂载：入库 client.js + 真 react/react-dom + jsdom，经 apply 挂 PanelPage 并以点击/输入/提交驱动 hook 组件（需 devDependencies，缺席 SKIP；CI offline job 装依赖真跑）
 node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shape 漂移、分桶求和、四窗口
 node test/switch-store.test.mjs # 四个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」）
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）；新增 docs/ 顶层文件必须进 docs/README.md 索引表，否则 ORPHAN_DOCS 判红

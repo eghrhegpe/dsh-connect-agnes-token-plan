@@ -98,6 +98,13 @@ jobs:
           node test/routes.test.mjs
           node test/panel.test.mjs
           node test/render.test.mjs
+          # The real-DOM mount suite: the SHIPPED client.js + real react +
+          # react-dom into jsdom, driven through clicks/typing/submits. Needs
+          # the devDependencies installed above (jsdom/react/react-dom); on a
+          # clean checkout without them it SKIPs loudly, but this job installs
+          # them, so here it really gates — it is the only suite where hook
+          # components (AccountForm, ModelPicker) actually mount.
+          node test/dom-render.test.mjs
           node test/parsers.test.mjs
           node test/provider.test.mjs
           node test/config.test.mjs

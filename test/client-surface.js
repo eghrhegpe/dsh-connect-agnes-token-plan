@@ -12,8 +12,10 @@
  * SOURCES, not the shipped `client.js` artifact. The two run the same factory
  * (`clientFactory`), so the behaviour suites drive the browser's real
  * definitions; what they do not prove is that the artifact builds and mounts,
- * which is `test/build-gate.mjs`'s job. Keep that split honest — see the same
- * note at the top of `src/client/index.ts`.
+ * which `test/build-gate.mjs` pins (freshness + smoke) and
+ * `test/dom-render.test.mjs` now closes for real (the shipped `client.js`
+ * mounted by real react-dom in jsdom, driven by clicks/typing). Keep that
+ * split honest — see the same note at the top of `src/client/index.ts`.
  *
  * This replaces the previous approach — cutting functions out of the source
  * with balanced-brace walks and evaluating the snippets with `new Function`.

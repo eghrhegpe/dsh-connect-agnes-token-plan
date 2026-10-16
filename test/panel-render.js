@@ -16,9 +16,12 @@
  * closes over. Nothing is lifted from source text, so there is no structure
  * for the checks to lose track of.
  *
- * `AccountForm` is deliberately not exercised: it is built on `useState` and
- * friends, and faking the hook contract would test the fake. It stays a
- * documented gap rather than a pretended one.
+ * `AccountForm` is deliberately not exercised HERE: it is built on `useState`
+ * and friends, and faking the hook contract would test the fake. It is mounted
+ * for real (the shipped artifact, real react-dom, jsdom) by
+ * `test/dom-render.test.mjs`, which drives its controlled inputs and its
+ * sign-in POST through real clicks and keystrokes; this file keeps to the
+ * hook-free components a recording `h` can evaluate honestly.
  * @module dsh-connect-agnes-token-plan/panel-render
  */
 

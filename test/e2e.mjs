@@ -8,10 +8,11 @@
  * responses and this file asserts on their JSON — but be precise about what is
  * NOT exercised: **no React component ever mounts here**. The suite never fetches
  * `/` or `client.js`, so a client bundle that crashes on mount would still see
- * every check below go green. The panel's DECISIONS are covered, just not by a
- * browser: `test/panel.test.mjs` and `test/render.test.mjs` import the real
- * `src/client/` modules through a capture loader. Rendering is the one gap that
- * no suite in this repository closes (docs/TESTING.md §4).
+ * every check below go green. The panel's DECISIONS are covered by
+ * `test/panel.test.mjs` and `test/render.test.mjs` (the real `src/client/`
+ * modules through a capture loader), and the SHIPPED artifact's ability to
+ * mount and answer clicks in a DOM is covered by `test/dom-render.test.mjs`
+ * (jsdom + real react-dom, devDependencies) — not here.
  *
  * The isolation is deliberate and total:
  *
