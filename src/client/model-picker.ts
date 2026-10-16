@@ -138,7 +138,12 @@ export function ModelPicker({ llm, onDone, onEcho, tt }: {
       // of waiting for a full snapshot round-trip — on a degraded console that
       // round-trip is the slow one. The roster's model rows are catalogue
       // facts, not something this write changes, so the echo only touches the
-      // keys the answer carries.
+      // keys the answer carries. `enabledModelIds` is on EVERY ok answer (the
+      // host's `routes/models.ts` `answer()` always sends it; the 400s throw
+      // before this echo runs), so the `: ids` fallback below is a dead
+      // branch today — kept only as a shape-drift guard: if a future host
+      // omits the field, the roster shows what the user just requested
+      // instead of going blank.
       setSavedKey(posted);
       if (onEcho) {
         onEcho({

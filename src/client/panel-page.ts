@@ -232,7 +232,14 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // into, and the fallback is a plain full load (the numbers cannot be
   // conjured, only fetched).
   const dataRef = useRef<SnapshotData | null>(null);
-  dataRef.current = data;
+  // A render-phase `dataRef.current = data` is a non-transactional write:
+  // concurrent rendering may drop or interleave it. Mirror it in an effect —
+  // every reader of this ref sits in `echoLlm`'s async body, long past the
+  // commit, so the effect is the right home (same shape as the pill's
+  // `cadenceRef` mirror in `composer-usage-pill.ts`).
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
   const echoLlm = useCallback((patch: LlmEchoPatch) => {
     // A write's echo must retire any in-flight poll snapshot: one started before
     // the write's POST landed could still return AFTER this merge and overwrite

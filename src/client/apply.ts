@@ -99,6 +99,11 @@ export function apply(ctx: ClientCtx): void {
             name: "conversation.input.right",
             id: `${NS}-composer-pill`,
             locale: NS,
+            // List seats sort occupants by `order` ascending (default 0, ties
+            // keep registration order). DSH's own conversation bundle renders
+            // this seat but ships no built-in entries — it is plugin-only — so
+            // 4 is not a contractual seat position; it merely sorts this pill
+            // after default-0 occupants if another plugin ever registers here.
             order: 4,
             inject: () => ({ tt })
           },

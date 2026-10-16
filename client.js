@@ -3714,7 +3714,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}
 		}, []);
 		const dataRef = useRef(null);
-		dataRef.current = data;
+		useEffect(() => {
+			dataRef.current = data;
+		}, [data]);
 		const echoLlm = useCallback((patch) => {
 			generation.current += 1;
 			inFlight.current?.abort?.();
