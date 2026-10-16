@@ -2,6 +2,24 @@
 
 本文件只记**公开行为变化**（新增能力、破坏性改动、重要修复）。实现细节、重构与测试加固请直接看 `git log`。
 
+## [0.11.0] — 2026-10-16
+
+本版两条主线：新能力**对话框用量胶囊**（输入框右侧的第二条读数，按 provider 门控），与**面板操作体感**批次（ADR-014）落地。
+
+### 对话框用量胶囊：输入框右侧的第二条读数（两个上游、一个座席，provider 门控）
+
+- **新：注册 `conversation.input.right` composer 座席并挂载 `ComposerUsagePill`**——读数按当前会话模型的 provider 门控：`agnes-token-plan` 模型画控制台 5 小时 / 每周请求窗口的使用百分比，`agnescode` 模型画桌面端积分余额（画存量、不造百分比：网关只发积分不给上限，把余额换算成百分比需要发明一个它占谁的份额）；**其它 provider 的会话一律不挂载**（无读取、无定时器、无读数）——别的插件的会话绝不该带这些数字，`agnescode` 的额度宇宙也是桌面网关自己的，不能给它画控制台的窗口。
+- **门控坐在组件边界而非 hook 之后**：外层组件只决定挂哪个内层组件，轮询 hook 全在内层里——先调 hook 再早退会违反 Rules of Hooks，React 会把组件丢弃到会话结束（姊妹插件有专门钉住这条的回归 scenario）。
+- **读数与面板同源、不造第二把尺**：百分比走 `windowPercent`（平台自己的 `usagePct` 优先、`used/limit` 只作兜底、**从不钳制**——超额窗口报 >100 是事实不是渲染 bug），严重度点走 `usageTier`（90 / 70，与面板进度条同源）；AgnesCode 侧 `0` 是「耗尽」读数、字段缺席是「读不到」（破折号），不是零。
+- **软失败（§5 不变量②）**：读取失败保留最后读数并标记过期，不清空、不抛错；注册失败面板照常工作、该模块缺席。
+- 影响面：`src/client/{composer-usage-pill,const,apply,cards,agnescode-tab,i18n,styles,index}.ts` + `client.js`（随 src 同 commit 重建）；`test/composer-slot-gate.mjs`（新增：钉住座席 / 渲染器 / projection / 物化契约与两个 provider id 的双侧拼写）、`test/dom-render.test.mjs`（胶囊真 DOM scenario）、`test/render.test.mjs` / `test/contract.test.mjs`（§11c）；文档与 CI 门禁同步。
+
+### 面板操作体感：快照取数并行 + 保存回显不再拖全量快照（ADR-014）
+
+- **可感变化（账号失效 / 控制台降级场景）**：① 快照五源取数全部并行（原 `overview` 先行再批量；失效账号下两条 15 s 超时链叠加，单次快照最坏 30 s 起，现压到 ~15 s；死令牌锁号不重新引入——`getToken` 单飞 + `rejected` 集 + 逐请求 401 处置，测试 B 组按新形状重钉：每源至多一次出示 / 每 poll 一次登录）；② 接入 API tab 的 provider 开关 / 模型清单 / 出图·视频工具卡的「保存后全量快照 reload」改为把 POST 响应体就地并入快照 `llm` 块——关模型、切开关的反馈不再等下一轮慢轮询；③ AgnesCode 三动作（开关 / 检测本机登录态 / 保存模型清单）直接应用 POST 的完整响应，harvest 成功即时翻出已关联卡片（此前要再排一次最长 30 s 的 GET）；④ `/agnescode` 路由的 balance / catalog 两个 30 s 上游读改并行（最坏 60 s → 30 s）。工具卡「实际生效模型」徽标与额度数字仍随 30 s 轮询更新（Host 计算值，本地不造数）。
+- **归位说明**：此批次（①–④）在 0.10.2 发布（2026-10-10）之后的补记提交里被记在 `[0.10.2]` 节下，但已发布的 0.10.2 tarball 里**没有其中任何一条**（0.10.2 的 `overview` 仍先行单独取数、客户端半边尚无 `LlmEchoPatch`）；`[0.10.2]` 下的「面板操作体感」节移入本节订正。
+- 影响面：`src/host/{snapshot-aggregate,routes/agnescode}.ts`、`src/client/{panel-page,provider-controls,model-picker,wire,agnescode-tab}.ts`、`test/routes.test.mjs`、`docs/`（ADR-014、ARCHITECTURE §3、PROVIDER-HOT-RELOAD、AGNES-API、PITFALLS）、`lib/` + `client.js`（随 src 同 commit 重建）。
+
 ## [0.10.2] — 2026-10-10
 
 ### 修复：视频状态轮询断点续查、额度渲染与模型花名册的几处真实缺陷 + 凭据隔离加固
@@ -12,11 +30,6 @@
 - **修（凭据隔离）：AgnesCode 的 DPAPI PowerShell 子进程不再继承含凭据的父进程 env**，新增 `dpapiChildEnv` 剥除四枚凭据名（`AGNES_PASSWORD` / `AGNES_USERNAME` / `AGNES_TOKEN_PLAN_API_KEY` / `AGNESCODE_CREDENTIAL`），与全仓凭据 REF 集合逐字一致——降低解密第三方桌面端会话文件那一步的凭据泄漏半径（红线①）。`harvest attempts[].detail` 与 `state().error` 出口统一过 `redactSecrets`。
 - **内部加固 / 清理（不属公开行为变化，详见 `git log`）**：收敛三轮四域代码审查的约 22 项缺陷与计数器 / 方法归一化 / 单飞泄漏 / JSDoc 归位等低危项；删除 25 个零读者 style token（`details*` / `grant*` / `models*` / `trend*` / `poolsGrid` / `primaryHover`）与全仓零引用的孤儿 `jsqr` devDependency；统一 `countOf` 与 `Number(x)||0` 两处数值惯用法、`requestMethod` 六路由共用、BFF 门控头收敛为单一 `AGNESCODE_BASE_HEADERS`；CI `build-gate` 确保暂存目录存在再 `mkdtemp`。上述均以新增断言钉住，无破坏性改动。
 - 影响面：`src/{host,client}/`（多文件）、`lib/`、`client.js`（随 src 同 commit 重建，构建零漂移）、`test/`（多套件 + 断言）、`package.json`（版本 + 去孤儿依赖）。`npm test` 全绿：28 套件 + tsc / build / dup / e2e 四门禁通过，e2e 66/66 PASSED。
-
-### 面板操作体感：快照取数并行 + 保存回显不再拖全量快照（ADR-014）
-
-- **可感变化（账号失效 / 控制台降级场景）**：① 快照五源取数全部并行（原 `overview` 先行再批量；失效账号下两条 15 s 超时链叠加，单次快照最坏 30 s 起，现压到 ~15 s）；② 接入 API tab 的 provider 开关 / 模型清单 / 出图·视频工具卡的「保存后全量快照 reload」改为把 POST 响应体就地并入快照 `llm` 块——关模型、切开关的反馈不再等下一轮慢轮询；③ AgnesCode 三动作（开关 / 检测本机登录态 / 保存模型清单）直接应用 POST 的完整响应，harvest 成功即时翻出已关联卡片（此前要再排一次最长 30 s 的 GET）；④ `/agnescode` 路由的 balance / catalog 两个 30 s 上游读改并行（最坏 60 s → 30 s）。工具卡「实际生效模型」徽标与额度数字仍随 30 s 轮询更新（Host 计算值，本地不造数）。
-- 影响面：`src/host/snapshot-aggregate.ts`、`src/host/routes/agnescode.ts`、`src/client/{panel-page,provider-controls,model-picker,wire,agnescode-tab}.ts`、`test/routes.test.mjs`（B 组新钉：每源至多一次出示 / 每 poll 一次登录）、`docs/`（ARCHITECTURE §3、PROVIDER-HOT-RELOAD、AGNES-API、ADR-014）、`lib/` + `client.js`（随 src 重建）。
 
 ## [0.10.1] — 2026-10-06
 
