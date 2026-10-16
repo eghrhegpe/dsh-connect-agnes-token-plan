@@ -294,7 +294,7 @@ console.error = (...args) => {
 // configured user must see "loading", never the sign-in form, and the tab bar
 // must already be there (ARCHITECTURE §5: one missing module must not take
 // the other tabs down).
-{
+try {
   let resolveSnapshot;
   route = () => new Promise((resolve_) => { resolveSnapshot = resolve_; });
 
@@ -373,7 +373,7 @@ console.error = (...args) => {
   check("switching back restores the quota numbers",
     quotaTab.getAttribute("aria-selected") === "true" && text(container).includes("20.6%"),
     text(container).slice(0, 160));
-
+} finally {
   await unmountAll();
 }
 
@@ -382,7 +382,7 @@ console.error = (...args) => {
 // recording stand-in never mounted it. Here the setup view appears, accepts
 // typing, refuses an empty password, and completes a sign-in whose POST this
 // suite inspects — the full journey, through the shipped bytes.
-{
+try {
   const notConfigured = {
     ok: false,
     error: "no console account is configured",
@@ -451,7 +451,7 @@ console.error = (...args) => {
   check("the successful sign-in replaces the form with the quota numbers",
     text(container).includes("20.6%") && container.querySelector('input[autocomplete="username"]') === null,
     text(container).slice(0, 200));
-
+} finally {
   await unmountAll();
 }
 
@@ -460,7 +460,7 @@ console.error = (...args) => {
 // G8c refuses a second copy in source). Here it is DRIVEN: a keystroke filters
 // the rows, an untick flips the footer, and the save POSTs the draft — three
 // useState/useMemo round trips through the shipped bytes.
-{
+try {
   const llmBody = {
     ...healthyBody,
     llm: {
@@ -525,7 +525,7 @@ console.error = (...args) => {
     text(container).includes(zh["llm.rosterSaved"])
       && [...container.querySelectorAll("button")].every((button) => button.textContent !== zh["llm.rosterSave"]),
     text(container).slice(-200));
-
+} finally {
   await unmountAll();
 }
 
