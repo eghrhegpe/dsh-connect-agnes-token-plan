@@ -241,6 +241,11 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     // generation — the same token `load` uses for mutual exclusion — is what
     // kills it; the next scheduled tick fetches the truth. No new state.
     generation.current += 1;
+    // Bumping only retires it in the write guard (its result gets dropped);
+    // cancel the request itself too, the same way `load` does — a retired
+    // poll that keeps the Host's connection open until it answers on its
+    // own is the very waste the echo exists to kill.
+    inFlight.current?.abort?.();
     if (dataRef.current === null) {
       void load();
       return;

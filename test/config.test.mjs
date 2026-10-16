@@ -45,6 +45,16 @@ function check(name, condition, detail = "") {
   check("usageDays default", settings.usageDays === CONFIG_DEFAULTS.usageDays, String(settings.usageDays));
   check("cacheSeconds default", settings.cacheSeconds === CONFIG_DEFAULTS.cacheSeconds, String(settings.cacheSeconds));
   check("pollSeconds default", settings.pollSeconds === CONFIG_DEFAULTS.pollSeconds, String(settings.pollSeconds));
+  // Cross-source pin, sibling of the two origin literals above: the usage
+  // pill's pre-first-answer retry fallback is a CLIENT-side literal (it can
+  // only be read out of the source as text), the second spelling of this
+  // default — the pill retries at exactly the rate the Host would state,
+  // until the first real answer takes over the cadence.
+  const pillSource = readFileSync(join(here, "..", "src", "client", "composer-usage-pill.ts"), "utf8");
+  const pillRetry = pillSource.match(/SNAPSHOT_RETRY_FALLBACK_MS\s*=\s*(\d+(?:_\d+)?)/);
+  check("the pill's pre-first-answer retry fallback equals the Host default cadence in ms",
+    pillRetry !== null && Number(pillRetry[1].replace(/_/g, "")) === CONFIG_DEFAULTS.pollSeconds * 1000,
+    pillRetry ? `${pillRetry[1]} vs ${CONFIG_DEFAULTS.pollSeconds * 1000}` : "(no SNAPSHOT_RETRY_FALLBACK_MS literal in composer-usage-pill.ts)");
   check("consoleTimeoutMs default", settings.consoleTimeoutMs === CONFIG_DEFAULTS.consoleTimeoutMs, String(settings.consoleTimeoutMs));
   check("tokenSkewSeconds default", settings.tokenSkewSeconds === CONFIG_DEFAULTS.tokenSkewSeconds, String(settings.tokenSkewSeconds));
   check("default allowedHosts match the schema",

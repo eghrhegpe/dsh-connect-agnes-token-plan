@@ -222,13 +222,20 @@ for (const root of found) {
   // D. The keyed hook is still materialized strictly for a session seat.
   // The call shape is matched structurally — local names and whitespace are the
   // minifier's to rewrite, so pinning them would red the gate on a reformat.
-  const materialized = /materializeStandardBinding\(\s*[^,]+,\s*[^)]*===\s*['"]session-maybe['"]/.test(renderer.text);
-  check(`[D][${tag}] useProjection is still strictly materialized (optional = scope === "session-maybe")`,
+  // The pattern COUNTS, not just tests: the live bundle carries the function
+  // definition plus two non-session call sites on top of the pinned one, so a
+  // raw token count would be 4, not 1. Exactly ONE call site compares against
+  // "session-maybe" today; a second one would make a single `.test()` match
+  // indeterminate — which call did the gate look at? — so one match is part
+  // of the check. (The `[^)]*` argument class still cannot see past a nested
+  // parenthesis in the second argument; that direction stays a known risk.)
+  const sessionMaybeCalls = renderer.text.match(/materializeStandardBinding\(\s*[^,]+,\s*[^)]*===\s*['"]session-maybe['"]/g) ?? [];
+  const materialized = sessionMaybeCalls.length === 1;
+  check(`[D][${tag}] useProjection is still strictly materialized (optional = scope === "session-maybe") at exactly one call site`,
     materialized
-      && renderer.text.includes("materializeStandardBinding")
       && renderer.text.includes("standardHookPropName")
       && renderer.text.includes("strict keyed standard hook"),
-    `optional-arg call=${materialized} standardHookPropName=${renderer.text.includes("standardHookPropName")} strict-throw=${renderer.text.includes("strict keyed standard hook")}`);
+    `session-maybe call sites=${sessionMaybeCalls.length} standardHookPropName=${renderer.text.includes("standardHookPropName")} strict-throw=${renderer.text.includes("strict keyed standard hook")}`);
 
   const readErrors = [...conversation.errors, ...session.errors, ...renderer.errors];
   check(`[read][${tag}] every contract file was readable`, readErrors.length === 0, readErrors.slice(0, 3).join(" | ") || "no read errors");
