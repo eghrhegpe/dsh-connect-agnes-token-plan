@@ -668,6 +668,14 @@ try {
   check("an empty transient `next` does not shadow a usable `lastUsed`",
     transient.button() !== null,
     `button=${transient.button() !== null}`);
+  // A CLEARED provider is the same frame shape: the field present, not a value to
+  // gate on. A `typeof === "string"` check accepts `""`, and the pill then
+  // vanishes on an OWNED model for exactly those frames.
+  selection.next = { provider: "", model: "agnes-pro" };
+  const cleared = await readPill();
+  check("a cleared provider (empty string) does not shadow a usable `lastUsed`",
+    cleared.button() !== null,
+    `button=${cleared.button() !== null}`);
   selection.next = { provider: "agnes-token-plan", model: "agnes-pro" };
   delete selection.lastUsed;
 
@@ -688,6 +696,38 @@ try {
       && text(failing.container).includes(zh["composer.stale"]),
     text(failing.container).slice(0, 200));
   status = 200;
+
+  // The FIRST read fails, before any answer has stated a cadence. The loop must
+  // keep retrying at the documented fallback rate — otherwise the mount read's
+  // failure leaves no interval and no visibility wake, and the pill sits on its
+  // first-failed frame for the whole session: a dead dash, not a reading. The
+  // visibility wake below is the demand-driven twin of that 30-second retry.
+  windows = [
+    { key: "requests5h", unit: "requests", limit: 1000, windowHours: 5, used: 1200, usagePct: 120 },
+    { key: "requestsWeekly", unit: "requests", limit: 100000, windowHours: 168, used: 4000, usagePct: 4 }
+  ];
+  fetched.length = 0;
+  status = 500;
+  const firstFail = await readPill();
+  check("a failed FIRST read keeps the pill alive — dashes and the stale mark, not a dead session",
+    firstFail.button() !== null
+      && text(firstFail.container).includes("5 小时 —")
+      && text(firstFail.container).includes(zh["composer.stale"])
+      && firstFail.button()?.getAttribute("title")?.includes(zh["composer.noWindows"]) === true,
+    `text=${text(firstFail.container).slice(0, 200)} title=${firstFail.button()?.getAttribute("title")}`);
+  status = 200;
+  await act(async () => {
+    Object.defineProperty(dom.window.document, "visibilityState", { value: "hidden", configurable: true });
+    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+    Object.defineProperty(dom.window.document, "visibilityState", { value: "visible", configurable: true });
+    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+  });
+  await settle();
+  check("the wake re-fetches on a recovered status and paints the overage — a first failure never stalls",
+    fetched.length > 0 && fetched.every((path) => path === SNAPSHOT_PATH)
+      && text(firstFail.container).includes("5 小时 120.0%")
+      && css(firstFail.dot(), "background").startsWith("var(--dsw-alias-state-error-primary"),
+    `routes=${JSON.stringify(fetched.slice(0, 8))} text=${text(firstFail.container).slice(0, 160)}`);
 
   // An empty window list is "the console did not report this", not "you have
   // used nothing": the readings stay dashes and the dot refuses to grade.

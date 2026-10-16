@@ -3705,6 +3705,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const dataRef = useRef(null);
 		dataRef.current = data;
 		const echoLlm = useCallback((patch) => {
+			generation.current += 1;
 			if (dataRef.current === null) {
 				load();
 				return;
@@ -3984,10 +3985,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* a picker switch, before it carries the new selection) must not shadow a
 	* still-usable `lastUsed`. A bare `next ?? lastUsed` reads a provider off `{}`,
 	* finds none, and hides the pill for OWNED models on exactly the frames a switch
-	* produces.
+	* produces. "Empty" includes the frame where the provider was CLEARED but the
+	* field is still present: a candidate without a non-empty `provider` cannot
+	* gate a mount — the gate keys on the provider — and all it can do is shadow.
 	*/
 	function selectedProviderOf(projection) {
-		const usable = (candidate) => candidate !== null && candidate !== void 0 && (typeof candidate.provider === "string" || typeof candidate.model === "string");
+		const usable = (candidate) => candidate !== null && candidate !== void 0 && typeof candidate.provider === "string" && candidate.provider !== "";
 		const p = projection ?? {};
 		const provider = (usable(p.next) ? p.next : usable(p.lastUsed) ? p.lastUsed : void 0)?.provider;
 		return typeof provider === "string" && provider !== "" ? provider : void 0;
@@ -4058,7 +4061,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* @param route - module-scope stable: a fresh literal per render would rebuild
 	*   `load` and restart the poll interval with it.
 	* @param initialCadenceMs - the rate to follow before any answer arrives;
-	*   `null` means "no timer until something states one".
+	*   `null` means "no timer until something states one" — which installs
+	*   NEITHER interval nor visibility wake, so it is only safe for a route
+	*   whose first read cannot fail. A route whose first read CAN fail (the
+	*   console one: the Host may be busy, or the link may hiccup, at mount)
+	*   passes a retry fallback instead, or a failed first read stalls the
+	*   reader for the whole session.
 	*/
 	function useRemoteRead(route, initialCadenceMs) {
 		const [reading, setReading] = useState({
@@ -4069,7 +4077,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			failed: false
 		});
 		const cadenceRef = useRef(initialCadenceMs);
-		cadenceRef.current = reading.cadenceMs;
+		useEffect(() => {
+			cadenceRef.current = reading.cadenceMs;
+		}, [reading.cadenceMs]);
 		const generation = useRef(0);
 		const inFlight = useRef(null);
 		const load = useCallback(async () => {
@@ -4170,7 +4180,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	}
 	/** The console reader (the pill's `/snapshot` loop). */
 	function useConsoleQuota() {
-		return useRemoteRead(SNAPSHOT_ROUTE, null);
+		return useRemoteRead(SNAPSHOT_ROUTE, SNAPSHOT_RETRY_FALLBACK_MS);
 	}
 	/** The desktop-app reader (the pill's `/agnescode` loop). */
 	function useAgnescodeState() {
@@ -4329,7 +4339,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		if (provider === "agnescode") return h(AgnescodeBalancePill, { tt });
 		return null;
 	}
-	var PILL_CLASS, WINDOW_5H, WINDOW_WEEKLY, TIER_INK, SNAPSHOT_ROUTE, AGNESCODE_ROUTE;
+	var PILL_CLASS, WINDOW_5H, WINDOW_WEEKLY, TIER_INK, SNAPSHOT_ROUTE, AGNESCODE_ROUTE, SNAPSHOT_RETRY_FALLBACK_MS;
 	var init_composer_usage_pill = __esmMin((() => {
 		init_runtime();
 		init_styles();
@@ -4372,6 +4382,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				};
 			}
 		};
+		SNAPSHOT_RETRY_FALLBACK_MS = 3e4;
 	}));
 
 //#endregion

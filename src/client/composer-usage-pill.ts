@@ -91,12 +91,14 @@ export interface ComposerPillProps {
  * a picker switch, before it carries the new selection) must not shadow a
  * still-usable `lastUsed`. A bare `next ?? lastUsed` reads a provider off `{}`,
  * finds none, and hides the pill for OWNED models on exactly the frames a switch
- * produces.
+ * produces. "Empty" includes the frame where the provider was CLEARED but the
+ * field is still present: a candidate without a non-empty `provider` cannot
+ * gate a mount — the gate keys on the provider — and all it can do is shadow.
  */
 export function selectedProviderOf(projection: ModelSelectionLike | undefined): string | undefined {
   const usable = (candidate: { provider?: string; model?: string } | null | undefined) =>
     candidate !== null && candidate !== undefined
-    && (typeof candidate.provider === "string" || typeof candidate.model === "string");
+    && typeof candidate.provider === "string" && candidate.provider !== "";
   const p = projection ?? {};
   const candidate = usable(p.next) ? p.next : usable(p.lastUsed) ? p.lastUsed : undefined;
   const provider = candidate?.provider;
@@ -205,7 +207,12 @@ interface RemoteRoute<T> {
  * @param route - module-scope stable: a fresh literal per render would rebuild
  *   `load` and restart the poll interval with it.
  * @param initialCadenceMs - the rate to follow before any answer arrives;
- *   `null` means "no timer until something states one".
+ *   `null` means "no timer until something states one" — which installs
+ *   NEITHER interval nor visibility wake, so it is only safe for a route
+ *   whose first read cannot fail. A route whose first read CAN fail (the
+ *   console one: the Host may be busy, or the link may hiccup, at mount)
+ *   passes a retry fallback instead, or a failed first read stalls the
+ *   reader for the whole session.
  */
 function useRemoteRead<T>(route: RemoteRoute<T>, initialCadenceMs: number | null): RemoteReading<T> {
   const [reading, setReading] = useState<RemoteReading<T>>(
@@ -216,7 +223,14 @@ function useRemoteRead<T>(route: RemoteRoute<T>, initialCadenceMs: number | null
   // would be rebuilt whenever the rate changes, and the mount effect below would
   // then fire an extra read on exactly that transition.
   const cadenceRef = useRef<number | null>(initialCadenceMs);
-  cadenceRef.current = reading.cadenceMs;
+  // The mirror runs in an effect, not the render body: a ref write during render
+  // is not transactional under concurrent rendering — a discarded-and-replayed
+  // render leaves the ref holding a value no committed render produced. Every
+  // reader of the ref sits in `load`'s async body, strictly after commit, so an
+  // effect mirror is current by the time anything reads it.
+  useEffect(() => {
+    cadenceRef.current = reading.cadenceMs;
+  }, [reading.cadenceMs]);
   // Only the newest read may write state: the interval can start a second read
   // before the first returns, and without this the slower response lands last.
   const generation = useRef(0);
@@ -354,9 +368,12 @@ function isStale<T>(reading: RemoteReading<T>, now: number): boolean {
  * The console route: the Host's snapshot, read through the panel's own
  * `interpretSnapshot` — one interpretation of that wire, not a second one.
  *
- * Cadence: whatever `pollSeconds` the Host states, and `null` before it states
- * one, so no literal here can disagree with the operator's configured rate (the
- * same ruling as `PanelPage`).
+ * Cadence: whatever `pollSeconds` the Host states. Before it states one, the
+ * loop runs at the retry fallback below, so a failed first read keeps
+ * retrying instead of dead-stalling; no literal here can disagree with the
+ * operator's configured rate (the same ruling as `PanelPage`) — the fallback
+ * is superseded by the first successful answer, or stopped by one that
+ * states none.
  */
 const SNAPSHOT_ROUTE: RemoteRoute<SnapshotData> = {
   path: SNAPSHOT_PATH,
@@ -394,9 +411,24 @@ const AGNESCODE_ROUTE: RemoteRoute<AgnescodeStateData> = {
   }
 };
 
+/**
+ * The retry rate the console reader follows while its FIRST read has failed
+ * and the Host has not yet stated a poll rate: with no cadence stated, the
+ * loop installs neither interval nor visibility wake, so a failed first read
+ * would otherwise sit on a dead "—" for the whole session (the pill has no
+ * error text of its own — the panel is where failures are read). A successful
+ * answer always supersedes this number with the Host's stated rate — or
+ * explicitly stops the timer, which is a Host instruction, not a failure — so
+ * it never outlives the first answer. It matches the Host's default
+ * `pollSeconds` (30, `CONFIG_DEFAULTS` in `host-config.ts`): the operator's
+ * rate is what the reader follows the moment it learns it, and this is only
+ * "keep trying until we do".
+ */
+const SNAPSHOT_RETRY_FALLBACK_MS = 30_000;
+
 /** The console reader (the pill's `/snapshot` loop). */
 function useConsoleQuota(): RemoteReading<SnapshotData> {
-  return useRemoteRead(SNAPSHOT_ROUTE, null);
+  return useRemoteRead(SNAPSHOT_ROUTE, SNAPSHOT_RETRY_FALLBACK_MS);
 }
 
 /** The desktop-app reader (the pill's `/agnescode` loop). */

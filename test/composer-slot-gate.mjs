@@ -101,16 +101,33 @@ function scopes() {
  * chunk: searching the package rather than one hardcoded path is what keeps this
  * gate from failing on packaging changes it does not actually care about.
  * Bounded on purpose (a UI bundle can be several MB) — a file-count or size cap
- * that trips is reported, not silently swallowed.
+ * that trips is reported, not silently swallowed: `bundleText` collects the
+ * reasons and the `[caps]` check fails loudly, because a token missing from a
+ * PARTIAL read is not proof it is missing from the package.
  * @param {string} pkgDir - absolute package directory.
- * @returns {{text: string, files: number, errors: string[]}} the concatenated text.
+ * @returns {{text: string, files: number, errors: string[], caps: string[]}} the concatenated text.
  */
 function bundleText(pkgDir) {
   const chunks = [];
   const errors = [];
+  /**
+   * Why the walk stopped, when it stopped early: the walk is bounded on
+   * purpose (a UI bundle can be several MB), and the doc says a cap trip is
+   * REPORTED, not silently swallowed — so every bound that trips appends its
+   * reason here and the caller turns it into a failing check.
+   * @type {string[]}
+   */
+  const caps = [];
   let files = 0;
   const walk = (dir, depth) => {
-    if (depth > 6 || files > 400) return;
+    if (depth > 6) {
+      caps.push(`depth cap: ${dir}`);
+      return;
+    }
+    if (files >= 400) {
+      caps.push(`file cap: at least 400 files, ${dir} not walked`);
+      return;
+    }
     let names;
     try {
       names = readdirSync(dir);
@@ -132,7 +149,10 @@ function bundleText(pkgDir) {
         continue;
       }
       if (!name.endsWith(".js") && !name.endsWith(".d.ts")) continue;
-      if (stat.size > 8_000_000) continue;
+      if (stat.size > 8_000_000) {
+        caps.push(`size cap: ${path} (${stat.size} bytes) not read`);
+        continue;
+      }
       try {
         chunks.push(readFileSync(path, "utf8"));
         files += 1;
@@ -142,7 +162,7 @@ function bundleText(pkgDir) {
     }
   };
   walk(pkgDir, 0);
-  return { text: chunks.join("\n"), files, errors };
+  return { text: chunks.join("\n"), files, errors, caps };
 }
 
 const found = scopes();
@@ -176,26 +196,33 @@ for (const root of found) {
   const tag = `v${versionOf("dsh-client-ui-conversation")}`;
 
   // A. The seat is still declared, as a session-scoped list.
-  const declared = conversation.text.match(/'conversation\.input\.right':\s*\{([^}]*)\}/);
-  const declaredBody = declared?.[1] ?? "";
+  // The quotes are matched with a back-reference, not pinned: the gate must see
+  // either single or double quotes after minification, and anything else is the
+  // new contract, not a formatting change.
+  const declared = conversation.text.match(/(['"])conversation\.input\.right\1:\s*\{([^}]*)\}/);
+  const declaredBody = declared?.[2] ?? "";
   check(`[A][${tag}] conversation.input.right is still declared kind:'list' + scope:'session'`,
-    declared !== null && /kind:\s*'list'/.test(declaredBody) && /scope:\s*'session'/.test(declaredBody),
+    declared !== null
+      && /kind:\s*['"]list['"]/.test(declaredBody)
+      && /scope:\s*['"]session['"]/.test(declaredBody),
     declared === null ? "declaration not found in the package's type surface" : declaredBody.replace(/\s+/g, " ").trim());
 
   // B. The seat is still rendered.
-  const rendered = /renderSlot\(\s*"conversation\.input\.right"/.test(conversation.text);
+  const rendered = /renderSlot\(\s*['"]conversation\.input\.right['"]/.test(conversation.text);
   check(`[B][${tag}] the conversation package still renders that seat`,
     rendered,
     rendered ? "renderSlot(\"conversation.input.right\", …) found" : "no renderSlot(\"conversation.input.right\") call found");
 
   // C. `projection` is still a keyed hook of the session scope.
-  const keyed = /keyedHooks:\s*\[\s*"projection"\s*\]/.test(session.text);
+  const keyed = /keyedHooks:\s*\[\s*['"]projection['"]\s*\]/.test(session.text);
   check(`[C][${tag}] the session scope still declares the \`projection\` keyed hook`,
     keyed,
     keyed ? "keyedHooks: [\"projection\"] found" : "keyedHooks: [\"projection\"] not found");
 
   // D. The keyed hook is still materialized strictly for a session seat.
-  const materialized = /materializeStandardBinding\(\s*scopeBinding\s*,\s*scope === "session-maybe"\s*\)/.test(renderer.text);
+  // The call shape is matched structurally — local names and whitespace are the
+  // minifier's to rewrite, so pinning them would red the gate on a reformat.
+  const materialized = /materializeStandardBinding\(\s*[^,]+,\s*[^)]*===\s*['"]session-maybe['"]/.test(renderer.text);
   check(`[D][${tag}] useProjection is still strictly materialized (optional = scope === "session-maybe")`,
     materialized
       && renderer.text.includes("materializeStandardBinding")
@@ -205,6 +232,14 @@ for (const root of found) {
 
   const readErrors = [...conversation.errors, ...session.errors, ...renderer.errors];
   check(`[read][${tag}] every contract file was readable`, readErrors.length === 0, readErrors.slice(0, 3).join(" | ") || "no read errors");
+
+  // The doc says a cap trip is reported, so a bound that trips is a FAILURE, not
+  // a silent "declaration not found": the bundle was only partially read, and a
+  // token absent from what we saw is not proof it is absent from the package.
+  const capTrips = [...conversation.caps, ...session.caps, ...renderer.caps];
+  check(`[caps][${tag}] no walk cap was tripped (the bundles were read in full)`,
+    capTrips.length === 0,
+    capTrips.length ? capTrips.slice(0, 3).join(" | ") : "no cap tripped");
 }
 
 console.log(JSON.stringify(results, null, 2));

@@ -234,6 +234,13 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   const dataRef = useRef<SnapshotData | null>(null);
   dataRef.current = data;
   const echoLlm = useCallback((patch: LlmEchoPatch) => {
+    // A write's echo must retire any in-flight poll snapshot: one started before
+    // the write's POST landed could still return AFTER this merge and overwrite
+    // the just-saved `llm` block with the pre-save values for a whole poll
+    // cycle — the UI showing "saved" and then flipping back. Bumping the
+    // generation — the same token `load` uses for mutual exclusion — is what
+    // kills it; the next scheduled tick fetches the truth. No new state.
+    generation.current += 1;
     if (dataRef.current === null) {
       void load();
       return;
