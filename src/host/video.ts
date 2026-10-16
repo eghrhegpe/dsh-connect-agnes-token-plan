@@ -30,7 +30,7 @@
  * @module dsh-connect-agnes-token-plan/video
  */
 
-import { str, num, redactSecrets } from "./util.ts";
+import { str, num, redactSecrets, resolveToolInputs } from "./util.ts";
 import { isVideo25Family, pickVideoModel } from "./video-models.ts";
 import {
   VIDEO_DEFAULT_TIMEOUT_MS,
@@ -158,17 +158,10 @@ export function defineVideoTool({
       if (isDisposed()) throw new Error("Agnes video tool is no longer mounted");
       const prompt = str(params?.prompt, "").trim();
       if (prompt === "") throw new Error("prompt is required");
-      const apiKey = await resolveApiKey();
-      if (typeof apiKey !== "string" || apiKey.trim() === "") {
-        throw new Error("AGNES_TOKEN_PLAN_API_KEY 未配置：在面板「模型接入」粘贴 API Key（免费版 sk- 或 Token Plan cpk-），或设置该环境变量");
-      }
-      let picked;
-      try {
-        picked = (await getEntries?.()) ?? [];
-      } catch {
-        picked = [];
-      }
-      const entries = Array.isArray(picked) ? picked : [];
+      // Same shared preamble as the draw tool: key first (so an unconfigured
+      // deployment costs no catalogue read), catalogue read defensively. The
+      // family-dispatch checks below stay video-only.
+      const { apiKey, entries } = await resolveToolInputs({ resolveApiKey, getEntries });
       const model = pickVideoModel(entries, params?.model, settings?.videoModelId);
       if (model === null) {
         throw new Error("catalog 中没有视频模型（`output_modalities` 字段与 `agnes-video-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含视频模型");

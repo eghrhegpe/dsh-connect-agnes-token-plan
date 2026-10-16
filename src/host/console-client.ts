@@ -38,6 +38,66 @@ function sweepCache(cache: CacheMap) {
 }
 
 /**
+ * The cache + single-flight protocol every console fetch in this module uses.
+ *
+ * All three callers — {@link fetchConsole}, {@link fetchPlans},
+ * {@link fetchModelCatalog} — need the same four moves in the same order, and
+ * each used to spell them out: a TTL read off `cache`, a shared in-flight
+ * promise per URL, the write-back, and the bounded sweep. The difference
+ * between them is only what a REQUEST does (`produce`), never how an answer is
+ * remembered. Keeping the protocol here means a fourth endpoint cannot pick up
+ * a subtly different variant of it (the same "hand-copied rule drifts" failure
+ * `switch-precedence.ts` was extracted to end).
+ *
+ * Two properties are load-bearing and are why `produce` is a callback rather
+ * than a pre-made promise:
+ *
+ * 1. **Nothing is cached until the answer has been judged.** `produce` throws
+ *    for a refusal instead of returning one, so a transient 401 never gets
+ *    written down and left to stick for the whole TTL — which would leave the
+ *    panel reading "not signed in" long after the store had healed.
+ * 2. **A failed flight leaves no trace.** The `finally` drops the in-flight
+ *    entry on the error path too, so the next poll genuinely retries rather
+ *    than awaiting a rejected promise it never saw.
+ *
+ * @param {string} url - the fully built request URL; also the cache and
+ *   in-flight key, which is what makes the de-duplication per-endpoint.
+ * @param {number} cacheMs - how long a successful answer stays fresh.
+ * @param {CacheMap} cache - the shared response cache.
+ * @param {InflightMap} inflight - the shared in-flight map.
+ * @param {() => Promise<unknown>} produce - performs the request and returns
+ *   the value to cache; throws to refuse, and a throw caches nothing.
+ * @returns {Promise<unknown>} the cached, shared, or freshly produced value.
+ */
+async function sharedFetch(
+  url: string,
+  cacheMs: number,
+  cache: CacheMap,
+  inflight: InflightMap,
+  produce: () => Promise<unknown>
+): Promise<unknown> {
+  const cached = cache.get(url);
+  if (cached !== undefined && Date.now() - cached.at < cacheMs) return cached.body;
+
+  // One in-flight fetch per URL: many open panels (or tabs) polling at once
+  // must not each hammer the console. The same request is shared until it
+  // resolves, which also keeps the host off the platform's own rate limiter.
+  const pending = inflight.get(url);
+  if (pending !== undefined) return pending;
+
+  const run = async () => {
+    const body = await produce();
+    cache.set(url, { body, at: Date.now() });
+    sweepCache(cache);
+    return body;
+  };
+
+  const flight = run().finally(() => { inflight.delete(url); });
+  inflight.set(url, flight);
+  return flight;
+}
+
+/**
  * Whether an envelope code means "the token is no longer good".
  *
  * Agnes reports an expired session as `code: 401` inside an HTTP 401, but the
@@ -128,16 +188,8 @@ export async function fetchConsole(
     ? `?${new URLSearchParams(params).toString()}`
     : "";
   const url = `${settings.consoleBase}${path}${query}`;
-  const cached = cache.get(url);
-  if (cached !== undefined && Date.now() - cached.at < cacheMs) return cached.body;
 
-  // One in-flight fetch per URL: many open panels (or tabs) polling at once
-  // must not each hammer the console. The same request is shared until it
-  // resolves, which also keeps the host off the platform's own rate limiter.
-  const pending = inflight.get(url);
-  if (pending !== undefined) return pending;
-
-  const run = async () => {
+  return sharedFetch(url, cacheMs, cache, inflight, async () => {
     /** One attempt: `{data}` on success, `{authRefused: true}` when renewing helps. */
     const attempt = async (token: string) => {
       const response = await fetch(url, {
@@ -171,17 +223,8 @@ export async function fetchConsole(
       error.code = CODE.JWT_EXPIRED;
       throw error;
     }
-    // Cached only after the envelope was read: caching a refusal would make one
-    // transient 401 stick for the whole TTL, and the panel would keep showing
-    // "not signed in" long after the store had healed.
-    cache.set(url, { body: result.data, at: Date.now() });
-    sweepCache(cache);
     return result.data;
-  };
-
-  const flight = run().finally(() => { inflight.delete(url); });
-  inflight.set(url, flight);
-  return flight;
+  });
 }
 
 /**
@@ -201,13 +244,7 @@ export async function fetchConsole(
  */
 export async function fetchPlans(settings: Settings, cacheMs: number, cache: CacheMap, inflight: InflightMap) {
   const url = `${settings.consoleBase}${PLANS_PATH}`;
-  const cached = cache.get(url);
-  if (cached !== undefined && Date.now() - cached.at < cacheMs) return cached.body;
-
-  const pending = inflight.get(url);
-  if (pending !== undefined) return pending;
-
-  const run = async () => {
+  return sharedFetch(url, cacheMs, cache, inflight, async () => {
     // No `authorization` header at all — sending an empty Bearer turns a
     // public endpoint into a refused one on this gateway.
     const response = await fetch(url, {
@@ -215,15 +252,8 @@ export async function fetchPlans(settings: Settings, cacheMs: number, cache: Cac
       signal: AbortSignal.timeout(settings.consoleTimeoutMs)
     });
     if (!response.ok) throw new Error(`${PLANS_PATH} returned HTTP ${response.status}`);
-    const body = unwrapEnvelope(await response.json(), PLANS_PATH);
-    cache.set(url, { body, at: Date.now() });
-    sweepCache(cache);
-    return body;
-  };
-
-  const flight = run().finally(() => { inflight.delete(url); });
-  inflight.set(url, flight);
-  return flight;
+    return unwrapEnvelope(await response.json(), PLANS_PATH);
+  });
 }
 
 /**
@@ -243,15 +273,7 @@ export async function fetchPlans(settings: Settings, cacheMs: number, cache: Cac
  */
 export async function fetchModelCatalog(settings: Settings, cacheMs: number, cache: CacheMap, inflight: InflightMap, apiKey: string) {
   const url = `${settings.apiBase}/models`;
-  const cached = cache.get(url);
-  if (cached !== undefined && Date.now() - cached.at < cacheMs) return cached.body;
-
-  // Same single-flight treatment as fetchConsole: an open panel and a Models
-  // page both poll `/v1/models`, and they should share one call.
-  const pending = inflight.get(url);
-  if (pending !== undefined) return pending;
-
-  const run = async () => {
+  return sharedFetch(url, cacheMs, cache, inflight, async () => {
     const response = await fetch(url, {
       headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
       // The catalog is a console call on the same footing as any other, so it
@@ -266,7 +288,7 @@ export async function fetchModelCatalog(settings: Settings, cacheMs: number, cac
     // structured fields (input_modalities etc.) that a bare id list throws
     // away. `id` is normalized; unknown fields ride along untouched so a
     // platform adding `input_modalities` needs no parser change here.
-    const models = Array.isArray(body?.data)
+    return Array.isArray(body?.data)
       ? body.data
           .map((entry: unknown) => {
             const source = obj(entry);
@@ -274,12 +296,5 @@ export async function fetchModelCatalog(settings: Settings, cacheMs: number, cac
           })
           .filter((entry: { id: string }) => entry.id !== "")
       : [];
-    cache.set(url, { body: models, at: Date.now() });
-    sweepCache(cache);
-    return models;
-  };
-
-  const flight = run().finally(() => { inflight.delete(url); });
-  inflight.set(url, flight);
-  return flight;
+  });
 }

@@ -1,9 +1,11 @@
 /**
- * Shared value readers and the error constructor used across the Host half.
+ * Shared value readers, async primitives and the error constructor used across
+ * the Host half.
  *
- * These are the small "read X or fall back" primitives every module reaches
- * for. Centralising them stops copies from drifting apart the way the error-code
- * taxonomy once did.
+ * These are the small "read X or fall back" helpers every module reaches for,
+ * plus the two cross-cutting async shapes (`retryBounded`, `forget`) and the
+ * agent-tool input preamble ({@link resolveToolInputs}). Centralising them
+ * stops copies from drifting apart the way the error-code taxonomy once did.
  * @module dsh-connect-agnes-token-plan/util
  */
 
@@ -210,6 +212,48 @@ export async function retryBounded({ attempts, delayMs, run }: {
     }
   }
   return false;
+}
+
+/**
+ * The shared preamble every agent tool runs before it can build a request:
+ * resolve the live API key, refuse when there is none, then read the model
+ * catalogue defensively.
+ *
+ * `defineDrawTool` and `defineVideoTool` each spelled this out, which meant the
+ * key-missing message — the one line a user actually reads, naming the panel
+ * section and both key shapes — existed twice and could be fixed once. The
+ * ORDER is load-bearing and is why this is a function rather than two call
+ * sites: the key is resolved and validated BEFORE the catalogue is touched, so
+ * an unconfigured deployment costs no catalogue read, and a `getEntries` that
+ * throws degrades the picker to empty rather than failing the tool (the catalog
+ * is a cache-shaped input; a stale or missing one must not kill a call that the
+ * caller may still be able to make with an explicit model id).
+ *
+ * What it deliberately does NOT do is anything modality-specific: draw's
+ * cooldown gate and video's family-dispatch checks stay with their own tools
+ * because those are real domain differences, not ceremony.
+ *
+ * @param {{resolveApiKey: () => Promise<string|undefined>, getEntries?: () => Promise<unknown[]>}} wiring
+ *   the two `ToolWiring` seams the tools are mounted with.
+ * @returns {Promise<{apiKey: string, entries: unknown[]}>} a non-empty key and
+ *   the catalogue entries (empty array when the read is absent or throws).
+ * @throws {Error} when no key is configured — the message names the fix.
+ */
+export async function resolveToolInputs(wiring: {
+  resolveApiKey: () => Promise<string | undefined>;
+  getEntries?: () => Promise<unknown[]>;
+}): Promise<{ apiKey: string; entries: unknown[] }> {
+  const apiKey = await wiring.resolveApiKey();
+  if (typeof apiKey !== "string" || apiKey.trim() === "") {
+    throw new Error("AGNES_TOKEN_PLAN_API_KEY 未配置：在面板「模型接入」粘贴 API Key（免费版 sk- 或 Token Plan cpk-），或设置该环境变量");
+  }
+  let picked;
+  try {
+    picked = (await wiring.getEntries?.()) ?? [];
+  } catch {
+    picked = [];
+  }
+  return { apiKey, entries: Array.isArray(picked) ? picked : [] };
 }
 
 /**

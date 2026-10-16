@@ -30,7 +30,7 @@
  * @module dsh-connect-agnes-token-plan/draw
  */
 
-import { str, num, redactSecrets } from "./util.ts";
+import { str, num, redactSecrets, resolveToolInputs } from "./util.ts";
 import { isImageGenModel } from "./modality.ts";
 import type { DrawRequest } from "./types.ts";
 
@@ -353,17 +353,10 @@ export function defineDrawTool({
       if (cooldown.blocked()) {
         throw new Error(`draw cooldown: 上一次出图失败，${Math.ceil(cooldown.remainingMs() / 1000)}s 后再试`);
       }
-      const apiKey = await resolveApiKey();
-      if (typeof apiKey !== "string" || apiKey.trim() === "") {
-        throw new Error("AGNES_TOKEN_PLAN_API_KEY 未配置：在面板「模型接入」粘贴 API Key（免费版 sk- 或 Token Plan cpk-），或设置该环境变量");
-      }
-      let picked;
-      try {
-        picked = (await getEntries?.()) ?? [];
-      } catch {
-        picked = [];
-      }
-      const entries = Array.isArray(picked) ? picked : [];
+      // Key + catalogue through the shared tool preamble: the key is validated
+      // before the catalogue is touched, so an unconfigured deployment costs no
+      // read. The cooldown gate above stays draw-only (video has no cooldown).
+      const { apiKey, entries } = await resolveToolInputs({ resolveApiKey, getEntries });
       const model = pickDrawModel(entries, params?.model, settings?.drawModelId);
       if (model === null || model === undefined) {
         throw new Error(

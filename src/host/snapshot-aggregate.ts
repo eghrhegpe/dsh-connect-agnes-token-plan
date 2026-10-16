@@ -401,67 +401,45 @@ async function applyCatalogEffects({
 }
 
 /**
- * Fetch the four console sources plus the model catalog and aggregate them
- * into the snapshot body the route writes.
+ * Fetch the four console sources plus the model catalogue — the NETWORK half of
+ * the poll, kept apart from the projection that shapes the answer.
  *
- * All five are fetched in parallel through the shared `cache` + `inflight`
- * maps (a single-flight per URL so concurrent polls share one call) and the
- * `tokenStore` (so a 401 triggers one renewal before the call). Only the
- * catalog is authenticated by the API key instead; a missing key degrades the
- * model lists, not the quota — resolved per poll so a key that arrives after
- * the plugin mounted still lights the lists on the next poll.
+ * All five go out through the shared `cache` + `inflight` maps (a single-flight
+ * per URL so concurrent polls share one call) and the `tokenStore` (so a 401
+ * triggers one renewal before the call). Only the catalogue is authenticated by
+ * the API key instead; a missing key degrades the model lists, not the quota —
+ * resolved per poll so a key that arrives after the plugin mounted still lights
+ * the lists on the next poll.
+ *
+ * Extracted from `buildSnapshotBody`, which is now "fetch, then shape": this was
+ * the only part of it that touches the network, and the reasoning about WHY the
+ * five requests share one batch belongs next to the batch rather than in the
+ * middle of the field assembly. The outcomes are passed straight through —
+ * `soft` has already turned every failure into `{value: null, error}`.
  *
  * @param {object} context
- * @param {object} context.settings - the resolved settings row.
- * @param {Map} context.cache - the console-response cache (shared across polls).
- * @param {Map} context.inflight - the single-flight map (shared across polls).
+ * @param {Settings} context.settings - the resolved settings row.
+ * @param {CacheMap} context.cache - the console-response cache (shared across polls).
+ * @param {InflightMap} context.inflight - the single-flight map (shared across polls).
  * @param {object} context.tokenStore - the `createTokenStore` instance.
  * @param {object} context.apiKeyStore - the `createApiKeyStore` instance.
- * @param {object} context.publisher - the `createProviderPublisher` instance.
- * @param {object} context.catalogStore - the `createFileCatalogStore` instance.
- * @param {() => Promise<boolean|null>} context.panelSwitch - the panel-saved
- *   provider switch (`provider-store.enabled()`); null when untouched.
- * @param {() => Promise<boolean|null>} context.drawSwitch - the panel-saved
- *   draw-tool switch (`draw-store.enabled()`), same shape and precedence.
- * @param {() => Promise<string|null>} context.drawModelId - the panel-saved
- *   draw-model preference (`draw-store.modelId()`); null when untouched.
- * @param {() => Promise<boolean|null>} context.videoSwitch - the panel-saved
- *   video-tool switch (`video-store.enabled()`). A SEPARATE opt-in from the
- *   draw switch: the two modalities are independent.
- * @param {() => Promise<string|null>} context.videoModelId - the panel-saved
- *   video-model preference (`video-store.modelId()`); null when untouched.
- * @returns {Promise<object>} the snapshot body.
+ * @returns {Promise<{overview: object, series: object, subscription: object, plans: object, catalog: unknown}>}
+ *   one `{value, error}` outcome per console source, plus the raw catalogue.
  */
-export async function buildSnapshotBody({
+async function fetchQuotaSources({
   settings,
   cache,
   inflight,
   tokenStore,
-  apiKeyStore,
-  publisher,
-  catalogStore,
-  panelSwitch,
-  drawSwitch,
-  drawModelId,
-  videoSwitch,
-  videoModelId
+  apiKeyStore
 }: {
   settings: Settings;
   cache: CacheMap;
   inflight: InflightMap;
   tokenStore: ReturnType<typeof createTokenStore>;
   apiKeyStore: ReturnType<typeof createApiKeyStore>;
-  publisher: ReturnType<typeof createProviderPublisher>;
-  catalogStore: ReturnType<typeof createFileCatalogStore>;
-  panelSwitch: () => Promise<boolean | null>;
-  drawSwitch?: () => Promise<boolean | null>;
-  drawModelId?: () => Promise<string | null>;
-  videoSwitch?: () => Promise<boolean | null>;
-  videoModelId?: () => Promise<string | null>;
 }) {
-  const providerState = publisher.state;
   const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
-
   const { startDate, endDate } = usageWindow(settings.usageDays);
   // THE AUTH PROBE — one source among five, fetched with the others IN
   // PARALLEL (2026-10-10; it used to run first and alone).
@@ -536,6 +514,76 @@ export async function buildSnapshotBody({
       return apiKey === "" ? null : fetchModelCatalog(settings, 3600_000, cache, inflight, apiKey).catch(() => null);
     })()
   ]);
+  return { overview, series, subscription, plans, catalog };
+}
+
+/**
+ * Assemble the snapshot body the route writes, from the five sources the poll
+ * fetched plus the stores' current state.
+ *
+ * The NETWORK half is {@link fetchQuotaSources}: this function starts from its
+ * `{value, error}` outcomes, so every field below is either a degraded source
+ * or a value read off a store, and the only side effects it performs are the
+ * catalogue persist + provider republish isolated in `applyCatalogEffects`.
+ * The five requests' parallelism, caching and 401 handling are that function's
+ * concern, not this one's.
+ *
+ * @param {object} context
+ * @param {object} context.settings - the resolved settings row.
+ * @param {Map} context.cache - the console-response cache (shared across polls).
+ * @param {Map} context.inflight - the single-flight map (shared across polls).
+ * @param {object} context.tokenStore - the `createTokenStore` instance.
+ * @param {object} context.apiKeyStore - the `createApiKeyStore` instance.
+ * @param {object} context.publisher - the `createProviderPublisher` instance.
+ * @param {object} context.catalogStore - the `createFileCatalogStore` instance.
+ * @param {() => Promise<boolean|null>} context.panelSwitch - the panel-saved
+ *   provider switch (`provider-store.enabled()`); null when untouched.
+ * @param {() => Promise<boolean|null>} context.drawSwitch - the panel-saved
+ *   draw-tool switch (`draw-store.enabled()`), same shape and precedence.
+ * @param {() => Promise<string|null>} context.drawModelId - the panel-saved
+ *   draw-model preference (`draw-store.modelId()`); null when untouched.
+ * @param {() => Promise<boolean|null>} context.videoSwitch - the panel-saved
+ *   video-tool switch (`video-store.enabled()`). A SEPARATE opt-in from the
+ *   draw switch: the two modalities are independent.
+ * @param {() => Promise<string|null>} context.videoModelId - the panel-saved
+ *   video-model preference (`video-store.modelId()`); null when untouched.
+ * @returns {Promise<object>} the snapshot body.
+ */
+export async function buildSnapshotBody({
+  settings,
+  cache,
+  inflight,
+  tokenStore,
+  apiKeyStore,
+  publisher,
+  catalogStore,
+  panelSwitch,
+  drawSwitch,
+  drawModelId,
+  videoSwitch,
+  videoModelId
+}: {
+  settings: Settings;
+  cache: CacheMap;
+  inflight: InflightMap;
+  tokenStore: ReturnType<typeof createTokenStore>;
+  apiKeyStore: ReturnType<typeof createApiKeyStore>;
+  publisher: ReturnType<typeof createProviderPublisher>;
+  catalogStore: ReturnType<typeof createFileCatalogStore>;
+  panelSwitch: () => Promise<boolean | null>;
+  drawSwitch?: () => Promise<boolean | null>;
+  drawModelId?: () => Promise<string | null>;
+  videoSwitch?: () => Promise<boolean | null>;
+  videoModelId?: () => Promise<string | null>;
+}) {
+  const providerState = publisher.state;
+  const { overview, series, subscription, plans, catalog } = await fetchQuotaSources({
+    settings,
+    cache,
+    inflight,
+    tokenStore,
+    apiKeyStore
+  });
 
   // --- the quota block -----------------------------------------------------
   // Assembled by `buildQuotaBlock` below: fetch-five-then-degrade means every
