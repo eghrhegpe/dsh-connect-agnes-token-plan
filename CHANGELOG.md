@@ -320,9 +320,9 @@
 
 - **面板第三个 tab「小浣熊」**（`src/client/raccoon-tab.ts`）：开关、微信扫码登录、积分余额、模型花名册四块。文案中英双语（`raccoon.*` 17 键）。
 - **Host 半边 peer-free 协议层**（`src/host/raccoon.ts`）：扫码登录走查、信封解析（成功判据是 `code === 0`，用普通 `Number` 比较——共享的 `num` 助手会把 `0` 当假值拒掉）、一次性 refresh-token 轮换、余额与目录读取、两态思考档位映射。
-- **凭据走 DSH 凭据服务**（`src/host/raccoon-store.ts`）：存的是凭据服务引用而非明文；轮换后的新 pair 在续期时**回写**——这正是与「读桌面端文件」路线相比唯一能站住的地方。
+- **凭据走 DSH 凭据服务**（`src/host/raccoon-store.ts`）：存的是凭据服务引用而非明文；轮换后的新 pair 在续期时**回写**。
 - **开关按 profile 分段**（`src/host/raccoon-switch-store.ts`）：与 provider/draw 同一套文件-backed 纪律。
-- **第二个独立 publisher**（`src/host/raccoon-publish.ts` + `raccoon-llm-adapter.ts`）：与 Token Plan 的注册完全隔离，小浣熊侧怎么折腾都churn 不到主注册。
+- **第二个独立 publisher**（`src/host/raccoon-publish.ts` + `raccoon-llm-adapter.ts`）：与 Token Plan 的注册完全隔离。
 - **自包含 QR 编码器**（`src/client/qr.ts`，455 行，零外部依赖）：byte mode、纠错等级 M、v1–10，登录 URL 直接在面板内编码成图。
 - **测试**：`test/raccoon.test.mjs`（离线，覆盖协议、两个 store、描述符映射、publisher 状态机、QR 编码器、开关 store），已进 `npm test` 与 CI offline 档。
 
@@ -333,24 +333,24 @@
 - **QR 要等下一轮 60s 轮询才出现**：登录入口像没反应。
 - **`fontSize` / `marginTop` 泄漏成 DOM 属性而非样式**：样式静默失效。
 - **扫码登录拿到的昵称没存**：面板无法称呼用户，补存后正常问候。
-- **小浣熊的积分倍率没进模型选择器**：面板花名册显示的 ×0.75 / free / ×0.2，在选择器里看不到（pi-ai 没有计费元数据通道，选择器只渲染名字）。倍率改挂进显示名——`GLM-5.3（×0.75）`、`SenseNova 6.8 Flash（free）`，倍率 1 保持裸名。两处同源，不会打架。
+- **小浣熊的积分倍率没进模型选择器**：面板花名册显示的 ×0.75 / free / ×0.2，在选择器里看不到（pi-ai 没有计费元数据通道，选择器只渲染名字）。倍率改挂进显示名——`GLM-5.3（×0.75）`、`SenseNova 6.8 Flash（free）`，倍率 1 保持裸名。
 
 ### 面板从侧边栏归位到 Plugins 页
 
 - **去掉 `sidebar.panellist` 与 `main` 槽位注册**，只留 `plugins.bundle.config`：面板改为 Plugins 页内的**内联卡片**，不再占侧边栏一行（`src/client/panel-page.ts`、`src/client/index.ts`）。同时摘掉 layout 服务依赖与 onClose 按钮（Plugins 页自己管导航），`PanelPage` 的 `onClose` 改为按传入与否决定渲染。
-- 这解决了「装了 5 个 connect 插件 = 侧边栏 5 行噪音」的问题，与 workbuddy 的形态对齐。
+- 解决了「装了 5 个 connect 插件 = 侧边栏 5 行噪音」的问题，与 workbuddy 的形态对齐。
 
 ### 小浣熊模型列表：行形态与 Token Plan 花名册对齐
 
-原来每个模型只有「名字 + 一个 English 徽章」，参数行整块缺席，读起来像个半成品。数据其实**早就在手上**——网关的目录行带 `context_window` / `max_output_tokens`，`fetchRaccoonCatalog` 自首个版本就归一化了这两个字段，`raccoonRoster` 也一路保留着，只有这个渲染组件把它们丢了：
+原来每个模型只有「名字 + 一个 English 徽章」，参数行整块缺席。数据其实**早就在手上**——网关的目录行带 `context_window` / `max_output_tokens`，`fetchRaccoonCatalog` 自首个版本就归一化了这两个字段，只有渲染组件把它们丢了：
 
-- **补上参数行**：「256K 上下文 · 最大输出 64K」，复用 Token Plan 花名册的 `S.modelMeta` 与同两条文案模板（`llm.contextBadge` / `llm.metaOutput`）。目录没声明该字段时**不画这一段**（`num()` 对缺失值返回 `undefined`，不兜底编数）——面板只引述平台真给的东西。
+- **补上参数行**：「256K 上下文 · 最大输出 64K」，复用 Token Plan 花名册的 `S.modelMeta` 与同两条文案模板（`llm.contextBadge` / `llm.metaOutput`）。目录没声明该字段时**不画这一段**（`num()` 对缺失值返回 `undefined`，不兜底编数）。
 - **倍率改为独立 chip**（`S.modelRate`，与 Token Plan 同款），`0` 显示 `free` 而不是 `×0`（零倍率是对模型的事实陈述，不是一个为零的费率）；新增 `raccoon.free` 键补齐 i18n。
 - **倍率 tooltip 不复用 `llm.rosterRateTitle`**：那句话写的是「积分消耗**伪**倍率（自定义对比用，**非官方**）」，因为 Token Plan 的倍率确实是操作者在插件里配的；而小浣熊的倍率是**网关目录直接声明的字段**，借那句 tooltip 等于给真数据贴上"编的"标签。新增 `raccoon.rateTitle`「网关目录声明的积分倍率（0 为免费）」，并加断言钉住别再用错。
 - **`· vision` 硬编码英文改为 `llm.rosterVision`「可看图」徽章**，靠右对齐——原先那个 `" · vision"` 是拼在倍率徽章里的中文字典里的英文裸串，既没走 i18n 也没走统一徽章样式。
 - **给列表一个框**（新增 `S.modelPanel`）：与同 tab 里「已登录」块（`S.card`）同级的容器。行的分隔线样式**不变**——仓库既有原则是「section card 持有唯一的框、行不重画框」，缺的是列表这一层的容器，不是给每行描边。
 
-`test/render.test.mjs` 补 5 条断言（150 → 155）：参数行在有字段时出现、在没字段时不出现为空行、费率 chip 渲染、free 不带 `×0`，以及**思考档位必须缺席**——该 provider 注册的是 `reasoning: false`（pi-ai 发不出网关唯一有效的 `extra_body.thinking`），照抄 Token Plan 那行「思考 关闭/低/中/高」等于承诺一个 DSH 选择器永远不会给的档位。均做过「删参数行 / 填入思考档位 → 红 → 还原 → 绿」验证。
+`test/render.test.mjs` 补 5 条断言（150 → 155）：参数行在有字段时出现、在没字段时不出现为空行、费率 chip 渲染、free 不带 `×0`，以及**思考档位必须缺席**——该 provider 注册的是 `reasoning: false`（pi-ai 发不出网关唯一有效的 `extra_body.thinking`），照抄 Token Plan 那行「思考 关闭/低/中/高」等于承诺一个 DSH 选择器永远不会给的档位。
 
 ### 「接入 API」tab：卡片改名、重排、默认展开
 
@@ -362,7 +362,7 @@
 
 同时修掉一处被这次重排坑到的文案漂移：`llm.rosterEmpty` 原写「在**上方**保存一次 API Key」，而它所指引的 API Key 卡已经换到**下方**——方向词在换序后必然指错，改为直接点名「API Key」卡片（中英两侧同步；`draw.off`、`llm.noKey` 那两处「上方」指的是**同卡片内**的开关与输入框，不跨卡，保持不变）。
 
-`test/panel.test.mjs` 补三条断言把这次的决定钉住：三张卡的渲染顺序、默认展开集合、跨卡指引必须点卡片名而非方向词（均做过「故意改回旧序 / 改回 false → 红 → 还原 → 绿」验证）。
+`test/panel.test.mjs` 补三条断言：三张卡的渲染顺序、默认展开集合、跨卡指引必须点卡片名而非方向词。
 
 ### 截图与市场清单对齐（`docs` 门禁新增检查 `SCREENSHOTS`）
 
@@ -370,13 +370,13 @@
 
 - **清单对齐当前两张**：`assets/panel-credit.png`（「积分额度」tab）、`assets/panel-API-provider.png`（「接入 API」tab）；「小浣熊」那张待补。
 - **`docs.test.mjs` 新增检查 `SCREENSHOTS`**：清单声明的每条路径必须**真实存在于磁盘**、是图片扩展名、条目数 1–8、且为仓库根相对路径。三种破坏实测红过再还原复验绿（换回旧名 / `..` 逃逸 / 拿 `README.md` 当条目）。
-- **`PITFALLS` 新增 §26**（条目数 25 → 26，三处引用由门禁当场抓出并同步）：**清单类文件（`.json` / `.yml` / `.toml`）不是文档，但同样是契约**——改资产名前先问「还有谁按名字引用它」；本仓库按名字引用 `assets/` 的机器消费方只有 `screenshots.json` 一处，正是「只有一处 + 又不叫 `.md`」让它成了盲区。
-- **`CONTRIBUTING` §8** 那句「重截并推送后截图自动生效（**文件名不变**）」已修正：它藏了个未言明的前提——**改名就必须同步清单**，而这次恰恰是换了名。
+- **`PITFALLS` 新增 §26**（条目数 25 → 26，三处引用由门禁当场抓出并同步）：**清单类文件（`.json` / `.yml` / `.toml`）不是文档，但同样是契约**——改资产名前先问「还有谁按名字引用它」。本仓库按名字引用 `assets/` 的机器消费方只有 `screenshots.json` 一处，正是「只有一处 + 又不叫 `.md`」让它成了盲区。
+- **`CONTRIBUTING` §8** 那句「重截并推送后截图自动生效（**文件名不变**）」已修正：它藏了个未言明的前提——**改名就必须同步清单**。
 
 ### 模型花名册重排（WorkBuddy 形态）
 
 - **行去卡内框、改用分隔线**：`modelRow` 由横向 flex 行改为纵向列（头行 + 缩进的参数行），新增 `modelRowHead` 包裹头行；徽章只标 notable 态（删「纯文本」徽章、补「额度耗尽」徽章）。工具行计数成组右置，批量按钮 32px 与搜索框等高。
-- **每行只留会变的 per-model 事实**：参数段从「上下文 · 最大输出 · 默认思考强度」改为**本模型实际可选档位**——「思考 关闭/低/中/高/极高[/最高]」，由 Host 新导出的 `supportedThinkingLevels` 按 pi-ai `getSupportedThinkingLevels` 同一规则过滤（与 DSH 选择器同源），glm-5.2 独显「最高」。provider 级常数（默认思考强度）收进花名册头部只说一次（`llm.rosterThinkingDefault`），**删掉逐行重复的恒定默认档**——用户锐评「恒定默认档逐行重复=噪音」，该反模式记于 `docs/ARCHIVE-IMPROVEMENTS-2026-09.md` §7（2026-10-05 归档）。
+- **每行只留会变的 per-model 事实**：参数段从「上下文 · 最大输出 · 默认思考强度」改为**本模型实际可选档位**——「思考 关闭/低/中/高/极高[/最高]」，由 Host 新导出的 `supportedThinkingLevels` 按 pi-ai `getSupportedThinkingLevels` 同一规则过滤（与 DSH 选择器同源），glm-5.2 独显「最高」。provider 级常数（默认思考强度）收进花名册头部只说一次（`llm.rosterThinkingDefault`），**删掉逐行重复的恒定默认档**。
 - **`tokenSize` 修正 1049k → 1M**：千整走十进制、纯二进制走 1024、≥1M 归 M。Host 侧新增 `maxOutputLength` 投影（`0` = 未声明则整段不画，绝不猜）。
 - **`matchMultiplier` 单一匹配器**：趋势行 ×N 与花名册 ×N 同源同值，两处显示不可能不一致。
 
@@ -390,36 +390,23 @@
 
 - 账号表单标题下与 API Key 表单底部的官网链接**两种状态都显示**：无账号时「前往官网注册」，已有账号时「前往官网管理额度 / 获取 API Key」（新键 `auth.portalHint`，中英双语；URL 入 `const.ts`）。
 
-### 思考档位收敛到「实测过 200 才画」（面板不再过度承诺 low/medium/xhigh）
+### 思考档位收敛到「实测过 200 才画」
 
-面板花名册每行原来把 `low/medium/xhigh` 对**所有**商汤模型都画出来，但冻结契约表
-`test/baselines/sensenova-contract.json` 里 `xhigh` 只实测过 deepseek-v4-flash（200）、
-`max` 只实测过 glm-5.2（200），`low`/`medium` 对任何模型都**从未实测**（代码依据只是
-平台 400 报错文案里出现过这两个词，而那串列表是**并集**、各模型支持面不同）——用户点了某家不支持的档就可能 400。
-现把 `thinkingLevelMapFor` 改为**逐模型门控**（新常量 `PROBED_EFFORT`，数据抄自同一张
-冻结契约，覆盖 low/medium/high/xhigh/max 五格）：`high`（平台默认，全家族实测过）保持
-开，`xhigh` 只对 deepseek-v4-flash 开，`max` 只对 glm-5.2 开；未收录模型默认全关。
+面板花名册每行原来把 `low/medium/xhigh` 对**所有**商汤模型都画出来，但冻结契约表 `test/baselines/sensenova-contract.json` 里 `xhigh` 只实测过 deepseek-v4-flash（200）、`max` 只实测过 glm-5.2（200），`low`/`medium` 对任何模型都**从未实测**（代码依据只是平台 400 报错文案里出现过这两个词，而那串列表是**并集**、各模型支持面不同）——用户点了某家不支持的档就可能 400。
 
-**2026-09-30 探针补测后**：`test/live-contract.mjs` 扩了 `reasoning_effort:low/medium`
-探针（2s 退避；429 记 INDEFINITE 不当判读——限流是节奏问题不是参数拒绝，只有 4xx 才
-算"不支持"的负证据）。首跑实锤 200 的格子：sensenova-6.8-flash-lite（low+medium）、
-**deepseek-v4-flash（low+medium，你原问的那行——低中档平台真支持）**、glm-5.2（low+medium）、
-deepseek-flash（medium）、kimi-k3（medium）→ 这些格已翻 `true`，对应面板行放出低/中档。
-仍 INDEFINITE 的（429 rpm 窗口，非 400，保持关、重跑再翻）：deepseek-v4-pro 的 low+medium、
-deepseek-flash 的 low、kimi-k3 的 low。
+现把 `thinkingLevelMapFor` 改为**逐模型门控**（新常量 `PROBED_EFFORT`，数据抄自同一张冻结契约，覆盖 low/medium/high/xhigh/max 五格）：`high`（平台默认，全家族实测过）保持开，`xhigh` 只对 deepseek-v4-flash 开，`max` 只对 glm-5.2 开；未收录模型默认全关。
 
-测试同步：`contract` §2 加逐模型 low/medium 断言（读契约表，`true`→开、`indefinite`/`false`→关）、
-`provider` §1（v4-flash/glm-5.2/flash-lite 的 low+medium 开、INDEFINITE 格关）、`retry` §5、
-`routes` Q2、`render` G4（v4-flash 那行 = 关闭/低/中/高/极高）。文档同步：`API.md` 样例
-行与字段注记、`IMPROVEMENTS.md` §7 修订、本条。
+**2026-09-30 探针补测后**：`test/live-contract.mjs` 扩了 `reasoning_effort:low/medium` 探针（2s 退避；429 记 INDEFINITE 不当判读——限流是节奏问题不是参数拒绝，只有 4xx 才算"不支持"的负证据）。首跑实锤 200 的格子：sensenova-6.8-flash-lite（low+medium）、deepseek-v4-flash（low+medium）、glm-5.2（low+medium）、deepseek-flash（medium）、kimi-k3（medium）→ 这些格已翻 `true`，对应面板行放出低/中档。仍 INDEFINITE 的（429 rpm 窗口，非 400，保持关、重跑再翻）：deepseek-v4-pro 的 low+medium、deepseek-flash 的 low、kimi-k3 的 low。
+
+测试同步：`contract` §2 加逐模型 low/medium 断言（读契约表，`true`→开、`indefinite`/`false`→关）、`provider` §1（v4-flash/glm-5.2/flash-lite 的 low+medium 开、INDEFINITE 格关）、`retry` §5、`routes` Q2、`render` G4（v4-flash 那行 = 关闭/低/中/高/极高）。文档同步：`API.md` 样例行与字段注记、`IMPROVEMENTS.md` §7 修订、本条。
 
 ### 可见性修复三连：登录态常显 + provider 注册 pending 态 + 小浣熊错误不再被开关藏起
 
 同族问题——「状态翻成某个值后，操作入口/错误行跟着消失，用户拿不到重入路」：
 
-- **登录态与账号编辑器无条件可见**（中间态不再是死路）：此前「连接商汤控制台」区卡只在 `hasAccount || needsAccount` 时出现——中间态（已点过「清除账号」、grant 仍在静默续期）下整卡消失，要等 refresh_token 彻底失效才重新拿到重输入口。现改为**只要快照携带 auth 块就常显**，积分额度页底部永远有该卡（默认折叠、一键展开）：随时可核对登录态、重输账号改指仍有效的 grant、或再清一次账号。头部「需要重新登录」chip 的 tooltip 在 Host 没给 reason 时回落 guidance 文案，不再留空白。
-- **provider 注册 pending 态**：开关已开、服务在、无 error，但注册没落地时，原文案谎报「未注册——勾选上方开关」（指向已勾选的开关）；新增 `llm.registeredPending` 直说 pending。同时修分支序：具体失败（providerError）优先于能力缺失（noService），两者同时成立时不再吞错误。
-- **小浣熊 tab 注册状态行不再被开关门控**：providerError 原来只在 `enabled === true` 时渲染，开关一关报错就消失；现 `state !== null` 即渲染，失败行与开关解耦。
+- **登录态与账号编辑器无条件可见**（中间态不再是死路）：此前「连接商汤控制台」区卡只在 `hasAccount || needsAccount` 时出现——中间态（已点过「清除账号」、grant 仍在静默续期）下整卡消失，要等 refresh_token 彻底失效才重新拿到重输入口。现改为**只要快照携带 auth 块就常显**，积分额度页底部永远有该卡（默认折叠、一键展开）。头部「需要重新登录」chip 的 tooltip 在 Host 没给 reason 时回落 guidance 文案。
+- **provider 注册 pending 态**：开关已开、服务在、无 error，但注册没落地时，原文案谎报「未注册——勾选上方开关」（指向已勾选的开关）；新增 `llm.registeredPending` 直说 pending。同时修分支序：具体失败（providerError）优先于能力缺失（noService）。
+- **小浣熊 tab 注册状态行不再被开关门控**：providerError 原来只在 `enabled === true` 时渲染，开关一关报错就消失；现 `state !== null` 即渲染。
 - **构建修复**：`qr.ts` 内 8 处 `x?.y = v`（可选链左值赋值）是解析错误，tsdown 直接挂掉——改为先索引后赋值。
 - **测试**：`test/panel.test.mjs` B2 组翻转（中间态/死 grant 态都钉 `canManageAccount === true`）；`panel-decision.js` 镜像同步去门控；`render.test.mjs` 新增 pending 态与 error 优先序 2 项 pin。
 
@@ -427,24 +414,22 @@ deepseek-flash 的 low、kimi-k3 的 low。
 
 上报现象：全新装好插件打开面板，看不到三个 tab，整页只有一个登录表单——**API Key tab 和小浣熊 tab 也一起消失了**，尽管它们一个根本不读控制台、一个连的是另一个上游。
 
-根因是**结构性设计缺陷，不是移植失误**（源版同样存在）：控制台探针 `overview` 被当作**唯一致命源**，失败即整个快照走 `ok:false`；客户端又把 tab 栏放在 `data` 分支里，于是「控制台没登录」这一件事把三个互相独立的模块全埋了。这正是 `AGENTS.md` 模块独立性不变量禁止的形状。
+根因是**结构性设计缺陷，不是移植失误**（源版同样存在）：控制台探针 `overview` 被当作**唯一致命源**，失败即整个快照走 `ok:false`；客户端又把 tab 栏放在 `data` 分支里，于是「控制台没登录」这一件事把三个互相独立的模块全埋了。
 
-两层修复 + 一条诚实性补丁：
-
-- **Host（`snapshot-aggregate.ts`）**：`overview` 从致命源降级为五个可降级源之一（`soft()`），新增 `quota.consoleConnected`；失败原因（`not_configured` / `auth_error` / `console_error`）走 `quota.error.code`。它仍**串行先取**——401 时先换新令牌，后面批量才拿活令牌出门（`test/routes.test.mjs` B 组的「死令牌只被出示一次」仍是绿的）。
+- **Host（`snapshot-aggregate.ts`）**：`overview` 从致命源降级为五个可降级源之一（`soft()`），新增 `quota.consoleConnected`；失败原因（`not_configured` / `auth_error` / `console_error`）走 `quota.error.code`。它仍**串行先取**——401 时先换新令牌，后面批量才拿活令牌出门。
 - **客户端（`panel-page.ts`）**：tab 栏从 `data` 分支提到顶层，**第一帧就渲染**；`data === null` 时登录表单变成额度 tab 的**内容**而不是整页。控制台未连接时额度 tab 内点名原因，并一次性自动展开账号卡（用 `useRef` + `useEffect`，因为 `open` 是受控 prop，写成 `open: openSections.account || needsSetup` 会让卡片再也收不起来）。
-- **诚实性补丁**：`quota.totals` 在读不到时是 **`null`，不是零值块**。`parseUsageOverview(null)` 的每个计数器都经 `countOf` 落到 `0`，直接渲染会把一次读取失败伪装成「0 次请求 / 0 token」——把失败变成测量。面板本就有 `null` → 「暂未读到」的分支，所以这一条只改 Host 侧。
+- **诚实性补丁**：`quota.totals` 在读不到时是 **`null`，不是零值块**。`parseUsageOverview(null)` 的每个计数器都经 `countOf` 落到 `0`，直接渲染会把一次读取失败伪装成「0 次请求 / 0 token」——把失败变成测量。
 - **顺带暴露的副作用**：未登录的 Host 现在也会去取**公开套餐目录**（它是控制台静默时唯一还剩的额度内容），`test/wiring.test.mjs` 此前从未 stub 过它，已补。
 - **测试**：`routes` +8、`wiring` +2、`e2e` +2、`render` +2（含「第一帧就带三个 tab」的回归）；`docs/API.md` / `ARCHITECTURE.md` §3 §5 同步。客户端两个 tab 的行为未变，只是重新可达。
 
 **上线实测又挖出一个缺口（同日补）**：重启 web 后快照确实变成 `ok:true` / `consoleConnected:false` / `totals:null`，但 `quota.error.code` 是 **`login_rejected`**——而 `GUIDANCE_BY_CODE` 只覆盖了 5 个码。根因是这次降级的连带效应：`AUTH_FAILURE_CODES` 里 13 个码现在**都能**以 `quota.error.code` 抵达面板（以前它们只会变成整份 `ok:false`，面板只读顶层 `code`），表却没跟着长。后果是面板退化成泛泛的「控制台未连接」，丢掉「账号需要重新输入」这个唯一有用的信息。
 
 - `GUIDANCE_BY_CODE` 补齐到 `AUTH_FAILURE_CODES ∪ NO_LOGIN_CODES` 全覆盖：令牌侧（`auth_error` / `jwt_expired` / `no_refresh_token` / `refresh_rejected` + 四个已死的 OIDC 期码）统一给「令牌失效，重登一次」；账号侧 `not_configured` / `missing_credentials` 给「还没配账号」；四种凭据拒绝**复用表单自己的文案**（`auth.badCredentials` / `auth.locked` / `auth.rateLimited` / `auth.verification`）——它们的下一步动作各不相同（重输 / 等解锁 / 等限频 / 完成人工验证），塌成一句「登录失败」会对其中三种给出错误建议。
-- **补上反向检查**（`test/panel.test.mjs`）：此前只断言「表里的 key 都是真码」，现在同时断言「能抵达面板的码都有文案」。缺的正是这一半，而且是被线上抓到的，不是被测试抓到的。
+- **补上反向检查**（`test/panel.test.mjs`）：此前只断言「表里的 key 都是真码」，现在同时断言「能抵达面板的码都有文案」。
 
 ### 修复：浏览器把保存的商汤账号填进模型搜索框
 
-上报现象：密码管理器把 SenseNova 控制台的账号自动填进插件的输入框，**连「接入 API」tab 的模型搜索框也被塞了账号**，看着像浏览器按关键词猜中了什么。
+上报现象：密码管理器把 SenseNova 控制台的账号自动填进插件的输入框，**连「接入 API」tab 的模型搜索框也被塞了账号**。
 
 **不是关键词，是我们主动声明的，而且同 origin 上还有第二个一模一样的表单**：
 
@@ -454,8 +439,8 @@ deepseek-flash 的 low、kimi-k3 的 low。
 
 修法：给模型搜索框加 `autoComplete="off"` 与 `name="model-search"`。**账号表单的 `username`/`current-password` 语义刻意保留**（浏览器记住 Agnes 账号是想要的能力），本次只堵「去表单外找用户名」这条路径。
 
-- `render.test.mjs` 新增 I2 组：渲染全部 7 个可能含输入框的组件，断言每个可填文本输入框要么 `autoComplete="off"`、要么声明凭据角色，并把「唯一声明凭据角色的是账号表单」钉死。该检查实测会红再复绿。
-- 机制与证据写进 `docs/PITFALLS.md` §27（同 origin 多插件会把这一点放大成「凭据互相串门」）。
+- `render.test.mjs` 新增 I2 组：渲染全部 7 个可能含输入框的组件，断言每个可填文本输入框要么 `autoComplete="off"`、要么声明凭据角色，并把「唯一声明凭据角色的是账号表单」钉死。
+- 机制与证据写进 `docs/PITFALLS.md` §27。
 
 ### 修复：额度已经正常显示，头部却一直挂「需要重新登录」
 
@@ -464,45 +449,46 @@ deepseek-flash 的 low、kimi-k3 的 low。
 - **根因**：`state.lastError` 由 `getToken()` 的 `acquire()` 路径写入、也由那条路径清除，但 `getToken()` 在缓存令牌仍然新鲜时会**提前 return**，根本不进 `acquire()`；而面板上的手动登录是**直接存令牌**的，从不经过 `acquire()`。一次失败的自动重登写上这个字符串，用户手动登录成功后节流记录被清了、**这个字符串没清**，新令牌又足够新鲜——清除路径再也不会跑到。
 - **修法**：不逐个写入点补清除，而是把上报钉在结果上——`state()` 里 `error: isFresh(stored) ? null : …`。`auth.error` 的契约是「面板该向用户要账号」，持有一个控制台没拒绝过的令牌时就不存在当前错误。
 - **同族**：`AccountForm` 的「已保存并登录，正在读取额度…」也从不落地（`saved` 只被「清除账号」复位），改由父组件传 `hasSnapshot` 门控——独立表单照旧显示，面板内嵌不再显示。**这条没有测试覆盖**（测试替身的 `useState` 只返回初值，进不去 `saved`），是记录在案的缺口。
-- **测试**：`store.test.mjs` 8c 组补两处断言（parked 期间必须报错、改正之后必须不报），实测会红并精确报出用户看到的那句原文，再还原复绿；冻结基线零漂移。机制写进 `docs/PITFALLS.md` §28。
+- **测试**：`store.test.mjs` 8c 组补两处断言（parked 期间必须报错、改正之后必须不报）；冻结基线零漂移。机制写进 `docs/PITFALLS.md` §28。
 
 ### 运维诊断 doctor（PITFALLS §22 的欠账）
 
 回答「这台机器的 provider / 出图开关到底开没开」——此前唯一答案在一个 JSON 状态文件里，不在任何配置文件、任何路由、任何 CLI。
 
-- **新增 `src/host/doctor.ts`（peer-free 纯读层）+ `tools/doctor.mjs` CLI**：读 `$DSH_HOME/state/<name>/` 与每个 `<profile>/<name>/` 下的 `provider.json` / `draw.json` / `catalog.json`，报「面板保存值 > 部署默认值」的生效开关、模型允许清单、以及「文件存在但读不成」时**点名**是哪个文件（损坏/外来版本不会静默变空）。`npm run doctor`（人读）/ `npm run doctor:json`（机器读）。
-- 与「大统一」定位对齐：单点入口必须可查，doctor 是第一条查询通道；它不写任何文件、不碰凭据，只在磁盘上读，Host 没起也能跑。
-- **测试**：`test/doctor.test.mjs`（23 项，离线门禁）——三套 payload 解析器的「损坏/外来版本读作未设」方向、profile 分段与 shared 布局互不误认、干净机器/损坏文件的人读文案；进 `npm test` 与 CI offline 档。
+- **新增 `src/host/doctor.ts`（peer-free 纯读层）+ `tools/doctor.mjs` CLI**：读 `$DSH_HOME/state/<name>/` 与每个 `<profile>/<name>/` 下的 `provider.json` / `draw.json` / `catalog.json`，报「面板保存值 > 部署默认值」的生效开关、模型允许清单、以及「文件存在但读不成」时**点名**是哪个文件。`npm run doctor`（人读）/ `npm run doctor:json`（机器读）。
+- 它不写任何文件、不碰凭据，只在磁盘上读，Host 没起也能跑。
+- **测试**：`test/doctor.test.mjs`（23 项，离线门禁），进 `npm test` 与 CI offline 档。
 
 ### 边界裁定：第二上游正式纳入界内（不变量 3 修订）
 
 Token Plan 与小浣熊同为商汤旗下产品线，`sensenova` 这个名头名副其实，第二上游不再是「待定方向的破例」。
 
-- **`ARCHITECTURE.md` §5 不变量 3 修订**：划线依据从「只吸收与商汤 **Key/账号线**强相关的能力」改为「只吸收与**商汤（SenseTime）产品线**强相关的能力」。原划法按 Key 域名 / 认证域划线，会把同一厂商的姐妹产品线误判到界外——第二上游由此从「撞边界、须先定方向」变为**界内**。另两条不变量（opt-in 默认关、凭据红线）不变。
-- **新增 §5.5** 记录裁定本身，**三条独立举证**而非印象：中证网 2026-07-19（U1 Pro 能力「在**商汤旗下的**产业级 AI『小浣熊』及 Seko 中已得到深度验证」）、商汤官方稿件 2026-09-21（「**商汤小浣熊 Raccoon Work**」由商汤科技打造）、以及本仓库既有措辞（ROADMAP §6.1 早写着「接入**商汤小浣熊**桌面 App 模型」——边界这次才承认，事实一直在那儿）。
+- **`ARCHITECTURE.md` §5 不变量 3 修订**：划线依据从「只吸收与商汤 **Key/账号线**强相关的能力」改为「只吸收与**商汤（SenseTime）产品线**强相关的能力」。原划法按 Key 域名 / 认证域划线，会把同一厂商的姐妹产品线误判到界外。另两条不变量（opt-in 默认关、凭据红线）不变。
+- **新增 §5.5** 记录裁定本身，**三条独立举证**：中证网 2026-07-19（U1 Pro 能力「在**商汤旗下的**产业级 AI『小浣熊』及 Seko 中已得到深度验证」）、商汤官方稿件 2026-09-21（「**商汤小浣熊 Raccoon Work**」由商汤科技打造）、以及本仓库既有措辞（ROADMAP §6.1 早写着「接入**商汤小浣熊**桌面 App 模型」）。
 - **它与 Token Plan 的确切关系**（后来人据此判断还能不能再放宽）：**同一厂商、不同产品线、认证域互不相通、积分口径互不算**。所以实现上必须继续是独立凭据 / 独立 publisher / 独立 provider id——共享任何一样都等于把两条产品线焊死。它是**第二上游**，与 §6.1.1 判死的**第二登录路径**不是同一件事。
-- **防止口子被开成无限大**：本次放宽只覆盖「同一厂商下的产品线」，**跨厂商聚合**（codearts 那类一套形态融 N 家）依旧在界外。以后每纳入一条新产品线必须同时落三条——① 外部可核的厂商举证；② 与 Token Plan 的具体关系，尤其是积分与认证域是否通用；③ 齐全后才允许以 opt-in 默认关的形态进入树干。缺一条就退回 publisher 隔离那条路。
-- **同步**：`ROADMAP.md` §6.1.1 的「须先定方向——不默认吸收」改为**方向已定**；`AGENTS.md` 第三条事实改为「同属商汤旗下，但认证域不相通」。§6.1.1 判死第二**登录路径**的两次复测结论**不变**——它与「第二上游属不属界内」不是同一件事，别混为一谈。
+- **防止口子被开成无限大**：本次放宽只覆盖「同一厂商下的产品线」，**跨厂商聚合**（codearts 那类一套形态融 N 家）依旧在界外。以后每纳入一条新产品线必须同时落三条——① 外部可核的厂商举证；② 与 Token Plan 的具体关系，尤其是积分与认证域是否通用；③ 齐全后才允许以 opt-in 默认关的形态进入树干。
+- **同步**：`ROADMAP.md` §6.1.1 的「须先定方向——不默认吸收」改为**方向已定**；`AGENTS.md` 第三条事实改为「同属商汤旗下，但认证域不相通」。
 
 ### 第二上游补复测 + 文档追平（一次自审掀开的三处「文档与代码分头走路」）
 
-- **README 不再说谎**（它进 npm 的 `files` 白名单，是用户装完后读到的唯一说明书）：此前 ① **零处**提到当期头条特性——第三个 tab「小浣熊」；② 三处仍写「侧边栏」，而代码早已迁到 Plugins 页，第 31 行「打开侧边栏「积分面板」」会让人**找不到入口**（操作级失效，不是文字洁癖）；③ 仍挂着「面板**只读**」的承诺，而它已经能注册推理通道、挂出图工具、写 DSH settings。三处全部改正，并补齐「出图工具」与「第二个上游：小浣熊」两个真正的能力小节（含 provider id `sensenova-raccoon`、工具挂载需重启的事实）。
+- **README 不再说谎**（它进 npm 的 `files` 白名单，是用户装完后读到的唯一说明书）：此前 ① **零处**提到当期头条特性——第三个 tab「小浣熊」；② 三处仍写「侧边栏」，而代码早已迁到 Plugins 页，会让人**找不到入口**；③ 仍挂着「面板**只读**」的承诺，而它已经能注册推理通道、挂出图工具、写 DSH settings。三处全部改正，并补齐「出图工具」与「第二个上游：小浣熊」两个真正的能力小节（含 provider id `sensenova-raccoon`、工具挂载需重启的事实）。
 - **`cordis.patch.yml` 头注释的同类漂移**：第 3 行同款地写着 "sidebar panel"，同样进 npm 包，一并改掉。
-- **第二上游的网关契约补复测**（新增 `docs/ROADMAP.md` §6.1.2）：2026-10-01 的四次无凭据只读请求——本插件实际依赖的 `/model_catalog` 与 `/chat/completions` 均回 `401 authorization_empty_error`（已抵鉴权层，路由健在）；09-30 记录里那个 404 的是参考件 `dsh-raccoon-work` 的 `/models`，**本插件不使用**。此前据前缀相同就判「实现的常量正是被标注 404 的那份清单」属**误判，已更正**。附带教训收进 PITFALLS §24。
+- **第二上游的网关契约补复测**（新增 `docs/ROADMAP.md` §6.1.2）：2026-10-01 的四次无凭据只读请求——本插件实际依赖的 `/model_catalog` 与 `/chat/completions` 均回 `401 authorization_empty_error`（已抵鉴权层，路由健在）；09-30 记录里那个 404 的是参考件 `dsh-raccoon-work` 的 `/models`，**本插件不使用**。此前据前缀相同就判「实现的常量正是被标注 404 的那份清单」属**误判，已更正**。
 - **护栏：`docs.test.mjs` 新增两条语义检查**——原有的全是形式校验（链接 / 表格去重 / 行数上限），对面「文档断言的事是否与代码一致」毫无感知：
-  - **检查 `README_TABS`**：README 必须覆盖面板的每一个 tab。tab 名单从 `panel-page.ts` 的 `activeTab` 联合类型派生、文案从 `i18n.ts` 的 `tab.<id>` 派生，**不写死任何名字**，于是「加 tab 忘了告诉用户」和「改 tab 名不跟」都必然红。
+  - **检查 `README_TABS`**：README 必须覆盖面板的每一个 tab。tab 名单从 `panel-page.ts` 的 `activeTab` 联合类型派生、文案从 `i18n.ts` 的 `tab.<id>` 派生，**不写死任何名字**。
   - **检查 `SELF_DESCRIPTION`**：README 与 `cordis.patch.yml` 声称的 UI 位置必须与 `src/client/*.ts` 实际注册的槽位一致。
   - 两条都做过「故意破坏 → 必须红 → 还原 → 复绿」的双向验证（删光「小浣熊」精确报出 `raccoon（面板文案「小浣熊」）`；改回事故原文报「声称面板在侧边栏但没有 sidebar 槽位注册」）。
 - **PITFALLS 新增 §24（GET 探活会误判）与 §25（形式门禁全绿 ≠ 文档说实话）**，总数 23 → 25；三处散落的过期引用（`README.md` / `AGENTS.md` / `docs/README.md`）同步——这批数字正是由新门禁当场揪出来的。
 
 ### 文档修正：撤销 ROADMAP §0 被证伪的前提
 
-- [ROADMAP.md](docs/ROADMAP.md) §0 与 §2 引言原写「本插件已是双 profile 的 `agent-default-model`——即这台机器的**默认推理通道**，故障域已升级为推理可用性」。该论断 2026-09-29 已被研究原稿 §1.2 撤销（`agent-default-model` 是宿主的选择记录服务，原引用不可复现；撤销原文现见 [ARCHIVE-BOUNDARY-DECISIONS.md](docs/ARCHIVE-BOUNDARY-DECISIONS.md) A1），但 ROADMAP 未同步。现改为「**能力事实**：可注册 provider `sensenova-token-plan`；是否默认通道由 profile 与用户模型选择决定；一旦某 profile 选它作默认，故障域才从面板升级为推理可用性（条件性爆炸半径）」。两份文档不再正面矛盾。
+- [ROADMAP.md](docs/ROADMAP.md) §0 与 §2 引言原写「本插件已是双 profile 的 `agent-default-model`——即这台机器的**默认推理通道**，故障域已升级为推理可用性」。该论断 2026-09-29 已被研究原稿 §1.2 撤销（`agent-default-model` 是宿主的选择记录服务，原引用不可复现；撤销原文现见 [ARCHIVE-BOUNDARY-DECISIONS.md](docs/ARCHIVE-BOUNDARY-DECISIONS.md) A1），但 ROADMAP 未同步。现改为「**能力事实**：可注册 provider `sensenova-token-plan`；是否默认通道由 profile 与用户模型选择决定；一旦某 profile 选它作默认，故障域才从面板升级为推理可用性（条件性爆炸半径）」。
 
 ### 文档与仓库纪律
 
 - **消灭「离线 N 套件」数字漂移源**：文档不再背书套件数量与枚举（`AGENTS.md` 曾写十七套件、`DSH-PLUGIN.md` 曾列 17 项清单，raccoon/doctor 套件加入后双双过期）——套件清单与链的唯一事实源收敛到 `package.json scripts.test`（已有 `package.test.mjs` 钉磁盘 ↔ 链 ↔ CI 一致性），文档只指事实源不复制数字。
 - **现状模块引用 `.js` → `.ts` 全量对齐**（64 处 / 9 文件）：只改「现状引用」，保留「历史动作 / 研究档案 / 产物 / 外部」四类原文。
+- **反模式归档**：用户锐评「恒定默认档逐行重复 = 噪音」，该反模式记于 `docs/ARCHIVE-IMPROVEMENTS-2026-09.md` §7（2026-10-05 归档）。
 
 ### 仓库结构规范化：src/ 全源码，lib/ 纯产物
 
@@ -511,7 +497,7 @@ Token Plan 与小浣熊同为商汤旗下产品线，`sensenova` 这个名头名
 
 ### 模态判定地基（modality.ts）：出图 / 视频模型识别统一为单一出处
 
-出图工具认不出模型的根因是「模态判定」两路分家、又都没拿到字段：Agnes 网关的 `/v1/models` 条目只带 `id/object/created/owned_by/supported_endpoint_types`，**没有任何模态字段**（真机确证 2026-10-01）。同一缺失让两个判定朝相反方向失手——`isImageGenModel` 严格方向（缺字段 = 不是出图模型）导致 `agnes_draw_image` 选不出候选，面板报「暂无出图模型」；`isChatModel` 宽松方向（缺字段 = 对话）把 4 个 image/video 模型全挂进对话选择器，一选就 400「是 image 模型，请使用 /v1/images/generations」。
+出图工具认不出模型的根因是「模态判定」两路分家、又都没拿到字段：Agnes 网关的 `/v1/models` 条目只带 `id/object/created/owned_by/supported_endpoint_types`，**没有任何模态字段**（真机确证 2026-10-01）。同一缺失让两个判定朝相反方向失手——`isImageGenModel` 严格方向（缺字段 = 不是出图模型）导致 `agnes_draw_image` 选不出候选，面板报「暂无出图模型」；`isChatModel` 宽松方向（缺字段 = 对话）把 4 个 image/video 模型全挂进对话选择器，一选就 400。
 
 - **新增 `src/host/modality.ts` 作为模态判定的唯一出处**，三级解析：`output_modalities` 字段优先（平台补字段即自动生效）→ `agnes-image-*` / `agnes-video-*` 名称段兜底（只匹配完整段，不重蹈 `dsh-draw-router` 的 `/u1-fast/i` 子串漏判）→ 默认 `text`。`isImageGenModel` 与 `isChatModel` 改为共用这一个函数，矛盾由构造消除而非靠约定维持。
 - **真实目录验证**：出图候选 0 → 2（自动选中 `agnes-image-2.1-flash`）；对话名单 7 → 3。出图端点本身无需改动——真机实测 `POST /v1/images/generations` 返回 `data[0].url`，与 `parseDrawResponse` 已对齐。
@@ -520,22 +506,22 @@ Token Plan 与小浣熊同为商汤旗下产品线，`sensenova` 这个名头名
 
 ### 出图工具面板开关（drawEnabled）
 
-与 provider 开关同机制的「面板开关 + 立即生效」，出图吸收（§5.4 接法 B）不再需要改配置重启：
+与 provider 开关同机制的「面板开关 + 立即生效」：
 
 - **面板新增「出图工具」卡片**（`client.js` 的 `DrawSwitch` 控件）：勾选保存后写入插件私有状态文件 `$DSH_HOME/state/<plugin>/draw.json`，与 `provider-store.js` 走完全相同的完整性纪律。优先级：面板保存值 > `cordis.patch.yml` 的 `drawEnabled`；从未动过面板的部署，行为与 `false` 一致。
 - **新增 `POST /api/<name>/draw` 路由**（`routes.js`）：与 `/provider` 同一信任形状（同源围栏 + 4 KB body 上限），`{ enabled: true|false }` 或 `{ forget: true }`。
-- **快照 `llm.drawEnabled` / `llm.drawSource`**：`snapshot-aggregate.js` 在 llm 块里回显出图开关的生效值与来源，面板无需单独调 `/draw` 就能读到当前状态。
+- **快照 `llm.drawEnabled` / `llm.drawSource`**：`snapshot-aggregate.js` 在 llm 块里回显出图开关的生效值与来源。
 - **`lifecycle.js` 的 `registerDrawTool` 改读生效值**：不再直接读 `settings.drawEnabled`，而是「面板保存值 ?? 配置默认值」。工具的实际挂载/缺席发生在**下一个 Host 启动**时（agent tools 没有 unregister 语义），开关值本身是立即生效的。
 - **测试**：`test/provider.test.mjs` 新增 draw-store 纯逻辑组（归一、读写、版本拒绝、损坏忽略、forget）；`test/routes.test.mjs` 新增 R 组（8 项，覆盖 GET/POST/forget/跨域围栏/跨 remount 持久化/配置回退）；`test/wiring.test.mjs` 路由计数从 5 更新为 6。
 
 ### 视频工具面板开关（videoEnabled）：V2.0 单体系，异步任务制
 
-与出图对称，新增可选的视频生成 agent 工具（默认关），接入全链路与出图共用同一套纪律：
+与出图对称，新增可选的视频生成 agent 工具（默认关）：
 
 - **面板新增「视频工具」卡片**（`client.js` 的 `VideoSwitch` 控件）：与 `DrawSwitch` 共用同一私有 `ToolSwitch` 体，保证两个工具的降级阶梯与状态不可能分叉。勾选保存写入 `$DSH_HOME/state/<plugin>/video.json`，优先级：面板保存值 > `cordis.patch.yml` 的 `videoEnabled`。
 - **新增 `POST /api/<name>/video` 路由**（`routes.js`）：与 `/draw` 共用同一处理器 `registerToolSwitchRoute`，区别只在闭包捕获的 store 与请求体键名（`drawModelId` / `videoModelId`）——键名承重，写错会让两工具静默共用一个模型；`test/routes.test.mjs` 组 S 专门钉隔离。
-- **Host 半边 `src/host/video.ts`（V2.0 单体系，不无脑移植上游）**：走 `POST {apiBase}/videos` 建任务 → 轮询 `{host}/agnesapi` → 取 `url` 的完整状态机；`VIDEO_MAX_POLLS = 1000` 防时钟不前进时空转；**刻意不设 30s 冷却门**（协议往返延迟已远宽于冷却窗口，且一次视频尝试分钟级、共用视频限频池）。`buildVideoBody` 对非法显式值**抛错而非夹取**（夹取帧数会静默改变视频时长，分钟级生成后才发现）。
-- **只覆盖 V2.0 参数体系**（`width`/`height`/`num_frames`(须 8n+1)/`frame_rate`/`seed`/`negative_prompt`/`image`），与 2.5 系列（`mode`/`seconds`/`size`/`aspect_ratio`）互斥；`pickVideoModel` 只在 V2.0 家族选，2.5 进 `video25ModelIds` 单独上报面板说明，不进对话选择器。
+- **Host 半边 `src/host/video.ts`（V2.0 单体系，不无脑移植上游）**：走 `POST {apiBase}/videos` 建任务 → 轮询 `{host}/agnesapi` → 取 `url` 的完整状态机；`VIDEO_MAX_POLLS = 1000` 防时钟不前进时空转；**刻意不设 30s 冷却门**。`buildVideoBody` 对非法显式值**抛错而非夹取**（夹取帧数会静默改变视频时长，分钟级生成后才发现）。
+- **只覆盖 V2.0 参数体系**（`width`/`height`/`num_frames`(须 8n+1)/`frame_rate`/`seed`/`negative_prompt`/`image`），与 2.5 系列（`mode`/`seconds`/`size`/`aspect_ratio`）互斥；`pickVideoModel` 只在 V2.0 家族选，2.5 进 `video25ModelIds` 单独上报面板说明。
 - **快照新增视频键**：`llm.videoEnabled` / `videoSource` / `videoModel` / `videoCandidateCount` / `videoCandidateIds` / `video25ModelIds`；`progress: 0` 走 `parseVideoQuery` 直接 `Number()` 读取（不能用坚持正值的 `num()`，否则合法 0% 被读成缺失）。
 - **配套配置**：`cordis.patch.yml` 新增 `videoEnabled` / `videoModelId` / `videoTimeoutMs`(≥30000) / `videoWidth`(1152) / `videoHeight`(768) / `videoNumFrames`(121) / `videoFrameRate`(24) 七项；`src/host/types.ts` 的 `HostDeps` 补 `videoFetch`。
 - **文档**：`AGNES-API.md` §7.5 整段重写为 V2.0 请求体字段与校验规则；`API.md` 补快照视频键与 `/video` 路由；`SETUP.md` 补 7 个视频配置字段；`PROVIDER-HOT-RELOAD.md` 新增 §8；`ARCHITECTURE.md` §5.4 补「视频吸收」；`README.md` 补视频工具段；`PITFALLS.md` 新增 §29（两站凭据不互通）/ §30（视频异步任务制）/ §31（`progress:0` 不能用 `num()`）。
@@ -545,8 +531,8 @@ Token Plan 与小浣熊同为商汤旗下产品线，`sensenova` 这个名头名
 
 几处「不报错、但会误导或压平层级」的显示。
 
-- **每模型消耗柱状图补图例**：柱子按「最高消耗者」归一化，top 模型永远填满轨道——它回答的是「谁在烧积分」，但满格会被误读成「这个模型快触顶」。卡片底部补一行说明「柱长按最高消耗相对显示，非占总额度比例」，图表不再靠省略说谎。
-- **返赠余额从药丸改为指标数字**：`返赠余额 327,904` 此前裹在与「通用池/专属池」同款的圆角药丸里，一个大数字被压成和静态类型标签同等权重的装饰。改为卡头右侧的 tabular 数字，读作可花余额指标。
+- **每模型消耗柱状图补图例**：柱子按「最高消耗者」归一化，top 模型永远填满轨道——它回答的是「谁在烧积分」，但满格会被误读成「这个模型快触顶」。卡片底部补一行说明「柱长按最高消耗相对显示，非占总额度比例」。
+- **返赠余额从药丸改为指标数字**：`返赠余额 327,904` 此前裹在与「通用池/专属池」同款的圆角药丸里，一个大数字被压成和静态类型标签同等权重的装饰。改为卡头右侧的 tabular 数字。
 - **注册成功不再常驻绿色**：「已向 DSH 注册提供方…」是静止常态，长期亮 `state-success-primary` 会让人误以为刚发生了好事。收敛为中性次要文字，绿色只留给「已保存」这类瞬时反馈。
 - **去掉最内层子卡的冗余边框**：section 卡→池卡→双子窗三层等宽 `border-l1` 互相抵消、压平层级。最内层子窗改为纯靠更深的背景面（layer-2）浮起，边框只留两层。
 - **API Key 字段标题去重**：「模型接入（API Key）」区块头与卡内输入框标签原本同名重复，标签改为「API Key」。
