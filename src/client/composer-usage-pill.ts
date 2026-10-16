@@ -295,16 +295,22 @@ function useRemoteRead<T>(route: RemoteRoute<T>, initialCadenceMs: number | null
     }
   }, [route]);
 
-  // Mount: exactly one read. `load` is stable while the cadence is (the route is
-  // module-scope), so this fires once; the loop below never doubles it.
+  // Mount: exactly one read — UNLESS this document is hidden, in which case
+  // nothing is being watched and the loop's first transition to "visible"
+  // below is what loads (every poll keeps a Host connection open). `load` is
+  // stable while the cadence is (the route is module-scope), so this fires
+  // once; the loop below never doubles it.
   useEffect(() => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     void load();
   }, [load]);
 
   // The loop: paused while the tab is hidden — nobody is watching, and every
   // poll keeps a Host connection (and on the desktop upstream, two upstream
   // reads) open — and rebuilt when the cadence changes. The wake-up read gives
-  // the numbers something fresh to be.
+  // the numbers something fresh to be. A document HIDDEN AT MOUNT starts
+  // paused for the same reason: the mount read above was skipped, and
+  // `onVisibility`'s first transition to "visible" is what loads and arms.
   useEffect(() => {
     const cadenceMs = reading.cadenceMs;
     if (cadenceMs === null) return undefined;
@@ -318,7 +324,11 @@ function useRemoteRead<T>(route: RemoteRoute<T>, initialCadenceMs: number | null
         timer = null;
       }
     };
-    start();
+    // A document hidden at mount starts PAUSED: the mount read above was
+    // skipped for the same reason, and the first "visible" transition is
+    // what loads and arms.
+    const hiddenNow = typeof document !== "undefined" && document.visibilityState === "hidden";
+    if (!hiddenNow) start();
     const onVisibility = () => {
       if (typeof document === "undefined") return;
       if (document.visibilityState === "hidden") stop();

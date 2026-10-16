@@ -3188,6 +3188,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				setError("unable to reach the Host");
 			}
 		}, []);
+		const retireInFlight = () => {
+			generation.current += 1;
+			inFlight.current?.abort?.();
+		};
 		useEffect(() => {
 			alive.current = true;
 			let timer = null;
@@ -3239,7 +3243,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					action: "switch",
 					enabled
 				});
-				if (alive.current) setState(body);
+				if (alive.current) {
+					retireInFlight();
+					setState(body);
+				}
 			} catch (why) {
 				if (alive.current) setNote(format(tt("agnescode.switchError"), { error: why instanceof Error ? why.message : String(why) }));
 			}
@@ -3250,6 +3257,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			try {
 				const body = await postJson(AGNESCODE_PATH, { action: "harvest" });
 				if (alive.current) {
+					retireInFlight();
 					if (body !== null) setState(body);
 					if (body?.ok === true) setNote(tt("agnescode.harvestOk"));
 					else setNote(tt("agnescode.harvestFail"));
@@ -3265,7 +3273,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				action: "saveModels",
 				enabledModelIds: ids
 			});
-			if (alive.current) setState(body);
+			if (alive.current) {
+				retireInFlight();
+				setState(body);
+			}
 		}, []);
 		const enabled = state?.enabled === true;
 		const view = agnescodeView(state, error);
@@ -4129,6 +4140,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}
 		}, [route]);
 		useEffect(() => {
+			if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
 			load();
 		}, [load]);
 		useEffect(() => {
@@ -4146,7 +4158,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					timer = null;
 				}
 			};
-			start();
+			if (!(typeof document !== "undefined" && document.visibilityState === "hidden")) start();
 			const onVisibility = () => {
 				if (typeof document === "undefined") return;
 				if (document.visibilityState === "hidden") stop();

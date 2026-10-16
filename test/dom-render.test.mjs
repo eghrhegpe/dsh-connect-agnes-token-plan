@@ -729,6 +729,32 @@ try {
       && css(firstFail.dot(), "background").startsWith("var(--dsw-alias-state-error-primary"),
     `routes=${JSON.stringify(fetched.slice(0, 8))} text=${text(firstFail.container).slice(0, 160)}`);
 
+  // A document that is HIDDEN AT MOUNT starts paused: nobody is watching and
+  // every poll keeps a Host connection open, so the mount read is skipped and
+  // the first transition to "visible" is what loads. (A visible mount reads
+  // immediately, as every scenario above does.)
+  windows = [
+    { key: "requests5h", unit: "requests", limit: 1000, windowHours: 5, used: 500, usagePct: 12.3, resetAt: Math.floor(Date.now() / 1000) + 3600 },
+    { key: "requestsWeekly", unit: "requests", limit: 100000, windowHours: 168, used: 4000, usagePct: 4 }
+  ];
+  fetched.length = 0;
+  Object.defineProperty(dom.window.document, "visibilityState", { value: "hidden", configurable: true });
+  const hiddenMount = await readPill();
+  check("a pill mounted into a hidden document starts paused — no read on mount",
+    hiddenMount.button() !== null && fetched.length === 0,
+    `button=${hiddenMount.button() !== null} fetches=${fetched.length}`);
+  Object.defineProperty(dom.window.document, "visibilityState", { value: "visible", configurable: true });
+  await act(async () => {
+    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+  });
+  await settle();
+  check("the first transition to visible is what loads the pill",
+    fetched.length > 0 && fetched.every((path) => path === SNAPSHOT_PATH)
+      && text(hiddenMount.container).includes("5 小时 12.3%")
+      && css(hiddenMount.dot(), "background").startsWith("var(--dsw-alias-state-success-primary"),
+    `routes=${JSON.stringify(fetched.slice(0, 8))} text=${text(hiddenMount.container).slice(0, 160)}`);
+  Object.defineProperty(dom.window.document, "visibilityState", { value: "visible", configurable: true });
+
   // An empty window list is "the console did not report this", not "you have
   // used nothing": the readings stay dashes and the dot refuses to grade.
   windows = [];
@@ -810,6 +836,87 @@ try {
     fetched.length > 0 && fetched.every((path) => path === SNAPSHOT_PATH)
       && text(backToConsole.container).includes("Token Plan"),
     `routes=${JSON.stringify(fetched)} text=${text(backToConsole.container).slice(0, 120)}`);
+} finally {
+  await unmountAll();
+}
+
+// ── 9c. the AgnesCode tab's write paths retire the in-flight GET ────────────
+// The tab's timer and its visibility wake issue GETs; one issued BEFORE a
+// write and answered AFTER it used to overwrite the write's post-write state
+// for up to one 60 s tick. All three write paths (switch, harvest,
+// saveModels) now retire the in-flight read first — bump the token, abort
+// the request, apply no state — the same shape `panel-page`'s echo path uses.
+// Driven through the tab's REAL toggle: the wake's GET is held at a gate
+// while the switch's POST lands, then the stale pre-write answer is let
+// through.
+try {
+  const agyOn = {
+    ok: true, enabled: true, loggedIn: true, nickname: "阿格",
+    balance: { totalBalance: 1200, timeSensitiveBalance: 40, permanentBalance: 1160 },
+    models: [], providerRegistered: false
+  };
+  const agyOff = { ...agyOn, enabled: false };
+  const held = [];
+  let deferGet = false;
+  route = (path, opts) => {
+    if (path === AGNESCODE_PATH) {
+      if (opts?.method === "POST") {
+        // Every POST answer is the Host's FULL post-write state, so the switch
+        // answers the way the real route does: what the write set, whole.
+        const payload = JSON.parse(opts?.body ?? "{}");
+        return reply(payload?.action === "switch" ? (payload?.enabled === true ? agyOn : agyOff) : agyOff);
+      }
+      if (deferGet) return new Promise((resolve) => { held.push(resolve); });
+      return reply(agyOn);
+    }
+    return reply(healthyBody);
+  };
+
+  const container = await mountPanel();
+  await act(async () => {}); // the panel's own first snapshot lands
+  const agyTab = [...container.querySelectorAll('button[role="tab"]')]
+    .find((button) => button.textContent === zh["tab.agnescode"]);
+  await click(agyTab);
+  await act(async () => {}); // the tab's first GET lands immediately (gate not armed)
+  const switchInput = () =>
+    container.querySelector(`input[type="checkbox"][aria-label="${zh["agnescode.switch"]}"]`);
+  check("the AgnesCode tab shows the provider switch in the ON state",
+    switchInput()?.checked === true,
+    `checked=${String(switchInput()?.checked)}`);
+
+  // Arm the gate and trigger a NEW GET through the tab's OWN visibility wake
+  // (hidden → visible loads once, the same handoff `PanelPage` makes).
+  deferGet = true;
+  await act(async () => {
+    Object.defineProperty(dom.window.document, "visibilityState", { value: "hidden", configurable: true });
+    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+    Object.defineProperty(dom.window.document, "visibilityState", { value: "visible", configurable: true });
+    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+  });
+  await act(async () => {}); // the wake's GET is in flight, held at the gate
+
+  // The user turns the provider off WHILE that GET is in flight.
+  await click(switchInput());
+  await act(async () => {});
+  const agyCalls = fetchCalls.filter((call) => call.path === AGNESCODE_PATH);
+  const post = agyCalls.find((call) => call.opts?.method === "POST");
+  let posted = null;
+  try { posted = JSON.parse(post?.opts?.body ?? "null"); } catch { posted = null; }
+  check("the switch's POST carries the write, and the post-write state lands",
+    JSON.stringify(posted) === JSON.stringify({ action: "switch", enabled: false })
+      && switchInput()?.checked === false,
+    JSON.stringify({ posted, checked: switchInput()?.checked }));
+
+  // Let the pre-write GET's stale answer through: it carries the ON state that
+  // the write just replaced. The tab must keep the write's state — the retired
+  // read is superseded (generation bumped), so its answer is dropped, not
+  // painted.
+  for (const resolve of held.splice(0)) resolve(reply(agyOn));
+  await act(async () => {});
+  await act(async () => {}); // the stale answer's `json()` microtask
+  check("a stale pre-write GET cannot overwrite the write's post-write state",
+    switchInput()?.checked === false,
+    `checked=${String(switchInput()?.checked)}`);
 } finally {
   await unmountAll();
 }

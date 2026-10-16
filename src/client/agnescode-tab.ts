@@ -183,6 +183,17 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     }
   }, []);
 
+  // Retire the in-flight GET before a POST's post-write state is applied: that
+  // GET's snapshot was taken BEFORE the write, and letting it land afterwards
+  // would overwrite the fresh state for up to one poll tick — the same shape
+  // `panel-page.ts`'s echo path retires (bump the token, abort the request, no
+  // new state). `load`'s catch above already treats a generation-mismatched
+  // abort as "superseded, not failed", so the retired GET stays silent.
+  const retireInFlight = () => {
+    generation.current += 1;
+    inFlight.current?.abort?.();
+  };
+
   // One loop owns the tab's polling: an immediate load on entry, then the
   // cadence; the timer stops on unmount (the tab may close at any time).
   //
@@ -257,7 +268,10 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       // `routes/agnescode.ts`) — apply it whole: a two-field patch would
       // leave the balance/roster the write just re-published stale, and a
       // patch-onto-null would be a no-op on a tab whose first GET failed.
-      if (alive.current) setState(body as unknown as AgnescodeState);
+      if (alive.current) {
+        retireInFlight();
+        setState(body as unknown as AgnescodeState);
+      }
     } catch (why) {
       if (alive.current) setNote(format(tt("agnescode.switchError"), { error: why instanceof Error ? why.message : String(why) }));
     }
@@ -278,6 +292,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
         // card right here and the tab no longer queues a second GET (the one
         // that can hold the upstream's 30 s timeout) to learn what the POST
         // just answered. The 60 s poll re-syncs on its own.
+        retireInFlight();
         if (body !== null) setState(body as unknown as AgnescodeState);
         if (body?.ok === true) {
           setNote(tt("agnescode.harvestOk"));
@@ -297,7 +312,10 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   // itself rather than a reload through the upstream-holding GET.
   const saveModels = useCallback(async (ids: string[]) => {
     const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "saveModels", enabledModelIds: ids });
-    if (alive.current) setState(body as unknown as AgnescodeState);
+    if (alive.current) {
+      retireInFlight();
+      setState(body as unknown as AgnescodeState);
+    }
   }, []);
 
   const enabled = state?.enabled === true;
