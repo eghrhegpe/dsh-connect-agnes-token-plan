@@ -23,69 +23,64 @@
 
 ## [Unreleased]
 
-### 修复：用量胶囊首读失败不再整段死停、保存回显不再被旧轮询盖回
+### 修复：用量胶囊首读失败不再卡死到会话结束、保存不再被旧轮询盖回
 
-- **修（用量胶囊）：首轮 `/snapshot` 读失败且 Host 尚未说出 cadence 时，读循环不装任何间隔器与可见性唤醒**，胶囊停在失败帧直到会话结束（「软失败保留最后读数」退化成「没有读数」）。现首读改走 30 s 重试兜底 cadence（对齐 Host 默认 `pollSeconds`），失败也持续重试，直到 Host 自己报出轮询间隔接管。
-- **修（用量胶囊）：被清空但字段仍在的 provider 帧（`{provider:""}`）会遮蔽仍可用的 `lastUsed`**，自有模型的胶囊在切换选择器的恰好转帧上消失。`selectedProviderOf` 现只认非空 `provider` 为可用。
-- **修（面板保存回显）：`echoLlm` 并入保存响应的 `llm` 块时不退役在途旧轮询快照**——保存前发起、保存后返回的轮询会把刚保存的读数盖回去最多一个轮询周期（UI 上「已保存」闪回旧值；Host 侧状态不受影响）。现回显时先 bump `generation`（与 `load` 同款互斥令牌），在途快照被一并退役。
+- **修（用量胶囊）**：控制台额度的首次读取失败时，胶囊不再停在失败帧直到会话结束——现在按 30 秒节奏持续重试，一读成功即显示正常读数；轮询间隔自动以 Host 报出的值为准。
+- **修（用量胶囊）**：模型选择器的 provider 被清空（空值）时，胶囊不再在恰好转帧上丢掉读数——上一次的选择仍可用就继续用它。
+- **修（面板）**：保存提供方开关 / 模型清单 / 出图·视频工具卡后，刚保存的值不再被在途的旧轮询快照盖回旧值。
+- 影响面：`src/client/{composer-usage-pill,panel-page}.ts`、`client.js`、`test/{dom-render,composer-slot-gate,config}.test.mjs`。
 
 ## [0.11.0] — 2026-10-16
 
-本版两条主线：新能力**对话框用量胶囊**（输入框右侧的第二条读数，按 provider 门控），与**面板操作体感**批次（ADR-014）落地。
+本版两条主线：新能力**对话框用量胶囊**（输入框右侧的第二条读数），与一批**面板操作体感**改进（几处面板操作的等待时间缩短）。
 
-### 对话框用量胶囊：输入框右侧的第二条读数（两个上游、一个座席，provider 门控）
+### 对话框用量胶囊：输入框右侧的第二条读数
 
-- **新：注册 `conversation.input.right` composer 座席并挂载 `ComposerUsagePill`。** 读数按当前会话模型的 provider 门控：`agnes-token-plan` 模型画控制台 5 小时 / 每周请求窗口的使用百分比；`agnescode` 模型画桌面端积分余额（画存量、不造百分比——网关只发积分不给上限，把余额换算成百分比需要发明一个它占谁的份额）。**其它 provider 的会话一律不挂载**（无读取、无定时器、无读数）：别的插件的会话绝不该带这些数字，`agnescode` 的额度宇宙也是桌面网关自己的，不能给它画控制台的窗口。
-- **门控坐在组件边界而非 hook 之后**：外层组件只决定挂哪个内层组件，轮询 hook 全在内层里。先调 hook 再早退会违反 Rules of Hooks，React 会把组件丢弃到会话结束（姊妹插件有专门钉住这条的回归 scenario）。
-- **读数与面板同源、不造第二把尺**：百分比走 `windowPercent`（平台自己的 `usagePct` 优先、`used/limit` 只作兜底、**从不钳制**——超额窗口报 >100 是事实不是渲染 bug）；严重度点走 `usageTier`（90 / 70，与面板进度条同源）。AgnesCode 侧 `0` 是「耗尽」读数、字段缺席是「读不到」（破折号），不是零。
-- **软失败（§5 不变量②）**：读取失败保留最后读数并标记过期，不清空、不抛错；注册失败面板照常工作、该模块缺席。
-- 影响面：`src/client/{composer-usage-pill,const,apply,cards,agnescode-tab,i18n,styles,index}.ts` + `client.js`（随 src 同 commit 重建）；`test/composer-slot-gate.mjs`（新增：钉住座席 / 渲染器 / projection / 物化契约与两个 provider id 的双侧拼写）、`test/dom-render.test.mjs`（胶囊真 DOM scenario）、`test/render.test.mjs` / `test/contract.test.mjs`（§11c）；文档与 CI 门禁同步。
+- **新**：使用本插件模型的会话，输入框右侧出现一枚小胶囊。Token Plan 模型显示「5 小时 / 每周请求窗口」的使用百分比——与面板进度条同一把尺子，超额（>100%）照实显示不钳制；AgnesCode 模型显示桌面端积分余额——余额是存量、不造百分比（`0` 是「已耗尽」的读数，破折号是「读不到」）。其它 provider 模型的会话一律不显示，胶囊不发起任何读取。
+- **软失败**：读数失败不影响面板与其它功能，胶囊保留最后一次成功读数并标记「上次数据」；胶囊本身注册失败时整个模块缺席，面板照常工作。
+- 影响面：`src/client/{composer-usage-pill,const,apply,cards,agnescode-tab,i18n,styles,index}.ts`、`client.js`、`test/{composer-slot-gate,dom-render,render,contract}.test.mjs`。
 
-### 面板操作体感：快照取数并行 + 保存回显不再拖全量快照（ADR-014）
+### 面板操作体感：几处面板操作不再等下一轮轮询
 
-- **可感变化（账号失效 / 控制台降级场景）**，四项：
-  - ① 快照五源取数全部并行（原 `overview` 先行再批量）。失效账号下两条 15 s 超时链叠加，单次快照最坏 30 s 起，现压到 ~15 s。死令牌锁号不重新引入——`getToken` 单飞 + `rejected` 集 + 逐请求 401 处置，测试 B 组按新形状重钉：每源至多一次出示 / 每 poll 一次登录。
-  - ② 接入 API tab 的 provider 开关 / 模型清单 / 出图·视频工具卡的「保存后全量快照 reload」改为把 POST 响应体就地并入快照 `llm` 块——关模型、切开关的反馈不再等下一轮慢轮询。
-  - ③ AgnesCode 三动作（开关 / 检测本机登录态 / 保存模型清单）直接应用 POST 的完整响应，harvest 成功即时翻出已关联卡片（此前要再排一次最长 30 s 的 GET）。
-  - ④ `/agnescode` 路由的 balance / catalog 两个 30 s 上游读改并行（最坏 60 s → 30 s）。
+可感变化（账号失效 / 控制台降级场景），四项：
+
+- ① 快照取数全部并行：失效账号下面板取数最坏情形从 30 s 起压到 ~15 s。死令牌每源至多出示一次、每轮自动登录一次——不重新引入锁号。
+- ② 保存提供方开关 / 模型清单 / 出图·视频工具卡不再触发全量快照 reload，关模型、切开关的效果不再等下一轮慢轮询。
+- ③ AgnesCode 三个动作（开关 / 检测本机登录态 / 保存模型清单）即时生效，采集成功立刻翻出已关联卡片，不再多等一次最长 30 s。
+- ④ AgnesCode 侧的两个 30 s 上游读（积分余额 / 模型清单）改并行，最坏 60 s → 30 s。
 - 工具卡「实际生效模型」徽标与额度数字仍随 30 s 轮询更新（Host 计算值，本地不造数）。
-- **归位说明**：此批次（①–④）在 0.10.2 发布（2026-10-10）之后的补记提交里被记在 `[0.10.2]` 节下，但已发布的 0.10.2 tarball 里**没有其中任何一条**（0.10.2 的 `overview` 仍先行单独取数、客户端半边尚无 `LlmEchoPatch`）；`[0.10.2]` 下的「面板操作体感」节移入本节订正。
-- 影响面：`src/host/{snapshot-aggregate,routes/agnescode}.ts`、`src/client/{panel-page,provider-controls,model-picker,wire,agnescode-tab}.ts`、`test/routes.test.mjs`、`docs/`（ADR-014、ARCHITECTURE §3、PROVIDER-HOT-RELOAD、AGNES-API、PITFALLS）、`lib/` + `client.js`（随 src 同 commit 重建）。
+- **归位说明**：以上四项曾被记在 `[0.10.2]` 节下的补记里，但已发布的 0.10.2 包内并不含其中任何一条；它们随本版实际落地，原节移入本节订正。
+- 内部：快照并行的决策依据见 `docs/ADR.md` ADR-014。
+- 影响面：`src/host/{snapshot-aggregate,routes/agnescode}.ts`、`src/client/{panel-page,provider-controls,model-picker,wire,agnescode-tab}.ts`、`lib/`、`client.js`、`test/routes.test.mjs`。
 
 ## [0.10.2] — 2026-10-10
 
-### 修复：视频状态轮询断点续查、额度渲染与模型花名册的几处真实缺陷 + 凭据隔离加固
+### 修复：视频任务续查、额度渲染与模型花名册的几处真实缺陷 + 凭据隔离加固
 
-- **修（视频工具）：异步视频轮询被拒时不带 `video_id`，且只走「超时 / 超轮次」两路径。** agent 首次查询拿不到 task id 就无法续查，任务卡在「查不到」。`video-client` 现改为携带 `video_id` 并有限重试（`queryRetries=2` → 初查 + 2 次重试 = 3 次调用），与超时 / 超轮次两条路径对齐。新增 `video.test.mjs` 覆盖耗尽路径与 `queryRetries=0` 边界。
-- **修（额度渲染）：`usagePct` 有值而 `used` 缺失时，`count(null)` 被渲染成 `0`，面板会打印「已用 0 / N」**（F1）。`UsageTotals` 四个主计数另加 `typeof` 门：缺席字段不再画成「0」。真实数据流下此门不触发（`countOf` 已把缺席平台字段压成数字 0、`overview` 失败时 `quota.totals:null`，见红线⑥ / ADR-007），属渲染层自防御，防未来 partial 对象被构造出来。
-- **修（AgnesCode 花名册）：两处目录正确性缺陷。**（F5）排除别名 `id === EXCLUDED_IDS[0]` 改为 `.includes(id)`，第二个别名不再静默失效、继续混进花名册；（F10）`provider-controls` 的 `idList` 用 `String(id)` 强转，`null` 会变成字符串 `"null"` 这个假模型 id 出现在候选列表里，改用 `models.ts` 的 `rosterIds`（只收非空字符串）。
-- **修（凭据隔离）：AgnesCode 的 DPAPI PowerShell 子进程不再继承含凭据的父进程 env。** 新增 `dpapiChildEnv` 剥除四枚凭据名（`AGNES_PASSWORD` / `AGNES_USERNAME` / `AGNES_TOKEN_PLAN_API_KEY` / `AGNESCODE_CREDENTIAL`），与全仓凭据 REF 集合逐字一致——降低解密第三方桌面端会话文件那一步的凭据泄漏半径（红线①）。`harvest attempts[].detail` 与 `state().error` 出口统一过 `redactSecrets`。
-- **内部加固 / 清理（不属公开行为变化，详见 `git log`）**：收敛三轮四域代码审查的约 22 项缺陷与计数器 / 方法归一化 / 单飞泄漏 / JSDoc 归位等低危项；删除 25 个零读者 style token（`details*` / `grant*` / `models*` / `trend*` / `poolsGrid` / `primaryHover`）与全仓零引用的孤儿 `jsqr` devDependency；统一 `countOf` 与 `Number(x)||0` 两处数值惯用法、`requestMethod` 六路由共用、BFF 门控头收敛为单一 `AGNESCODE_BASE_HEADERS`；CI `build-gate` 确保暂存目录存在再 `mkdtemp`。上述均以新增断言钉住，无破坏性改动。
-- 影响面：`src/{host,client}/`（多文件）、`lib/`、`client.js`（随 src 同 commit 重建，构建零漂移）、`test/`（多套件 + 断言）、`package.json`（版本 + 去孤儿依赖）。`npm test` 全绿：28 套件 + tsc / build / dup / e2e 四门禁通过，e2e 66/66 PASSED。
+- **修（视频工具）**：异步视频任务首次查询被拒时现在携带任务 id、有限重试，任务可以续查——此前卡在「查不到」。
+- **修（额度渲染）**：平台缺席某字段时不再显示「已用 0 / N」——缺席画成破折号，不画成 0。
+- **修（AgnesCode 花名册）**：第二个排除别名不再静默失效；不再出现名为 `"null"` 的假模型候选。
+- **修（凭据隔离）**：解密桌面 App 会话文件的本机子进程不再继承父进程的凭据环境（剥除 `AGNES_PASSWORD` / `AGNES_USERNAME` / `AGNES_TOKEN_PLAN_API_KEY` / `AGNESCODE_CREDENTIAL` 四枚凭据名），凭据可能出现的日志出口统一脱敏。
+- **内部加固 / 清理**（不属公开行为变化，约 22 项低危缺陷与一个孤儿依赖的删除）：详见 `git log`。
+- 影响面：`src/{host,client}/`（多文件）、`lib/`、`client.js`、`test/`（多套件）、`package.json`。
 
 ## [0.10.1] — 2026-10-06
 
 > **如果你装过 0.10.0，请升级到本版。** 0.10.0 的市场页截图 `assets/panel-AgnesCode.png` 里含一个真实账号昵称（面板「已关联：{昵称}」那一行，截图时未遮挡）。该图随 0.10.0 发布，已发布版本不可覆盖，因此只能随新版替换。图已重截，该行改为中性占位文案，昵称不再出现在任何像素里；泄漏面仅此一个图片文件，其余两张截图与包内全部文本文件均无该账号名残留。
 
-### 登录表单服从 Host 下发的节流窗口：刷新页面不再让按钮在锁定期内可点
+### 登录节流窗口改为全机共享：刷新页面不再让按钮在锁定期内可点
 
-- **修：跨进程 / 跨 profile 的锁定期内，在面板上按一次就可能撞锁。** 登录节流写在插件自己的 `throttle.json` 里，**机器级共享**（desktop profile 吃到的 429，在 web profile 的 Host 上同样真实）。Host 一直把「剩余窗口」与「已停车」两个事实下发到快照 `auth` 块，但面板此前不读它们：倒计时从组件本地 state 起步，只有本进程那次登录失败才会被填上。于是刷新页面、换 profile、换 Host 进程这三种正常操作，都会让提交按钮在一个仍被服务的窗口里显示为可点。而 `POST /account` 是刻意清节流的（理由是「用户是在按面板的指示操作」），那次点击不止白费——它抹掉另一个进程正在遵守的记录，并把一次真实尝试打进可能已锁的账号。现倒计时由 `servedWaitMs` 判定、`servedWaitUntil` 换算；表单用前者播种并单调吸收后续窗口（只延后不缩短，避免把读者已在等的窗口提前解锁）。
-- **新增：已停车（`needsUserAction`）时给一句话，而不是倒计时。** 错密码、需人工验证、自造退避用尽这三类拒绝没有可等待的期限——倒计时数到零不会有任何东西重试，所以那个数字是撒谎。面板现在明说「已停止自动重试，请核对账号与密码后手动登录」并保持提交按钮可用（重新输入才是出路），与 `auth.locked`（平台说账号本身被锁）分作两句。
-- **修：验证码类拒绝不再同时渲染两句矛盾的话。** `POST /account` 的失败体在平台给了 `Retry-After` 时，会同时带一个整段窗口与 `needsUserAction: true`，旧渲染路径上「已停止自动重试」与一个两小时倒计时因此同时出现。现 `submit` 让 parked 优先于窗口，`AccountForm` 与 `snapshot.ts` 的规则同源（此前只有后者）。
-- **`API.md` 补上 `auth` 块两个节流字段的契约**：单位是剩余毫秒不是整段窗口；parked 时不许倒计时；面板必须服从它们而非只认自己那次失败。`AUTH.md` §7 与 `ARCHITECTURE.md` §3 数据流图同步接入。这两个字段此前只有两个 JSON 值、无任何语义说明，按字面读会把「parked 也倒计时」这类 bug 写出来。
-- 影响面：`src/client/{snapshot,account-form,i18n}.ts`、`test/{panel.test.mjs,panel-decision.js}`、`docs/{API,AUTH,ARCHITECTURE,ADR}.md`、`docs/PITFALLS.md`（新增 §52–§54）、`docs/ADR.md`（新增 ADR-010）、`client.js`（重建产物）。`lib/` 未改——本次全部改动在 client 半边。
+- **修**：登录节流窗口现在**机器级共享**——一个 profile 撞上的 429，其它 profile 的 Host 同样算数。此前倒计时只从本进程的失败起步，刷新页面、换 profile、重启 Host 三种正常操作都会让提交按钮在仍被节流的窗口里显示为可点，而那次点击不止白费——它还会抹掉另一个进程正在遵守的节流记录。现在倒计时由 Host 下发的共享窗口播种，只延长、不缩短。
+- **新增**：「等下去也没用」的已停车情形（错密码、需人工验证、重试次数用尽），面板明说「已停止自动重试，请核对账号与密码后手动登录」，不再给一个数到零也不会重试的倒计时；与「账号被平台锁定」分作两句。
+- **修**：验证码类拒绝同时带回等待窗口与「需人工处理」时，面板不再同时显示「已停止自动重试」与两小时倒计时这两句矛盾的话（人工处理优先）。
+- 内部：节流窗口机制（`auth` 块两字段、parked 不倒计时、播种只延后）见 `docs/PITFALLS.md` §52 与 `docs/ADR.md` ADR-010；契约文档见 `docs/API.md`。
+- 影响面：`src/client/{snapshot,account-form,i18n}.ts`、`test/{panel.test.mjs,panel-decision.js}`、`client.js`。
 
 ### 插件卡补上图标：Plugins 页不再裸显示包名 + 一段英文
 
-- **新增 `icon.svg`**（`icon: "./icon.svg"`）：Plugins 页的插件卡此前只有文字。卡片图标由 DSH Host 读 `package.json` 的 `icon` 字段渲染，不提供就缺一块。沿用面板的「积分币」母题（渐变圆盘 + 白色记数笔画），配色对齐本插件品牌蓝 `--agnes-brand`（#1E40AF），与面板开关 / tab 下边框 / 额度进度条同一套 token，不跟 DSH 的中性色走。几何与兄弟插件 `dsh-connect-sensenova-token-plan` 保持一致，避免同系列插件卡片形态各异。
-- **读取端是硬校验，不是降级**：`icon` 必须是相对路径、扩展名限 SVG/PNG/JPEG/WebP、文件必须落在 `files` 白名单目录内、体积 ≤256 KiB——任一不满足会让整条插件元数据报错（出处是 `dsh-connect-sensenova-token-plan` CHANGELOG 0.4.4，已写进 `docs/PITFALLS.md` §27）。因此 `icon.svg` 同时进 `files` 白名单；`exports` 无需新增子路径（图标由 Host 直接按仓库路径读，不走包导出）。
-- 影响面：`icon.svg`、`package.json`、`docs/DSH-PLUGIN.md`（教学快照同步 `icon` 字段与 `files` 数组）。
-
-### 评审整改：红线④文档措辞更正 + 新增 ADR-012「大统一」爆炸半径权衡
-
-- **修（文档 / 红线④）：`AGENTS.md` 红线④称「`AUTH_DEFAULTS.consoleOrigin` 是唯一出处」，与代码不符。** 后端源站字面量实际有两处——`agnes-auth.ts:47` 的 `AUTH_DEFAULTS.consoleOrigin` 与 `host-config.ts:41` 的 `CONFIG_DEFAULTS.consoleBase`——两者值一致，且由 `resolveAuthOverrides` 以 `consoleOrigin: consoleBase` 汇流为单一 `consoleOrigin`。运行时是一条源、非漂移 bug。红线④现改为「两处字面量一致、配置边界汇流为单一 `consoleOrigin`，别写第三处也别让两处分叉」。
-- **新增（决策账本）：`ADR-012` 把「大统一」的结构性爆炸半径列为已知权衡。** ADR-001 把额度面板升级为商汤全过程集成单点入口；实测同进程现承载 LLM provider 注册、出图执行、视频异步状态机，以及解密第三方桌面端 AgnesCode 的 os_crypt/DPAPI 会话文件（攻击面最敏感的一块）。隔离纪律真实（agnescode 与主线 publisher 共用 `publish-core.ts` 机制、不共用状态；`kind:"grant"` 单点构造/判定；throttle 与凭据 grant 刻意共享不统一），但结构性爆炸半径被重新集中——这正是对 PITFALLS §6「私有状态误进凭据服务会炸整台机器」那次教训的现代重演形态。判定：属设计张力非缺陷；主动缓解是 §5 不变量（五源软失败 / 一个模块缺席不埋别的模块）与 ADR-005 准入门槛 + 拆分蓝图把结构债从事后锐评变事前决策点。
-- 影响面：`AGENTS.md`（红线④措辞）、`docs/ADR.md`（新增 ADR-012）、本文件。
+- **新增 `icon.svg`**：Plugins 页的插件卡此前只有文字；卡片图标由 DSH Host 读 `package.json` 的 `icon` 字段渲染，不提供就缺一块。图标沿用面板的「积分币」母题（品牌蓝），几何与兄弟插件 `dsh-connect-sensenova-token-plan` 保持一致。
+- **图标读取是硬校验**：必须是相对路径、限 SVG/PNG/JPEG/WebP、落在 `files` 白名单内、体积 ≤ 256 KiB，任一不满足会让整条插件元数据报错——因此 `icon.svg` 同时进 `files` 白名单。
+- 影响面：`icon.svg`、`package.json`。
 
 ## [0.10.0] — 2026-10-04
 
