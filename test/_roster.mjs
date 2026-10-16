@@ -32,6 +32,13 @@ export function listSuites() {
  * `wire.ts` mirror, and the strict flags in tsconfig.json are all compile-time
  * fences, and a compile-time fence nothing runs is not a fence. It sat red at
  * HEAD on 2026-10-02 with no gate, no CI job, and 24 green suites.
+ *
+ * `composer-slot-gate` is the SHELL-side half of the composer pill: the
+ * behaviour suite mounts our `client.js` through a capturing slot stub, so it
+ * can never notice the DSH client moving the `conversation.input.right` seat or
+ * relaxing `useProjection` to optional — and that failure looks exactly like a
+ * provider with no quota. It reads the peer's own bytes, SKIPs loudly with no
+ * runtime on the machine.
  * @type {string[]}
  */
-export const GATES = ["tsc-gate.mjs", "build-gate.mjs", "dup-gate.mjs", "e2e-gate.mjs"];
+export const GATES = ["tsc-gate.mjs", "build-gate.mjs", "dup-gate.mjs", "composer-slot-gate.mjs", "e2e-gate.mjs"];

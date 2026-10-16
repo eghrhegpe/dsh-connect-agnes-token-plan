@@ -111,6 +111,21 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   const overageInner = findElement(bar(overage), (props) => typeof props.style?.width === "string");
   check("the overage bar keeps the platform's width instead of a 100% cap",
     overageInner?.props.style.width === "130%", String(overageInner?.props.style.width));
+  // ARIA cannot carry a value above its own maximum. `valuenow=130` against a
+  // fixed `valuemax=100` is an invalid meter, and a reader that clamps the pair
+  // silently loses the overage the two checks above insist on keeping — so the
+  // maximum follows the READING, and `aria-valuetext` spells the platform's
+  // figure out in full. (A window inside 100 still reports the plain 0-100
+  // range; only an overage moves the ceiling.)
+  const overageBar = bar(overage);
+  check("an overage bar's ARIA maximum follows the reading instead of capping it",
+    Number(overageBar?.props["aria-valuemax"]) >= Number(overageBar?.props["aria-valuenow"])
+    && Number(overageBar?.props["aria-valuemax"]) === 130,
+    JSON.stringify({ now: overageBar?.props["aria-valuenow"], max: overageBar?.props["aria-valuemax"] }));
+  check("an ordinary window still reports the plain 0-100 range",
+    bar(diverged)?.props["aria-valuemax"] === 100, String(bar(diverged)?.props["aria-valuemax"]));
+  check("the platform's overage figure survives as aria-valuetext",
+    overageBar?.props["aria-valuetext"] === "130.0%", String(overageBar?.props["aria-valuetext"]));
   // 130% is past the 90 threshold, so the fill must be the error tone rather
   // than the calm default — the tone follows the platform's number too.
   const calmInner = findElement(treeOf(render.QuotaWindowCard, {
@@ -269,6 +284,20 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
       label: "quota.win.imagesDaily",
       window: { key: "imagesDaily", unit: "images", limit: 4000, windowHours: 24 }, tt
     }))));
+  // An UNKNOWN unit is the unit-side twin of `windowLabel`'s raw-key fallback
+  // (block G): a Host that grew a dimension this bundle has never heard of must
+  // show up as itself. Dropping the unit instead prints a naked "1500" — the
+  // "reads as available capacity" shape the percentage headline exists to
+  // avoid — and does it SILENTLY, where an unknown KEY is loud. Video's empty
+  // unit above stays empty: that one is a stated platform ambiguity, not an
+  // unrecognised name.
+  const unknownUnit = treeOf(render.QuotaWindowCard, {
+    label: "tokensMonthly",
+    window: { key: "tokensMonthly", unit: "tokens", limit: 1500, windowHours: 24 },
+    tt
+  });
+  check("an unknown unit falls back to the raw name instead of being dropped",
+    texts(unknownUnit).includes("1500 tokens"), JSON.stringify(texts(unknownUnit)));
 }
 
 // === C. the bar's tone escalates as the window fills ======================
@@ -1732,6 +1761,69 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("the English note carries all three ceilings",
     defaultRpm !== null && enNote.includes(String(defaultRpm))
       && enNote.includes(String(enterpriseRpm)) && enNote.includes(String(tokenPlanRpm)), enNote);
+}
+
+// === the composer pill's reading decisions =================================
+// The pill's real-DOM behaviour lives in `dom-render.test.mjs`; these are the
+// pure decisions underneath it, where a wrong answer is a wrong NUMBER on the
+// toolbar rather than a crash — the class of bug this file exists for. They run
+// through the same definitions the browser uses (`surface.helpers`).
+{
+  const { selectedProviderOf, windowByKey, worstTier, percentText, windowPercent, usageTier } = surface.helpers;
+
+  // Which provider the session points at, `next` over `lastUsed` — including the
+  // repair that matters: an EMPTY `next` (the transient frame right after a
+  // picker switch) must fall back rather than read as "no provider".
+  check("the projection's `next` wins over `lastUsed`",
+    selectedProviderOf({ next: { provider: "a" }, lastUsed: { provider: "b" } }) === "a");
+  check("an empty transient `next` falls back to `lastUsed`",
+    selectedProviderOf({ next: {}, lastUsed: { provider: "agnes-token-plan" } }) === "agnes-token-plan");
+  check("no projection at all names no provider", selectedProviderOf(undefined) === undefined);
+
+  // The percentage: the platform's own figure leads, `used / limit` is only the
+  // fallback, and NEITHER is clamped — an overage window reports over 100.
+  check("the platform's usagePct leads over used/limit",
+    windowPercent({ limit: 1000, used: 500, usagePct: 12.3 }) === 12.3);
+  check("used/limit is the fallback when the platform stated no percentage",
+    Math.abs(windowPercent({ limit: 800, used: 200 }) - 25) < 1e-9);
+  check("an overage percentage is reported verbatim, not clamped",
+    windowPercent({ limit: 1000, used: 1200, usagePct: 120 }) === 120);
+  check("a window with no reading at all is null, never zero",
+    windowPercent({ limit: 1000 }) === null && windowPercent(null) === null && windowPercent("x") === null);
+
+  check("a shape-drifted row is skipped rather than thrown on",
+    windowByKey([null, "x", { key: "requests5h", usagePct: 3 }], "requests5h")?.usagePct === 3
+      && windowByKey(undefined, "requests5h") === undefined);
+
+  check("the dot's tier is the worse of the two windows",
+    worstTier([95, 4]) === "error" && worstTier([75, 4]) === "warn" && worstTier([4, 3]) === "ok");
+  check("an unreadable window never grades as unhealthy",
+    worstTier([null, null]) === "unknown" && worstTier([null, 2]) === "ok");
+  check("the pill grades on the panel's thresholds, not a second scale",
+    usageTier(90) === "error" && usageTier(70) === "warn" && usageTier(69.9) === "ok");
+  check("a dash means 'no reading', while 0 is a reading",
+    percentText(null) === "—" && percentText(0) === "0.0%" && percentText(120) === "120.0%");
+
+  // Sized to the HOST's composer toolbar (the 28px / 12px its own controls
+  // wear), not to this plugin's card scale — the regression this pins is the
+  // pill being redrawn at card size and wedging into the toolbar.
+  const trigger = surface.styles.pillTrigger ?? {};
+  check("the pill's frame is the host toolbar scale",
+    trigger.height === 28 && trigger.fontSize === 12 && trigger.border === "none"
+      && surface.styles.pillDot?.width === 7,
+    JSON.stringify(trigger));
+
+  // The desktop side draws a STOCK (credits), so the one way it can lie is by
+  // turning a gap into a measurement: `0` must survive as a drained balance,
+  // while every shape of "we did not get a figure" stays null (the dash).
+  const { balanceOf } = surface.helpers;
+  check("a drained balance is 0, not a gap",
+    balanceOf({ balance: { totalBalance: 0 } }) === 0);
+  check("every unreadable balance shape is null, never 0",
+    balanceOf({ balance: {} }) === null
+      && balanceOf({ balance: null }) === null
+      && balanceOf({ balance: { totalBalance: "12" } }) === null
+      && balanceOf(null) === null && balanceOf(undefined) === null);
 }
 
 console.log(JSON.stringify(results, null, 2));

@@ -86,6 +86,24 @@ export const zh = {
   "quota.total.video": "视频",
   "quota.total.activeDays": "活跃天数",
   "quota.usageMissing": "{label}：暂未读到。",
+  // 对话框胶囊的文案是单独一套：它按**宿主工具栏**的宽度预算写（12px 字、单行不换行），
+  // 所以窗口名比面板卡片里的更短（「5 小时 / 本周」）。数值与阈值仍与面板同源
+  // （`windowPercent` / `usageTier`），只有字面量分家。
+  "composer.planPrefix": "Token Plan",
+  "composer.window5h": "5 小时",
+  "composer.windowWeekly": "本周",
+  "composer.pillTitle": "Token Plan 额度",
+  "composer.notConnected": "控制台未连接",
+  "composer.noWindows": "控制台未返回额度窗口",
+  // 桌面端上游（AgnesCode）那一侧：它画的是**存量**（积分），不是百分比，所以只有
+  // 数字 + 单位 + 「为什么没数字」的那句话。两条「没数字」的原因复用 tab 自己的文案
+  // （`agnescode.unregistered` / `agnescode.notLogged`），只有「网关这次没答」是本胶囊
+  // 自己的话。
+  "composer.balancePrefix": "AgnesCode",
+  "composer.balanceTitle": "AgnesCode 积分余额",
+  "composer.balanceUnit": "积分",
+  "composer.balanceUnread": "本次没能读到余额",
+  "composer.stale": "上次数据",
   "usage.none": "该区间内没有用量记录。",
   "usage.period": "近 {days} 天",
   "usage.periodUnknown": "用量区间",
@@ -328,6 +346,17 @@ export const en: typeof zh = {
   "quota.total.video": "Video",
   "quota.total.activeDays": "Active days",
   "quota.usageMissing": "{label}: not read yet.",
+  "composer.planPrefix": "Token Plan",
+  "composer.window5h": "5h",
+  "composer.windowWeekly": "this week",
+  "composer.pillTitle": "Token Plan quota",
+  "composer.notConnected": "console not connected",
+  "composer.noWindows": "the console returned no quota windows",
+  "composer.balancePrefix": "AgnesCode",
+  "composer.balanceTitle": "AgnesCode credit balance",
+  "composer.balanceUnit": "credits",
+  "composer.balanceUnread": "the balance could not be read this time",
+  "composer.stale": "last reading",
   "usage.none": "No usage recorded in this range.",
   "usage.period": "Last {days} days",
   "usage.periodUnknown": "Usage range",

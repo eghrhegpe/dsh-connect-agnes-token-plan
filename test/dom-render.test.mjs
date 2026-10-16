@@ -127,8 +127,14 @@ const surface = instance.panel;
 // enough to matter: `bind` resolves against the dictionaries `apply` itself
 // registers, so the `tt` the panel renders with is the plugin's own zh text —
 // a dictionary key that stops existing shows up as a raw key on screen below.
-/** The slot declaration + component `apply` registers, exactly as the shell would capture them. */
-const slot = {};
+/**
+ * The slot declaration + component `apply` registers, per slot name, exactly as
+ * the shell would capture them. Keyed by name because `apply` mounts TWO seats
+ * now (the Plugins-page card and the composer pill) and a single `slot` box made
+ * the second registration overwrite the first — the panel below would have been
+ * driven with the pill in its place.
+ */
+const slots = {};
 const dictionaries = {};
 const ctx = {
   // cordis `effect`: run the registration now, remember the disposer.
@@ -145,27 +151,26 @@ const ctx = {
   },
   slots: {
     inject: (name, register) => {
-      slot.name = name;
       const dispose = register();
       return () => typeof dispose === "function" ? dispose() : undefined;
     },
     register: (decl, component) => {
-      slot.decl = decl;
-      slot.component = component;
+      slots[decl.name] = { decl, component };
       return () => {};
     }
   }
 };
 instance.apply(ctx);
 const { zh, en } = dictionaries;
+const slot = slots["plugins.bundle.config"];
 
 check("apply registers both dictionaries under the plugin namespace",
   dictionaries.ns === "dsh-connect-agnes-token-plan"
     && Object.keys(zh ?? {}).length > 0 && Object.keys(en ?? {}).length > 0,
   `ns=${String(dictionaries.ns)} zh=${Object.keys(zh ?? {}).length} en=${Object.keys(en ?? {}).length}`);
 check("apply registers the config card into the shell's slot",
-  slot.name === "plugins.bundle.config" && typeof slot.component === "function",
-  `slot=${String(slot.name)} component=${typeof slot.component}`);
+  slot?.decl?.name === "plugins.bundle.config" && typeof slot.component === "function",
+  `slot=${String(slot?.decl?.name)} component=${typeof slot?.component}`);
 
 // The props the shell would hand the page: `decl.inject()` is the REAL pair
 // (`tt` bound to this namespace, the locale subscription face).
@@ -174,8 +179,23 @@ check("the slot declaration injects a live tt that resolves real text",
   typeof pageProps.tt === "function" && pageProps.tt("panel.loading") === zh["panel.loading"],
   String(pageProps.tt?.("panel.loading")));
 
+// The composer seat `apply` also owns. Asserted here rather than in a scenario
+// below because a shell that captures the declaration at all must capture BOTH:
+// the pill's own block further down mounts through this registration.
+const pillSlot = slots["conversation.input.right"];
+check("apply registers the composer pill into the conversation.input.right seat",
+  pillSlot !== undefined && typeof pillSlot.component === "function"
+    && pillSlot.decl.id === "dsh-connect-agnes-token-plan-composer-pill"
+    && pillSlot.decl.locale === "dsh-connect-agnes-token-plan",
+  `slot=${String(pillSlot?.decl?.id)} locale=${String(pillSlot?.decl?.locale)}`);
+const pillProps = typeof pillSlot?.decl?.inject === "function" ? pillSlot.decl.inject() : {};
+check("the pill's declaration injects a live tt and no other prop of its own",
+  typeof pillProps.tt === "function" && pillProps.tt("composer.planPrefix") === zh["composer.planPrefix"]
+    && Object.keys(pillProps).length === 1,
+  `${JSON.stringify(Object.keys(pillProps))} prefix=${String(pillProps.tt?.("composer.planPrefix"))}`);
+
 // ── 4. a scripted fetch: the panel's only door to the Host ──────────────────
-const { SNAPSHOT_PATH, ACCOUNT_PATH, MODELS_PATH } = await import("../src/client/const.ts");
+const { SNAPSHOT_PATH, ACCOUNT_PATH, MODELS_PATH, AGNESCODE_PATH } = await import("../src/client/const.ts");
 const fetchCalls = [];
 /** The current scenario's route; each block installs its own. */
 let route = () => { throw new Error("dom-render: no route installed for this scenario"); };
@@ -525,6 +545,231 @@ try {
     text(container).includes(zh["llm.rosterSaved"])
       && [...container.querySelectorAll("button")].every((button) => button.textContent !== zh["llm.rosterSave"]),
     text(container).slice(-200));
+} finally {
+  await unmountAll();
+}
+
+// ── 9b. the composer usage pill, driven through its OWN registration ───────
+// The pill is this bundle's only surface outside the Plugins page: it mounts per
+// session in the composer toolbar, gated on the model that session is pointed at.
+// Its real failure modes are all invisible to a source-level suite — a hook order
+// that only breaks on a provider switch, a fetch loop that keeps running for a
+// foreign provider, a percentage quietly clamped, a failed poll that blanks the
+// readout, or a second reading under another upstream's name.
+try {
+  const PILL = "dsh-agnes-composer-pill";
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const css = (element, prop) => (element?.style?.[prop] ?? "");
+  const settle = async () => { await act(async () => { await sleep(0); }); };
+
+  /** Mount any component with props; `unmountAll` tears every root down. */
+  async function mountComponent(component, props) {
+    const container = dom.window.document.createElement("div");
+    dom.window.document.body.appendChild(container);
+    const root = createRoot(container);
+    mounted.push({ root, container });
+    await act(async () => { root.render(React.createElement(component, props)); });
+    return { root, container };
+  }
+
+  // The keyed hook the slot system materializes: a REAL hook (useState), as in
+  // the shell. A plain function would let a conditional early-return limp
+  // through instead of failing on the Rules of Hooks.
+  const selection = { next: { provider: "agnes-token-plan", model: "agnes-pro" } };
+  const useProjection = () => {
+    React.useState(selection);
+    return selection;
+  };
+  const pillPropsWithHook = { ...pillProps, useProjection };
+
+  let windows = [];
+  let quotaExtra = {};
+  let status = 200;
+  // The desktop upstream's answer, on its OWN route: the two providers read two
+  // endpoints, and "which one did the pill ask" is the whole isolation claim.
+  let agnescode = { ok: true, enabled: true, loggedIn: true, nickname: "阿格", balance: { totalBalance: 1200, timeSensitiveBalance: 40, permanentBalance: 1160 } };
+  const fetched = [];
+  route = (path) => {
+    fetched.push(path);
+    if (path === AGNESCODE_PATH) return reply(agnescode, status);
+    return reply({
+      ok: true,
+      now: Date.now(),
+      pollSeconds: 30,
+      auth: null,
+      quota: { consoleConnected: true, plan: { displayName: "专业版" }, windows, ...quotaExtra },
+      llm: null
+    }, status);
+  };
+  const readPill = async () => {
+    const pill = await mountComponent(pillSlot.component, pillPropsWithHook);
+    await settle();
+    return {
+      container: pill.container,
+      button: () => pill.container.querySelector(`button.${PILL}`),
+      dot: () => pill.container.querySelector(`span.${PILL}-dot`)
+    };
+  };
+
+  // The two request windows, with the platform stating a percentage that does
+  // NOT match used/limit: the platform's figure leads, and an arithmetic
+  // re-derivation would print a different number than the console shows.
+  windows = [
+    { key: "requests5h", unit: "requests", limit: 1000, windowHours: 5, used: 500, usagePct: 12.3, resetAt: Math.floor(Date.now() / 1000) + 3600 },
+    { key: "requestsWeekly", unit: "requests", limit: 100000, windowHours: 168, used: 4000, usagePct: 4 }
+  ];
+  const healthy = await readPill();
+  check("an owned model mounts the pill with both window readings",
+    healthy.button() !== null
+      && text(healthy.container).includes("Token Plan · 5 小时 12.3% · 本周 4.0%"),
+    `text=${text(healthy.container).slice(0, 160)}`);
+  check("the reading is the platform's own usagePct, never used/limit",
+    text(healthy.container).includes("12.3%") && !text(healthy.container).includes("50.0%"),
+    `text=${text(healthy.container).slice(0, 160)}`);
+  check("only the console snapshot route is read",
+    fetched.every((path) => path === SNAPSHOT_PATH), JSON.stringify(fetched));
+  check("the reset instant rides in the tooltip, not the pill body",
+    healthy.button()?.getAttribute("title")?.includes(zh["quota.resetAt"].split("{")[0].trim()) === true
+      && !text(healthy.container).includes(zh["quota.resetAt"].split("{")[0].trim()),
+    `title=${healthy.button()?.getAttribute("title")}`);
+  check("a healthy pill wears the success ink on its dot",
+    css(healthy.dot(), "background").startsWith("var(--dsw-alias-state-success-primary"),
+    css(healthy.dot(), "background"));
+
+  // A window in OVERAGE reports >100, and that is the platform's own fact: the
+  // pill must not clamp it to a tidy 100% (nor soften the dot's tier).
+  windows = [
+    { key: "requests5h", unit: "requests", limit: 1000, windowHours: 5, used: 1200, usagePct: 120 },
+    { key: "requestsWeekly", unit: "requests", limit: 100000, windowHours: 168, used: 4000, usagePct: 4 }
+  ];
+  const overage = await readPill();
+  check("an overage window reports >100 instead of being clamped",
+    text(overage.container).includes("120.0%") && text(overage.container).includes("本周 4.0%"),
+    text(overage.container).slice(0, 160));
+  check("the worse of the two windows picks the dot",
+    css(overage.dot(), "background").startsWith("var(--dsw-alias-state-error-primary"),
+    css(overage.dot(), "background"));
+
+  // The gate. A foreign provider must mount NOTHING — no pill, and above all no
+  // fetch loop for a session whose quota is not this plugin's business.
+  selection.next = { provider: "openai", model: "gpt-x" };
+  const before = fetched.length;
+  const foreign = await readPill();
+  check("a foreign provider mounts nothing and starts no read loop",
+    foreign.button() === null && fetched.length === before,
+    `button=${foreign.button() !== null} fetches=${fetched.length - before}`);
+
+  // The transient frame right after a picker switch: `next` arrives empty before
+  // it carries the new selection. An empty `next` must not shadow a still-usable
+  // `lastUsed`, or an OWNED model loses its pill on exactly those frames.
+  selection.next = {};
+  selection.lastUsed = { provider: "agnes-token-plan", model: "agnes-pro" };
+  const transient = await readPill();
+  check("an empty transient `next` does not shadow a usable `lastUsed`",
+    transient.button() !== null,
+    `button=${transient.button() !== null}`);
+  selection.next = { provider: "agnes-token-plan", model: "agnes-pro" };
+  delete selection.lastUsed;
+
+  // A failed read keeps the numbers on screen and says the reading is the last
+  // one; it must never blank the readout, which would read as "no quota".
+  const failing = await readPill();
+  status = 500;
+  Object.defineProperty(dom.window.document, "visibilityState", { value: "hidden", configurable: true });
+  await act(async () => {
+    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+    Object.defineProperty(dom.window.document, "visibilityState", { value: "visible", configurable: true });
+    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+  });
+  await settle();
+  check("a failed poll keeps the last numbers and marks the reading stale",
+    failing.button() !== null
+      && text(failing.container).includes("5 小时 120.0%")
+      && text(failing.container).includes(zh["composer.stale"]),
+    text(failing.container).slice(0, 200));
+  status = 200;
+
+  // An empty window list is "the console did not report this", not "you have
+  // used nothing": the readings stay dashes and the dot refuses to grade.
+  windows = [];
+  const bare = await readPill();
+  check("no windows reads as dashes, with the dot declining to grade",
+    text(bare.container).includes("5 小时 —") && text(bare.container).includes("本周 —")
+      && css(bare.dot(), "background").startsWith("var(--dsw-alias-label-secondary"),
+    `text=${text(bare.container).slice(0, 160)} dot=${css(bare.dot(), "background")}`);
+  check("the tooltip carries the reason the readout is empty",
+    bare.button()?.getAttribute("title")?.includes(zh["composer.noWindows"]) === true,
+    `title=${bare.button()?.getAttribute("title")}`);
+
+  // A console that is not connected is a different fact from an empty window
+  // list, and the tooltip is the only place with room to say which.
+  quotaExtra = { consoleConnected: false };
+  const offline = await readPill();
+  check("a disconnected console is stated in the tooltip",
+    offline.button()?.getAttribute("title")?.includes(zh["composer.notConnected"]) === true,
+    `title=${offline.button()?.getAttribute("title")}`);
+  quotaExtra = {};
+
+  // ── the desktop upstream: the SAME seat, the OTHER route ─────────────────
+  // An `agnescode` session must read the desktop route and never the console
+  // snapshot — that isolation is what makes the two readings two readings and
+  // not one upstream's number under the other's name.
+  selection.next = { provider: "agnescode", model: "agnes-pro" };
+  fetched.length = 0;
+  const balance = await readPill();
+  check("an AgnesCode model reads its own route and never the console snapshot",
+    fetched.length > 0 && fetched.every((path) => path === AGNESCODE_PATH),
+    JSON.stringify(fetched));
+  check("the balance side paints the credit stock with its own prefix",
+    text(balance.container).includes("AgnesCode · 1200 积分")
+      && !text(balance.container).includes("Token Plan"),
+    `text=${text(balance.container).slice(0, 160)}`);
+  check("the tooltip carries the account, the split and no invented percentage",
+    balance.button()?.getAttribute("title")?.includes("阿格") === true
+      && balance.button()?.getAttribute("title")?.includes("时效 40") === true
+      && balance.button()?.getAttribute("title")?.includes("永久 1160") === true
+      && !text(balance.container).includes("%"),
+    `title=${balance.button()?.getAttribute("title")}`);
+
+  // `0` is a READING: a drained pool is the alarm, never the grey dash that
+  // means "we could not find out".
+  agnescode = { ...agnescode, balance: { totalBalance: 0, timeSensitiveBalance: 0, permanentBalance: 0 } };
+  const drained = await readPill();
+  check("a drained balance reads 0 in the alarm tier, never a dash",
+    text(drained.container).includes("AgnesCode · 0 积分") && !text(drained.container).includes("—")
+      && css(drained.dot(), "background").startsWith("var(--dsw-alias-state-error-primary"),
+    `text=${text(drained.container).slice(0, 160)} dot=${css(drained.dot(), "background")}`);
+
+  // A missing figure is a different claim from a zero, and the tooltip says
+  // WHICH fact is missing: unlinked desktop App vs switch off vs no answer.
+  agnescode = { ok: true, enabled: true, loggedIn: false };
+  const signedOut = await readPill();
+  check("an unlinked desktop App reads a dash and names the missing fact",
+    text(signedOut.container).includes("AgnesCode · —")
+      && css(signedOut.dot(), "background").startsWith("var(--dsw-alias-label-secondary)")
+      && signedOut.button()?.getAttribute("title")?.includes(zh["agnescode.notLogged"]) === true,
+    `text=${text(signedOut.container).slice(0, 120)} title=${signedOut.button()?.getAttribute("title")}`);
+  agnescode = { ok: true, enabled: false, loggedIn: false };
+  const switchedOff = await readPill();
+  check("a switched-off provider is a different fact from an unlinked App",
+    switchedOff.button()?.getAttribute("title")?.includes(zh["agnescode.unregistered"]) === true,
+    `title=${switchedOff.button()?.getAttribute("title")}`);
+  agnescode = { ok: true, enabled: true, loggedIn: true, nickname: "阿格" };
+  const noBalance = await readPill();
+  check("a logged-in account whose balance did not arrive says so",
+    noBalance.button()?.getAttribute("title")?.includes(zh["composer.balanceUnread"]) === true
+      && text(noBalance.container).includes("AgnesCode · —"),
+    `title=${noBalance.button()?.getAttribute("title")}`);
+
+  // The return trip: back to a console model, the pill reads the snapshot again
+  // and stops touching the desktop route.
+  selection.next = { provider: "agnes-token-plan", model: "agnes-pro" };
+  fetched.length = 0;
+  const backToConsole = await readPill();
+  check("switching back to a console model reads the snapshot and not the desktop route",
+    fetched.length > 0 && fetched.every((path) => path === SNAPSHOT_PATH)
+      && text(backToConsole.container).includes("Token Plan"),
+    `routes=${JSON.stringify(fetched)} text=${text(backToConsole.container).slice(0, 120)}`);
 } finally {
   await unmountAll();
 }

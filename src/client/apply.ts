@@ -1,15 +1,22 @@
 /**
- * The Host-facing mount: dictionary registration and the plugin config card.
+ * The Host-facing mount: dictionary registration, the plugin config card, and
+ * the composer usage pill.
  *
  * The panel lives inside the Plugins page (`plugins.bundle.config` slot) —
  * it appears as an inline card between the bundle description and the Loader
  * row, always expanded (`view: "page"` only, no summary state). There is no
  * sidebar entry and no standalone `main` page; the user reaches it by
  * opening the Plugins panel and navigating to this bundle.
+ *
+ * The pill is the plugin's ONE surface outside that page: the
+ * `conversation.input.right` seat in a session's composer, which shows the
+ * console quota of the model that session is actually pointed at. Both mounts
+ * fail soft and independently — a shell that refuses one still gets the other.
  */
 import { NS } from "./const.ts";
 import { en, zh } from "./i18n.ts";
 import { PanelPage } from "./panel-page.ts";
+import { ComposerUsagePill } from "./composer-usage-pill.ts";
 import type { Tt } from "./runtime.ts";
 
 /** Required services: the slot system, the locale registry. */
@@ -76,6 +83,31 @@ export function apply(ctx: ClientCtx): void {
     );
   } catch (error) {
     console.warn(`[${NS}] config card registration failed:`, error);
+  }
+
+  // The composer usage pill: the `conversation.input.right` seat. The slot
+  // system materializes this component's `useProjection` prop itself (a
+  // session-scoped keyed hook, strictly required — a missing source throws
+  // `SlotAssemblyError`), so `inject` here only supplies the plugin's own
+  // dictionary lookup. A registration failure degrades exactly like the card's
+  // above (§5 invariant 2): the panel keeps working and this module is absent.
+  try {
+    disposers.push(
+      ctx.slots.inject("conversation.input.right", () =>
+        ctx.slots.register(
+          {
+            name: "conversation.input.right",
+            id: `${NS}-composer-pill`,
+            locale: NS,
+            order: 4,
+            inject: () => ({ tt })
+          },
+          ComposerUsagePill
+        )
+      ) as () => void
+    );
+  } catch (error) {
+    console.warn(`[${NS}] composer pill registration failed:`, error);
   }
 
   ctx.effect(() => () => {

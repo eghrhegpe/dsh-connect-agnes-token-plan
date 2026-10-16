@@ -13,18 +13,76 @@ import type { PlanData, QuotaData, QuotaWindowData, UsageData, UsageTotalsData }
 /**
  * A quota window as the wire carries it; fields are defensive on purpose.
  *
- * The alias exists because `QuotaWindowCard` deliberately accepts `unknown`: a
- * window that is not an object at all (a shape-drifted row, an absent field)
- * must render nothing instead of throwing. `wire.ts` already describes the
- * well-formed case, so this narrows the same shape instead of redeclaring it.
+ * The alias names the WELL-FORMED shape the two readers cast to once their own
+ * `typeof` guard has passed — it is not a parameter type. Both entry points
+ * declare `unknown` on purpose: a window that is not an object at all (a
+ * shape-drifted row, an absent field) must render nothing instead of throwing,
+ * and writing the union out (`QuotaWindow | null | unknown`) would not buy
+ * anything, because `unknown` absorbs every other member — the precise-looking
+ * spelling is exactly `unknown`. `wire.ts` already declares the well-formed
+ * case, so this references it rather than redeclaring it.
  */
 type QuotaWindow = QuotaWindowData;
 
-/** The bar fill and figure tone for a usage percentage: 70 warn / 90 danger. */
-export function usageTone(pct: number): { fill: Record<string, unknown>; color: string } {
-  if (pct >= 90) return { fill: S.barFillError, color: "var(--dsw-alias-state-error-primary)" };
-  if (pct >= 70) return { fill: S.barFillWarn, color: "var(--dsw-alias-state-warn-primary)" };
-  return { fill: S.barFill, color: "var(--dsw-alias-label-secondary)" };
+/**
+ * One percentage's severity: 90 danger / 70 warn, else ok.
+ *
+ * Its own function because a SECOND surface reads the same thresholds — the
+ * composer usage pill paints a status dot with them (`composer-usage-pill.ts`).
+ * Two copies of "90 / 70" would be two answers to "when is a window in
+ * trouble", and the panel's tonal vocabulary is not something to re-invent per
+ * surface.
+ */
+export function usageTier(pct: number): "error" | "warn" | "ok" {
+  if (pct >= 90) return "error";
+  if (pct >= 70) return "warn";
+  return "ok";
+}
+
+/**
+ * The bar fill for a usage percentage, by {@link usageTier}.
+ *
+ * The fill is the whole answer: the bar is the only surface that colours by
+ * tier, and the figure keeps the panel's one text colour. (This used to also
+ * return a `color` "for the figure", which no caller ever read — a second
+ * answer to a question nobody asked.)
+ */
+export function usageTone(pct: number): Record<string, unknown> {
+  const tier = usageTier(pct);
+  if (tier === "error") return S.barFillError;
+  if (tier === "warn") return S.barFillWarn;
+  return S.barFill;
+}
+
+/**
+ * One window's consumption percentage — the panel's single reading of it.
+ *
+ * The percentage is the platform's own `usagePct`, quoted verbatim — never a
+ * re-derivation. The Host parses it from the subscription response and ships it
+ * down for exactly this purpose (docs/API.md §快照, AGNES-API.md: the bar is a
+ * transcription, not a computation). Two reasons it is NOT `used/limit` first:
+ *
+ *  - the platform's denominator need not be `limit` (it may be a separate
+ *    quota ceiling for the same window), so the arithmetic silently shows a
+ *    different number than the one the console shows;
+ *  - clamping to 100 would rewrite the platform's own value. A window in
+ *    overage reports >100, and that is a fact, not a rendering bug.
+ *
+ * `used / limit` remains only as the fallback for a Host that predates the
+ * field or omits it for this window — a shape mismatch must still render.
+ * `null` means "no reading", which is a different claim from `0`.
+ *
+ * Exported because the composer pill quotes the same two windows and must not
+ * grow a second opinion about what a window's percentage is.
+ */
+export function windowPercent(window: unknown): number | null {
+  if (window === null || typeof window !== "object") return null;
+  const source = window as QuotaWindow;
+  const platformPct = typeof source.usagePct === "number" && Number.isFinite(source.usagePct) ? source.usagePct : null;
+  if (platformPct !== null) return platformPct;
+  const limit = Number(source.limit) || 0;
+  const used = typeof source.used === "number" && Number.isFinite(source.used) ? source.used : null;
+  return used !== null && limit > 0 ? (used / limit) * 100 : null;
 }
 
 /**
@@ -50,18 +108,26 @@ function windowPeriod(hours: unknown, tt: Tt): string {
 }
 
 /**
- * The unit a dimension is counted in — `""` for video.
+ * The unit a dimension is counted in — `""` only where naming one would be an
+ * invention.
  *
  * Video is deliberately unitless. The platform's limit field is
  * `video_daily_limit` while its usage field is `total_video_seconds`, and it
  * never says which one the limit is expressed in, so printing "500 秒" would
  * assert something nobody verified.
+ *
+ * An UNKNOWN unit falls back to the raw name, the same rule `windowLabel`
+ * follows for an unknown key: a Host that grew a dimension this bundle has
+ * never heard of must show up as itself. Returning `""` there would drop the
+ * noun and print a naked "1500" — the exact "reads as available capacity"
+ * shape this card exists to avoid, and silent where an unknown KEY is loud.
  */
 function unitOf(unit: unknown, tt: Tt): string {
   const name = String(unit ?? "");
   if (name === "requests") return tt("quota.unit.requests");
   if (name === "images") return tt("quota.unit.images");
-  return "";
+  if (name === "video") return "";
+  return name;
 }
 
 /** `monthly` / `yearly` as the panel phrases them. */
@@ -90,7 +156,7 @@ function cycleLabel(cycle: unknown, tt: Tt): string {
  * one malformed row must not blank the whole panel — the shape warning above
  * already says what is wrong.
  */
-export function QuotaWindowCard({ label, window, tt }: { label: string; window: QuotaWindow | null | unknown; tt: Tt }): unknown {
+export function QuotaWindowCard({ label, window, tt }: { label: string; window: unknown; tt: Tt }): unknown {
   if (window === null || typeof window !== "object") return null;
   const source = window as QuotaWindow;
   const limit = Number(source.limit) || 0;
@@ -99,24 +165,10 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
   // must not read as zero used, which would draw a full bar and claim the
   // window is untouched.
   const used = typeof source.used === "number" && Number.isFinite(source.used) ? source.used : null;
-  // The percentage is the platform's own `usage_pct`, quoted verbatim — never a
-  // re-derivation. The Host parses it from the subscription response and ships
-  // it down for exactly this purpose (docs/API.md §快照, AGNES-API.md: the bar
-  // is a transcription, not a computation). Two reasons it is NOT `used/limit`:
-  //
-  //  - the platform's denominator need not be `limit` (it may be a separate
-  //    quota ceiling for the same window), so the arithmetic silently shows a
-  //    different number than the one the console shows;
-  //  - clamping to 100 would rewrite the platform's own value. A window in
-  //    overage reports >100, and that is a fact, not a rendering bug.
-  //
-  // `used / limit` remains only as the fallback for a Host that predates the
-  // field or omits it for this window — a shape mismatch must still render.
-  const platformPct = typeof source.usagePct === "number" && Number.isFinite(source.usagePct) ? source.usagePct : null;
-  const pct = platformPct !== null
-    ? platformPct
-    : used !== null && limit > 0 ? (used / limit) * 100 : null;
-  const tone = usageTone(pct ?? 0);
+  // The percentage comes from the ONE shared reading of a window
+  // (`windowPercent`: the platform's own `usagePct`, else `used / limit`), so
+  // the card and the composer pill cannot grow two opinions about it.
+  const pct = windowPercent(source);
   // The window's own reset moment, when the subscription reported one. It is a
   // fact the platform states, so it is quoted verbatim; the platform's own
   // countdown is used only when the absolute time is missing.
@@ -157,8 +209,23 @@ export function QuotaWindowCard({ label, window, tt }: { label: string; window: 
       ? null
       : h(
           "div",
-          { style: S.bar, role: "progressbar", "aria-label": `${label} ${tt("quota.used")} ${pct.toFixed(1)}%`, "aria-valuenow": pct.toFixed(1), "aria-valuemin": 0, "aria-valuemax": 100 },
-          h("div", { style: { ...tone.fill, width: `${pct}%` } })
+          {
+            style: S.bar,
+            role: "progressbar",
+            "aria-label": `${label} ${tt("quota.used")} ${pct.toFixed(1)}%`,
+            // ARIA cannot carry a value above its own maximum, and this window
+            // is the one that legitimately exceeds 100 (the platform's own
+            // figure, never clamped — PITFALLS §45). Reading `valuenow=130`
+            // against a fixed `valuemax=100` is an invalid meter, and a reader
+            // that clamps it loses the single fact the bar is there to carry.
+            // So the maximum FOLLOWS the reading, and `aria-valuetext` spells
+            // the platform's figure out so an overage survives speech intact.
+            "aria-valuenow": pct.toFixed(1),
+            "aria-valuemin": 0,
+            "aria-valuemax": Math.max(100, Math.ceil(pct)),
+            "aria-valuetext": `${pct.toFixed(1)}%`
+          },
+          h("div", { style: { ...usageTone(pct), width: `${pct}%` } })
         ),
     // The counts and the reset stamp share ONE bottom row (counts left, reset
     // right) — two stacked rows would spend vertical space the bar already

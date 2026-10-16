@@ -13,10 +13,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 
 //#endregion
 //#region src/client/const.ts
-	var PANEL_ID, NS, SNAPSHOT_PATH, ACCOUNT_PATH, API_KEY_PATH, PROVIDER_PATH, MODELS_PATH, DRAW_PATH, VIDEO_PATH, AGNESCODE_PATH, AGNES_SIGNUP_URL, AGNESCODE_SITE_URL;
+	var PANEL_ID, NS, PROVIDER_ID, AGNESCODE_PROVIDER_ID, SNAPSHOT_PATH, ACCOUNT_PATH, API_KEY_PATH, PROVIDER_PATH, MODELS_PATH, DRAW_PATH, VIDEO_PATH, AGNESCODE_PATH, AGNES_SIGNUP_URL, AGNESCODE_SITE_URL;
 	var init_const = __esmMin((() => {
 		PANEL_ID = "dsh-connect-agnes-token-plan";
 		NS = PANEL_ID;
+		PROVIDER_ID = "agnes-token-plan";
+		AGNESCODE_PROVIDER_ID = "agnescode";
 		SNAPSHOT_PATH = `/api/${PANEL_ID}/snapshot`;
 		ACCOUNT_PATH = `/api/${PANEL_ID}/account`;
 		API_KEY_PATH = `/api/${PANEL_ID}/api-key`;
@@ -108,6 +110,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"quota.total.video": "视频",
 			"quota.total.activeDays": "活跃天数",
 			"quota.usageMissing": "{label}：暂未读到。",
+			"composer.planPrefix": "Token Plan",
+			"composer.window5h": "5 小时",
+			"composer.windowWeekly": "本周",
+			"composer.pillTitle": "Token Plan 额度",
+			"composer.notConnected": "控制台未连接",
+			"composer.noWindows": "控制台未返回额度窗口",
+			"composer.balancePrefix": "AgnesCode",
+			"composer.balanceTitle": "AgnesCode 积分余额",
+			"composer.balanceUnit": "积分",
+			"composer.balanceUnread": "本次没能读到余额",
+			"composer.stale": "上次数据",
 			"usage.none": "该区间内没有用量记录。",
 			"usage.period": "近 {days} 天",
 			"usage.periodUnknown": "用量区间",
@@ -330,6 +343,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"quota.total.video": "Video",
 			"quota.total.activeDays": "Active days",
 			"quota.usageMissing": "{label}: not read yet.",
+			"composer.planPrefix": "Token Plan",
+			"composer.window5h": "5h",
+			"composer.windowWeekly": "this week",
+			"composer.pillTitle": "Token Plan quota",
+			"composer.notConnected": "console not connected",
+			"composer.noWindows": "the console returned no quota windows",
+			"composer.balancePrefix": "AgnesCode",
+			"composer.balanceTitle": "AgnesCode credit balance",
+			"composer.balanceUnit": "credits",
+			"composer.balanceUnread": "the balance could not be read this time",
+			"composer.stale": "last reading",
 			"usage.none": "No usage recorded in this range.",
 			"usage.period": "Last {days} days",
 			"usage.periodUnknown": "Usage range",
@@ -1344,7 +1368,42 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				fontSize: 11,
 				lineHeight: "16px",
 				marginBottom: 2
-			}
+			},
+			pillTrigger: {
+				appearance: "none",
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 5,
+				height: 28,
+				padding: "0 6px",
+				flexShrink: 0,
+				background: "none",
+				border: "none",
+				color: "inherit",
+				fontFamily: "inherit",
+				fontSize: 12,
+				lineHeight: "20px",
+				whiteSpace: "nowrap",
+				userSelect: "none",
+				cursor: "default"
+			},
+			pillDot: {
+				width: 7,
+				height: 7,
+				borderRadius: 999,
+				flexShrink: 0
+			},
+			pillPlan: {
+				color: "var(--dsw-alias-label-secondary)",
+				flexShrink: 0
+			},
+			pillReading: { fontVariantNumeric: "tabular-nums" },
+			pillStale: { color: "var(--dsw-alias-label-secondary)" },
+			pillErrorText: { color: "var(--dsw-alias-state-error-primary)" },
+			pillTierOk: { background: "var(--dsw-alias-state-success-primary, #22c55e)" },
+			pillTierWarn: { background: "var(--dsw-alias-state-warn-primary, #f59e0b)" },
+			pillTierError: { background: "var(--dsw-alias-state-error-primary, #ef4444)" },
+			pillTierUnknown: { background: "var(--dsw-alias-label-secondary)" }
 		};
 	}));
 
@@ -2653,20 +2712,63 @@ var dsh_connect_agnes_token_plan_client = (function() {
 
 //#endregion
 //#region src/client/cards.ts
-/** The bar fill and figure tone for a usage percentage: 70 warn / 90 danger. */
+/**
+	* One percentage's severity: 90 danger / 70 warn, else ok.
+	*
+	* Its own function because a SECOND surface reads the same thresholds — the
+	* composer usage pill paints a status dot with them (`composer-usage-pill.ts`).
+	* Two copies of "90 / 70" would be two answers to "when is a window in
+	* trouble", and the panel's tonal vocabulary is not something to re-invent per
+	* surface.
+	*/
+	function usageTier(pct) {
+		if (pct >= 90) return "error";
+		if (pct >= 70) return "warn";
+		return "ok";
+	}
+	/**
+	* The bar fill for a usage percentage, by {@link usageTier}.
+	*
+	* The fill is the whole answer: the bar is the only surface that colours by
+	* tier, and the figure keeps the panel's one text colour. (This used to also
+	* return a `color` "for the figure", which no caller ever read — a second
+	* answer to a question nobody asked.)
+	*/
 	function usageTone(pct) {
-		if (pct >= 90) return {
-			fill: S.barFillError,
-			color: "var(--dsw-alias-state-error-primary)"
-		};
-		if (pct >= 70) return {
-			fill: S.barFillWarn,
-			color: "var(--dsw-alias-state-warn-primary)"
-		};
-		return {
-			fill: S.barFill,
-			color: "var(--dsw-alias-label-secondary)"
-		};
+		const tier = usageTier(pct);
+		if (tier === "error") return S.barFillError;
+		if (tier === "warn") return S.barFillWarn;
+		return S.barFill;
+	}
+	/**
+	* One window's consumption percentage — the panel's single reading of it.
+	*
+	* The percentage is the platform's own `usagePct`, quoted verbatim — never a
+	* re-derivation. The Host parses it from the subscription response and ships it
+	* down for exactly this purpose (docs/API.md §快照, AGNES-API.md: the bar is a
+	* transcription, not a computation). Two reasons it is NOT `used/limit` first:
+	*
+	*  - the platform's denominator need not be `limit` (it may be a separate
+	*    quota ceiling for the same window), so the arithmetic silently shows a
+	*    different number than the one the console shows;
+	*  - clamping to 100 would rewrite the platform's own value. A window in
+	*    overage reports >100, and that is a fact, not a rendering bug.
+	*
+	* `used / limit` remains only as the fallback for a Host that predates the
+	* field or omits it for this window — a shape mismatch must still render.
+	* `null` means "no reading", which is a different claim from `0`.
+	*
+	* Exported because the composer pill quotes the same two windows and must not
+	* grow a second opinion about what a window's percentage is.
+	*/
+	function windowPercent(window) {
+		if (window === null || typeof window !== "object") return null;
+		const source = window;
+		const platformPct = typeof source.usagePct === "number" && Number.isFinite(source.usagePct) ? source.usagePct : null;
+		if (platformPct !== null) return platformPct;
+		const limit = Number(source.limit) || 0;
+		const used = typeof source.used === "number" && Number.isFinite(source.used) ? source.used : null;
+		return used !== null && limit > 0 ? used / limit * 100 : null;
 	}
 	/**
 	* The window's own name, from the key the Host emits.
@@ -2689,18 +2791,26 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		return format(tt("quota.perHours"), { hours: value });
 	}
 	/**
-	* The unit a dimension is counted in — `""` for video.
+	* The unit a dimension is counted in — `""` only where naming one would be an
+	* invention.
 	*
 	* Video is deliberately unitless. The platform's limit field is
 	* `video_daily_limit` while its usage field is `total_video_seconds`, and it
 	* never says which one the limit is expressed in, so printing "500 秒" would
 	* assert something nobody verified.
+	*
+	* An UNKNOWN unit falls back to the raw name, the same rule `windowLabel`
+	* follows for an unknown key: a Host that grew a dimension this bundle has
+	* never heard of must show up as itself. Returning `""` there would drop the
+	* noun and print a naked "1500" — the exact "reads as available capacity"
+	* shape this card exists to avoid, and silent where an unknown KEY is loud.
 	*/
 	function unitOf(unit, tt) {
 		const name = String(unit ?? "");
 		if (name === "requests") return tt("quota.unit.requests");
 		if (name === "images") return tt("quota.unit.images");
-		return "";
+		if (name === "video") return "";
+		return name;
 	}
 	/** `monthly` / `yearly` as the panel phrases them. */
 	function cycleLabel(cycle, tt) {
@@ -2733,9 +2843,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const limit = Number(source.limit) || 0;
 		const unit = unitOf(source.unit, tt);
 		const used = typeof source.used === "number" && Number.isFinite(source.used) ? source.used : null;
-		const platformPct = typeof source.usagePct === "number" && Number.isFinite(source.usagePct) ? source.usagePct : null;
-		const pct = platformPct !== null ? platformPct : used !== null && limit > 0 ? used / limit * 100 : null;
-		const tone = usageTone(pct ?? 0);
+		const pct = windowPercent(source);
 		const resetAt = typeof source.resetAt === "number" && Number.isFinite(source.resetAt) ? source.resetAt : null;
 		const resetInSeconds = typeof source.resetInSeconds === "number" && Number.isFinite(source.resetInSeconds) ? source.resetInSeconds : null;
 		const resetLine = resetAt !== null ? format(tt("quota.resetAt"), { time: clockSameDay(resetAt) }) : resetInSeconds !== null ? format(tt("quota.resetCountdown"), { minutes: Math.max(1, Math.round(resetInSeconds / 60)) }) : null;
@@ -2745,9 +2853,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"aria-label": `${label} ${tt("quota.used")} ${pct.toFixed(1)}%`,
 			"aria-valuenow": pct.toFixed(1),
 			"aria-valuemin": 0,
-			"aria-valuemax": 100
+			"aria-valuemax": Math.max(100, Math.ceil(pct)),
+			"aria-valuetext": `${pct.toFixed(1)}%`
 		}, h("div", { style: {
-			...tone.fill,
+			...usageTone(pct),
 			width: `${pct}%`
 		} })), (pct === null || used === null) && resetLine === null ? null : h("div", { style: S.quotaFoot }, pct === null || used === null ? null : h("span", { style: S.quotaUsed }, `${tt("quota.used")} ${count(used)} / ${count(limit)}`), resetLine === null ? null : h("span", { style: {
 			...S.muted,
@@ -3868,6 +3977,404 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	}));
 
 //#endregion
+//#region src/client/composer-usage-pill.ts
+/**
+	* The provider the session is currently pointed at, `next` winning over
+	* `lastUsed` — with one repair: an EMPTY `next` (the transient frame right after
+	* a picker switch, before it carries the new selection) must not shadow a
+	* still-usable `lastUsed`. A bare `next ?? lastUsed` reads a provider off `{}`,
+	* finds none, and hides the pill for OWNED models on exactly the frames a switch
+	* produces.
+	*/
+	function selectedProviderOf(projection) {
+		const usable = (candidate) => candidate !== null && candidate !== void 0 && (typeof candidate.provider === "string" || typeof candidate.model === "string");
+		const p = projection ?? {};
+		const provider = (usable(p.next) ? p.next : usable(p.lastUsed) ? p.lastUsed : void 0)?.provider;
+		return typeof provider === "string" && provider !== "" ? provider : void 0;
+	}
+	/**
+	* One window by key, skipping rows that are not objects at all.
+	*
+	* A shape-drifted row must not throw inside the composer: the panel already
+	* reports shape warnings, and a pill that crashes would take the toolbar down
+	* with it.
+	*/
+	function windowByKey(windows, key) {
+		if (!Array.isArray(windows)) return void 0;
+		for (const row of windows) {
+			if (row === null || typeof row !== "object") continue;
+			if (row.key === key) return row;
+		}
+	}
+	/**
+	* The worse of several readings, with "unknown" only when NONE is readable.
+	*
+	* `null` (no reading) is skipped rather than treated as zero: a window the Host
+	* could not measure must not drag the dot down to a healthy-looking grade.
+	*/
+	function worstTier(percentages) {
+		const rank = {
+			error: 3,
+			warn: 2,
+			ok: 1,
+			unknown: 0
+		};
+		let worst = "unknown";
+		for (const pct of percentages) {
+			if (pct === null) continue;
+			const tier = usageTier(pct);
+			if (rank[tier] > rank[worst]) worst = tier;
+		}
+		return worst;
+	}
+	/**
+	* A percentage as the pill writes it — the platform's own figure at one decimal,
+	* the same precision the window card leads with. `—` is reserved for "no reading",
+	* which is a different claim from `0.0%`.
+	*/
+	function percentText(pct) {
+		return pct === null ? "—" : `${pct.toFixed(1)}%`;
+	}
+	/**
+	* The pill's own route reader.
+	*
+	* It exists because the pill and the panel are mounted independently: the card
+	* is a Plugins-page surface that may never be opened in a given session, while
+	* the pill sits in the composer of every conversation whose model is one of this
+	* plugin's. Sharing one poller would mean either polling for a card nobody
+	* opened or rendering a card from a read the pill happened to pay for.
+	*
+	* ONE core, TWO routes. The generation guard, the abort, the stated cadence and
+	* the hidden-tab pause are identical for both upstreams; only the route, the
+	* body reading and the default rate differ. A second copy of this body is
+	* exactly what `dup-gate` exists to refuse, and two hand-kept copies would drift
+	* the first time one of them is repaired.
+	*
+	* What it does NOT carry is the panel's policy: the failure taxonomy (guidance
+	* lines, the sign-in form gate), the refresh spinner, and the `llm` echo merge
+	* all belong to a screen with forms on it. Here a failure is one bit — "this
+	* reading is stale" — and the numbers stay.
+	*
+	* @param route - module-scope stable: a fresh literal per render would rebuild
+	*   `load` and restart the poll interval with it.
+	* @param initialCadenceMs - the rate to follow before any answer arrives;
+	*   `null` means "no timer until something states one".
+	*/
+	function useRemoteRead(route, initialCadenceMs) {
+		const [reading, setReading] = useState({
+			data: null,
+			updatedAt: 0,
+			cadenceMs: initialCadenceMs,
+			loadedOnce: false,
+			failed: false
+		});
+		const cadenceRef = useRef(initialCadenceMs);
+		cadenceRef.current = reading.cadenceMs;
+		const generation = useRef(0);
+		const inFlight = useRef(null);
+		const load = useCallback(async () => {
+			generation.current += 1;
+			const mine = generation.current;
+			const isCurrent = () => generation.current === mine;
+			inFlight.current?.abort?.();
+			const controller = typeof AbortController === "function" ? new AbortController() : null;
+			inFlight.current = controller;
+			const fail = () => {
+				if (isCurrent()) setReading((current) => ({
+					...current,
+					failed: true,
+					loadedOnce: true
+				}));
+			};
+			try {
+				const response = await fetch(route.path, {
+					headers: { accept: "application/json" },
+					cache: "no-store",
+					...controller ? { signal: controller.signal } : {}
+				});
+				if (!isCurrent()) return;
+				if (!response.ok) {
+					fail();
+					return;
+				}
+				const body = await response.json().catch(() => null);
+				if (!isCurrent()) return;
+				const read = route.parse(body, response.status);
+				if (read.data === null) {
+					fail();
+					return;
+				}
+				setReading({
+					data: read.data,
+					updatedAt: Date.now(),
+					cadenceMs: read.cadenceMs !== void 0 ? read.cadenceMs : cadenceRef.current,
+					loadedOnce: true,
+					failed: false
+				});
+			} catch {
+				fail();
+			} finally {
+				if (inFlight.current === controller) inFlight.current = null;
+			}
+		}, [route]);
+		useEffect(() => {
+			load();
+		}, [load]);
+		useEffect(() => {
+			const cadenceMs = reading.cadenceMs;
+			if (cadenceMs === null) return void 0;
+			let timer = null;
+			const start = () => {
+				if (timer === null) timer = setInterval(() => {
+					load();
+				}, cadenceMs);
+			};
+			const stop = () => {
+				if (timer !== null) {
+					clearInterval(timer);
+					timer = null;
+				}
+			};
+			start();
+			const onVisibility = () => {
+				if (typeof document === "undefined") return;
+				if (document.visibilityState === "hidden") stop();
+				else {
+					load();
+					start();
+				}
+			};
+			if (typeof document !== "undefined" && typeof document.addEventListener === "function") document.addEventListener("visibilitychange", onVisibility);
+			return () => {
+				stop();
+				if (typeof document !== "undefined" && typeof document.removeEventListener === "function") document.removeEventListener("visibilitychange", onVisibility);
+			};
+		}, [load, reading.cadenceMs]);
+		useEffect(() => () => {
+			generation.current += 1;
+			inFlight.current?.abort?.();
+		}, []);
+		return reading;
+	}
+	/**
+	* "These are the last numbers we managed to get."
+	*
+	* Two causes: the last read failed, or the reading has aged past two cadences —
+	* expressed as a multiple of the rate being followed, so this file holds no
+	* second spelling of any poll interval. Without a cadence there is no expected
+	* freshness to judge against, so only a failure can mark it.
+	*/
+	function isStale(reading, now) {
+		const aged = reading.cadenceMs !== null && reading.updatedAt > 0 && now - reading.updatedAt > reading.cadenceMs * 2;
+		return reading.loadedOnce && (reading.failed || aged);
+	}
+	/** The console reader (the pill's `/snapshot` loop). */
+	function useConsoleQuota() {
+		return useRemoteRead(SNAPSHOT_ROUTE, null);
+	}
+	/** The desktop-app reader (the pill's `/agnescode` loop). */
+	function useAgnescodeState() {
+		return useRemoteRead(AGNESCODE_ROUTE, AGNESCODE_POLL_MS);
+	}
+	/** The shared shell: the tier dot, the upstream prefix, the reading. */
+	function PillBody(props) {
+		const { tt, planLabel, tier, stale, title, children } = props;
+		return h("button", {
+			type: "button",
+			className: PILL_CLASS,
+			title,
+			"aria-label": title,
+			style: S.pillTrigger
+		}, h("span", {
+			className: `${PILL_CLASS}-dot`,
+			"aria-hidden": "true",
+			style: {
+				...S.pillDot,
+				...TIER_INK[tier]
+			}
+		}), h("span", {
+			className: `${PILL_CLASS}-plan`,
+			style: S.pillPlan
+		}, `${planLabel} · `), h("span", {
+			className: `${PILL_CLASS}-text`,
+			style: tier === "error" ? S.pillErrorText : void 0
+		}, children, stale ? h("span", { style: S.pillStale }, ` · ${tt("composer.stale")}`) : null));
+	}
+	/** The first of several epoch-second instants that is a usable number, else 0. */
+	function firstInstant(...values) {
+		for (const value of values) if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+		return 0;
+	}
+	/**
+	* The console reading: the two request windows and the tooltip that carries what
+	* the body has no room for (which plan, which quota, when the window resets, and
+	* whether this reading is the last known one).
+	*/
+	function ConsoleQuotaPill({ tt }) {
+		const reading = useConsoleQuota();
+		const quota = reading.data?.quota ?? null;
+		const windows = Array.isArray(quota?.windows) ? quota.windows : [];
+		const fiveHour = windowByKey(windows, WINDOW_5H);
+		const weekly = windowByKey(windows, WINDOW_WEEKLY);
+		const p5 = windowPercent(fiveHour);
+		const pWeekly = windowPercent(weekly);
+		const tier = worstTier([p5, pWeekly]);
+		const stale = isStale(reading, Date.now());
+		const disconnected = quota !== null && quota.consoleConnected === false;
+		const planName = String(quota?.plan?.displayName || quota?.plan?.name || "");
+		const resetAt = firstInstant(fiveHour?.resetAt, weekly?.resetAt);
+		const title = [
+			tt("composer.pillTitle"),
+			planName === "" ? null : planName,
+			!reading.loadedOnce ? tt("panel.loading") : disconnected ? tt("composer.notConnected") : null,
+			reading.loadedOnce && !disconnected && windows.length === 0 ? tt("composer.noWindows") : null,
+			resetAt > 0 ? format(tt("quota.resetAt"), { time: clockSameDay(resetAt) }) : null,
+			stale ? tt("composer.stale") : null
+		].filter(Boolean).join(" · ");
+		const windowText = (label, pct) => `${label} ${percentText(pct)}`;
+		return h(PillBody, {
+			tt,
+			planLabel: tt("composer.planPrefix"),
+			tier,
+			stale,
+			title,
+			children: [
+				h("span", {
+					key: WINDOW_5H,
+					style: S.pillReading
+				}, windowText(tt("composer.window5h"), p5)),
+				" · ",
+				h("span", {
+					key: WINDOW_WEEKLY,
+					style: S.pillReading
+				}, windowText(tt("composer.windowWeekly"), pWeekly))
+			]
+		});
+	}
+	/**
+	* One credit balance as a number, or `null` when the state declared none.
+	*
+	* The AgnesCode gateway publishes STOCKS: `totalBalance` plus its time-limited
+	* and permanent parts. There is no cap in that universe, so the pill draws the
+	* balance — never a percentage, which would require inventing the limit it is a
+	* share of.
+	*
+	* `0` is a READING (a drained balance is the alarm, and it must read `0` in the
+	* error tier), while a missing or non-finite field is ABSENCE — the grey dash.
+	* The panel's own rule for this tab ("a rendered zero would present an unread
+	* figure as a measurement") is the same one, applied to a field-level gap the
+	* panel never has to face because it renders the block only when it is there.
+	*/
+	function balanceOf(state) {
+		const total = state?.balance?.totalBalance;
+		return typeof total === "number" && Number.isFinite(total) ? total : null;
+	}
+	/** One part of the balance (time-limited / permanent), or `null` when unreadable. */
+	function partOf(state, key) {
+		const value = state?.balance?.[key];
+		return typeof value === "number" && Number.isFinite(value) ? value : null;
+	}
+	/**
+	* The desktop-app reading: the gateway's own credit balance.
+	*
+	* It is a STOCK, not a meter — see {@link balanceOf} — so the body carries the
+	* figure and the tooltip carries the three facts that have no room there: which
+	* account (`nickname`), how the total splits (time-limited / permanent), and —
+	* when there is no figure at all — WHICH fact is missing. "The desktop App is
+	* not signed in", "the provider switch is off" and "the gateway did not answer
+	* this time" are three different problems, and a bare dash beside them left the
+	* reader guessing (the same repair the sibling's capsule made for its gateway).
+	*/
+	function AgnescodeBalancePill({ tt }) {
+		const reading = useAgnescodeState();
+		const state = reading.data;
+		const balance = balanceOf(state);
+		const tier = balance === null ? "unknown" : balance <= 0 ? "error" : "ok";
+		const stale = isStale(reading, Date.now());
+		const pending = !reading.loadedOnce && balance === null;
+		const why = !reading.loadedOnce || balance !== null ? null : state === null ? tt("composer.balanceUnread") : state.enabled !== true ? tt("agnescode.unregistered") : state.loggedIn !== true ? tt("agnescode.notLogged") : tt("composer.balanceUnread");
+		const timeLimited = partOf(state, "timeSensitiveBalance");
+		const permanent = partOf(state, "permanentBalance");
+		const split = timeLimited === null || permanent === null ? null : `${tt("agnescode.balanceTimeLabel")} ${count(timeLimited)} · ${tt("agnescode.balancePermanentLabel")} ${count(permanent)}`;
+		const title = [
+			tt("composer.balanceTitle"),
+			state?.loggedIn === true && String(state.nickname ?? "") !== "" ? format(tt("agnescode.loggedIn"), { nick: String(state.nickname) }) : null,
+			split,
+			why,
+			stale ? tt("composer.stale") : null
+		].filter(Boolean).join(" · ");
+		return h(PillBody, {
+			tt,
+			planLabel: tt("composer.balancePrefix"),
+			tier,
+			stale,
+			title,
+			children: h("span", { style: S.pillReading }, pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`)
+		});
+	}
+	/**
+	* The composer pill.
+	*
+	* Renders nothing unless the session's model belongs to this plugin — so no other
+	* provider's conversation carries a foreign readout, and no fetch loop runs while
+	* it is absent (the inner reader is not mounted). WHICH upstream it belongs to is
+	* the same decision as whether one mounts: the console provider reads the
+	* snapshot, the desktop-app provider reads its own route, and neither is mounted
+	* for the other's models.
+	*/
+	function ComposerUsagePill(props) {
+		const { tt, useProjection } = props;
+		const provider = selectedProviderOf((useProjection ?? (() => void 0))("modelSelection"));
+		if (provider === "agnes-token-plan") return h(ConsoleQuotaPill, { tt });
+		if (provider === "agnescode") return h(AgnescodeBalancePill, { tt });
+		return null;
+	}
+	var PILL_CLASS, WINDOW_5H, WINDOW_WEEKLY, TIER_INK, SNAPSHOT_ROUTE, AGNESCODE_ROUTE;
+	var init_composer_usage_pill = __esmMin((() => {
+		init_runtime();
+		init_styles();
+		init_format();
+		init_const();
+		init_snapshot();
+		init_cards();
+		init_agnescode_tab();
+		PILL_CLASS = "dsh-agnes-composer-pill";
+		WINDOW_5H = "requests5h";
+		WINDOW_WEEKLY = "requestsWeekly";
+		TIER_INK = {
+			error: S.pillTierError,
+			warn: S.pillTierWarn,
+			ok: S.pillTierOk,
+			unknown: S.pillTierUnknown
+		};
+		SNAPSHOT_ROUTE = {
+			path: SNAPSHOT_PATH,
+			parse: (body, status) => {
+				if (status < 200 || status >= 300) return { data: null };
+				const read = interpretSnapshot(body);
+				if (read.data === null) return { data: null };
+				const stated = read.data.pollSeconds;
+				return {
+					data: read.data,
+					cadenceMs: typeof stated === "number" && Number.isFinite(stated) && stated > 0 ? Math.floor(stated) * 1e3 : null
+				};
+			}
+		};
+		AGNESCODE_ROUTE = {
+			path: AGNESCODE_PATH,
+			parse: (body, status) => {
+				if (status < 200 || status >= 300) return { data: null };
+				const state = body;
+				if (state === null || typeof state !== "object" || state.ok !== true) return { data: null };
+				return {
+					data: state,
+					cadenceMs: AGNESCODE_POLL_MS
+				};
+			}
+		};
+	}));
+
+//#endregion
 //#region src/client/apply.ts
 /**
 	* Register the dictionaries and the plugin config card.
@@ -3912,6 +4419,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		} catch (error) {
 			console.warn(`[${NS}] config card registration failed:`, error);
 		}
+		try {
+			disposers.push(ctx.slots.inject("conversation.input.right", () => ctx.slots.register({
+				name: "conversation.input.right",
+				id: `${NS}-composer-pill`,
+				locale: NS,
+				order: 4,
+				inject: () => ({ tt })
+			}, ComposerUsagePill)));
+		} catch (error) {
+			console.warn(`[${NS}] composer pill registration failed:`, error);
+		}
 		ctx.effect(() => () => {
 			for (const dispose of disposers.splice(0)) try {
 				dispose();
@@ -3923,6 +4441,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_const();
 		init_i18n();
 		init_panel_page();
+		init_composer_usage_pill();
 		inject = ["slots", "locale"];
 	}));
 
@@ -3943,6 +4462,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_api_key_form();
 		init_model_picker();
 		init_panel_page();
+		init_composer_usage_pill();
 		init_agnescode_tab();
 		function clientFactory(loaderRequire) {
 			provideClientReact(loaderRequire("react"));
@@ -3986,7 +4506,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					allowListFor,
 					toggleModelIn,
 					setAllModelsIn,
-					bulkModelsIn
+					bulkModelsIn,
+					selectedProviderOf,
+					windowByKey,
+					worstTier,
+					percentText,
+					windowPercent,
+					usageTier,
+					balanceOf
 				}),
 				components: Object.freeze({
 					PlanCard,
@@ -4007,6 +4534,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					ModelRoster,
 					ModelPicker,
 					PanelPage,
+					ComposerUsagePill,
 					AgnescodeTab,
 					AgnescodeRoster,
 					AgnescodeModelPicker

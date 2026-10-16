@@ -5,14 +5,14 @@
 
 ## 项目一句话
 
-DSH 插件：从 Agnes 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / AgnesCode）。算法参考历史上的游 `sensenova-usage-dashboard`（本地副本现已不在本机，恢复方式见 `docs/ARCHITECTURE.md` §1）；参照件容器 `upstream/` 的清单、版本与纪律见 `docs/REFERENCES.md`——**探测/参照产物一律落进 `upstream/`，绝不留在仓库根的未跟踪区**。
+DSH 插件：从 Agnes 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / AgnesCode），外加会话输入框右侧的**用量胶囊**（`conversation.input.right` 座席，见事实 1）。算法参考历史上的游 `sensenova-usage-dashboard`（本地副本现已不在本机，恢复方式见 `docs/ARCHITECTURE.md` §1）；参照件容器 `upstream/` 的清单、版本与纪律见 `docs/REFERENCES.md`——**探测/参照产物一律落进 `upstream/`，绝不留在仓库根的未跟踪区**。
 Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/user/login`，无 OIDC / 无 refresh token，令牌死了就重登一次）；Client（React bundle）轮询本地路由。
 
 **三条事实**（写代码前先认清你在动哪一条）：
 
-1. 「积分额度」tab 是地基，走 Host 登录 + 自动重登，只读 Agnes 控制台（`platform-backend.agnes-ai.cn`）。
+1. 「积分额度」tab 是地基，走 Host 登录 + 自动重登，只读 Agnes 控制台（`platform-backend.agnes-ai.cn`）。**对话框用量胶囊横跨这一条与事实 3**：它按当前会话模型的 provider 门控（`useProjection("modelSelection")`），`agnes-token-plan` 模型画控制台 5 小时 / 本周百分比、`agnescode` 模型画桌面端积分余额（存量，不造百分比），别的 provider 一律不挂载。座席注册在 `src/client/apply.ts`；两条读数各读 `/snapshot` 与 `/agnescode`，共用同一个 `useRemoteRead` 轮询核心；控制台侧与面板同源（`windowPercent` / `usageTier`），余额侧与 tab 同源（`balanceOf` / `AGNESCODE_POLL_MS`）。
 2. 「接入 API」tab 与出图工具会把本插件**升级为推理通道**——注册 provider `agnes-token-plan`、给 agent 挂 `agnes_draw_image`。它们都是 **opt-in 默认关**，任何失败必须降级为「面板照常用、该模块缺席」。
-3. **「AgnesCode」tab 是桌面端上游**：接的是 AgnesCode 桌面端的登录态——本插件第一条**本机登录态采集**线（workbuddy 族先例）：微信登录发生在桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（Chromium os_crypt + DPAPI + AES-256-GCM，逐文件 9 档分诊：file_missing / format_drift / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform，注入式可离线测，见 `test/agnescode.test.mjs`），provider `agnescode`，接口地址**按账号跟随**会话文件且钉死在 Agnes 域名族内。**它没有刷新端点（JWT 约 28 天）——这是已知限制，不是特性**：续期没有自动路径，必须用户手动重开桌面 App、再点「检测本机登录态」重新采集，约每 28 天一次；插件无法在后台自动续期。隔离纪律与主 provider 同款：两边 publisher、store、凭据引用全部隔离（见 `docs/ROADMAP.md` §6.3）。
+3. **「AgnesCode」tab 是桌面端上游**：接的是 AgnesCode 桌面端的登录态——本插件第一条**本机登录态采集**线（workbuddy 族先例）：微信登录发生在桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（Chromium os_crypt + DPAPI + AES-256-GCM，逐文件 9 档分诊：file_missing / format_drift / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform，注入式可离线测，见 `test/agnescode.test.mjs`），provider `agnescode`，接口地址**按账号跟随**会话文件且钉死在 Agnes 域名族内。**它没有刷新端点（JWT 约 28 天）——这是已知限制，不是特性**：续期没有自动路径，必须用户手动重开桌面 App、再点「检测本机登录态」重新采集，约每 28 天一次；插件无法在后台自动续期。隔离纪律与主 provider 同款：两边 publisher、store、凭据引用全部隔离（见 `docs/ROADMAP.md` §6.3）。**它同时是胶囊的第二条读数**：`agnescode` 模型在输入框右侧画这套积分余额（前缀 `AgnesCode`），读的是同一个只读 GET，cadence 复用 tab 的 `AGNESCODE_POLL_MS`。
 
 **定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计裁定见 docs/ADR.md，2026-09 的研究原稿已归档为 docs/ARCHIVE-IMPROVEMENTS-2026-09.md（不作现行依据）。
 
@@ -40,12 +40,12 @@ dsh-connect-workbuddy
 node test/agnes-auth.test.mjs  # 一跳登录/失败分类/重登/节流窗口解析
 node test/store-baseline.test.mjs # token-store 全行为冻结基线：拆分/改动续期·节流·迁移前后必须零漂移
 node test/panel.test.mjs    # 面板决策、中英字典一致性
-node test/dom-render.test.mjs # 真 DOM 挂载：入库 client.js + 真 react/react-dom + jsdom，经 apply 挂 PanelPage 并以点击/输入/提交驱动 hook 组件（需 devDependencies，缺席 SKIP；CI offline job 装依赖真跑）
+node test/dom-render.test.mjs # 真 DOM 挂载：入库 client.js + 真 react/react-dom + jsdom，经 apply 挂 PanelPage 与对话框用量胶囊，并以点击/输入/提交/切 provider 驱动 hook 组件（需 devDependencies，缺席 SKIP；CI offline job 装依赖真跑）
 node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shape 漂移、分桶求和、四窗口
 node test/switch-store.test.mjs # 四个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」）
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）；新增 docs/ 顶层文件必须进 docs/README.md 索引表，否则 ORPHAN_DOCS 判红
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
-npm test                    # 全量离线测试门禁 + 末尾 4 道 gate：tsc-gate / build-gate / dup-gate / e2e-gate（各自探到 tsc / tsdown / jscpd / dsh CLI 才实跑，否则 SKIP；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）
+npm test                    # 全量离线测试门禁 + 末尾数道 gate（tsc-gate / build-gate / dup-gate / composer-slot-gate / e2e-gate，各自探到 tsc / tsdown / jscpd / 本机 DSH client 副本 / dsh CLI 才实跑，否则 SKIP；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）
 npm run build               # 改 src/（host 或 client）后必跑：重建 lib/ 与根 client.js（两者是入库产物：重建后必须与 src/ 同一 commit 提交；build-gate 拦构建失败/产物缺失/漂移，CI 新鲜度门禁拦「改了 src 没重建」；别把 /lib/ 加回 .gitignore）
 ```
 
@@ -128,6 +128,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 排查登录失败 / 改一跳登录、失败分类、重登、节流 | `docs/AUTH.md` → `docs/AGNES-API.md` §1–§2 |
 | 动桌面端上游（AgnesCode / `agnescode`） | `docs/ROADMAP.md` §6.3（契约探针 + 隔离裁定）→ `src/host/agnescode*.ts` |
 | 给用户看的文案（README / `cordis.patch.yml`）改了 | `test/docs.test.mjs` 检查 `README_TABS`/`SELF_DESCRIPTION`（tab 全覆盖 + 槽位一致），两者都进 npm 包 |
+| 改**对话框用量胶囊**（座席注册、两处 provider 门控、窗口/余额读数、软失败/降级） | `src/client/composer-usage-pill.ts`（控制台读数走 `cards.ts` 的 `windowPercent` / `usageTier`，余额读数走 `balanceOf`；两条路由共用同一个 `useRemoteRead` 核心）→ 座席注册在 `src/client/apply.ts`；两个 provider id 的双侧拼写由 `test/contract.test.mjs` §11c 钉住；座席与 `useProjection` 的 peer 契约见 `test/composer-slot-gate.mjs`；真 DOM 行为见 `test/dom-render.test.mjs` |
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
 | 理解「这是一个 DSH 插件」（bundle 结构、Loader 条目、`cordis.patch.yml`、安装重启、peer 分工） | `docs/DSH-PLUGIN.md` |
 | 拍/改裁定、回溯边界与定位沿革（现行表述 vs 历史依据） | `docs/ADR.md`（决策账本；取代关系与举证链在此，现行规则见 `docs/ARCHITECTURE.md` §5）；**现行正文禁内联「修订（日期）」补丁**，`docs.test.mjs` 检查 `ARCHAEOLOGY` 把关 |

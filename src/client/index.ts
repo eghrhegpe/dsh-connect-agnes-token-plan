@@ -76,12 +76,22 @@ import {
   QuotaWindowCard,
   SectionCard,
   UsageChart,
-  UsageTotals
+  UsageTotals,
+  usageTier,
+  windowPercent
 } from "./cards.ts";
 import { ProviderStatus, ProviderRegStatus, ProviderSwitch, DrawSwitch, VideoSwitch, RpmNote, ProviderForm } from "./provider-controls.ts";
 import { ApiKeyForm } from "./api-key-form.ts";
 import { ModelPicker, ModelRoster } from "./model-picker.ts";
 import { PanelPage, barPlan } from "./panel-page.ts";
+import {
+  ComposerUsagePill,
+  balanceOf,
+  percentText,
+  selectedProviderOf,
+  windowByKey,
+  worstTier
+} from "./composer-usage-pill.ts";
 import { AgnescodeModelPicker, AgnescodeRoster, AgnescodeTab, agnescodeView } from "./agnescode-tab.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
@@ -129,7 +139,22 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       allowListFor,
       toggleModelIn,
       setAllModelsIn,
-      bulkModelsIn
+      bulkModelsIn,
+      // The composer pill's reading decisions, exposed for the same reason as
+      // the rest: the behaviour suites drive the REAL functions rather than
+      // scraping the source, so a pill that quietly stops gating on the
+      // provider (or starts clamping percentages) fails there first.
+      selectedProviderOf,
+      windowByKey,
+      worstTier,
+      percentText,
+      windowPercent,
+      usageTier,
+      // The desktop-app side's one reading: `0` is a drained balance (the alarm),
+      // a missing field is "unreadable" (the dash). Pinned by the render suite
+      // because turning a gap into a zero is the exact failure the panel's own
+      // "no rendered zero for an unread figure" rule exists to prevent.
+      balanceOf
     }),
     components: Object.freeze({
       PlanCard,
@@ -153,6 +178,10 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
       ModelRoster,
       ModelPicker,
       PanelPage,
+      // The composer usage pill: the one component of this bundle that renders
+      // outside the Plugins page. Exposed so the real-DOM suite can mount it
+      // under a fake `useProjection` and drive provider switches through it.
+      ComposerUsagePill,
       AgnescodeTab,
       AgnescodeRoster,
       // The AgnesCode roster's edit affordances. Exported so the render suite

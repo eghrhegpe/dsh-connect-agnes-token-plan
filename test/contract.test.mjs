@@ -45,6 +45,7 @@ import { countOf, timestampSeconds, checkShape, identifyVisionModel } from "../s
 import { retryableCodes, QUOTA_CODES } from "../src/host/llm-retry.ts";
 import { isCredentialRefusal, CODE } from "../src/host/codes.ts";
 import { AGNESCODE_HARVEST_TIER } from "../src/host/agnescode.ts";
+import { AGNESCODE_PROVIDER_ID } from "../src/host/agnescode-models.ts";
 import { CONFIG_DEFAULTS, name } from "../src/host/host-config.ts";
 import { API_KEY_REF } from "../src/host/api-key-store.ts";
 
@@ -690,21 +691,37 @@ function literalScan(text, opener, after) {
 //     silently stop the panel recognising the expected "switch on, no token
 //     yet" state — which is how a red error alert once flashed on the tab.
 //
-// Pinned here, next to the other cross-half wire facts. The host call sites
-// that spell this code (`agnescode-publish.ts`, `routes/agnescode.ts`) now go
-// through `CODE`, so this comparison is the last place the two spellings meet.
+// A third and fourth belong to the same family and are the purest case of it —
+// one provider gate per upstream the composer pill serves:
+//   `PROVIDER_ID` (`client/const.ts`) = `LLM_PROVIDER_ID`, and
+//   `AGNESCODE_PROVIDER_ID` = the Host's constant of the same name. Each pill
+//     only mounts when the session's selected provider is its string, so a
+//     rename on either side makes that reading silently never appear — an
+//     outcome indistinguishable from "this provider has no quota", with no error
+//     text and no other suite to notice. Pinned here, where the spellings meet.
+//
+// Pinned next to the other cross-half wire facts. The host call sites that spell
+// the AgnesCode code (`agnescode-publish.ts`, `routes/agnescode.ts`) now go
+// through `CODE`, so this comparison is the last place those two meet.
 {
-  const wireSrc = readFileSync(join(ROOT, "src", "client", "wire.ts"), "utf8");
+  const clientDir = join(ROOT, "src", "client");
+  const sources = new Map();
+  const sourceOf = (file) => {
+    if (!sources.has(file)) sources.set(file, readFileSync(join(clientDir, file), "utf8"));
+    return sources.get(file);
+  };
   const PINS = [
-    { name: "AGNESCODE_TIER_OK", host: AGNESCODE_HARVEST_TIER.OK, hostLabel: "AGNESCODE_HARVEST_TIER.OK" },
-    { name: "AGNESCODE_ERROR_NOT_CONFIGURED", host: CODE.NOT_CONFIGURED, hostLabel: "CODE.NOT_CONFIGURED" }
+    { name: "AGNESCODE_TIER_OK", file: "wire.ts", host: AGNESCODE_HARVEST_TIER.OK, hostLabel: "AGNESCODE_HARVEST_TIER.OK" },
+    { name: "AGNESCODE_ERROR_NOT_CONFIGURED", file: "wire.ts", host: CODE.NOT_CONFIGURED, hostLabel: "CODE.NOT_CONFIGURED" },
+    { name: "PROVIDER_ID", file: "const.ts", host: LLM_PROVIDER_ID, hostLabel: "LLM_PROVIDER_ID" },
+    { name: "AGNESCODE_PROVIDER_ID", file: "const.ts", host: AGNESCODE_PROVIDER_ID, hostLabel: "AGNESCODE_PROVIDER_ID" }
   ];
   for (const pin of PINS) {
-    const found = wireSrc.match(new RegExp(`export const ${pin.name} = "([^"]*)"`));
+    const found = sourceOf(pin.file).match(new RegExp(`export const ${pin.name} = "([^"]*)"`));
     // Liveness first: a renamed or reformatted constant must fail THIS check
     // loudly rather than skipping the comparison below.
     check(`the client's ${pin.name} is still spelled as this pin expects`,
-      found !== null, "wire.ts no longer matches — update this pin");
+      found !== null, `${pin.file} no longer matches — update this pin`);
     if (found) {
       check(`the client's ${pin.name} equals the Host's ${pin.hostLabel}`,
         found[1] === pin.host, `client="${found[1]}" host="${pin.host}"`);

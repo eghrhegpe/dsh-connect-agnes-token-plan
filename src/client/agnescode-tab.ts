@@ -61,8 +61,15 @@ export interface TabStatus {
 /** The secret-free state the /agnescode route answers. */
 type AgnescodeState = AgnescodeStateData;
 
-/** The cadence the tab polls at while open (balance + roster drift slowly). */
-const AGNESCODE_POLL_MS = 60_000;
+/**
+ * The cadence this tab polls at while open (balance + roster drift slowly).
+ *
+ * Exported because the composer pill reads the SAME route on the same schedule:
+ * the route states no `pollSeconds` of its own, so this constant is the one
+ * spelling of that rate — a second literal in the pill would be two answers to
+ * "how fresh is the balance".
+ */
+export const AGNESCODE_POLL_MS = 60_000;
 
 /**
  * The tab's rendering decisions, lifted out of the JSX so they can be nailed.

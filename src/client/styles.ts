@@ -202,5 +202,37 @@ export const S = {
   // line read as pasted log rather than a diagnosis. The tier word carries the
   // distinction between the non-ok tiers (each wants different advice); the
   // color carries only ok / needs-attention.
-  diagRow: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 11, lineHeight: "16px", marginBottom: 2 }
+  diagRow: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 11, lineHeight: "16px", marginBottom: 2 },
+  // ── the composer usage pill (`conversation.input.right`) ──────────────────
+  // Sized to the HOST's own toolbar controls, not to this plugin's card scale:
+  // the composer row already draws model picker / voice / send controls at 28px
+  // with 12px text, and a pill built at the card's 13px/32px read as a foreign
+  // widget wedged into the toolbar. Everything here is inline style — this
+  // plugin injects no stylesheet (`switch.ts` carries the same ruling) — and the
+  // tier inks come from the shell's own state tokens, so a theme or a light/dark
+  // flip carries the dot with it.
+  pillTrigger: {
+    appearance: "none", display: "inline-flex", alignItems: "center", gap: 5,
+    height: 28, padding: "0 6px", flexShrink: 0,
+    background: "none", border: "none", color: "inherit",
+    fontFamily: "inherit", fontSize: 12, lineHeight: "20px",
+    whiteSpace: "nowrap", userSelect: "none", cursor: "default"
+  },
+  pillDot: { width: 7, height: 7, borderRadius: 999, flexShrink: 0 },
+  // The plan name: which quota the numbers beside it belong to. Its own span so
+  // it can be tinted or weighted later without touching the reading.
+  pillPlan: { color: "var(--dsw-alias-label-secondary)", flexShrink: 0 },
+  // Tabular figures: the percentages must not jitter while the pill polls.
+  pillReading: { fontVariantNumeric: "tabular-nums" },
+  pillStale: { color: "var(--dsw-alias-label-secondary)" },
+  // An exhausted window is the ONE case where the text itself is tinted. A
+  // healthy 3% pill must stay as quiet as the chrome around it.
+  pillErrorText: { color: "var(--dsw-alias-state-error-primary)" },
+  // The dot's four inks. `ok` gets the success token (a status light needs a
+  // positive state; the panel's progress bar deliberately has none) and
+  // `unknown` the label ink, which reads as "no reading" rather than as a grade.
+  pillTierOk: { background: "var(--dsw-alias-state-success-primary, #22c55e)" },
+  pillTierWarn: { background: "var(--dsw-alias-state-warn-primary, #f59e0b)" },
+  pillTierError: { background: "var(--dsw-alias-state-error-primary, #ef4444)" },
+  pillTierUnknown: { background: "var(--dsw-alias-label-secondary)" }
 };

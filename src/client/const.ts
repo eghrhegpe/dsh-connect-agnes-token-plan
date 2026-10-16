@@ -18,6 +18,27 @@ export const PANEL_ID = "dsh-connect-agnes-token-plan";
 /** Dictionary namespace this plugin owns (same string as {@link PANEL_ID}). */
 export const NS = PANEL_ID;
 
+/**
+ * The LLM provider id this plugin registers — the Host's `LLM_PROVIDER_ID`
+ * (`src/host/llm-models.ts`) under a client-side spelling.
+ *
+ * The composer usage pill gates on it: only a session whose selected model
+ * belongs to this provider may draw these numbers. The two halves spell the id
+ * independently (the client cannot import the Host), so `test/contract.test.mjs`
+ * pins the pair — a rename on one side would otherwise make the pill silently
+ * never mount, which is indistinguishable from "this provider has no quota".
+ */
+export const PROVIDER_ID = "agnes-token-plan";
+
+/**
+ * The desktop-app provider id this plugin registers — the Host's
+ * `AGNESCODE_PROVIDER_ID` (`src/host/agnescode-models.ts`) under a client-side
+ * spelling, for the same reason as {@link PROVIDER_ID}: it is the composer
+ * pill's second gate, and a rename on one side would make the balance reading
+ * silently never mount. `test/contract.test.mjs` §11c pins the pair.
+ */
+export const AGNESCODE_PROVIDER_ID = "agnescode";
+
 /** The Host snapshot route. Relative, same-origin. */
 export const SNAPSHOT_PATH = `/api/${PANEL_ID}/snapshot`;
 

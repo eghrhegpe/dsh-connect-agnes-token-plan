@@ -145,6 +145,12 @@ jobs:
           # large copy fails the build. Same non-roster exemption as build-gate
           # / tsc-gate; SKIPs loudly when jscpd is absent.
           node test/dup-gate.mjs
+          # The composer pill's PEER contract: the DSH client still declares the
+          # `conversation.input.right` seat, still renders it, still exposes the
+          # session `projection` keyed hook and still materializes `useProjection`
+          # strictly. Static reads of the runtime this job installed; SKIPs loudly
+          # when the machine has no DSH client copy.
+          node test/composer-slot-gate.mjs
 
   artifacts:
     name: Committed artifacts in sync with src/ (hard gate)
