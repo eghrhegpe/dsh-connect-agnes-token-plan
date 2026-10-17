@@ -76,9 +76,14 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 >
 > **拼错的键会在 Host 日志里点名。** 上表之外、也不属于登录覆盖项的键会被忽略，但挂载时会记一行 `unknown config key(s) ignored: …`（`resolveSettings` 返回 `unknownKeys`，`apply` 只记日志）。刻意**不**设 `config_error`：老 patch 里遗留的键（商汤时代的 OIDC 字段、`usageHours`）不该把整块面板打成配置错误——那与「一个模块缺席不许埋掉别的模块」相反（`ARCHITECTURE.md` §5）。所以它只让拼写错误不再静默，不让遗留键变成故障。`requestTimeoutMs` 是 `loginTimeoutMs` 的旧名、仍然生效，不会被点名。
 
-### AgnesCode 续期限制（已知，非特性）
+### AgnesCode 已知限制：凭据归属、撤销与续期
 
-AgnesCode tab 走的是桌面端登录态采集，**没有刷新端点**：会话 JWT 寿命 `exp−iat ≈ 28 天`，上游的 `auth-token-refresh-reservation` 只做失效检测、无续期实现。因此**续期是用户手动仪式，不是自动能力**——每约 28 天需重开桌面 App、再在 tab 里点「检测本机登录态」重新采集；插件无法在后台自动续期。这是上游形态决定的已知限制，别把它写成「点一下就永久好」的特性向用户描述（详见 `ROADMAP.md` §6.3 与 `ARCHITECTURE.md` 的 AgnesCode 线）。
+AgnesCode tab 读的是**另一个应用**（AgnesCode 桌面端）已经登录好的会话，本插件不发起任何登录。下面四条都是「它是什么」而不是「它暂时没做好」，写给要判断「这东西能不能装」的人：
+
+- **授权发生在别处，令牌不属于本插件**。微信扫码登录发生在桌面 App 里；本插件只读 App 的会话文件（`%APPDATA%\AgnesCode\code-auth-session.cn.v1`，Chromium os_crypt：`v10` 前缀 + AES-256-GCM，密钥由 DPAPI 以**当前 Windows 用户**为界包裹）。所以这是那个 App 的登录态，不是本插件新开的一个账号；同一用户权限下的进程都能读到它——这是「本机登录态采集」这一类线的固有属性，不是本插件额外打开的暴露面（它不提升权限、不导出密钥、不复制会话文件）。
+- **只读，从不写回**。采集侧没有任何写 / 改名 / 删除动作，App 的会话文件与登录态全程不被改动；解出的 JWT 只进 DSH 凭据服务（`AGNESCODE_CREDENTIAL`，owner-only），不进插件目录、不进 git、不进日志（红线 1）。请求只发往会话文件里那个 base，而它被**钉死在 Agnes 域名族内**——会话文件被改坏也不能把令牌指到别的主机。
+- **面板没有「登出」按钮，这是刻意的**。能停掉 provider 的是**开关**（关掉即注销注册）；而「删掉存下的 JWT」是隐私动作、不是日常登出，命名成「解除关联」会被读成普通操作，所以撤掉了。要真正吊销令牌只有两条路：在**桌面 App 里登出或改密码**（会话随之失效，下次采集会按分诊明说是哪一档，例如「会话里没有令牌」），或由操作者手动删掉 `~/.dsh/.credentials.yaml` 里的 `AGNESCODE_CREDENTIAL` 记录（owner-only 文件；删前先退出 DSH——运行中的进程还持有内存副本，而且下一次「检测本机登录态」会把它写回）。**关开关不等于吊销**：它只是让本插件不再注册 provider，已存的 JWT 仍在凭据服务里，重新打开开关会直接用回它、无需重新采集。
+- **续期是用户手动仪式，不是自动能力**。会话 JWT 寿命 `exp−iat ≈ 28 天`，上游的 `auth-token-refresh-reservation` 只做失效检测、无续期实现，插件也没有刷新端点可用。因此每约 28 天需重开桌面 App、再在 tab 里点「检测本机登录态」重新采集；插件无法在后台自动续期。这是上游形态决定的已知限制，别把它写成「点一下就永久好」的特性向用户描述（详见 `ROADMAP.md` §6.3 与 `ARCHITECTURE.md` 的 AgnesCode 线）。
 
 ---
 

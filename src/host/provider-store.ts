@@ -4,24 +4,20 @@
  *
  * Why a file at all: `registerProvider` in `cordis.patch.yml` is a DEPLOYMENT
  * default the operator edits with a reload, but the panel needs a live switch
- * that takes effect on the next request. The switch state therefore lives in
- * `$DSH_HOME/state/<plugin>/provider.json`, exactly like the draw / video
- * switches and the catalog: operational state, not an operator decision baked
- * into the patch layer.
+ * that takes effect on the next request. So the switch lives in
+ * `$DSH_HOME/state/<plugin>/provider.json` — operational state, not an
+ * operator decision baked into the patch layer.
  *
- * Precedence at read time:
- *
- *   1. a value SAVED FROM THE PANEL (enabled: true|false) always wins;
- *   2. no saved value (never touched, or the file was unreadable) falls back
- *      to the patch's `registerProvider` — so an operator who enabled the
- *      provider through configuration keeps it enabled across this change.
- *
- * Everything that makes this file a switch — the versioned payload, the temp
- * file plus atomic rename, owner-only modes, "anything unrecognised reads as
- * not set", the short-TTL read cache and the §23 one-shot legacy adoption —
- * lives in `switch-store.ts` now, shared by all four opt-in switches. Only the
- * facts that differ are declared here: the file name, the shape version, the
- * absence of a model preference, and the rejection wording.
+ * **Precedence is not stated here on purpose.** "A value saved from the panel
+ * wins, an untouched file falls back to the patch's `registerProvider`" is one
+ * rule shared by all four opt-in switches and owned by `switch-precedence.ts`;
+ * restating it here (and in the two sibling stores) made three copies that
+ * could drift from the arbiter with no gate to notice. Everything that makes
+ * this file a switch — the versioned payload, the temp file plus atomic rename,
+ * owner-only modes, "anything unrecognised reads as not set", the short-TTL
+ * read cache and the §23 one-shot legacy adoption — is `switch-store.ts`'s.
+ * Only the facts that differ are declared here: the file name, the shape
+ * version, the absence of a model preference, and the rejection wording.
  *
  * @module dsh-connect-agnes-token-plan/provider-store
  */

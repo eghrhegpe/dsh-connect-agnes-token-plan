@@ -399,6 +399,17 @@ AES-256-GCM；密钥在同目录 `Local State` 的 `os_crypt.encrypted_key`，DP
 deep-link（`issue-authorization-code` 用 JWT 换一次性 code → BFF `exchange-code` 换
 `access_token`，`client_id: agnes-code`，redirect `agnes://auth/callback`）——仅记录，未实测。
 
+**采集侧写权限为零（工程不变量，不是措辞）。** `agnescode*.ts` 里没有任何
+`writeFile` / `rename` / `rm`：这条线只读 App 的会话文件，App 的登录态与文件形状全程不被
+本插件改动。推论是「撤销」在插件侧**没有实现位置**——面板的开关只注销 provider
+（`agnescodeSwitch.save(false)` 之后走一次 `publishFromStore()`，由 publisher 的开关闸释放
+注册），凭据原语 `forget()` 只删 DSH 凭据服务里的引用、不碰 App 的文件，而**它在 `src/` 里
+没有任何调用点**（只有测试直接调它）：原来的「解除关联」按钮被撤掉了，理由是它唯一独有的
+效果是「从磁盘删掉存下的 JWT」——那是隐私动作，不是日常登出，命名成「解除关联」会被读成
+普通操作。要真正吊销只能在桌面 App 里登出/改密码，或由操作者手动删掉凭据记录；
+**关开关 ≠ 吊销**，重新打开开关会直接用回已存的 JWT（开关路由的 `publishFromStore` 从
+凭据服务重建注册，不重新采集）。操作员视角的四条限制见 [SETUP.md](./SETUP.md) §3。
+
 **先例归属**：这将是本插件第一条「**本机登录态采集**」线（qoder / trae / workbuddy 族先例，
 §5.3 核实表）；Token Plan 仍是「自有登录」（`dsh-codearts-auth` 先例）。两种形态并存时隔离
 纪律与主提供方同款（[ARCHITECTURE.md](./ARCHITECTURE.md) §5.2）执行：独立 publisher / store / 凭据引用，

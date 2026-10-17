@@ -196,8 +196,14 @@ export const CONFIG_DEFAULTS = Object.freeze({
  * resolver starts from, while the operator writes `allowedHosts`
  * (`resolveAllowedHosts` reads only the latter). The rename is the one place
  * where "has a default" and "is an input" disagree.
+ *
+ * Exported because it is also the SETUP.md config table's other half: that
+ * table documents the operator contract, and `docs.test.mjs` pins the two
+ * against each other rather than trusting a hand-maintained mirror
+ * (`DOC_CONFIG_TABLE`). A test that re-derived this set would be the second
+ * copy this export exists to prevent.
  */
-const READ_KEYS: ReadonlySet<string> = new Set([
+export const CONFIG_READ_KEYS: ReadonlySet<string> = new Set([
   ...Object.keys(CONFIG_DEFAULTS).filter((key) => key !== "admittedHosts"),
   // The operator-facing spelling of the host list (SETUP.md §3,
   // `cordis.patch.yml`); `admittedHosts` above is deliberately NOT accepted, so
@@ -233,7 +239,7 @@ const READ_KEYS: ReadonlySet<string> = new Set([
  * @returns {string[]} the unrecognised keys, sorted so the log line is stable.
  */
 export function unknownConfigKeys(config: Record<string, unknown>): string[] {
-  return Object.keys(obj(config)).filter((key) => !READ_KEYS.has(key)).sort();
+  return Object.keys(obj(config)).filter((key) => !CONFIG_READ_KEYS.has(key)).sort();
 }
 
 /**

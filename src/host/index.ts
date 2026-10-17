@@ -53,6 +53,7 @@ import {
   resolveAuthOverrides,
   unknownConfigKeys,
   CONFIG_DEFAULTS,
+  CONFIG_READ_KEYS,
   isAdmitted,
   hostName,
   inject,
@@ -406,4 +407,4 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   }, `${name}: routes`);
 }
 
-export { apply, inject, name, resolveSettings, resolveAuthOverrides, CONFIG_DEFAULTS, hostName, isAdmitted, unknownConfigKeys };
+export { apply, inject, name, resolveSettings, resolveAuthOverrides, CONFIG_DEFAULTS, CONFIG_READ_KEYS, hostName, isAdmitted, unknownConfigKeys };

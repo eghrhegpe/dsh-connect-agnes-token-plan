@@ -9,21 +9,15 @@
  *
  * `videoEnabled` in `cordis.patch.yml` is a DEPLOYMENT default the operator
  * edits with a reload, but the panel needs a live switch that takes effect on
- * the next request. The state lives in `$DSH_HOME/state/<plugin>/video.json`,
- * exactly like the draw switch, the provider switch and the catalog:
- * operational state, not an operator decision baked into the patch layer.
+ * the next request. So the switch lives in `$DSH_HOME/state/<plugin>/video.json`
+ * — operational state, not an operator decision baked into the patch layer.
  *
- * Precedence at read time:
- *
- *   1. a value SAVED FROM THE PANEL (enabled: true|false) always wins;
- *   2. no saved value (never touched, or the file was unreadable) falls back
- *      to the patch's `videoEnabled`.
- *
- * Everything but the facts below is shared with the other three opt-in switches
- * in `switch-store.ts`. The WIRE KEY is the one that matters: this file spells
- * the preference `videoModelId`, the draw file spells it `drawModelId`, and a
+ * **Precedence is not stated here on purpose** (see `draw-store.ts`): it is one
+ * rule for all four opt-in switches, owned by `switch-precedence.ts`. What
+ * belongs here is the WIRE KEY, the one that matters: this file spells the
+ * preference `videoModelId`, the draw file spells it `drawModelId`, and a
  * parser that guessed would answer "no preference" for a file that plainly has
- * one — silently.
+ * one — silently. The rest of the machinery is `switch-store.ts`'s.
  *
  * @module dsh-connect-agnes-token-plan/video-store
  */

@@ -12,6 +12,10 @@
 //                    与 client 槽位注册一致、SCREENSHOTS 声明的图真实存在于磁盘。这三条
 //                    与前两组有本质区别：前两组验的是「文档格式对不对」，它们验的是
 //                    「文档有没有说实话」——形式全绿而语义已漂，是本仓库踩过两次的坑（见 PITFALLS §25）。
+//   镜像表与实际一致：DOC_CONFIG_TABLE SETUP.md 的配置表 ↔ 代码读取的键集、DOC_SUITE_TABLE
+//                    TESTING.md 的套件表 ↔ test/ 下的套件。与上一组同族，也是「文档说没说实话」：
+//                    这两张表都是手维护的镜像，此前没有任何门禁——少一行是「读者不知道有这个键 /
+//                    这个行为有人守」，多一行是「读者去找一个空」，而两张当时恰好都是对的。
 //   考古纪律：ARCHAEOLOGY 现行文档不许盖「修订（日期）」式内联补丁——决策沿革只登记
 //                    在 docs/ADR.md 账本（规则本体见该文件「使用规则」）
 //   peer 边界：PEER_BOUNDARY 静态 `@deepseek-ai/*` import 只许 llm adapter 层——
@@ -26,6 +30,9 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, extname, resolve, relative, sep, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+// The config contract, imported rather than re-derived: a test that rebuilt the
+// key set itself would be the second copy these two checks exist to prevent.
+import { CONFIG_READ_KEYS } from "../src/host/host-config.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fails = [];
@@ -158,6 +165,8 @@ const CHECK_IDS = new Map([
   ["RULE_LAYER_BOUNDARY", "client 规则层 Node 可直 import，规则不得从产物抠取（ADR-006）"],
   ["COUNT_GUARD", "活文档计数护栏：不得写死会漂移的规模"],
   ["PUBLISHED_VERSION", "发布版本陈述不得低于 package.json（CONTRIBUTING.md）"],
+  ["DOC_CONFIG_TABLE", "SETUP.md 配置表与代码读取的键集一致"],
+  ["DOC_SUITE_TABLE", "TESTING.md 套件表与磁盘上的套件一致"],
   ["REF_RESOLVABLE", "检查引用可解析（本条自己）"]
 ]);
 
@@ -1238,6 +1247,101 @@ const CHECK_NAMES = new Set(CHECK_IDS.keys());
   if (dangling.length) dangling.forEach(bad);
   else note(`检查引用可解析：${resolved} 处 docs.test 语境命名引用命中、数字序号 0 处（${deprecated} 处数字已全部迁移；另 ${skipped} 处指到别的套件，本检查不越权）`);
   guard("REF_RESOLVABLE", resolved, 5);
+}
+
+/**
+ * Read the first-column cells of the markdown table whose header's first cell is `first`.
+ *
+ * Shared by the two mirror-table checks below (16 / 17) rather than written twice:
+ * they differ only in which file, which header and what the cells mean.
+ * @param {string} file - repo-relative path, e.g. "docs/SETUP.md".
+ * @param {string} first - the header's first cell, exactly (`字段` / `文件`).
+ * @returns {string[]|null} the cells with backticks stripped, or `null` when no such table.
+ */
+const tableFirstColumn = (file, first) => {
+  const lines = readFileSync(join(ROOT, file), "utf8").split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith("|")) continue;
+    if ((lines[i].split("|")[1] ?? "").trim() !== first) continue;
+    const cells = [];
+    let j = i + 2;
+    while (j < lines.length && lines[j].startsWith("|")) {
+      cells.push((lines[j].split("|")[1] ?? "").trim().replace(/`/g, ""));
+      j++;
+    }
+    return cells;
+  }
+  return null;
+};
+
+// 16) SETUP.md 的配置表 ↔ 代码真正读取的键集
+// 这张 24 行表是**操作员契约的手写镜像**，而它此前没有任何门禁：代码加了键、表里
+// 没加，操作员永远不知道那个键存在——更糟的是「未知键告警」（`unknownConfigKeys`）
+// 会反过来把一个**真实存在的键**当拼写错误点名。两端现在都从同一个源读。
+//
+// 为什么不写成「表 == `CONFIG_DEFAULTS`」：那是错的。表是操作员视角，与代码默认值
+// 的键集**正当不同**——`allowedHosts` 是操作员的拼写（代码里的 `admittedHosts` 只是
+// 默认值持有者），三个 auth 覆盖在**顶层**（红线 3），两个输出字段不该出现在输入表里。
+// 正确基准是 `CONFIG_READ_KEYS`（代码侧唯一的事实源），差集必须恰好是下面四个。
+{
+  const rows = tableFirstColumn("docs/SETUP.md", "字段");
+  if (rows === null) {
+    bad("docs/SETUP.md 找不到「| 字段 | 默认 | 说明 |」配置表——本检查没有受检面（表被改名/删除时它必须以红出现，而不是以空通过）");
+  } else {
+    // 每个豁免都要写理由：不写就变成「表里少一行也算对」，那正是本检查要防的形状。
+    const OMITTED = new Map([
+      ["auth", "嵌套 `auth:` 块是必须**不用**的形状（红线 3），写进操作员表等于教人犯错"],
+      ["requestTimeoutMs", "`loginTimeoutMs` 的退役拼写：仍被读取（兼容老行），但新配置不该写它"],
+      ["imageModelIds", "输出字段：vision 第二步写回本行的结果，不是操作员输入"],
+      ["visionModels", "输出字段：同上"]
+    ]);
+    const undocumented = [...CONFIG_READ_KEYS].filter((key) => !rows.includes(key) && !OMITTED.has(key));
+    const invented = rows.filter((key) => !CONFIG_READ_KEYS.has(key));
+    const stale = [...OMITTED.keys()].filter((key) => rows.includes(key));
+    if (undocumented.length) {
+      bad(`docs/SETUP.md 配置表漏了代码会读取的键：${undocumented.join(", ")}——加配置却不写进操作员表，等于该键只对读源码的人存在`);
+    }
+    if (invented.length) {
+      bad(`docs/SETUP.md 配置表列了代码从不读取的键：${invented.join(", ")}——写进表里就是承诺，而它会被当作未知键忽略`);
+    }
+    if (stale.length) {
+      bad(`docs/SETUP.md 配置表补上了本应豁免的键：${stale.join(", ")}——表里有了它，就该从上面的 OMITTED 里删掉对应理由`);
+    }
+    if (undocumented.length + invented.length + stale.length === 0) {
+      note(`SETUP 配置表 ${rows.length} 行与 CONFIG_READ_KEYS ${CONFIG_READ_KEYS.size} 个键对齐（豁免 ${OMITTED.size} 个，理由各自写在检查体内）`);
+    }
+    guard("DOC_CONFIG_TABLE", rows.length, 20);
+  }
+}
+
+// 17) TESTING.md 的套件表 ↔ 磁盘上的套件
+// 同一类镜像：这张 32 行表此前靠人手跟，而「加了套件忘了写进表」不会有任何信号——
+// 表里少一行，读者就少一条「这个行为有人守」的证据。现在按磁盘核对，两个方向都查：
+// 有套件没进表（读者看不见），或表里点名了不存在的文件（读者去找一个空）。
+//
+// 按 test/ 下的**文件**而不是「套件」核对：两个 live 档不是 `*.test.mjs`（默认门禁
+// 不跑它们，见 package.test.mjs 的命名边界），但它们真实存在且该有一行。
+{
+  const rows = tableFirstColumn("docs/TESTING.md", "文件");
+  if (rows === null) {
+    bad("docs/TESTING.md 找不到「| 文件 | 守什么 |」套件表——本检查没有受检面");
+  } else {
+    const named = rows.map((row) => row.replace(/^test\//, ""));
+    const onDisk = readdirSync(join(ROOT, "test")).filter((n) => n.endsWith(".test.mjs"));
+    const suites = named.filter((n) => n.endsWith(".test.mjs"));
+    const undocumented = onDisk.filter((n) => !suites.includes(n));
+    const ghost = named.filter((n) => !existsSync(join(ROOT, "test", n)));
+    if (undocumented.length) {
+      bad(`docs/TESTING.md 套件表漏了磁盘上的套件：${undocumented.join(", ")}——新套件要在这里有一行，否则「这个行为有人守」只写在代码里`);
+    }
+    if (ghost.length) {
+      bad(`docs/TESTING.md 套件表点名了 test/ 里不存在的文件：${ghost.join(", ")}——读者会去找一个空`);
+    }
+    if (undocumented.length + ghost.length === 0) {
+      note(`TESTING 套件表 ${named.length} 行覆盖 test/ 全部 ${onDisk.length} 个套件（另有 ${named.length - suites.length} 行是 live 档）`);
+    }
+    guard("DOC_SUITE_TABLE", named.length, 20);
+  }
 }
 
 // 本文件自己的存活守卫（PITFALLS §39：守护物失效时谁会喊）
