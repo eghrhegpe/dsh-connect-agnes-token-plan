@@ -315,7 +315,15 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     agnescodeStore,
     agnescodeSwitch,
     agnescodeModels,
-    agnescodePublisher
+    agnescodePublisher,
+    // The BFF fetch the agnescode route's cache + single-flight wraps. Absent
+    // (the real Loader) it falls back to the Host's own `fetch` at the call
+    // site; present (the offline suites) it lets a COUNTING stub prove the
+    // de-duplication instead of only reasoning about it. Defaulted HERE for
+    // the same reason `drawFetch`/`videoFetch` are: `exactOptionalPropertyTypes`
+    // refuses to write `deps.agnescodeFetch`'s `| undefined` into the wiring's
+    // optional property.
+    agnescodeFetch: deps.agnescodeFetch ?? ((url, options) => fetch(url, options))
   };
 
   // The route handlers (trust fence, method allowances, body ceilings,

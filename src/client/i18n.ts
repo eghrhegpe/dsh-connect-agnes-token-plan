@@ -110,6 +110,7 @@ export const zh = {
   "usage.requests": "模型请求",
   "usage.perBucket": "按平台返回的分桶",
   "usage.legend": "柱高按区间内最高的一桶相对显示，不是占额度上限的比例。",
+  "usage.weekNote": "底色分组为同一 7 天配额周期（按平台重置时间倒推），每组上方的数字是该周请求合计。",
   "shape.api": "接口",
   "shape.missing": "缺少字段",
   "section.collapse": "收起",
@@ -221,6 +222,11 @@ export const zh = {
   "agnescode.loggedIn": "已关联：{nick}",
   "agnescode.bffBase": "接口地址 {base}",
   "agnescode.notLogged": "未关联——请先在 AgnesCode 桌面端登录（微信扫码），再点「检测本机登录态」。",
+  // The harvest is Windows-only (`harvestAgnescodeLocalSession` refuses
+  // non-win32 up front). Stated where the reader is ABOUT to act, not only in
+  // the post-click diagnosis rows — a macOS reader clicking the button used to
+  // learn the boundary only after nothing happened.
+  "agnescode.harvestWindowsOnly": "本机登录态采集目前仅支持 Windows（macOS / Linux 未实现）。",
   "agnescode.downloadCta": "下载 AgnesCode 桌面客户端，领取限时积分 →",
   // ONE line for the whole pool story (小浣 shape): total, then the
   // platform's own split. The JWT expiry is NOT here — the credential card
@@ -234,6 +240,10 @@ export const zh = {
   "agnescode.balanceTimeLabel": "时效",
   "agnescode.balancePermanentLabel": "永久",
   "agnescode.models": "模型（{count}）",
+  // Printed when the roster the picker shows is the BUILT-IN fallback: its
+  // rates were captured at probe time and may have moved since. The date is
+  // the Host's `AGNESCODE_FALLBACK_ASOF`, not a promise about today.
+  "agnescode.fallbackRoster": "未取到实时目录，以下为内置清单，倍率截至 {asOf}。",
   // Gating is account state, not model truth — the badge states the limit
   // instead of the Host silently dropping the model.
   "agnescode.memberOnly": "会员",
@@ -363,6 +373,7 @@ export const en: typeof zh = {
   "usage.requests": "Model requests",
   "usage.perBucket": "as bucketed by the platform",
   "usage.legend": "Bars are scaled relative to the busiest bucket, not to the quota limit.",
+  "usage.weekNote": "Shaded groups are 7-day quota periods, walked back from the platform's reset time; the figure above each group is that week's request total.",
   "shape.api": "endpoint",
   "shape.missing": "missing field",
   "section.collapse": "Collapse",
@@ -473,11 +484,13 @@ export const en: typeof zh = {
   "agnescode.loggedIn": "Linked: {nick}",
   "agnescode.bffBase": "API base {base}",
   "agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
+  "agnescode.harvestWindowsOnly": "Local login-state detection currently supports Windows only (macOS / Linux not implemented).",
   "agnescode.downloadCta": "Download the AgnesCode desktop client and claim your limited-time credits →",
   "agnescode.balanceLabel": "Credit balance",
   "agnescode.balanceTimeLabel": "Time-limited",
   "agnescode.balancePermanentLabel": "Permanent",
   "agnescode.models": "Models ({count})",
+  "agnescode.fallbackRoster": "Live catalogue unavailable — showing the built-in list, rates as of {asOf}.",
   "agnescode.memberOnly": "member",
   "agnescode.rateTitle": "Credit multiplier as published by the platform (0 = free)",
   "agnescode.registeredPill": "Registered",

@@ -164,7 +164,7 @@ export function ModelPicker({ llm, onDone, onEcho, tt }: {
 
   return h(
     "div",
-    { style: { marginBottom: 14 } },
+	{ style: { ...S.modelPanel, marginBottom: 14 } },
     // The header carries ONLY two things of the same kind: the title (what
     // this section is) and the provider-wide thinking default (the one setting
     // that applies to every row). The mechanism explanation used to sit here

@@ -729,6 +729,11 @@ async function withNetwork(stub, body) {
   // keys `EXPECTED_SHAPES` declares — are gone.
   const DRIFT_OVERVIEW_BODY = { code: 200, message: "ok", data: { result: { data: [] } } };
   const DRIFT_SERIES_BODY = { code: 200, message: "ok", data: { series: [] } };
+  // The subscription tier of `EXPECTED_SHAPES` is `["plan_name", "billing_cycle"]`:
+  // an envelope whose `data` carries NEITHER must read as drift, not "no plan".
+  // `buildShapeWarnings` used to project only overview + series, so this shape
+  // rendered an empty plan card forever with nothing red anywhere.
+  const DRIFT_SUBSCRIPTION_BODY = { code: 200, message: "ok", data: {} };
   // A token unique to this block. index.js is a module singleton across mounts,
   // so `invalidate()` records refused tokens process-wide; reusing a JWT an
   // earlier section had its console reject would make getToken throw "not being
@@ -743,6 +748,11 @@ async function withNetwork(stub, body) {
     const target = String(url);
     if (target.includes("/api/usage/overview")) return envelope(DRIFT_OVERVIEW_BODY);
     if (target.includes("/api/usage/series")) return envelope(DRIFT_SERIES_BODY);
+    // `/plans` BEFORE `/subscription`: the former's path contains the latter's,
+    // and the catalogue must stay healthy so the drift pinned here belongs to
+    // the subscription alone (same order discipline as `consoleAnswer`).
+    if (target.includes("/api/cn/user/subscription/plans")) return envelope(PLANS_BODY);
+    if (target.includes("/api/cn/user/subscription")) return envelope(DRIFT_SUBSCRIPTION_BODY);
     const answer = consoleAnswer(target);
     if (answer !== null) return envelope(answer);
     return new Response("{}", { status: 404 });
@@ -759,6 +769,12 @@ async function withNetwork(stub, body) {
       JSON.stringify(warnKeys));
     check("the missing series key is reported as drift",
       warnKeys.includes("usage-series:items"), JSON.stringify(warnKeys));
+    // The tier `buildShapeWarnings` used to leave out entirely: a renamed
+    // `plan_name`/`billing_cycle` must surface as subscription drift, not an
+    // empty plan card that reads as "no data".
+    check("the missing subscription keys are reported as drift",
+      warnKeys.includes("subscription:plan_name") && warnKeys.includes("subscription:billing_cycle"),
+      JSON.stringify(warnKeys));
     check("the panel surfaces the drift rather than reading empty",
       panelDecision(snapshot.payload).renders === "pools");
   }).catch((error) => fail("L2: shapeWarnings", error));

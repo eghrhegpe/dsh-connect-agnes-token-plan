@@ -228,7 +228,11 @@ jobs:
           # the same as one that exercised it. The token is emitted by
           # test/e2e-gate.mjs, so the two cannot drift apart.
           if printf '%s' "$out" | grep -q 'VERDICT=SKIPPED'; then
-            echo "**e2e: SKIPPED** - no dsh CLI on this runner. This green job did NOT exercise the loader, routes, or trust fence." >> "$GITHUB_STEP_SUMMARY"
+            # Two skips share the verdict token (no CLI at all / a CLI whose
+            # runtime tree cannot be shared), so the summary quotes the gate's
+            # own reason instead of guessing "no dsh CLI" for both.
+            reason=$(printf '%s' "$out" | grep -o 'SKIP_REASON=[a-z-]*' | head -1)
+            echo "**e2e: SKIPPED** (${reason:-SKIP_REASON=unknown}) - this green job did NOT exercise the loader, routes, or trust fence." >> "$GITHUB_STEP_SUMMARY"
           elif printf '%s' "$out" | grep -q 'VERDICT=PASSED'; then
             echo "**e2e: RAN and PASSED** - a real dsh web process against the fake platform." >> "$GITHUB_STEP_SUMMARY"
           else

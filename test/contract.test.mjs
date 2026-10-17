@@ -662,7 +662,7 @@ function literalScan(text, opener, after) {
   // depth scan.
   check("no template literal inside the scanned /agnescode GET block (the depth scan cannot cross one)",
     hostScan.template.length === 0, `backtick lines: ${hostScan.template.join(", ") || "(none)"}`);
-  const anchors = ["ok", "enabled", "loggedIn", "nickname", "models", "enabledModelIds", "balance"];
+  const anchors = ["ok", "enabled", "loggedIn", "nickname", "models", "enabledModelIds", "balance", "modelsSource", "modelsAsOf"];
   const anchored = anchors.every((k) => host.has(k) && client.has(k));
   check("both halves' agnescode parsers are live (GET-body anchors found on each side)",
     anchored, JSON.stringify({ host: [...host], client: [...client] }));

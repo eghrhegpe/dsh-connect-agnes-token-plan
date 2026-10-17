@@ -305,6 +305,15 @@ export interface AgnescodeStateData {
     permanentBalance?: number;
   } | null;
   models?: AgnescodeModelData[];
+  /**
+   * WHICH roster `models` is: `"live"` (the BFF's `/v2/models` answer) or
+   * `"fallback"` (the built-in list of rates frozen at probe time). The tab
+   * renders the difference — a fallback row's `multiplier` is a captured
+   * snapshot, not a live price, and the reader deserves to know which.
+   */
+  modelsSource?: "live" | "fallback";
+  /** Present only with `modelsSource: "fallback"`: when the frozen rates were probed. */
+  modelsAsOf?: string;
   enabledModelIds?: string[];
   providerRegistered?: boolean;
   providerError?: string;

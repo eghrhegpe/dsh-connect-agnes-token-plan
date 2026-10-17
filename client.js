@@ -127,6 +127,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"usage.requests": "模型请求",
 			"usage.perBucket": "按平台返回的分桶",
 			"usage.legend": "柱高按区间内最高的一桶相对显示，不是占额度上限的比例。",
+			"usage.weekNote": "底色分组为同一 7 天配额周期（按平台重置时间倒推），每组上方的数字是该周请求合计。",
 			"shape.api": "接口",
 			"shape.missing": "缺少字段",
 			"section.collapse": "收起",
@@ -235,11 +236,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.loggedIn": "已关联：{nick}",
 			"agnescode.bffBase": "接口地址 {base}",
 			"agnescode.notLogged": "未关联——请先在 AgnesCode 桌面端登录（微信扫码），再点「检测本机登录态」。",
+			"agnescode.harvestWindowsOnly": "本机登录态采集目前仅支持 Windows（macOS / Linux 未实现）。",
 			"agnescode.downloadCta": "下载 AgnesCode 桌面客户端，领取限时积分 →",
 			"agnescode.balanceLabel": "积分余额",
 			"agnescode.balanceTimeLabel": "时效",
 			"agnescode.balancePermanentLabel": "永久",
 			"agnescode.models": "模型（{count}）",
+			"agnescode.fallbackRoster": "未取到实时目录，以下为内置清单，倍率截至 {asOf}。",
 			"agnescode.memberOnly": "会员",
 			"agnescode.rateTitle": "平台公布的积分消耗倍率（0 为免费）",
 			"agnescode.registeredPill": "已注册",
@@ -360,6 +363,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"usage.requests": "Model requests",
 			"usage.perBucket": "as bucketed by the platform",
 			"usage.legend": "Bars are scaled relative to the busiest bucket, not to the quota limit.",
+			"usage.weekNote": "Shaded groups are 7-day quota periods, walked back from the platform's reset time; the figure above each group is that week's request total.",
 			"shape.api": "endpoint",
 			"shape.missing": "missing field",
 			"section.collapse": "Collapse",
@@ -468,11 +472,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.loggedIn": "Linked: {nick}",
 			"agnescode.bffBase": "API base {base}",
 			"agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
+			"agnescode.harvestWindowsOnly": "Local login-state detection currently supports Windows only (macOS / Linux not implemented).",
 			"agnescode.downloadCta": "Download the AgnesCode desktop client and claim your limited-time credits →",
 			"agnescode.balanceLabel": "Credit balance",
 			"agnescode.balanceTimeLabel": "Time-limited",
 			"agnescode.balancePermanentLabel": "Permanent",
 			"agnescode.models": "Models ({count})",
+			"agnescode.fallbackRoster": "Live catalogue unavailable — showing the built-in list, rates as of {asOf}.",
 			"agnescode.memberOnly": "member",
 			"agnescode.rateTitle": "Credit multiplier as published by the platform (0 = free)",
 			"agnescode.registeredPill": "Registered",
@@ -1200,6 +1206,32 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				fontVariantNumeric: "tabular-nums",
 				pointerEvents: "none"
 			},
+			usageBands: {
+				display: "flex",
+				gap: 4,
+				alignItems: "stretch"
+			},
+			usageBand: {
+				display: "flex",
+				flexDirection: "column",
+				gap: 2,
+				minWidth: 0,
+				padding: "3px 2px 2px",
+				borderRadius: 6,
+				flexBasis: 0
+			},
+			usageBandEven: { background: "var(--dsw-alias-bg-layer-1)" },
+			usageBandOdd: {},
+			usageBandLabel: {
+				fontSize: 9,
+				lineHeight: "12px",
+				textAlign: "center",
+				color: "var(--dsw-alias-label-secondary)",
+				fontVariantNumeric: "tabular-nums",
+				whiteSpace: "nowrap",
+				overflow: "hidden",
+				textOverflow: "ellipsis"
+			},
 			usageAxis: {
 				display: "flex",
 				justifyContent: "space-between",
@@ -1226,6 +1258,61 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				color: "var(--dsw-alias-label-secondary)",
 				fontVariantNumeric: "tabular-nums",
 				textAlign: "right"
+			},
+			planGrid: {
+				display: "grid",
+				gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
+				gap: 10
+			},
+			planCard: {
+				border: "1px solid var(--dsw-alias-border-l1)",
+				borderRadius: 12,
+				background: "var(--dsw-alias-bg-layer-1)",
+				padding: "14px 16px",
+				display: "flex",
+				flexDirection: "column",
+				gap: 10
+			},
+			planTier: {
+				fontSize: 15,
+				fontWeight: 600,
+				color: "var(--dsw-alias-label-primary)"
+			},
+			planCycle: {
+				display: "flex",
+				alignItems: "baseline",
+				gap: 10,
+				padding: "8px 10px",
+				borderRadius: 8,
+				background: "var(--dsw-alias-bg-layer-2)"
+			},
+			planCycleLabel: {
+				fontSize: 12,
+				color: "var(--dsw-alias-label-secondary)",
+				flex: "0 0 auto"
+			},
+			planPrice: {
+				fontSize: 16,
+				fontWeight: 700,
+				color: "var(--dsw-alias-label-primary)",
+				fontVariantNumeric: "tabular-nums",
+				marginLeft: "auto"
+			},
+			planLimits: {
+				display: "flex",
+				flexWrap: "wrap",
+				gap: 6,
+				fontSize: 11,
+				color: "var(--dsw-alias-label-secondary)"
+			},
+			planLimit: {
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 3,
+				padding: "2px 8px",
+				borderRadius: 999,
+				background: "var(--dsw-alias-bg-layer-2)",
+				border: "1px solid var(--dsw-alias-border-l1)"
 			},
 			note: {
 				marginTop: 24,
@@ -1976,7 +2063,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setNotice,
 			setSavedKey
 		]);
-		return h("div", { style: { marginBottom: 14 } }, h("div", { style: {
+		return h("div", { style: {
+			...S.modelPanel,
+			marginBottom: 14
+		} }, h("div", { style: {
 			display: "flex",
 			alignItems: "baseline",
 			justifyContent: "space-between",
@@ -2945,19 +3035,35 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	function CatalogueCard({ plans, tt }) {
 		const catalogue = Array.isArray(plans) ? plans : [];
 		if (catalogue.length === 0) return null;
-		return h("div", null, catalogue.map((entry) => {
+		const tiers = /* @__PURE__ */ new Map();
+		for (const entry of catalogue) {
+			const name = entry.displayName || entry.name || "";
+			const key = name.replace(/\s*[（(].*?[）)]\s*$/, "").trim() || name;
+			if (!tiers.has(key)) tiers.set(key, []);
+			tiers.get(key).push(entry);
+		}
+		const renderLimit = (text) => h("span", { style: S.planLimit }, text);
+		const renderEntry = (entry) => {
 			const limits = entry.limits ?? {};
 			const windowHours = Number(limits.requestsWindowH);
-			const parts = [
-				limits.requests5h !== void 0 && limits.requests5h > 0 ? `${count(limits.requests5h)}${tt("quota.unit.requests")}${windowHours > 0 ? ` / ${windowHours}h` : ""}` : "",
-				limits.requestsWeekly !== void 0 && limits.requestsWeekly > 0 ? `${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}` : "",
-				limits.imagesDaily !== void 0 && limits.imagesDaily > 0 ? `${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}` : ""
-			].filter((part) => part !== "");
-			return h("div", {
-				key: entry.uuid || String(entry.planId),
-				style: S.catalogueRow
-			}, h("span", { style: S.catalogueName }, entry.displayName || entry.name || ""), h("span", { style: S.muted }, cycleLabel(entry.billingCycle, tt)), entry.priceMinor !== void 0 && entry.priceMinor > 0 ? h("span", { style: S.muted }, money(entry.priceMinor, entry.currency)) : null, h("span", { style: S.catalogueLimits }, parts.join(" · ")));
-		}));
+			const limitItems = [];
+			if (limits.requests5h !== void 0 && limits.requests5h > 0) limitItems.push(renderLimit(`${count(limits.requests5h)}${tt("quota.unit.requests")} / ${windowHours > 0 ? windowHours : 5}h`));
+			if (limits.requestsWeekly !== void 0 && limits.requestsWeekly > 0) limitItems.push(renderLimit(`${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}`));
+			if (limits.imagesDaily !== void 0 && limits.imagesDaily > 0) limitItems.push(renderLimit(`${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}`));
+			return h("div", { style: S.planCycle }, h("span", { style: S.planCycleLabel }, cycleLabel(entry.billingCycle, tt)), entry.priceMinor !== void 0 && entry.priceMinor > 0 ? h("span", { style: S.planPrice }, money(entry.priceMinor, entry.currency)) : null);
+		};
+		return h("div", { style: S.planGrid }, Array.from(tiers.entries()).map(([tierName, entries]) => h("div", {
+			key: tierName,
+			style: S.planCard
+		}, h("span", { style: S.planTier }, tierName), entries.map((entry) => h("div", { key: entry.uuid || String(entry.planId) }, renderEntry(entry))), h("div", { style: S.planLimits }, ...(() => {
+			const limits = entries[0]?.limits ?? {};
+			const windowHours = Number(limits.requestsWindowH);
+			const items = [];
+			if (limits.requests5h !== void 0 && limits.requests5h > 0) items.push(renderLimit(`${count(limits.requests5h)}${tt("quota.unit.requests")} / ${windowHours > 0 ? windowHours : 5}h`));
+			if (limits.requestsWeekly !== void 0 && limits.requestsWeekly > 0) items.push(renderLimit(`${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}`));
+			if (limits.imagesDaily !== void 0 && limits.imagesDaily > 0) items.push(renderLimit(`${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}`));
+			return items;
+		})()))));
 	}
 	/**
 	* The consumption figures for one period, as a row of metric cells.
@@ -3013,6 +3119,23 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, h("span", { style: S.metricLabel }, cell.label), h("span", { style: S.metricValue }, cell.value)))));
 	}
 	/**
+	* A platform bucket label ("2026-09-29") as UTC milliseconds, or null.
+	*
+	* The label is parsed as a DATE, not an instant — `Date.parse("2026-09-29")`
+	* is the one ISO form every engine reads as UTC midnight — because the weekly
+	* grouping needs only WHERE a day falls relative to the reset line, and the
+	* reset instants themselves arrived already normalised (Asia/Shanghai) from
+	* the Host. Local-midnight parsing would shift every bucket by the reader's
+	* timezone and place the reset line inside different days for different
+	* readers.
+	*/
+	function dateMsOf(bucket) {
+		const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(bucket);
+		if (m === null) return null;
+		const ms = Date.parse(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
+		return Number.isFinite(ms) ? ms : null;
+	}
+	/**
 	* One axis tick as the eye reads it: "2026-09-18" → "9-18". The year prints
 	* only where it means something — a window inside one year never repeats it,
 	* while a tick whose year differs from the window's first bucket keeps its
@@ -3026,7 +3149,64 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		return m[1] === yearBase ? short : `${m[1]}-${short}`;
 	}
 	/**
-	* Per-bucket consumption as a mini bar chart.
+	* Which period index a date belongs to, counting back from the platform's
+	* weekly reset: `0` is the current period, `1` the one before it, and so on.
+	*
+	* Periods are half-open `[anchor − (k+1)·W, anchor − k·W)`: the instant a
+	* period opens belongs to the period it OPENS — usage at the reset line is
+	* already the new period's usage, so a day whose midnight lands exactly on a
+	* boundary counts toward the newer period. A plain `floor` would file that
+	* boundary day into the older period and shift every seam by one day.
+	*
+	* The anchor is a POSITIVE epoch-second timestamp; a wall-clock label older
+	* than the anchor (a stale snapshot, a clock disagreement) reads as the
+	* current period rather than being clamped backwards — a bucket cannot
+	* precede the window it was served inside.
+	*/
+	function periodIndexOf(bucketMs, anchorSec) {
+		return Math.max(0, Math.ceil((anchorSec * 1e3 - bucketMs) / WEEK_MS) - 1);
+	}
+	/**
+	* Cut the (chronological) bucket run into quota periods walked back from the
+	* anchor. Returns `null` when the run cannot be grouped — which covers BOTH
+	* degenerate cases: an unparseable anchor (absent, negative, or not a number
+	* the panel would stand behind) and a run with no parseable date label at
+	* all. `null` is one spelling for "no bands" because the two failures must
+	* degrade the same way: the plain per-bucket chart, no partial grouping.
+	*
+	* One date gap splits nothing: a period is a RANGE of time, so a missing
+	* bucket is a zero inside its period, not a seam between two of them. What
+	* the periods answer is "which days share a quota period" — a question about
+	* where the reset lines fall, not about how many rows the platform returned.
+	*/
+	function groupIntoPeriods(buckets, values, anchorSec) {
+		const bands = [];
+		let current = null;
+		let currentPeriod = -1;
+		let sawDate = false;
+		for (let index = 0; index < buckets.length; index += 1) {
+			const ms = dateMsOf(String(buckets[index]?.bucket ?? ""));
+			if (ms === null) continue;
+			sawDate = true;
+			const period = periodIndexOf(ms, anchorSec);
+			if (current === null || period !== currentPeriod) {
+				current = {
+					start: index,
+					end: index,
+					total: 0,
+					period
+				};
+				bands.push(current);
+				currentPeriod = period;
+			}
+			current.end = index;
+			current.total += values[index] ?? 0;
+		}
+		return sawDate ? bands : null;
+	}
+	/**
+	* Per-bucket consumption as a mini bar chart, grouped into 7-day quota
+	* periods.
 	*
 	* The x axis quotes the platform's OWN bucket labels — the series endpoint
 	* takes dates and answers with whatever granularity it chose, and the panel
@@ -3039,24 +3219,69 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* day" is answered at a glance rather than only on hover. Zero buckets print
 	* nothing — a bar with no fill needs no caption.
 	*
+	* OVER the bars sit the quota periods: alternating background bands walked
+	* back from the weekly window's reset time, each with that period's request
+	* total in one line above its bars. The bands are DECORATION, not data — no
+	* height, no fill — so the eye never reads them as "the week's usage bar".
+	* The grouping needs three things to line up: the anchor (the weekly window's
+	* reset time, quoted from the snapshot the panel already polls), parseable
+	* date labels on the buckets, and a parseable date on the FIRST label for the
+	* axis's year logic. Any of them missing and the whole layer steps aside —
+	* half a grouping is worse than none, because a missing band would read as
+	* "no quota period here" rather than "not drawn".
+	*
 	* The bars are scaled to the LARGEST bucket, so the tallest always fills the
 	* track; that answers "when was the heavy day", but the eye misreads a full
 	* track as "at the limit", so the legend names the convention.
 	*/
-	function UsageChart({ usage, tt }) {
+	function UsageChart({ usage, weeklyResetAt, tt }) {
 		const buckets = Array.isArray(usage?.buckets) ? usage.buckets : [];
 		if (buckets.length === 0) return h("div", { style: S.empty }, tt("usage.none"));
 		const values = buckets.map((bucket) => Math.max(0, Number(bucket?.requestCount) || 0));
 		const max = Math.max(0, ...values);
+		const anchorSec = Number(weeklyResetAt);
+		const bands = Number.isFinite(anchorSec) && anchorSec > 0 ? groupIntoPeriods(buckets, values, anchorSec) : null;
 		const tickStep = Math.max(1, Math.ceil(buckets.length / 6));
 		const tickIndexes = [];
 		for (let index = 0; index < buckets.length; index += tickStep) tickIndexes.push(index);
 		if (tickIndexes[tickIndexes.length - 1] !== buckets.length - 1) tickIndexes.push(buckets.length - 1);
 		const yearBase = /^(\d{4})/.exec(String(buckets[0]?.bucket ?? ""))?.[1] ?? "";
+		const renderBand = (band) => h("div", {
+			key: `band-${band.start}`,
+			style: {
+				...S.usageBand,
+				...band.period % 2 === 0 ? S.usageBandEven : S.usageBandOdd,
+				flexGrow: band.end - band.start + 1
+			},
+			title: `${String(buckets[band.start]?.bucket ?? "")} ~ ${String(buckets[band.end]?.bucket ?? "")}: ${count(band.total)} ${tt("quota.unit.requests")}`
+		}, h("div", { style: S.usageBandLabel }, count(band.total)), h("div", { style: S.usageBars }, buckets.slice(band.start, band.end + 1).map((bucket, offset) => {
+			const index = band.start + offset;
+			const value = values[index] ?? 0;
+			const pct = max > 0 ? (value ?? 0) / max * 100 : 0;
+			const label = String(bucket?.bucket ?? "");
+			return h("div", {
+				key: `${label}-${index}`,
+				style: S.usageBar,
+				title: `${label}: ${count(value)} ${tt("quota.unit.requests")}`
+			}, value > 0 ? h("span", { style: {
+				...S.usageBarValue,
+				bottom: `calc(${pct}% + 3px)`
+			} }, count(value)) : null, h("div", {
+				style: {
+					...S.usageBarFill,
+					height: `${pct}%`
+				},
+				role: "progressbar",
+				"aria-label": `${label} ${count(value)}`,
+				"aria-valuenow": Math.round(pct),
+				"aria-valuemin": 0,
+				"aria-valuemax": 100
+			}));
+		})));
 		return h("div", null, h("div", { style: S.trendHead }, h("span", { style: S.trendHeadLabel }, tt("usage.requests")), h("span", { style: {
 			...S.trendHeadLabel,
 			textAlign: "right"
-		} }, tt("usage.perBucket"))), h("div", { style: S.usageBars }, buckets.map((bucket, index) => {
+		} }, tt("usage.perBucket"))), bands !== null ? h("div", { style: S.usageBands }, bands.map(renderBand)) : h("div", { style: S.usageBars }, buckets.map((bucket, index) => {
 			const value = values[index] ?? 0;
 			const pct = max > 0 ? (value ?? 0) / max * 100 : 0;
 			const label = String(bucket?.bucket ?? "");
@@ -3085,7 +3310,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				style: S.usageAxisTick,
 				title: full
 			}, axisLabel(full, yearBase));
-		})), h("div", { style: S.trendLegend }, tt("usage.legend")));
+		})), h("div", { style: S.trendLegend }, tt("usage.legend"), bands !== null ? h("div", { style: { marginTop: 2 } }, tt("usage.weekNote")) : null));
 	}
 	/**
 	* One content section as a workbuddy-style collapsible card: a full-width
@@ -3121,7 +3346,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			hidden: !open
 		}, open ? children : null));
 	}
-	var WINDOW_GROUPS;
+	var WINDOW_GROUPS, WEEK_MS;
 	var init_cards = __esmMin((() => {
 		init_format();
 		init_runtime();
@@ -3135,6 +3360,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			keys: ["imagesDaily", "videoDaily"],
 			headByPeriod: false
 		}];
+		WEEK_MS = 6048e5;
 	}));
 
 //#endregion
@@ -3327,6 +3553,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const models = Array.isArray(state?.models) ? state.models : [];
 		const attempts = Array.isArray(state?.harvest?.attempts) ? state.harvest.attempts : [];
 		const balance = state?.balance ?? null;
+		const modelsSource = state?.modelsSource === "fallback" ? "fallback" : "live";
+		const modelsAsOf = typeof state?.modelsAsOf === "string" ? state.modelsAsOf : "";
 		return h("div", null, view.showError ? h("div", {
 			style: S.formError,
 			role: "alert"
@@ -3366,7 +3594,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			style: S.button,
 			onClick: () => void harvest(),
 			disabled: harvestBusy
-		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")))), h(Switch, {
+		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))), h("div", { style: {
+			...S.muted,
+			fontSize: 12,
+			marginTop: 6
+		} }, tt("agnescode.harvestWindowsOnly"))), h(Switch, {
 			checked: enabled,
 			disabled: harvestBusy,
 			onChange: () => void toggle(!enabled),
@@ -3438,13 +3670,20 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balancePermanentLabel"))), h("div", { style: {
 			...S.quotaRemaining,
 			marginTop: 4
-		} }, count(balance.permanentBalance ?? 0)))) : null, models.length > 0 ? h(AgnescodeModelPicker, {
+		} }, count(balance.permanentBalance ?? 0)))) : null, models.length > 0 ? h("div", null, modelsSource === "fallback" ? h("div", {
+			style: {
+				...S.muted,
+				fontSize: 12,
+				marginBottom: 6
+			},
+			role: "status"
+		}, format(tt("agnescode.fallbackRoster"), { asOf: modelsAsOf === "" ? "?" : modelsAsOf })) : null, h(AgnescodeModelPicker, {
 			models,
 			hostIds: state?.enabledModelIds,
 			registered: state?.providerRegistered === true,
 			tt,
 			onSave: saveModels
-		}) : null) : null, h("div", { style: {
+		})) : null) : null, h("div", { style: {
 			marginTop: 12,
 			paddingTop: 10,
 			borderTop: "1px solid var(--dsw-alias-border-l1)"
@@ -3831,6 +4070,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, [data]);
 		const quota = data?.quota;
 		const usage = data?.usage;
+		const weeklyResetAt = (Array.isArray(quota?.windows) ? quota.windows.find((entry) => entry?.key === "requestsWeekly")?.resetAt : void 0) ?? null;
 		const { failure, auth, needsSetup, guidance, shapeWarnings } = viewOf(data, error, tt);
 		const showSetupForm = needsSetup && loadedOnce;
 		const authChip = auth === null ? null : auth.error || !auth.configured ? h("span", {
@@ -3936,6 +4176,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			marginBottom: 8
 		} }, typeof usage?.days === "number" && usage.days > 0 ? format(tt("usage.period"), { days: usage.days }) : tt("usage.periodUnknown")), h(UsageChart, {
 			usage,
+			weeklyResetAt,
 			tt
 		})), h("div", { style: S.note }, typeof data?.cacheSeconds === "number" ? format(tt("note"), { cache: data.cacheSeconds }) : tt("note.noCache")), authManage ? h(SectionCard, {
 			title: tt("auth.title"),

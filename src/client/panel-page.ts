@@ -11,7 +11,7 @@ import { clock, format } from "./format.ts";
 import { errorOfStatus, interpretSnapshot, viewOf, shouldShowAccountManagement } from "./snapshot.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
-import type { LlmData, LlmEchoPatch, SnapshotData, VisionModelData } from "./wire.ts";
+import type { LlmData, LlmEchoPatch, QuotaWindowData, SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PlanCard, CatalogueCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
 import { DrawSwitch, RpmNote, VideoSwitch, ProviderForm } from "./provider-controls.ts";
@@ -344,6 +344,16 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
 
   const quota = data?.quota;
   const usage = data?.usage;
+  // The weekly reset time anchors the usage chart's quota-period grouping:
+  // the bands are walked back from it, so they land wherever the platform
+  // actually draws its week (not on a calendar convention the panel assumed).
+  // Quoted from the same snapshot the panel already polls — no extra read.
+  // Absent (no subscription usage yet, or shape drift) and the chart quietly
+  // degrades to the plain per-bucket form; the pill's reader does the same
+  // lookup with the same fallback order.
+  const weeklyResetAt = (Array.isArray(quota?.windows)
+    ? quota.windows.find((entry: QuotaWindowData) => entry?.key === "requestsWeekly")?.resetAt
+    : undefined) ?? null;
   // The decision is `viewOf`'s (module scope): the Node-side tests invoke
   // this exact function, so there is no second copy that could drift.
   const { failure, auth, needsSetup, guidance, shapeWarnings } = viewOf(data, error, tt);
@@ -501,7 +511,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                   typeof usage?.days === "number" && usage.days > 0
                     ? format(tt("usage.period"), { days: usage.days })
                     : tt("usage.periodUnknown")),
-                h(UsageChart, { usage, tt })
+                h(UsageChart, { usage, weeklyResetAt, tt })
               ),
               // The cache age is quoted from the snapshot, not written down here:
               // a note that says 60 while the Host caches for 300 is a lie the

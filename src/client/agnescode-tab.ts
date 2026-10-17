@@ -324,6 +324,11 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   const models = Array.isArray(state?.models) ? state.models : [];
   const attempts = Array.isArray(state?.harvest?.attempts) ? state.harvest.attempts : [];
   const balance = state?.balance ?? null;
+  // WHICH roster `models` is. The fallback's rates are FROZEN at probe time —
+  // the multiplier chip on a fallback row is a captured snapshot, not a live
+  // price, and the picker must say so instead of presenting it as today's.
+  const modelsSource = state?.modelsSource === "fallback" ? "fallback" : "live";
+  const modelsAsOf = typeof state?.modelsAsOf === "string" ? state.modelsAsOf : "";
 
   return h(
     "div",
@@ -413,7 +418,14 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                     onClick: () => void harvest(),
                     disabled: harvestBusy
                   }, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
-                )
+                ),
+                // The Windows-only boundary, stated BEFORE the click: the
+                // harvest's own tier rows say it too (`unsupported_platform`),
+                // but only after the reader has pressed the button and waited
+                // for nothing to happen. One quiet caption under the action it
+                // constrains — the reader on macOS/Linux needs it up front, the
+                // reader on Windows can skip right past.
+                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 6 } }, tt("agnescode.harvestWindowsOnly"))
               ),
           // The switch, a labeled row inside the card rather than a floating
           // line above it. It is deliberately a checkbox (the repo draws no
@@ -506,7 +518,18 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                     count(balance.permanentBalance ?? 0))))
             : null,
           models.length > 0
-            ? h(AgnescodeModelPicker, { models, hostIds: state?.enabledModelIds, registered: state?.providerRegistered === true, tt, onSave: saveModels })
+            ? h("div", null,
+                // One quiet line ABOVE the picker when the roster is the
+                // built-in fallback: the rates it shows were captured at probe
+                // time, and a `×1.85` chip the reader cannot date is a price
+                // presented as live. Same register as the harvest diagnosis
+                // rows (informational, not an alert) — the picker still works,
+                // it is just showing a snapshot.
+                modelsSource === "fallback"
+                  ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 6 }, role: "status" },
+                      format(tt("agnescode.fallbackRoster"), { asOf: modelsAsOf === "" ? "?" : modelsAsOf }))
+                  : null,
+                h(AgnescodeModelPicker, { models, hostIds: state?.enabledModelIds, registered: state?.providerRegistered === true, tt, onSave: saveModels }))
             : null
         )
       : null,

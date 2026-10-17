@@ -57,6 +57,13 @@ export interface HostDeps {
   /** Host webserver fetch used by the video route (mirrors `drawFetch`). */
   videoFetch?: (...args: any[]) => Promise<any>;
   /**
+   * Host webserver fetch used by the `/agnescode` route's two BFF reads
+   * (mirrors `drawFetch`). Injected so the route's account-keyed cache and
+   * single-flight can be driven by a COUNTING stub — the de-duplication is a
+   * claim about how many calls reach the BFF, and only a stub can count them.
+   */
+  agnescodeFetch?: (...args: any[]) => Promise<any>;
+  /**
    * The catalog store, injected by the tests so a `replace`/`setEnabledIds`
    * whose write fails can be driven end to end (PITFALLS §40: the publish
    * signature must not advance past a swallowed write failure).
@@ -368,4 +375,6 @@ export interface HostWiring {
   agnescodeSwitch: ReturnType<typeof createFileAgnescodeStore>;
   agnescodeModels?: ReturnType<typeof createFileAgnescodeModelsStore>;
   agnescodePublisher: ReturnType<typeof wireAgnescodePublisher>["publisher"];
+  /** The fetch the `/agnescode` route's two BFF reads use (see `HostDeps`). */
+  agnescodeFetch?: (...args: any[]) => Promise<any>;
 }

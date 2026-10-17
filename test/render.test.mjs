@@ -396,6 +396,109 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     String(findAll(tree, (props) => props.style?.position === "absolute").length));
 }
 
+// === E2b. the weekly grouping bands the bars by QUOTA period =============
+// When the snapshot carries the weekly window's reset time, the chart walks
+// 7-day periods back from it and shades each as a background band with its
+// request total. The bands are DECORATION (no height, no fill), so what the
+// checks pin is: which buckets share a band, the totals on the labels, the
+// shading keying on distance-from-anchor (the CURRENT period is always the
+// shaded one, whatever its width), and the two ways the whole layer steps
+// aside — no anchor, or no anchor AND non-date labels.
+{
+  // 2026-10-12 00:00:00 UTC as the reset instant. Period 0 (current) covers
+  // 2026-10-05..10-11, period 1 covers 09-28..10-04, period 2 covers
+  // 09-21..09-27 (only 09-23 present here).
+  const resetAt = Date.parse("2026-10-12T00:00:00Z") / 1000;
+  const usage = {
+    days: 30,
+    buckets: [
+      { bucket: "2026-09-23", requestCount: 7 },
+      { bucket: "2026-09-28", requestCount: 20 },
+      { bucket: "2026-10-02", requestCount: 30 },
+      { bucket: "2026-10-04", requestCount: 50 },
+      { bucket: "2026-10-05", requestCount: 10 },
+      { bucket: "2026-10-08", requestCount: 40 },
+      { bucket: "2026-10-11", requestCount: 60 }
+    ]
+  };
+  const tree = treeOf(render.UsageChart, { usage, weeklyResetAt: resetAt, tt });
+  const fills = findAll(tree, (props) => props.role === "progressbar");
+  check("every bucket still gets its own bar inside the bands",
+    fills.length === 7, `found ${fills.length}`);
+  const bands = findAll(tree, (props) => props.style?.flexBasis === 0 && props.title?.includes("~"));
+  check("the bands cut the run at the reset lines, not at bucket-count multiples",
+    bands.length === 3
+      && bands[0]?.props.style.flexGrow === 1
+      && bands[1]?.props.style.flexGrow === 3
+      && bands[2]?.props.style.flexGrow === 3,
+    JSON.stringify(bands.map((band) => band.props.style.flexGrow)));
+  check("each band's label prints that period's request total",
+    texts(bands[0])[0] === "7" && texts(bands[1])[0] === "100" && texts(bands[2])[0] === "110",
+    JSON.stringify(bands.map((band) => texts(band))));
+  check("a band's hover names the period's bounds and total",
+    bands[1]?.props.title === "2026-09-28 ~ 2026-10-04: 100 quota.unit.requests",
+    String(bands[1]?.props.title));
+  check("the shading follows distance from the anchor: the current period is shaded, the one before it is not",
+    bands[0]?.props.style.background === S.usageBandEven.background
+      && bands[1]?.props.style.background === undefined
+      && bands[2]?.props.style.background === S.usageBandEven.background,
+    JSON.stringify(bands.map((band) => band.props.style.background)));
+  check("the band row prints the grouping note",
+    texts(tree).join("\n").includes("usage.weekNote"), texts(tree).join("\n"));
+  // The axis and per-bar scales are untouched by the grouping: ticks still
+  // space by bucket count (7 buckets → step 2 → ticks at 0/2/4/6) and the
+  // busiest bar still fills its track.
+  const ticks = findAll(tree, (props) => props.style === S.usageAxisTick);
+  check("the axis keeps its bucket-count spacing over the bands",
+    ticks.length === 4
+      && ticks.map((tick) => tick.props.title).join(",") === "2026-09-23,2026-10-02,2026-10-05,2026-10-11",
+    JSON.stringify(ticks.map((tick) => tick.props.title)));
+  check("the busiest bar still fills its track inside its band",
+    fills[6]?.props.style.height === "100%", String(fills[6]?.props.style.height));
+  // One current-period band only: a 30-day window ending on the reset day
+  // would show four full periods plus one EMPTY current band — an all-zero
+  // band with a "0" label would read as "the quota period drew nothing",
+  // which is a fact about the FUTURE, not about usage.
+  const freshReset = Date.parse("2026-10-12T00:00:00Z") / 1000;
+  const oneBand = treeOf(render.UsageChart, {
+    usage: { buckets: [{ bucket: "2026-10-11", requestCount: 5 }] },
+    weeklyResetAt: freshReset,
+    tt
+  });
+  check("a single-bucket current period prints one shaded band with its own total",
+    findAll(oneBand, (props) => props.title?.includes("~")).length === 1
+      && texts(oneBand).join("\n").includes("5"),
+    texts(oneBand).join("\n"));
+}
+
+// === E2c. without an anchor the grouping is simply not drawn ==============
+// The bands need the weekly reset time; absent it (no subscription usage,
+// shape drift), the chart must fall back to the plain per-bucket form —
+// not to a calendar-week guess the platform never promised. The non-date
+// label case (E-series above) hits this too: no parseable dates, no bands,
+// even when an anchor exists.
+{
+  const usage = {
+    buckets: [
+      { bucket: "2026-09-29", requestCount: 40 },
+      { bucket: "2026-09-30", requestCount: 10 }
+    ]
+  };
+  const meta = (tree) => texts(tree).join("\n");
+  for (const [name, props] of [
+    ["no anchor", { usage, tt }],
+    ["a non-positive anchor", { usage, weeklyResetAt: 0, tt }],
+    ["non-date buckets with an anchor", { usage: { buckets: [{ bucket: "a", requestCount: 1 }, { bucket: "b", requestCount: 2 }] }, weeklyResetAt: 1789000000, tt }]
+  ]) {
+    const tree = treeOf(render.UsageChart, props);
+    check(`with ${name} the chart draws no bands and no grouping note`,
+      findAll(tree, (props) => props.title?.includes("~")).length === 0
+        && !meta(tree).includes("usage.weekNote")
+        && findAll(tree, (props) => props.style === S.usageBars).length > 0,
+      meta(tree));
+  }
+}
+
 // === E3. the usage totals row names the period it covers ==================
 // The account total and the window total use the SAME figures with different
 // meanings, so the label is what stops the reader taking a lifetime total for

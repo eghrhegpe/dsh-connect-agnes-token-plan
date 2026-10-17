@@ -37,6 +37,7 @@
  */
 
 import { createDecipheriv } from "node:crypto";
+import { readJwtExpiry } from "./agnes-auth.ts";
 import { obj, num, numZeroOk, str } from "./util.ts";
 
 /** The request headers every BFF call carries, with or without a token. The
@@ -222,19 +223,25 @@ export function agnescodeApiRoot(bffBase: string) {
   return base.endsWith("/v1") ? base.slice(0, -3) : base;
 }
 
-/** Decode a JWT's `exp` claim to MILLISECONDS; `undefined` on any failure. */
+/**
+ * Decode a JWT's `exp` claim to MILLISECONDS; `undefined` on any failure.
+ *
+ * ONE implementation, not two: `readJwtExpiry` (`agnes-auth.ts`) answers the
+ * same question for the console token, and this function used to be its twin —
+ * same base64url decode, same claim read, differing only in `null` vs
+ * `undefined` and in accepting `parts.length >= 2`, a leniency no real JWT ever
+ * exercises (a JWT is header.payload.signature, always three). The token shape
+ * is the platform's, not the upstream's, so one decoder is the correct count;
+ * the `null` → `undefined` mapping stays because callers here branch on
+ * `undefined` meaning "no expiry known" rather than "expired".
+ *
+ * (Same consolidation as `numOrNullSafe` → `util.numZeroOk` below, PITFALLS
+ * §49: a second reader of the same fact drifts, and the drift is silent.)
+ * @param {string} token - the session token.
+ * @returns {number|undefined} epoch millis, or `undefined` when there is none.
+ */
 export function decodeAgnescodeJwtExpMs(token: string) {
-  if (typeof token !== "string" || token.length === 0) return undefined;
-  const parts = token.split(".");
-  if (parts.length < 2) return undefined;
-  try {
-    const payload = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8"));
-    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return undefined;
-    const seconds = num(payload.exp);
-    return typeof seconds === "number" ? seconds * 1000 : undefined;
-  } catch {
-    return undefined;
-  }
+  return readJwtExpiry(token) ?? undefined;
 }
 
 /**
@@ -720,6 +727,14 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
 
 // numOrNullSafe was merged into util.numZeroOk (PITFALLS §49): the credits API
 // returns real numbers, so the typeof-strict reader is correct and the duplicate is gone.
+
+/**
+ * When the frozen rates above were last re-probed. Exported so the panel can
+ * PRINT it: a hardcoded price the reader cannot date is a price presented as
+ * live. The route reports this date whenever the roster it serves IS this list
+ * (`modelsSource: "fallback"`), and the tab renders it beside the picker.
+ */
+export const AGNESCODE_FALLBACK_ASOF = "2026-10-04";
 
 /**
  * The static fallback roster: the eight models the CN BFF's `/v2/models`

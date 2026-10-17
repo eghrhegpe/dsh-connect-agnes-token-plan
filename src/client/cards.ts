@@ -8,7 +8,7 @@ import { clockLong, clockSameDay, count, format, money, tokenSize } from "./form
 import { h } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { S } from "./styles.ts";
-import type { PlanData, QuotaData, QuotaWindowData, UsageData, UsageTotalsData } from "./wire.ts";
+import type { PlanData, QuotaData, QuotaWindowData, UsageBucketData, UsageData, UsageTotalsData } from "./wire.ts";
 
 /**
  * A quota window as the wire carries it; fields are defensive on purpose.
@@ -375,33 +375,77 @@ export function PlanCard({ quota, tt }: { quota?: QuotaData | null; tt: Tt }): u
 export function CatalogueCard({ plans, tt }: { plans?: PlanData[] | null; tt: Tt }): unknown {
   const catalogue = Array.isArray(plans) ? plans : [];
   if (catalogue.length === 0) return null;
+  // Group by tier: the platform returns 6 rows (入门/专业/高级 × 月付/年付).
+  // Grouping by the tier name lets the reader compare like-for-like across
+  // billing cycles, instead of reading a 6-row flat list where the 5h/每周/每日
+  // numbers repeat and the eye has no anchor.
+  const tiers = new Map<string, PlanData[]>();
+  for (const entry of catalogue) {
+    const name = entry.displayName || entry.name || "";
+    // Strip the cycle suffix to get the tier key: "入门版 (按月)" → "入门版"
+    const key = name.replace(/\s*[（(].*?[）)]\s*$/, "").trim() || name;
+    if (!tiers.has(key)) tiers.set(key, []);
+    tiers.get(key)!.push(entry);
+  }
+  const renderLimit = (text: string) =>
+    h("span", { style: S.planLimit }, text);
+  const renderEntry = (entry: PlanData) => {
+    const limits = entry.limits ?? {};
+    const windowHours = Number(limits.requestsWindowH);
+    const limitItems: unknown[] = [];
+    if (limits.requests5h !== undefined && limits.requests5h > 0) {
+      limitItems.push(renderLimit(`${count(limits.requests5h)}${tt("quota.unit.requests")} / ${windowHours > 0 ? windowHours : 5}h`));
+    }
+    if (limits.requestsWeekly !== undefined && limits.requestsWeekly > 0) {
+      limitItems.push(renderLimit(`${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}`));
+    }
+    if (limits.imagesDaily !== undefined && limits.imagesDaily > 0) {
+      limitItems.push(renderLimit(`${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}`));
+    }
+    return h(
+      "div",
+      { style: S.planCycle },
+      h("span", { style: S.planCycleLabel }, cycleLabel(entry.billingCycle, tt)),
+      entry.priceMinor !== undefined && entry.priceMinor > 0
+        ? h("span", { style: S.planPrice }, money(entry.priceMinor, entry.currency))
+        : null
+    );
+  };
   return h(
     "div",
-    null,
-    catalogue.map((entry) => {
-      const limits = entry.limits ?? {};
-      // The window length rides along ONLY when the Host stated one: the
-      // catalogue's 5-hour window is a platform fact (`concurrency_window_h`),
-      // and writing a default here would turn an unread figure into a number
-      // the panel asserts on its own — the same rule that keeps `totals` from
-      // being zeroed.
-      const windowHours = Number(limits.requestsWindowH);
-      const parts = [
-        limits.requests5h !== undefined && limits.requests5h > 0
-          ? `${count(limits.requests5h)}${tt("quota.unit.requests")}${windowHours > 0 ? ` / ${windowHours}h` : ""}`
-          : "",
-        limits.requestsWeekly !== undefined && limits.requestsWeekly > 0 ? `${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}` : "",
-        limits.imagesDaily !== undefined && limits.imagesDaily > 0 ? `${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}` : ""
-      ].filter((part) => part !== "");
-      return h(
+    { style: S.planGrid },
+    Array.from(tiers.entries()).map(([tierName, entries]) =>
+      h(
         "div",
-        { key: entry.uuid || String(entry.planId), style: S.catalogueRow },
-        h("span", { style: S.catalogueName }, entry.displayName || entry.name || ""),
-        h("span", { style: S.muted }, cycleLabel(entry.billingCycle, tt)),
-        entry.priceMinor !== undefined && entry.priceMinor > 0 ? h("span", { style: S.muted }, money(entry.priceMinor, entry.currency)) : null,
-        h("span", { style: S.catalogueLimits }, parts.join(" · "))
-      );
-    })
+        { key: tierName, style: S.planCard },
+        h("span", { style: S.planTier }, tierName),
+        entries.map((entry) =>
+          h("div", { key: entry.uuid || String(entry.planId) },
+            renderEntry(entry)
+          )
+        ),
+        h("div", { style: S.planLimits },
+          // Re-render the limits from the monthly entry (the first one, since
+          // monthly and yearly share the same limits — only price differs).
+          ...(() => {
+            const e = entries[0];
+            const limits = e?.limits ?? {};
+            const windowHours = Number(limits.requestsWindowH);
+            const items: unknown[] = [];
+            if (limits.requests5h !== undefined && limits.requests5h > 0) {
+              items.push(renderLimit(`${count(limits.requests5h)}${tt("quota.unit.requests")} / ${windowHours > 0 ? windowHours : 5}h`));
+            }
+            if (limits.requestsWeekly !== undefined && limits.requestsWeekly > 0) {
+              items.push(renderLimit(`${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}`));
+            }
+            if (limits.imagesDaily !== undefined && limits.imagesDaily > 0) {
+              items.push(renderLimit(`${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}`));
+            }
+            return items;
+          })()
+        )
+      )
+    )
   );
 }
 
@@ -451,6 +495,27 @@ export function UsageTotals({ totals, label, tt }: { totals?: UsageTotalsData | 
   );
 }
 
+/** One quota period's length: the platform's weekly window is 168 hours. */
+const WEEK_MS = 168 * 3600 * 1000;
+
+/**
+ * A platform bucket label ("2026-09-29") as UTC milliseconds, or null.
+ *
+ * The label is parsed as a DATE, not an instant — `Date.parse("2026-09-29")`
+ * is the one ISO form every engine reads as UTC midnight — because the weekly
+ * grouping needs only WHERE a day falls relative to the reset line, and the
+ * reset instants themselves arrived already normalised (Asia/Shanghai) from
+ * the Host. Local-midnight parsing would shift every bucket by the reader's
+ * timezone and place the reset line inside different days for different
+ * readers.
+ */
+function dateMsOf(bucket: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(bucket);
+  if (m === null) return null;
+  const ms = Date.parse(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 /**
  * One axis tick as the eye reads it: "2026-09-18" → "9-18". The year prints
  * only where it means something — a window inside one year never repeats it,
@@ -466,7 +531,70 @@ function axisLabel(bucket: string, yearBase: string): string {
 }
 
 /**
- * Per-bucket consumption as a mini bar chart.
+ * Which period index a date belongs to, counting back from the platform's
+ * weekly reset: `0` is the current period, `1` the one before it, and so on.
+ *
+ * Periods are half-open `[anchor − (k+1)·W, anchor − k·W)`: the instant a
+ * period opens belongs to the period it OPENS — usage at the reset line is
+ * already the new period's usage, so a day whose midnight lands exactly on a
+ * boundary counts toward the newer period. A plain `floor` would file that
+ * boundary day into the older period and shift every seam by one day.
+ *
+ * The anchor is a POSITIVE epoch-second timestamp; a wall-clock label older
+ * than the anchor (a stale snapshot, a clock disagreement) reads as the
+ * current period rather than being clamped backwards — a bucket cannot
+ * precede the window it was served inside.
+ */
+function periodIndexOf(bucketMs: number, anchorSec: number): number {
+  return Math.max(0, Math.ceil((anchorSec * 1000 - bucketMs) / WEEK_MS) - 1);
+}
+
+/** One quota period's slice of the chart: its buckets and their total. */
+interface PeriodBand {
+  start: number;
+  end: number;
+  total: number;
+  /** Distance from the anchor: 0 is the current period. Drives the shading. */
+  period: number;
+}
+
+/**
+ * Cut the (chronological) bucket run into quota periods walked back from the
+ * anchor. Returns `null` when the run cannot be grouped — which covers BOTH
+ * degenerate cases: an unparseable anchor (absent, negative, or not a number
+ * the panel would stand behind) and a run with no parseable date label at
+ * all. `null` is one spelling for "no bands" because the two failures must
+ * degrade the same way: the plain per-bucket chart, no partial grouping.
+ *
+ * One date gap splits nothing: a period is a RANGE of time, so a missing
+ * bucket is a zero inside its period, not a seam between two of them. What
+ * the periods answer is "which days share a quota period" — a question about
+ * where the reset lines fall, not about how many rows the platform returned.
+ */
+function groupIntoPeriods(buckets: UsageBucketData[], values: number[], anchorSec: number): PeriodBand[] | null {
+  const bands: PeriodBand[] = [];
+  let current: PeriodBand | null = null;
+  let currentPeriod = -1;
+  let sawDate = false;
+  for (let index = 0; index < buckets.length; index += 1) {
+    const ms = dateMsOf(String(buckets[index]?.bucket ?? ""));
+    if (ms === null) continue;
+    sawDate = true;
+    const period = periodIndexOf(ms, anchorSec);
+    if (current === null || period !== currentPeriod) {
+      current = { start: index, end: index, total: 0, period };
+      bands.push(current);
+      currentPeriod = period;
+    }
+    current.end = index;
+    current.total += values[index] ?? 0;
+  }
+  return sawDate ? bands : null;
+}
+
+/**
+ * Per-bucket consumption as a mini bar chart, grouped into 7-day quota
+ * periods.
  *
  * The x axis quotes the platform's OWN bucket labels — the series endpoint
  * takes dates and answers with whatever granularity it chose, and the panel
@@ -479,17 +607,34 @@ function axisLabel(bucket: string, yearBase: string): string {
  * day" is answered at a glance rather than only on hover. Zero buckets print
  * nothing — a bar with no fill needs no caption.
  *
+ * OVER the bars sit the quota periods: alternating background bands walked
+ * back from the weekly window's reset time, each with that period's request
+ * total in one line above its bars. The bands are DECORATION, not data — no
+ * height, no fill — so the eye never reads them as "the week's usage bar".
+ * The grouping needs three things to line up: the anchor (the weekly window's
+ * reset time, quoted from the snapshot the panel already polls), parseable
+ * date labels on the buckets, and a parseable date on the FIRST label for the
+ * axis's year logic. Any of them missing and the whole layer steps aside —
+ * half a grouping is worse than none, because a missing band would read as
+ * "no quota period here" rather than "not drawn".
+ *
  * The bars are scaled to the LARGEST bucket, so the tallest always fills the
  * track; that answers "when was the heavy day", but the eye misreads a full
  * track as "at the limit", so the legend names the convention.
  */
-export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }): unknown {
+export function UsageChart({ usage, weeklyResetAt, tt }: { usage?: UsageData | null; weeklyResetAt?: number | null; tt: Tt }): unknown {
   const buckets = Array.isArray(usage?.buckets) ? usage.buckets : [];
   if (buckets.length === 0) {
     return h("div", { style: S.empty }, tt("usage.none"));
   }
   const values = buckets.map((bucket) => Math.max(0, Number(bucket?.requestCount) || 0));
   const max = Math.max(0, ...values);
+  // The anchor is only accepted as a well-formed positive epoch; anything
+  // else (absent, negative, NaN) degrades to the plain chart.
+  const anchorSec = Number(weeklyResetAt);
+  const bands = Number.isFinite(anchorSec) && anchorSec > 0
+    ? groupIntoPeriods(buckets, values, anchorSec)
+    : null;
   // A handful of ticks instead of nothing between first and last: ~7 labels
   // for the 30-day default (6 for 14, 2 for a 2-bucket series), always ending
   // on the final bucket.
@@ -498,19 +643,26 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
   for (let index = 0; index < buckets.length; index += tickStep) tickIndexes.push(index);
   if (tickIndexes[tickIndexes.length - 1] !== buckets.length - 1) tickIndexes.push(buckets.length - 1);
   const yearBase = /^(\d{4})/.exec(String(buckets[0]?.bucket ?? ""))?.[1] ?? "";
-  return h(
+  // One period band's column: the decorative background, its label (the
+  // period's request total), and the bars it owns. The bars keep their own
+  // flex row so the two scales never share a container: band widths follow
+  // the PERIODS, bar widths follow the BUCKETS. Shading keys on the band's
+  // DISTANCE from the anchor (period % 2), not its time order: the current
+  // period is always the shaded one, so a window that gains or drops its
+  // oldest band never flips the whole row's parity.
+  const renderBand = (band: PeriodBand): unknown => h(
     "div",
-    null,
-    h(
-      "div",
-      { style: S.trendHead },
-      h("span", { style: S.trendHeadLabel }, tt("usage.requests")),
-      h("span", { style: { ...S.trendHeadLabel, textAlign: "right" } }, tt("usage.perBucket"))
-    ),
+    {
+      key: `band-${band.start}`,
+      style: { ...S.usageBand, ...(band.period % 2 === 0 ? S.usageBandEven : S.usageBandOdd), flexGrow: band.end - band.start + 1 },
+      title: `${String(buckets[band.start]?.bucket ?? "")} ~ ${String(buckets[band.end]?.bucket ?? "")}: ${count(band.total)} ${tt("quota.unit.requests")}`
+    },
+    h("div", { style: S.usageBandLabel }, count(band.total)),
     h(
       "div",
       { style: S.usageBars },
-      buckets.map((bucket, index) => {
+      buckets.slice(band.start, band.end + 1).map((bucket, offset) => {
+        const index = band.start + offset;
         const value = values[index] ?? 0;
         const pct = max > 0 ? ((value ?? 0) / max) * 100 : 0;
         const label = String(bucket?.bucket ?? "");
@@ -534,7 +686,47 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
           })
         );
       })
+    )
+  );
+  return h(
+    "div",
+    null,
+    h(
+      "div",
+      { style: S.trendHead },
+      h("span", { style: S.trendHeadLabel }, tt("usage.requests")),
+      h("span", { style: { ...S.trendHeadLabel, textAlign: "right" } }, tt("usage.perBucket"))
     ),
+    bands !== null
+      ? h("div", { style: S.usageBands }, bands.map(renderBand))
+      : h(
+          "div",
+          { style: S.usageBars },
+          buckets.map((bucket, index) => {
+            const value = values[index] ?? 0;
+            const pct = max > 0 ? ((value ?? 0) / max) * 100 : 0;
+            const label = String(bucket?.bucket ?? "");
+            return h(
+              "div",
+              {
+                key: `${label}-${index}`,
+                style: S.usageBar,
+                title: `${label}: ${count(value)} ${tt("quota.unit.requests")}`
+              },
+              value > 0
+                ? h("span", { style: { ...S.usageBarValue, bottom: `calc(${pct}% + 3px)` } }, count(value))
+                : null,
+              h("div", {
+                style: { ...S.usageBarFill, height: `${pct}%` },
+                role: "progressbar",
+                "aria-label": `${label} ${count(value)}`,
+                "aria-valuenow": Math.round(pct),
+                "aria-valuemin": 0,
+                "aria-valuemax": 100
+              })
+            );
+          })
+        ),
     h(
       "div",
       { style: S.usageAxis },
@@ -543,7 +735,7 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
         return h("span", { key: `${full}-${index}`, style: S.usageAxisTick, title: full }, axisLabel(full, yearBase));
       })
     ),
-    h("div", { style: S.trendLegend }, tt("usage.legend"))
+    h("div", { style: S.trendLegend }, tt("usage.legend"), bands !== null ? h("div", { style: { marginTop: 2 } }, tt("usage.weekNote")) : null)
   );
 }
 

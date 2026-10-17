@@ -153,9 +153,15 @@ export function planSummary(plan: Record<string, unknown> | null | undefined) {
 }
 
 /**
- * The first failure among the named sources, as a secret-free report.
- * @param {Array<[string, {error: Error|null}]>} sources - name/outcome pairs.
- * @returns {{source: string, code: string|null, message: string}|null} the report.
+ * One failed source as a secret-free report line.
+ *
+ * Deliberately NOT a list scan: `firstFailure` (below) owns gathering, and the
+ * two used to be confused in this JSDoc — the `@param` described a
+ * name/outcome array this function has never taken, which read as if
+ * `oneFailure` picked the first failure itself.
+ * @param {string} source - the source's name, as the panel names it.
+ * @param {Error & {code?: unknown}} error - that source's failure.
+ * @returns {{source: string, code: string|null, message: string}} the report.
  */
 function oneFailure(source: string, error: Error & { code?: unknown }) {
   return {
@@ -311,11 +317,19 @@ function buildQuotaBlock(
  * outright (those go through `quota.error`). A shape warning must reach the
  * panel or a renamed field would read as "no usage" forever — but it must NOT
  * be emitted for a source that failed on the network, or the shape would take
- * the blame for a 401. Pure projection of the three soft results.
+ * the blame for a 401. Pure projection of the soft results.
+ *
+ * EVERY `EXPECTED_SHAPES` tier is projected, in the order the sources are
+ * declared elsewhere: `subscription` was the one that got left out, so a
+ * renamed `plan_name` (the key the plan card names the reader's plan with)
+ * rendered as an empty plan card forever — the exact silent-"no data" shape
+ * this function exists to end, minus the warning that would have explained it.
+ * `docs/PITFALLS.md` §12 has always claimed all three tiers report drift.
  */
 function buildShapeWarnings(
   overview: { value: unknown; error: Error | null },
   series: { value: unknown; error: Error | null },
+  subscription: { value: unknown; error: Error | null },
   plans: { value: unknown; error: Error | null }
 ) {
   return [
@@ -325,6 +339,9 @@ function buildShapeWarnings(
     ...(series.value === null
       ? []
       : checkShape(series.value, "usage-series").missing.map((key) => ({ api: "usage-series", missing: key }))),
+    ...(subscription.value === null
+      ? []
+      : checkShape(subscription.value, "subscription").missing.map((key) => ({ api: "subscription", missing: key }))),
     // `checkShape` describes objects; the catalogue's `data` is an array, so
     // its drift is checked here.
     ...(plans.value !== null && !Array.isArray(plans.value) ? [{ api: "plans", missing: "array" }] : [])
@@ -602,7 +619,7 @@ export async function buildSnapshotBody({
   // as "no usage" forever. A source that failed outright is reported through
   // `quota.error` instead, so it is skipped here: reporting both would blame
   // the shape for a network error.
-  const shapeWarnings = buildShapeWarnings(overview, series, plans);
+  const shapeWarnings = buildShapeWarnings(overview, series, subscription, plans);
 
   // --- the catalog half ----------------------------------------------------
   const catalogIds = Array.isArray(catalog) ? catalog.map((entry) => entry.id) : [];

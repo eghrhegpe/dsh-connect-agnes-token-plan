@@ -1669,6 +1669,145 @@ const GOOD_SESSION = {
   }
 }
 
+// --- 11c. GET de-duplicates the BFF reads through the route cache -----------
+// The tab and the composer pill both poll `/agnescode`, and one GET used to
+// cost a balance call AND a catalogue call on every poll — read amplification
+// that scales with open panels. The route now reads through an account-keyed
+// cache + single-flight (60 s TTL), so repeated GETs share ONE upstream read
+// per kind per window, and a `null` answer is NOT cached (a transient BFF
+// hiccup must not freeze「暂无数据」for a minute). The counting fetcher via
+// `wiring.agnescodeFetch` is the seam that proves the de-duplication.
+{
+  section("route surface (the GET de-duplicates the two BFF reads)");
+  try {
+    const { registerRoutes } = await import("../src/host/routes.ts");
+    const routes = new Map();
+    const ctx = {
+      webServer: {
+        register({ path, handler }) {
+          routes.set(path, handler);
+          return () => routes.delete(path);
+        }
+      }
+    };
+    const unused = new Proxy({}, { get: () => async () => null });
+    // Counted per endpoint: the catalogue walks the live BFF once per cache
+    // window, the balance once per window while logged in.
+    const fetchCalls = { balance: 0, catalog: 0 };
+    const fetcher = async (url) => {
+      const target = String(url);
+      if (target.includes("/api/v2/subscription/credits-balance")) {
+        fetchCalls.balance += 1;
+        return new Response(JSON.stringify({ code: "000000", data: { total_balance: 120, time_sensitive_balance: 20, permanent_balance: 100, subscription_credits: 0, daily_free_credits: 0, level: 1 } }), { headers: { "content-type": "application/json" } });
+      }
+      fetchCalls.catalog += 1;
+      return new Response(JSON.stringify({ data: [{ id: "glm-5.2", name: "GLM-5.2", model_type: "text", max_input_tokens: 200000, max_output_tokens: 32768 }] }), { headers: { "content-type": "application/json" } });
+    };
+    registerRoutes(ctx, {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused,
+      apiKeyStore: unused,
+      catalogStore: unused,
+      providerStore: unused,
+      drawStore: unused,
+      videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      agnescodeFetch: fetcher,
+      agnescodeStore: {
+        async state() {
+          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
+        },
+        async resolve() {
+          return { credential: { accessToken: "y".repeat(40), bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }, source: "credentials" };
+        },
+        async save() {},
+        async forget() {}
+      },
+      agnescodeSwitch: { async enabled() { return true; }, async save() {} },
+      agnescodePublisher: null
+    });
+    const handler = routes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    const read = async () => {
+      const response = {
+        status: 0,
+        body: "",
+        writeHead(status) { this.status = status; },
+        end(payload) { this.body = payload; }
+      };
+      await handler({ method: "GET", headers: { host: "127.0.0.1" } }, response);
+      return JSON.parse(response.body);
+    };
+    // Two consecutive GETs inside one cache window: both readers (the tab and
+    // the pill) must share ONE upstream read per kind.
+    const first = await read();
+    check("the first GET reaches the BFF for both kinds",
+      fetchCalls.balance === 1 && fetchCalls.catalog === 1, JSON.stringify(fetchCalls));
+    check("the first GET reports a live roster with no fallback date",
+      first.modelsSource === "live" && first.modelsAsOf === undefined,
+      JSON.stringify({ modelsSource: first.modelsSource, modelsAsOf: first.modelsAsOf }));
+    const second = await read();
+    check("the cached GET answers without a second upstream call",
+      fetchCalls.balance === 1 && fetchCalls.catalog === 1, JSON.stringify(fetchCalls));
+    check("the cached GET still serves the same balance",
+      second?.balance?.totalBalance === first?.balance?.totalBalance,
+      JSON.stringify(second?.balance));
+    // A DIFFERENT account's fingerprint must not hit the first account's cache
+    // entry: the key is account-scoped, so a second store with another token
+    // costs its own upstream read. (Registered fresh: `registerRoutes` closures
+    // over the wiring, so the store swap requires a second route registration.)
+    const otherRoutes = new Map();
+    const otherCtx = { webServer: { register({ path, handler }) { otherRoutes.set(path, handler); return () => otherRoutes.delete(path); } } };
+    let fetchCalls2 = 0;
+    const wiring2 = {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused, apiKeyStore: unused, catalogStore: unused, providerStore: unused,
+      drawStore: unused, videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      agnescodeFetch: async () => {
+        fetchCalls2 += 1;
+        return new Response("{}", { status: 500 });
+      },
+      agnescodeStore: {
+        async state() {
+          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "另一账号", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
+        },
+        async resolve() {
+          return { credential: { accessToken: "z".repeat(40), bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }, source: "credentials" };
+        },
+        async save() {}, async forget() {}
+      },
+      agnescodeSwitch: { async enabled() { return true; }, async save() {} },
+      agnescodePublisher: null
+    };
+    registerRoutes(otherCtx, wiring2);
+    const otherHandler = otherRoutes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    const otherResponse = { status: 0, body: "", writeHead(status) { this.status = status; }, end(payload) { this.body = payload; } };
+    await otherHandler({ method: "GET", headers: { host: "127.0.0.1" } }, otherResponse);
+    const otherBody = JSON.parse(otherResponse.body);
+    check("a failed BFF read is not cached (the next poll retries, it does not inherit null)",
+      fetchCalls2 === 2 && otherBody.balance === null && otherBody.modelsSource === "fallback",
+      JSON.stringify({ fetchCalls2, balance: otherBody.balance, modelsSource: otherBody.modelsSource }));
+    check("the fallback roster carries its as-of date (a frozen price must be datable)",
+      otherBody.modelsAsOf === "2026-10-04", String(otherBody.modelsAsOf));
+  } catch (error) {
+    fail("route surface (BFF read de-duplication)", error);
+  }
+}
+
 // --- report ------------------------------------------------------------------
 releaseNetworkGuard();
 const passed = results.filter((result) => result.pass).length;

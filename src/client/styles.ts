@@ -140,6 +140,25 @@ export const S = {
   // already carry. The narrow 30-day columns overlap each other's labels only
   // on adjacent heavy days — the hover title stays the precise reading.
   usageBarValue: { position: "absolute", left: 0, right: 0, fontSize: 9, lineHeight: 1, textAlign: "center", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums", pointerEvents: "none" },
+  // The weekly GROUPING over those bars: alternating background bands, each
+  // one a 7-day quota period walked back from the platform's reset time. The
+  // band is DECORATION, not data — its only job is to show which days share a
+  // quota period, so it reads as a background step (the same layer-1 token the
+  // pool cards use), never as a bar with a height of its own. A flex row of
+  // band containers (flexGrow = bucket count) keeps every band's edge exactly
+  // on its outer bars' edges; an absolutely-positioned overlay would drift by
+  // the bars' 2px gaps and nobody would be able to say why.
+  usageBands: { display: "flex", gap: 4, alignItems: "stretch" },
+  usageBand: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0, padding: "3px 2px 2px", borderRadius: 6, flexBasis: 0 },
+  // Alternating fills: even (current) periods carry the layer-1 background,
+  // odd ones stay transparent — adjacent periods stay tellable apart without
+  // introducing a color the rest of the panel never uses.
+  usageBandEven: { background: "var(--dsw-alias-bg-layer-1)" },
+  usageBandOdd: {},
+  // The band's own figure: that period's request TOTAL, one line above its
+  // bars. Same 9px tabular vocabulary as the per-bar counts so the two scales
+  // (per-day, per-week) read as one system.
+  usageBandLabel: { fontSize: 9, lineHeight: "12px", textAlign: "center", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   usageAxis: { display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6, fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
   // One axis tick keeps its full platform bucket in `title`; what the eye
   // reads is the short "M-D" form, so a 30-day window gets ~7 labels instead
@@ -150,6 +169,16 @@ export const S = {
   catalogueRow: { display: "flex", alignItems: "baseline", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--dsw-alias-border-l1)", fontSize: 12 },
   catalogueName: { flex: "0 0 auto", fontWeight: 500 },
   catalogueLimits: { marginLeft: "auto", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums", textAlign: "right" },
+  // Plan catalogue — grouped by tier (入门/专业/高级) so the reader can compare
+  // like-for-like across billing cycles instead of reading a 6-row flat list.
+  planGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 10 },
+  planCard: { border: "1px solid var(--dsw-alias-border-l1)", borderRadius: 12, background: "var(--dsw-alias-bg-layer-1)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 },
+  planTier: { fontSize: 15, fontWeight: 600, color: "var(--dsw-alias-label-primary)" },
+  planCycle: { display: "flex", alignItems: "baseline", gap: 10, padding: "8px 10px", borderRadius: 8, background: "var(--dsw-alias-bg-layer-2)" },
+  planCycleLabel: { fontSize: 12, color: "var(--dsw-alias-label-secondary)", flex: "0 0 auto" },
+  planPrice: { fontSize: 16, fontWeight: 700, color: "var(--dsw-alias-label-primary)", fontVariantNumeric: "tabular-nums", marginLeft: "auto" },
+  planLimits: { display: "flex", flexWrap: "wrap", gap: 6, fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
+  planLimit: { display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 999, background: "var(--dsw-alias-bg-layer-2)", border: "1px solid var(--dsw-alias-border-l1)" },
   note: { marginTop: 24, color: "var(--dsw-alias-label-secondary)", fontSize: 12, lineHeight: "18px" },
   empty: { color: "var(--dsw-alias-label-secondary)", padding: "18px 0" },
   field: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 },

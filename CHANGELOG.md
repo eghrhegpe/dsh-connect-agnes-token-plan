@@ -23,6 +23,19 @@
 
 ## [Unreleased]
 
+### 新增：用量图按 7 天配额周期分组——浅色背景带 + 每周请求合计
+
+- **新增（积分额度 tab）**：日用量柱状图现在按平台的 7 天配额周期分组：同一周期的日子共享一层浅色背景带，带上标出该周的请求合计，鼠标悬停可见周期起止日期；每日柱子与柱顶的次数保持不变。分组边界从平台公布的周窗口重置时间倒推，无需配置。平台没给重置时间时，图表回到原来的纯按日形态，不做日历周猜测。
+
+### 修复：评审整改五项——/agnescode 读放大、subscription 形状漂移盲区、内置花名册不标日期、Windows 边界不点不明
+
+- **修（Host，读放大）**：`/agnescode` 的 GET 此前每次轮询都实打实打两次 BFF（余额 + 目录），自愈发布再打第三次；tab 与用量胶囊各按 60 秒轮询同一个路由，读放大随读者数翻倍。现在这两次读走**按账号键控的缓存 + 单飞**（60 秒 TTL，与轮询同节奏）：tab 与胶囊共享同一次上游读，失败（null）答案**不缓存**——瞬时故障不会被冻成整整一分钟「暂无数据」。键含账号指纹（SHA-256 截断，令牌原文不进键），换账号自动失效。
+- **修（Host，盲区）**：`subscription` 源的形状漂移（`plan_name` / `billing_cycle` 改名）此前不挂 `shapeWarnings`——`EXPECTED_SHAPES` 声明了第三档却没人读它，套餐卡片会永远渲染成空而没有任何警告。PITFALLS §12 一直声称三档都报。
+- **修（Host + 面板，可标日期的价格）**：内置备份花名册生效时（实时目录取不到），面板明说「倍率截至 {日期}」——`modelsSource: "live" | "fallback"` + `modelsAsOf`（扁平标量），冻结价格不再被当成实时价呈现。日期单一出处 `AGNESCODE_FALLBACK_ASOF`。
+- **修（面板 + README，边界前置）**：「本机登录态采集仅支持 Windows」写进未关联卡片（点击前就能看到，而非点完只收到一行 `unsupported_platform` 分诊）与 README AgnesCode 段第 4 条。
+- **修（账实不符三处）**：`oneFailure` 的 JSDoc 写的是 `firstFailure` 的签名（参数表从未匹配过实现）；AGENTS.md 事实 2 漏了 `agnes_video_generate`（工具真实存在）；`decodeAgnescodeJwtExpMs` 与 `readJwtExpiry` 是同一问题的两份实现（JWT exp 解码），合并为后者 + `?? undefined` 语义适配。
+- 影响面：`src/host/{routes/agnescode,agnescode,snapshot-aggregate,types,index}.ts`、`src/client/{agnescode-tab,wire,i18n}.ts`、`client.js`、README、AGENTS.md、`test/{agnescode,contract,panel,docs}.test.mjs`。
+
 ## [0.11.2] — 2026-10-17
 
 ### 修复：AgnesCode 写操作不再被在途的读盖回、胶囊在后台页面上不再轮询

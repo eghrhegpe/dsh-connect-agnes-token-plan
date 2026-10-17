@@ -22,20 +22,22 @@
  * @module dsh-connect-agnes-token-plan/routes/agnescode
  */
 
+import { createHash } from "node:crypto";
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
-import { redactSecrets } from "../util.ts";
+import { obj, redactSecrets, str } from "../util.ts";
 import {
   fetchAgnescodeCatalog,
   fetchAgnescodeBalance,
   harvestAgnescodeLocalSession,
   decodeAgnescodeJwtExpMs,
-  AGNESCODE_FALLBACK_MODELS
+  AGNESCODE_FALLBACK_MODELS,
+  AGNESCODE_FALLBACK_ASOF
 } from "../agnescode.ts";
 import { filterAgnescodeRows } from "../agnescode-models.ts";
 import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBody } from "./http.ts";
-import type { HostCtx, HostWiring } from "../types.ts";
+import type { CacheMap, HostCtx, HostWiring, InflightMap } from "../types.ts";
 
 /** One row of the harvest diagnosis the panel shows: which file was probed, how
  * it was classified, and why. `detail` is an error string, not a token — but it
@@ -58,6 +60,101 @@ const MAX_AGNESCODE_BODY_BYTES = 2048;
 const AGNESCODE_SELF_HEAL_COOLDOWN_MS = 60_000;
 
 /**
+ * How long one AgnesCode BFF read is reused. The tab polls every 60 s
+ * (`AGNESCODE_POLL_MS`) and the composer pill polls this same route on the same
+ * cadence, so a window shorter than the cadence would de-duplicate only the
+ * concurrent readers; this one also absorbs a poll that lands while the
+ * previous answer is still fresh (two panels, two sessions, a re-render).
+ */
+const AGNESCODE_READ_CACHE_MS = 60_000;
+
+/** The keys THIS route owns inside the shared cache map. */
+const AGNESCODE_CACHE_PREFIX = "agnescode:";
+
+/**
+ * A stable, non-reversible account discriminator for a cache key.
+ *
+ * The token must not become part of a key (red line #1 governs where a
+ * credential is allowed to BE), and the base URL alone cannot be the key: one
+ * URL answers with a DIFFERENT balance per account, and serving one account's
+ * balance beside another's catalogue is the identity-mixing bug this route
+ * already fixed once by resolving the credential exactly once. A truncated
+ * SHA-256 of a high-entropy JWT cannot be walked back to the token.
+ * @param {string} token - the session token.
+ * @returns {string} 16 hex chars.
+ */
+function accountFingerprint(token: string) {
+  return createHash("sha256").update(token).digest("hex").slice(0, 16);
+}
+
+/**
+ * The cache / single-flight key for one account's read of one BFF endpoint.
+ * @param {string} kind - `"balance"` or `"catalog"`.
+ * @param {unknown} credential - `{ accessToken, bffBase }`.
+ * @returns {string} the key.
+ */
+function agnescodeReadKey(kind: string, credential: unknown) {
+  const source = obj(credential);
+  return `${AGNESCODE_CACHE_PREFIX}${kind}:${str(source.bffBase, "")}:${accountFingerprint(str(source.accessToken, ""))}`;
+}
+
+/**
+ * Read-through cache + single-flight for the two AgnesCode BFF reads.
+ *
+ * WHY THIS IS NOT `console-client.ts`'s `sharedFetch`, which performs the same
+ * three moves for the Token Plan fetches — the difference is in the interface,
+ * not in the intent:
+ *
+ * 1. **The key is the ACCOUNT, not the URL.** One URL answers per account, so a
+ *    URL key would hand account A's balance to account B.
+ * 2. **These producers report failure by RETURNING `null`** (`fetchAgnescode*`
+ *    catch their own transport errors), while `sharedFetch` requires a throw —
+ *    it writes the map only after the value has been judged. Here a `null`/
+ *    `undefined` is the ABSENCE of an answer and must not be written down:
+ *    caching one would freeze「暂无数据」for the whole window and turn a
+ *    transient BFF hiccup into a minute with no balance. A throw caches nothing
+ *    either, and the `finally` drops the in-flight entry on both paths so the
+ *    next poll genuinely retries instead of awaiting a rejected promise.
+ *
+ * The gain is the point of the whole thing: without it one GET costs TWO
+ * upstream calls, and every additional open panel or pill multiplies that. The
+ * tab and the composer pill now share a single upstream read through here.
+ * @param {string} key - the account-scoped key (see `agnescodeReadKey`).
+ * @param {CacheMap} cache - the shared response cache (`wiring.cache`).
+ * @param {InflightMap} inflight - the shared single-flight map.
+ * @param {() => Promise<unknown>} produce - performs the read.
+ * @returns {Promise<unknown>} the cached, shared, or freshly produced answer.
+ */
+function readThroughAgnescode(
+  key: string,
+  cache: CacheMap,
+  inflight: InflightMap,
+  produce: () => Promise<unknown>
+): Promise<unknown> {
+  const cached = cache.get(key);
+  if (cached !== undefined && Date.now() - cached.at < AGNESCODE_READ_CACHE_MS) return Promise.resolve(cached.body);
+  const pending = inflight.get(key);
+  if (pending !== undefined) return pending;
+  const flight = (async () => {
+    const body = await produce();
+    if (body !== null && body !== undefined) {
+      cache.set(key, { body, at: Date.now() });
+      // `console-client`'s sweeper only runs on console traffic, so a machine
+      // that stops polling there would leave OUR entries behind: expire this
+      // route's own keys on every write. Bounded by accounts × 2 kinds.
+      for (const [other, entry] of cache) {
+        if (other !== key && other.startsWith(AGNESCODE_CACHE_PREFIX) && Date.now() - entry.at >= AGNESCODE_READ_CACHE_MS) {
+          cache.delete(other);
+        }
+      }
+    }
+    return body;
+  })().finally(() => { inflight.delete(key); });
+  inflight.set(key, flight);
+  return flight;
+}
+
+/**
  * Register the AgnesCode route. Wiring subset: `settings`, `agnescodeStore`,
  * `agnescodeSwitch`, `agnescodePublisher`.
  * @param ctx - the host root context (only `ctx.webServer` is used here).
@@ -65,7 +162,7 @@ const AGNESCODE_SELF_HEAL_COOLDOWN_MS = 60_000;
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
-  const { settings, agnescodeStore, agnescodeSwitch, agnescodePublisher, agnescodeModels } = wiring;
+  const { settings, agnescodeStore, agnescodeSwitch, agnescodePublisher, agnescodeModels, cache, inflight, agnescodeFetch } = wiring;
 
   // ── The AgnesCode route: the desktop-app upstream provider (ROADMAP §6.3) ──
   // The route-scoped state — declared BEFORE any handler runs, never after a
@@ -130,18 +227,30 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // refuses it in seconds, so it never reaches either ceiling.)
         let models: unknown = null;
         if (credential?.accessToken) {
+          // Both reads go through the account-keyed cache + single-flight, so
+          // the two readers of this route (the tab and the composer pill, both
+          // on the 60 s cadence) share ONE upstream read instead of costing two
+          // calls each on every poll. See `readThroughAgnescode`.
           const [b, m] = await Promise.all([
             // Balance stays gated on `loggedIn` as before: no stored identity,
             // no balance call.
-            loggedIn ? fetchAgnescodeBalance(credential).catch(() => null) : Promise.resolve(null),
-            fetchAgnescodeCatalog(credential).catch(() => null)
+            loggedIn
+              ? readThroughAgnescode(agnescodeReadKey("balance", credential), cache, inflight,
+                () => fetchAgnescodeBalance(credential, agnescodeFetch)).catch(() => null)
+              : Promise.resolve(null),
+            readThroughAgnescode(agnescodeReadKey("catalog", credential), cache, inflight,
+              () => fetchAgnescodeCatalog(credential, agnescodeFetch)).catch(() => null)
           ]);
           balance = b;
           models = m;
         }
-        const roster = models !== null && Array.isArray(models) && models.length > 0
-          ? models
-          : AGNESCODE_FALLBACK_MODELS;
+        // WHICH roster the panel is about to show — the live `/v2/models`
+        // answer or the built-in list of FROZEN rates — decided once, so the
+        // flag and the rows can never disagree. The panel prints the fallback's
+        // `asOf` date, so a rate captured at probe time is never presented as a
+        // live one.
+        const liveRoster = models !== null && Array.isArray(models) && models.length > 0;
+        const roster = liveRoster ? models : AGNESCODE_FALLBACK_MODELS;
         const publisherState = agnescodePublisher?.state ?? null;
         // The curated subset (empty = no curation = push the roster whole).
         const enabledModelIds = agnescodeModels !== null && agnescodeModels !== undefined
@@ -159,6 +268,12 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           expiresAtMs,
           balance,
           models: roster,
+          // Flat scalars, not a nested block: §11b's contract fence walks this
+          // literal by brace depth, and `modelsSource` is what lets the panel
+          // say "this is the built-in list, rates as of <date>" instead of
+          // presenting frozen prices as live ones.
+          modelsSource: liveRoster ? "live" : "fallback",
+          ...(liveRoster ? {} : { modelsAsOf: AGNESCODE_FALLBACK_ASOF }),
           enabledModelIds,
           providerRegistered: publisherState?.registered === true,
           ...(publisherState?.error !== null && publisherState?.error !== undefined ? { providerError: publisherState.error } : {}),
@@ -181,8 +296,16 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         try {
           const { credential } = agnescodeStore ? await agnescodeStore.resolve().catch(() => ({ credential: null })) : { credential: null };
           if (credential?.accessToken) {
-            const live = await fetchAgnescodeCatalog(credential).catch(() => null);
-            if (live !== null && live.length > 0) rows = live;
+            // The catalogue read is shared with the GET (same key), so a
+            // self-heal publish does not add a third call on a poll that just
+            // read the catalogue — and a save that re-publishes reuses the
+            // answer the save itself already triggered.
+            const live = await readThroughAgnescode(agnescodeReadKey("catalog", credential), cache, inflight,
+              () => fetchAgnescodeCatalog(credential, agnescodeFetch)).catch(() => null);
+            // `Array.isArray` (not `!== null`): the read returns `unknown`, and
+            // only the array check narrows it to a roster — the same move the
+            // GET's `liveRoster` makes.
+            if (Array.isArray(live) && live.length > 0) rows = live;
             bffBase = credential.bffBase ?? "";
           }
         } catch {
