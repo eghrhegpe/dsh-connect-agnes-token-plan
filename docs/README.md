@@ -28,6 +28,7 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [ADR.md](./ADR.md) | **决策账本**：一条裁定一个条目（日期 / 状态现行或已被取代 / 取代链）——边界、定位、流程的每次改判只在这里记账，现行正文只保留现状表述 | 拍新裁定、改既有边界、回溯「为什么现在是这个样子」 |
 | [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md) | **已失效裁定存档**（两类来源）：① 小浣熊边界裁定（ADR-002）的原文（该线已于 2026-10-01 移出本插件，见 ADR-003）；② A1–A4：2026-09 研究档案里已失效 / 已过期 / 已落地的判断（「默认推理通道」撤销论断、`index.js` 接线方案、落地顺序表与总判断、姊妹插件对比结论） | 查历史边界决策与「当初错在哪」、不复用为现行依据 |
 | [DSH-UNIFIED-INTERFACE-AUDIT.md](./DSH-UNIFIED-INTERFACE-AUDIT.md) | **观察存档**：DSH runtime 出图/出视频统一接口审计（事实链 + 结论：当前无第一方大统一 image/video 注册面，故 §5.4 接法 B 是当下唯一可行落地点，接法 A 因依赖外部社区包而否决） | 查「为何不退回通用接口 / 为何自己造工具」的 runtime 取证、不复用为执行依据 |
+| [DSH-SESSION-STORAGE.md](./DSH-SESSION-STORAGE.md) | DSH 会话存储布局：`sessions/**/session.v4.jsonl.zstd` 真原文（zstd 压缩 jsonl）vs `storages/session_projcache` 投影缓存（派生统计）；翻对话 / 查探针返回落点的速查 | 翻某条 DSH 对话原文、区分原文与派生数据、定位「某次返回写在哪」 |
 
 ## 文档边界（不在此目录写的内容）
 

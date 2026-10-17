@@ -147,6 +147,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 回溯已失效的边界裁定 / 2026-09 研究原稿（**不作现行依据**，待办状态已腐烂） | `docs/ARCHIVE-BOUNDARY-DECISIONS.md`、`docs/ARCHIVE-IMPROVEMENTS-2026-09.md` |
 | 排查「这条配置到底生效没」 / 改了源码却没变 | `docs/PITFALLS.md` §22（bundles 装载 → patch overlay → `$DSH_HOME/state/<profile>/<name>/` 三层，desktop 是安装副本、web 是 symlink） |
 | 加/改 **state 文件**、读 `profileContext`、判断某状态该不该按 profile 分段 | `docs/PITFALLS.md` §23（catalog/provider/draw 分段；throttle 与凭据 grant **故意共享**，别统一） |
+| 翻 DSH 对话原文 / 查某次接口探针返回落在哪 / 区分原文与投影缓存 | `docs/DSH-SESSION-STORAGE.md`（`sessions/**/session.v4.jsonl.zstd` 是 zstd 压缩 jsonl 真原文；派生统计在 `storages/session_projcache`；探针返回只进 docs，不进会话文件） |
 | 提交约定、`upstream/` 红线 | `docs/CONTRIBUTING.md` |
 
 ## 已知的真实坑（改前先看这里有没有）
