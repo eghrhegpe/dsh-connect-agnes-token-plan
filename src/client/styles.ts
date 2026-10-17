@@ -130,9 +130,21 @@ export const S = {
   // bottom. Equal columns (not a fixed bar width) is what keeps 30 daily
   // buckets inside the card instead of pushing it into a horizontal scroll.
   usageBars: { display: "flex", alignItems: "flex-end", gap: 2, height: 96, padding: "0 1px" },
-  usageBar: { flex: 1, minWidth: 2, height: "100%", display: "flex", alignItems: "flex-end" },
+  // `position: relative` anchors the bar's own count label: the number sits
+  // at the fill's top (absolute, `bottom` in lockstep with the fill height)
+  // instead of stealing height from the 96px track.
+  usageBar: { flex: 1, minWidth: 2, height: "100%", display: "flex", alignItems: "flex-end", position: "relative" },
   usageBarFill: { width: "100%", minHeight: 2, borderRadius: 2, background: "var(--agnes-brand, #1E40AF)" },
+  // The count on top of a bar. Absolute so it never reflows the flex row; only
+  // printed for non-zero buckets, because thirty "0"s would be noise the bars
+  // already carry. The narrow 30-day columns overlap each other's labels only
+  // on adjacent heavy days — the hover title stays the precise reading.
+  usageBarValue: { position: "absolute", left: 0, right: 0, fontSize: 9, lineHeight: 1, textAlign: "center", color: "var(--dsw-alias-label-secondary)", fontVariantNumeric: "tabular-nums", pointerEvents: "none" },
   usageAxis: { display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6, fontSize: 11, color: "var(--dsw-alias-label-secondary)" },
+  // One axis tick keeps its full platform bucket in `title`; what the eye
+  // reads is the short "M-D" form, so a 30-day window gets ~7 labels instead
+  // of nothing between first and last.
+  usageAxisTick: { whiteSpace: "nowrap" },
   // One plan row in the collapsed catalogue: name, cycle, then the limits
   // right-aligned so the three tiers line up and can be compared by eye.
   catalogueRow: { display: "flex", alignItems: "baseline", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--dsw-alias-border-l1)", fontSize: 12 },

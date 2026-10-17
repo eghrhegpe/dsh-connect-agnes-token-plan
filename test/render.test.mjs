@@ -357,9 +357,17 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("each bar names its bucket and count for the hover",
     findAll(tree, (props) => props.style === S.usageBar)[0]?.props.title === "2026-09-29: 40 quota.unit.requests",
     String(findAll(tree, (props) => props.style === S.usageBar)[0]?.props.title));
+  const valuesOnBars = findAll(tree, (props) => props.style?.position === "absolute");
+  check("each non-zero bar prints its own count above the fill",
+    valuesOnBars.length === 2 && valuesOnBars.map((bar) => texts(bar).join("")).join(",") === "40,10",
+    JSON.stringify(valuesOnBars.map((bar) => texts(bar).join(""))));
   const meta = texts(tree).join("\n");
-  check("the axis prints the platform's own first and last bucket labels",
-    meta.includes("2026-09-29") && meta.includes("2026-09-30"), meta);
+  const ticks = findAll(tree, (props) => props.style === S.usageAxisTick);
+  check("the axis ticks print the short M-D form with the full platform bucket in the title",
+    ticks.length === 2
+      && ticks.map((tick) => tick.props.title).join(",") === "2026-09-29,2026-09-30"
+      && meta.includes("9-29") && meta.includes("9-30") && !meta.includes("2026-09-29"),
+    JSON.stringify(ticks.map((tick) => tick.props.title)));
   check("the chart says what it counts and how it is bucketed",
     meta.includes("usage.requests") && meta.includes("usage.perBucket"), meta);
   check("the legend names the scaling convention",
@@ -383,6 +391,9 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
   check("an all-zero series reports zero to assistive tech",
     fills.every((fill) => fill.props["aria-valuenow"] === 0),
     JSON.stringify(fills.map((fill) => fill.props["aria-valuenow"])));
+  check("an all-zero series prints no count labels (nothing is worth captioning)",
+    findAll(tree, (props) => props.style?.position === "absolute").length === 0,
+    String(findAll(tree, (props) => props.style?.position === "absolute").length));
 }
 
 // === E3. the usage totals row names the period it covers ==================

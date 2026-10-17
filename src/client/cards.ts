@@ -452,14 +452,32 @@ export function UsageTotals({ totals, label, tt }: { totals?: UsageTotalsData | 
 }
 
 /**
+ * One axis tick as the eye reads it: "2026-09-18" → "9-18". The year prints
+ * only where it means something — a window inside one year never repeats it,
+ * while a tick whose year differs from the window's first bucket keeps its
+ * full "2025-12-30", so a series crossing New Year cannot read as two
+ * equal-looking labels.
+ */
+function axisLabel(bucket: string, yearBase: string): string {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(bucket);
+  if (m === null) return bucket;
+  const short = `${Number(m[2])}-${Number(m[3])}`;
+  return m[1] === yearBase ? short : `${m[1]}-${short}`;
+}
+
+/**
  * Per-bucket consumption as a mini bar chart.
  *
- * The x axis is the platform's OWN bucket label, not a date this client
- * re-derives: the series endpoint takes dates and answers with whatever
- * granularity it chose, so re-formatting `bucket` would be the panel asserting
- * a granularity the platform never promised. Only the first and last labels are
- * printed — 30 daily bars cannot each carry a readable date, and every bar
- * carries its own `title` for the one the reader hovers.
+ * The x axis quotes the platform's OWN bucket labels — the series endpoint
+ * takes dates and answers with whatever granularity it chose, and the panel
+ * does not re-derive dates it was never promised. A 30-bucket window cannot
+ * print thirty readable labels, so the axis shows a short "M-D" tick every few
+ * buckets with the FULL platform label kept in each tick's `title`, and every
+ * bar carries its own `title` for the one the reader hovers.
+ *
+ * Each bar prints its own request count above the fill, so "how much was that
+ * day" is answered at a glance rather than only on hover. Zero buckets print
+ * nothing — a bar with no fill needs no caption.
  *
  * The bars are scaled to the LARGEST bucket, so the tallest always fills the
  * track; that answers "when was the heavy day", but the eye misreads a full
@@ -472,8 +490,14 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
   }
   const values = buckets.map((bucket) => Math.max(0, Number(bucket?.requestCount) || 0));
   const max = Math.max(0, ...values);
-  const first = String(buckets[0]?.bucket ?? "");
-  const last = String(buckets[buckets.length - 1]?.bucket ?? "");
+  // A handful of ticks instead of nothing between first and last: ~7 labels
+  // for the 30-day default (6 for 14, 2 for a 2-bucket series), always ending
+  // on the final bucket.
+  const tickStep = Math.max(1, Math.ceil(buckets.length / 6));
+  const tickIndexes: number[] = [];
+  for (let index = 0; index < buckets.length; index += tickStep) tickIndexes.push(index);
+  if (tickIndexes[tickIndexes.length - 1] !== buckets.length - 1) tickIndexes.push(buckets.length - 1);
+  const yearBase = /^(\d{4})/.exec(String(buckets[0]?.bucket ?? ""))?.[1] ?? "";
   return h(
     "div",
     null,
@@ -487,7 +511,7 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
       "div",
       { style: S.usageBars },
       buckets.map((bucket, index) => {
-        const value = values[index];
+        const value = values[index] ?? 0;
         const pct = max > 0 ? ((value ?? 0) / max) * 100 : 0;
         const label = String(bucket?.bucket ?? "");
         return h(
@@ -497,6 +521,9 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
             style: S.usageBar,
             title: `${label}: ${count(value)} ${tt("quota.unit.requests")}`
           },
+          value > 0
+            ? h("span", { style: { ...S.usageBarValue, bottom: `calc(${pct}% + 3px)` } }, count(value))
+            : null,
           h("div", {
             style: { ...S.usageBarFill, height: `${pct}%` },
             role: "progressbar",
@@ -511,8 +538,10 @@ export function UsageChart({ usage, tt }: { usage?: UsageData | null; tt: Tt }):
     h(
       "div",
       { style: S.usageAxis },
-      h("span", null, first),
-      h("span", null, last)
+      tickIndexes.map((index) => {
+        const full = String(buckets[index]?.bucket ?? "");
+        return h("span", { key: `${full}-${index}`, style: S.usageAxisTick, title: full }, axisLabel(full, yearBase));
+      })
     ),
     h("div", { style: S.trendLegend }, tt("usage.legend"))
   );
