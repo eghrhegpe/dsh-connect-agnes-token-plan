@@ -152,6 +152,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.keyConsoleHint": "前往官网管理额度 →",
 			"llm.ephemeral": "注意：当前 Host 没有凭据服务，Key 只保存在内存中，重启后失效。",
 			"llm.keyPresent": "已配置（来源：{source}）",
+			"llm.keyRejected": "平台拒绝了这把 Key（401/403）——它可能已被吊销，或属于另一个账号。到 Agnes 控制台确认，或在下方重新填一把。",
+			"llm.catalogFailed": "模型目录暂时读不到：{error}（额度与聊天不受影响）",
 			"llm.noKey": "尚未配置——在上方粘贴 API Key 并保存。",
 			"llm.src.credentials": "DSH 凭据",
 			"llm.src.env": "环境变量 AGNES_TOKEN_PLAN_API_KEY",
@@ -257,6 +259,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.awaitingHarvest": "已启用——检测到本机登录态后即可注册模型。",
 			"agnescode.errNotConfigured": "凭据未就绪——点「检测本机登录态」重新采集后再试。",
 			"agnescode.expiresAt": "凭据有效期至 {time}",
+			"agnescode.expiresAtExpired": "凭据已于 {time} 过期",
+			"agnescode.expiresAtRemedy": "重开桌面 App 登录一次即可——下一次请求会自动重采集，不必点上面的按钮。",
 			"agnescode.error": "AgnesCode 操作失败：{error}",
 			"agnescode.harvestOk": "已读取本机登录态。",
 			"agnescode.harvestFail": "未能在本机找到可用的 AgnesCode 登录态。探测记录：",
@@ -388,6 +392,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.keyConsoleHint": "Manage your quota on the official site →",
 			"llm.ephemeral": "Note: this Host has no credentials service, so the key lives in memory only and is lost on restart.",
 			"llm.keyPresent": "Configured (source: {source})",
+			"llm.keyRejected": "The platform refused this key (401/403) — it may have been revoked or belong to another account. Check it in the Agnes console, or paste a new one below.",
+			"llm.catalogFailed": "The model catalogue could not be read: {error} (quota and chat are unaffected)",
 			"llm.noKey": "Not configured — paste an API key above and save.",
 			"llm.src.credentials": "DSH credentials",
 			"llm.src.env": "environment AGNES_TOKEN_PLAN_API_KEY",
@@ -493,6 +499,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.awaitingHarvest": "Enabled — runs once a local login state is detected.",
 			"agnescode.errNotConfigured": "Credential not ready — run the detection again, then retry.",
 			"agnescode.expiresAt": "Credential valid until {time}",
+			"agnescode.expiresAtExpired": "Credential expired {time}",
+			"agnescode.expiresAtRemedy": "Sign in to the desktop App once — the next request re-harvests it automatically; the button above is not required.",
 			"agnescode.error": "AgnesCode operation failed: {error}",
 			"agnescode.harvestOk": "Local login state read.",
 			"agnescode.harvestFail": "No usable AgnesCode login state found on this machine. Probed:",
@@ -869,7 +877,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			/** The platform refused without naming a reason this table knows. */
 			LOGIN_FAILED: "login_failed",
 			/** The platform locked the account after repeated failures. */
-			ACCOUNT_LOCKED: "account_locked"
+			ACCOUNT_LOCKED: "account_locked",
+			/**
+			* The gateway refused the inference key on `/v1/models`. Branched on outside
+			* the tables because the answer is behaviour, not text: a rejection is the
+			* one catalogue failure that means every conversation is about to fail too.
+			*/
+			KEY_REJECTED: "key_rejected"
 		});
 		COOLDOWN_TEXT = Object.freeze({
 			[CLIENT_CODE.ACCOUNT_LOCKED]: "auth.locked",
@@ -2292,6 +2306,21 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			...S.formNote,
 			color: "var(--dsw-alias-state-warn-primary)"
 		} }, tt("llm.ephemeral")));
+		const catalogError = llm.catalogError ?? null;
+		if (catalogError !== null && catalogError.code === CLIENT_CODE.KEY_REJECTED) rows.push(h("div", {
+			style: {
+				...S.formNote,
+				color: "var(--dsw-alias-state-warn-primary)"
+			},
+			role: "alert"
+		}, tt("llm.keyRejected")));
+		else if (catalogError !== null) rows.push(h("div", {
+			style: {
+				fontSize: 12,
+				color: "var(--dsw-alias-label-secondary)"
+			},
+			role: "status"
+		}, format(tt("llm.catalogFailed"), { error: String(catalogError.message ?? "") })));
 		return h("div", { style: {
 			display: "flex",
 			flexDirection: "column",
@@ -2673,6 +2702,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		init_models();
 		init_runtime();
 		init_switch();
+		init_snapshot();
 		init_styles();
 	}));
 
@@ -3574,7 +3604,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			style: S.button,
 			onClick: () => void harvest(),
 			disabled: harvestBusy
-		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))), state?.bffBase !== void 0 && state?.bffBase !== "" || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("div", { style: {
+		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))), state?.bffBase !== void 0 && state?.bffBase !== "" || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("div", null, h("div", { style: {
 			...S.quotaFoot,
 			marginTop: 8,
 			color: "var(--dsw-alias-label-secondary)"
@@ -3583,8 +3613,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			wordBreak: "break-all"
 		} }, format(tt("agnescode.bffBase"), { base: state.bffBase })) : null, typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("span", { style: {
 			...S.quotaUsed,
-			whiteSpace: "nowrap"
-		} }, format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) })) : null) : null) : h("div", null, h("div", { style: {
+			whiteSpace: "nowrap",
+			...state?.expired === true ? { color: "var(--dsw-alias-state-warn-primary)" } : {}
+		} }, format(tt(state?.expired === true ? "agnescode.expiresAtExpired" : "agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) })) : null), state?.expired === true ? h("div", {
+			style: {
+				...S.formNote,
+				fontSize: 12,
+				marginTop: 6,
+				color: "var(--dsw-alias-state-warn-primary)"
+			},
+			role: "status"
+		}, tt("agnescode.expiresAtRemedy")) : null) : null) : h("div", null, h("div", { style: {
 			display: "flex",
 			alignItems: "center",
 			gap: 12,

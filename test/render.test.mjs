@@ -17,6 +17,7 @@
 import { render, styles as S, texts, findElement, findAll } from "./panel-render.js";
 import { surface } from "./client-surface.js";
 import { THINKING_LADDER } from "../src/host/llm-models.ts";
+import { CODE } from "../src/host/codes.ts";
 import { API_KEY_SOURCES } from "../src/host/api-key-store.ts";
 import { AGNES_SIGNUP_URL } from "../src/client/const.ts";
 import { readFileSync } from "node:fs";
@@ -754,6 +755,57 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     fromEnv.some((line) => line.includes(zh["llm.src.env"])), fromEnv.join("\n"));
   check("an ephemeral host says so",
     fromEnv.some((line) => line.includes(zh["llm.ephemeral"])), fromEnv.join("\n"));
+
+  // --- F3: the catalogue is the only read that exercises the inference key,
+  // so its refusal is the only visible symptom of a revoked key. The panel
+  // must say it — and must say it as an ALARM, while a plain catalogue hiccup
+  // stays a quiet note (the key may be perfectly fine).
+  const rejectedLlm = { hasApiKey: true, keySource: "credentials", ephemeral: false,
+    registerProvider: true, llmAvailable: true, providerRegistered: true, providerId: "p",
+    modelCount: 3, visionCount: 1,
+    catalogError: { source: "catalog", code: CODE.KEY_REJECTED, message: "/v1/models returned HTTP 401" } };
+  const rejectedTree = treeOf(render.ProviderStatus, { llm: rejectedLlm, tt: ttZh });
+  const rejected = texts(rejectedTree);
+  check("a rejected key is stated on the key card",
+    rejected.some((line) => line.includes(zh["llm.keyRejected"])), rejected.join("\n"));
+  check("a rejected key is announced as an alert, not a footnote",
+    findElement(rejectedTree, (props) => props.role === "alert") !== null,
+    String(findElement(rejectedTree, (props) => props.role === "alert")?.props?.role));
+  // The pairing IS the defect F3 described: the key is still "configured" (it
+  // is — it is stored), so the card must say BOTH, not replace one with the other.
+  check("a rejected key does not un-say that a key is stored",
+    rejected.some((line) => line.includes(zh["llm.src.credentials"])), rejected.join("\n"));
+  check("a rejected key is not also reported as a plain catalogue failure",
+    !rejected.some((line) => line.includes("模型目录暂时读不到")), rejected.join("\n"));
+
+  const hiccupTree = treeOf(render.ProviderStatus, {
+    llm: { ...rejectedLlm, catalogError: { source: "catalog", code: CODE.CATALOG_HTTP, message: "HTTP 502" } },
+    tt: ttZh
+  });
+  const hiccup = texts(hiccupTree);
+  check("a plain catalogue failure carries the reason to the screen",
+    hiccup.some((line) => line.includes("HTTP 502") && line.includes("模型目录暂时读不到")), hiccup.join("\n"));
+  check("a plain catalogue failure is NOT an alarm",
+    findElement(hiccupTree, (props) => props.role === "alert") === null
+      && findElement(hiccupTree, (props) => props.role === "status") !== null);
+  check("a plain catalogue failure does not claim the key was refused",
+    !hiccup.some((line) => line.includes(zh["llm.keyRejected"])), hiccup.join("\n"));
+
+  const clean = rendered(render.ProviderStatus, {
+    llm: { ...rejectedLlm, catalogError: null }, tt: ttZh
+  });
+  check("a healthy catalogue says nothing at all",
+    !clean.some((line) => line.includes(zh["llm.keyRejected"]))
+      && !clean.some((line) => line.includes("模型目录暂时读不到")), clean.join("\n"));
+  // An older Host that predates this field sends nothing: same silence.
+  const silent = rendered(render.ProviderStatus, {
+    llm: { hasApiKey: true, keySource: "credentials", ephemeral: false, registerProvider: true,
+      llmAvailable: true, providerRegistered: true, providerId: "p" },
+    tt: ttZh
+  });
+  check("a snapshot without the field says nothing either",
+    !silent.some((line) => line.includes(zh["llm.keyRejected"]))
+      && !silent.some((line) => line.includes("模型目录暂时读不到")), silent.join("\n"));
 
   const noService = rendered(render.ProviderRegStatus, {
     llm: { hasApiKey: true, keySource: "credentials", registerProvider: true,

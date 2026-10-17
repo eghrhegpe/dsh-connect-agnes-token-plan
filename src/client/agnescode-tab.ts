@@ -392,14 +392,43 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                   || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
                   ? h(
                       "div",
-                      { style: { ...S.quotaFoot, marginTop: 8, color: "var(--dsw-alias-label-secondary)" } },
-                      state?.bffBase !== undefined && state?.bffBase !== ""
-                        ? h("span", { style: { ...S.quotaUsed, wordBreak: "break-all" } },
-                            format(tt("agnescode.bffBase"), { base: state.bffBase }))
-                        : null,
-                      typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
-                        ? h("span", { style: { ...S.quotaUsed, whiteSpace: "nowrap" } },
-                            format(tt("agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) }))
+                      null,
+                      h(
+                        "div",
+                        { style: { ...S.quotaFoot, marginTop: 8, color: "var(--dsw-alias-label-secondary)" } },
+                        state?.bffBase !== undefined && state?.bffBase !== ""
+                          ? h("span", { style: { ...S.quotaUsed, wordBreak: "break-all" } },
+                              format(tt("agnescode.bffBase"), { base: state.bffBase }))
+                          : null,
+                        typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0
+                          ? h("span", {
+                            style: {
+                              ...S.quotaUsed,
+                              whiteSpace: "nowrap",
+                              ...(state?.expired === true
+                                ? { color: "var(--dsw-alias-state-warn-primary)" }
+                                : {})
+                            }
+                          },
+                            format(tt(state?.expired === true ? "agnescode.expiresAtExpired" : "agnescode.expiresAt"),
+                              { time: clockLong(state.expiresAtMs) }))
+                          : null
+                      ),
+                      // The date alone used to be the whole story: a credential
+                      // that expired last week rendered exactly like a fresh one
+                      // (same grey caption, just a past date), and the only
+                      // symptom was a 401 inside a conversation. The Host says
+                      // `expired`; this line says what to do about it.
+                      state?.expired === true
+                        ? h("div", {
+                          style: {
+                            ...S.formNote,
+                            fontSize: 12,
+                            marginTop: 6,
+                            color: "var(--dsw-alias-state-warn-primary)"
+                          },
+                          role: "status"
+                        }, tt("agnescode.expiresAtRemedy"))
                         : null
                     )
                   : null

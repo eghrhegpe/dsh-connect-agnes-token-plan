@@ -469,7 +469,7 @@ peer 误判的**官方依据**：
 | `model` / `prompt` / `n` / `size` / `response_format` | 顶层 | `response_format` 顶层写法经 live probe ③ 确证有效，不迁 `extra_body`；`size` 接受精确 `WIDTHxHEIGHT`（32 的倍数）与 `2K` / `4K` 档位常量——两种写法均已 live probe ⑤ 确证生效，工具参数描述已随实测恢复档位表措辞 |
 | `ratio` | `extra_body.ratio` | Agnes 方言；live probe ⑤ 确证端点接受 `extra_body.ratio`（16:9 出图成功） |
 | `image` | `extra_body.image` | Agnes 方言；live probe ⑤ 确证端点接受 `extra_body.image`（参考图走 img2img，输出任务段由 `/t2i/` 切到 `/i2i/`，证实参考图真实生效而非被忽略） |
-| `return_base64` | `extra_body.return_base64` | Agnes 方言；live probe ⑤ 确证端点接受 `extra_body.return_base64`（`url` 返回空串、`b64_json` 携带 base64 载荷——即该字段改变了返回形态而非被丢弃）；`response_format` 保持顶层、不迁 |
+| `return_base64` | `extra_body.return_base64` | Agnes 方言；live probe ⑤ 确证端点接受 `extra_body.return_base64`（`url` 返回空串、`b64_json` 携带 base64 载荷——即该字段改变了返回形态而非被丢弃）；`response_format` 保持顶层、不迁。**插件侧**把载荷以 `data:image/png;base64,…` 放进工具结果的 `url` 字段（结果没有别的字段能承载它），并提示 agent 不要把它整段贴回对话 |
 
 > **live probe（2026-10-01，子代理真机）**：用真实 Key 实跑确认了四点——① `n` **必须为 1**，传 `n:2` 直接 `400 n 必须为 1`，故 `buildDrawBody` 现在只转发 `1`；② 不传 `model` 时自动发现选中 `agnes-image-2.1-flash` 并成功出图，证明「省略 model 走目录默认」逻辑是对的；③ 顶层 `response_format:"url"` **仍返回 url**（与本节真机记录一致），故维持顶层写法、不迁 `extra_body`；④ `agnes-u1-fast` 在真机是 **chat 模型**（报 400「是 chat 模型，请使用 /v1/chat/completions」），印证旧描述里的示例 id 是错的——已在上轮提交移除。
 >

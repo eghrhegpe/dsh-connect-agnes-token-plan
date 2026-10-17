@@ -590,7 +590,15 @@ const GOOD_SESSION = {
   try {
     const saved = [];
     const service = {
-      async set(ref, value) { saved.push({ ref, value }); },
+      // Upsert, like the real credentials service: a second `set` on the same
+      // ref REPLACES it. A push-only fake made `resolve` keep answering the
+      // first value ever written, which silently turned every later save into
+      // a no-op — and made `forget` look broken when it was the fixture.
+      async set(ref, value) {
+        const index = saved.findIndex((entry) => entry.ref === ref);
+        if (index >= 0) saved[index] = { ref, value };
+        else saved.push({ ref, value });
+      },
       async resolve(ref) { return saved.find((entry) => entry.ref === ref) ?? undefined; },
       async unset(ref) { const i = saved.findIndex((entry) => entry.ref === ref); if (i >= 0) saved.splice(i, 1); }
     };
@@ -623,6 +631,28 @@ const GOOD_SESSION = {
       && state.bffBase === credential.bffBase && JSON.stringify(state).includes(credential.accessToken) === false,
       JSON.stringify(state));
     check("a fresh 28-day credential is not expired", await store.isExpired() === false);
+    check("... and the panel-facing state says so too", state.expired === false, String(state.expired));
+
+    // The expired shape is the one the panel used to render as a plain past
+    // date: `expired` is what turns that caption into a warning, so it has to
+    // be the Host's answer rather than something the client derives. The JWT's
+    // own `exp` is authoritative (the store re-derives it on read), so the
+    // fixture has to be a token that really is in the past.
+    {
+      const dead = { ...credential, accessToken: makeJwt(-1) };
+      await store.save(dead);
+      const deadState = await store.state();
+      check("an expired credential reports expired:true with the past date intact",
+        deadState.expired === true && typeof deadState.expiresAtMs === "number" && deadState.expiresAtMs < Date.now(),
+        JSON.stringify({ expired: deadState.expired, at: deadState.expiresAtMs }));
+      check("... while a credential with no decodable exp reads as not expired",
+        (await (async () => {
+          const noExp = createAgnescodeStore({});
+          await noExp.save({ accessToken: "opaque-not-a-jwt", bffBase: credential.bffBase });
+          return noExp.state();
+        })()).expired === false);
+      await store.save(credential);
+    }
 
     await store.forget();
     check("forget clears both the service and the memory", (await store.resolve()).credential === null);
@@ -1221,10 +1251,12 @@ const GOOD_SESSION = {
       logger: { info() {}, warn() {}, error() {} },
       // The credential half only has to REPORT the linked account here: a
       // credential handed to `resolve()` would send the route to the live BFF,
-      // and the network guard would (correctly) trip.
+      // and the network guard would (correctly) trip. It reports a credential
+      // that died a minute ago, because this block also pins that the route
+      // forwards the Host's `expired` verdict and not just the date.
       agnescodeStore: {
         async state() {
-          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
+          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: Date.now() - 60_000, expired: true };
         },
         async resolve() {
           resolveCalls += 1;
@@ -1253,6 +1285,9 @@ const GOOD_SESSION = {
       JSON.stringify({ loggedIn: body.loggedIn, nickname: body.nickname, enabled: body.enabled }));
     check("the GET payload carries no token (the panel only ever sees shape facts)",
       !("accessToken" in body) && !JSON.stringify(body).includes("access_token"));
+    check("the GET forwards the Host's expired verdict alongside the date",
+      body.expired === true && typeof body.expiresAtMs === "number" && body.expiresAtMs < Date.now(),
+      JSON.stringify({ expired: body.expired, at: body.expiresAtMs }));
     check("one resolve serves both the balance and the catalogue", resolveCalls === 1, String(resolveCalls));
   } catch (error) {
     fail("route surface", error);

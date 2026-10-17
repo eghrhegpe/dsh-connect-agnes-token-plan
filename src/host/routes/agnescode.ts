@@ -198,6 +198,10 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         let nickname = "";
         let bffBase = "";
         let expiresAtMs: number | null = null;
+        // Host-side, not client-derived: the panel renders this as a warning,
+        // and a browser that computed it from `expiresAtMs` would own a second
+        // copy of the expiry rule.
+        let expired = false;
         let balance: unknown = null;
         let error: string | null = null;
         // Resolved ONCE and reused for both BFF calls. Each was its own
@@ -213,6 +217,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
             nickname = state?.nickname ?? "";
             bffBase = state?.bffBase ?? "";
             expiresAtMs = state?.expiresAtMs ?? null;
+            expired = state?.expired === true;
             credential = (await agnescodeStore.resolve().catch(() => ({ credential: null }))).credential ?? null;
           }
         } catch (why) {
@@ -266,6 +271,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           // the account's requests go) — secret-free, from the session file.
           bffBase,
           expiresAtMs,
+          expired,
           balance,
           models: roster,
           // Flat scalars, not a nested block: §11b's contract fence walks this

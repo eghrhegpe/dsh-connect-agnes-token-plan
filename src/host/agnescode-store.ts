@@ -168,7 +168,15 @@ export function createAgnescodeStore({ credentials = null }: { credentials?: (()
 
     /**
      * The secret-free description the routes and panel report.
-     * @returns {Promise<{hasCredential: boolean, source: ("credentials"|"memory"|null), ephemeral: boolean, nickname: string, bffBase: string, expiresAtMs: number|null}>}
+     *
+     * `expired` is computed HERE rather than in the panel: the Host owns the
+     * credential and its clock, and the one thing this tab must never do is
+     * print a date in the past as if it were a valid-until. It is a separate
+     * field from `expiresAtMs` because they answer different questions — "when
+     * does it die" vs "is it dead" — and a client that had to derive the second
+     * from the first would be re-implementing the expiry rule (lead window
+     * included) in a second place.
+     * @returns {Promise<{hasCredential: boolean, source: ("credentials"|"memory"|null), ephemeral: boolean, nickname: string, bffBase: string, expiresAtMs: number|null, expired: boolean}>}
      */
     async state() {
       const { credential, source } = await this.resolve();
@@ -178,7 +186,13 @@ export function createAgnescodeStore({ credentials = null }: { credentials?: (()
         ephemeral: resolveService() === null,
         nickname: credential?.nickname ?? "",
         bffBase: credential?.bffBase ?? "",
-        expiresAtMs: credential?.expiresAtMs ?? null
+        expiresAtMs: credential?.expiresAtMs ?? null,
+        // No lead window: "expired" here is a fact to display, not the
+        // re-harvest trigger (`isExpired` keeps its 5-minute lead for that).
+        expired:
+          credential !== null &&
+          credential.expiresAtMs !== undefined &&
+          Date.now() >= credential.expiresAtMs
       };
     }
   };

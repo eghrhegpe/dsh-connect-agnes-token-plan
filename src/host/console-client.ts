@@ -280,7 +280,17 @@ export async function fetchModelCatalog(settings: Settings, cacheMs: number, cac
       // takes the console deadline rather than a number of its own.
       signal: AbortSignal.timeout(settings.consoleTimeoutMs)
     });
-    if (!response.ok) throw new Error(`/v1/models returned HTTP ${response.status}`);
+    if (!response.ok) {
+      // A code, not just a message: this is the ONLY read that exercises the
+      // inference key, so its refusal is the only signal that the key itself is
+      // dead (revoked, rotated, or wrong account). Without it the failure is an
+      // anonymous 401 that every caller swallows, and the panel goes on saying
+      // "key configured" while every conversation fails. `KEY_REJECTED` is the
+      // one class worth acting on; the rest stay generic on purpose.
+      const error = new Error(`/v1/models returned HTTP ${response.status}`) as Error & { code?: string };
+      error.code = response.status === 401 || response.status === 403 ? CODE.KEY_REJECTED : CODE.CATALOG_HTTP;
+      throw error;
+    }
     const body = await response.json();
     // The OpenAI shape is NOT enveloped — this is the gateway, not the console,
     // so `unwrapEnvelope` is deliberately not used here.

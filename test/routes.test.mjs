@@ -13,6 +13,7 @@
  */
 import { loadPeer, installNetworkGuard, isolateHostEnv, isolateStateDir } from "./peer-roots.mjs";
 import { createFileThrottleStore } from "../src/host/throttle-store.ts";
+import { CODE } from "../src/host/codes.ts";
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
@@ -927,7 +928,66 @@ async function withNetwork(stub, body) {
       JSON.stringify({ model: llm.videoModel, count: llm.videoCandidateCount, ids: llm.videoCandidateIds }));
     check("the llm block never carries the key",
       !JSON.stringify(llm).includes("sk-test-key-for-routing-only"));
+    // F3: a catalogue that answered fine reports no failure — the field is a
+    // failure channel, not a status line, so its healthy value is `null`.
+    check("a healthy catalogue reports no catalogue failure",
+      llm.catalogError === null, JSON.stringify(llm.catalogError));
   }).catch((error) => fail("M: vision publish without settings service", error));
+}
+
+// === M1b. a refused inference key is visible in the snapshot ===============
+// `/v1/models` is the ONLY read that exercises the inference key, so a 401
+// from it is the only signal that the key itself is dead. Before F3 that
+// signal was swallowed by a `.catch(() => null)` and the snapshot looked
+// perfectly healthy: `hasApiKey: true`, the persisted roster still listing
+// models, and the panel with nothing to say while every conversation 401'd.
+// This block pins the pairing — key still reported as stored, AND the
+// refusal reported alongside it — plus the soft-failure rule: a dead key
+// must not bury the quota sources that do not use it.
+{
+  const credentials = makeCredentials(storedGrant(jwtExpiring(120), "r", 7200));
+  credentials.refs.set("AGNES_TOKEN_PLAN_API_KEY", "sk-test-key-for-routing-only");
+  const net = await loginNetwork();
+  const refusingStub = async (url, init) => {
+    const target = String(url);
+    if (target.includes("/v1/models") || target.includes("/models")) {
+      return new Response(JSON.stringify({ error: { message: "invalid api key" } }),
+        { status: 401, headers: { "content-type": "application/json" } });
+    }
+    return net(url, init);
+  };
+  await withNetwork(refusingStub, async () => {
+    const call = await mount(credentials, { writeImageModelIds: true });
+    const snapshot = await call(SNAPSHOT_PATH, makeRequest());
+    const llm = snapshot.payload.llm;
+    check("a refused catalogue still answers 200", snapshot.statusCode === 200,
+      String(snapshot.statusCode));
+    check("a refused key is reported with the code that makes it actionable",
+      llm?.catalogError?.source === "catalog" && llm?.catalogError?.code === CODE.KEY_REJECTED,
+      JSON.stringify(llm?.catalogError));
+    check("a refused key keeps its reason on the wire",
+      String(llm?.catalogError?.message ?? "").includes("401"),
+      String(llm?.catalogError?.message));
+    // The pairing that WAS the defect: the key is still stored, so the panel
+    // must not conclude "no key" — it must say "stored, and refused".
+    check("a refused key is still reported as stored",
+      llm?.hasApiKey === true && llm?.keySource === "credentials", JSON.stringify(llm?.hasApiKey));
+    // The old flag and the new reason must agree: `catalogAvailable` is
+    // `Array.isArray(catalog)`, so a refusal turns it false — and the roster
+    // then falls back to whatever was persisted (design: a background read
+    // never blanks the picker). Before F3 that fallback was the ONLY trace of
+    // the refusal, and it looks exactly like a healthy snapshot.
+    check("a refused catalogue reports catalogAvailable:false, with the reason beside it",
+      snapshot.payload.catalogAvailable === false && llm?.catalogError !== null,
+      JSON.stringify({ available: snapshot.payload.catalogAvailable, error: llm?.catalogError }));
+    // Soft-failure discipline (red line 6): the catalogue is one source among
+    // five, so its refusal must not take the quota block down with it.
+    check("a refused key does not bury the quota block",
+      snapshot.payload.ok === true && snapshot.payload.quota?.consoleConnected === true,
+      JSON.stringify({ ok: snapshot.payload.ok, connected: snapshot.payload.quota?.consoleConnected }));
+    check("the refusal never echoes the key",
+      !JSON.stringify(snapshot.payload).includes("sk-test-key-for-routing-only"));
+  }).catch((error) => fail("M1b: a refused inference key is visible", error));
 }
 
 // === M2. the snapshot reports the full video catalog and names the 2.5 ======

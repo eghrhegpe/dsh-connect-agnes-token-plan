@@ -189,7 +189,13 @@ export const CLIENT_CODE = Object.freeze({
   /** The platform refused without naming a reason this table knows. */
   LOGIN_FAILED: "login_failed",
   /** The platform locked the account after repeated failures. */
-  ACCOUNT_LOCKED: "account_locked"
+  ACCOUNT_LOCKED: "account_locked",
+  /**
+   * The gateway refused the inference key on `/v1/models`. Branched on outside
+   * the tables because the answer is behaviour, not text: a rejection is the
+   * one catalogue failure that means every conversation is about to fail too.
+   */
+  KEY_REJECTED: "key_rejected"
 });
 
 /**

@@ -189,6 +189,17 @@ export interface LlmData {
   enabledModelIds?: string[];
   quotaBlockedModelIds?: string[];
   providerError?: string;
+  /**
+   * Why the model-catalogue read failed, or `null` when it worked. Same shape
+   * as the quota block's failure entries (`{source, code, message}`), so the
+   * panel reads one vocabulary.
+   *
+   * `code: "key_rejected"` is the actionable one: the platform refused the
+   * inference key (401/403), which means every conversation on this provider is
+   * about to fail too. Anything else is a transient catalogue hiccup and is
+   * shown as a quiet note rather than an alarm.
+   */
+  catalogError?: { source?: string; code?: string | null; message?: string } | null;
   drawEnabled?: boolean;
   drawSource?: string;
   drawModel?: string;
@@ -287,9 +298,14 @@ export const AGNESCODE_TIER_OK = "ok";
  *
  * `ok`, `enabled`, `switchSource` and the harvest diagnosis are the route's
  * own answers; the credential half (`loggedIn` / `nickname` / `bffBase` /
- * `expiresAtMs`) is what the harvested session file contained, and
+ * `expiresAtMs` / `expired`) is what the harvested session file contained, and
  * `balance` / `models` / `enabledModelIds` are the credit pool and roster.
  * Nothing here is a value worth protecting — the route never sends the token.
+ *
+ * `expired` is computed Host-side (`agnescodeStore.state()`), not derived from
+ * `expiresAtMs` here: the panel must not own a second copy of the expiry rule.
+ * It is optional so a Host that predates it reads as "not expired" rather than
+ * crashing the tab.
  */
 export interface AgnescodeStateData {
   ok?: boolean;
@@ -299,6 +315,7 @@ export interface AgnescodeStateData {
   nickname?: string;
   bffBase?: string;
   expiresAtMs?: number | null;
+  expired?: boolean;
   balance?: {
     totalBalance?: number;
     timeSensitiveBalance?: number;

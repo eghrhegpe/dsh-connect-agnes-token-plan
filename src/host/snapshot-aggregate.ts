@@ -391,6 +391,13 @@ async function fetchQuotaSources({
 }) {
   const resolveApiKey = async () => (await apiKeyStore.resolve()).value;
   const { startDate, endDate } = usageWindow(settings.usageDays);
+  // The catalogue is the ONLY source that exercises the inference key, so its
+  // refusal is the only signal that the key itself is dead. The value still
+  // degrades to `null` (the panel keeps the roster it already persisted), but
+  // the REASON rides along to the `llm` block — otherwise a revoked key is
+  // invisible: `hasApiKey` stays true, the old roster still lists models, and
+  // the only symptom is a 401 inside a conversation.
+  const catalogFailure: { error: (Error & { code?: unknown }) | null } = { error: null };
   // THE AUTH PROBE — one source among five, fetched with the others IN
   // PARALLEL (2026-10-10; it used to run first and alone).
   //
@@ -461,10 +468,14 @@ async function fetchQuotaSources({
     // Optional: a missing API key degrades the model lists, not the quota.
     (async () => {
       const apiKey = await resolveApiKey();
-      return apiKey === "" ? null : fetchModelCatalog(settings, 3600_000, cache, inflight, apiKey).catch(() => null);
+      if (apiKey === "") return null;
+      return fetchModelCatalog(settings, 3600_000, cache, inflight, apiKey).catch((error: unknown) => {
+        catalogFailure.error = (error instanceof Error ? error : new Error(String(error))) as Error & { code?: unknown };
+        return null;
+      });
     })()
   ]);
-  return { overview, series, subscription, plans, catalog };
+  return { overview, series, subscription, plans, catalog, catalogError: catalogFailure.error };
 }
 
 /**
@@ -531,7 +542,7 @@ export async function buildSnapshotBody({
   videoModelId?: () => Promise<string | null>;
 }) {
   const providerState = publisher.state;
-  const { overview, series, subscription, plans, catalog } = await fetchQuotaSources({
+  const { overview, series, subscription, plans, catalog, catalogError } = await fetchQuotaSources({
     settings,
     cache,
     inflight,
@@ -602,14 +613,17 @@ export async function buildSnapshotBody({
   const videoResolution = resolveSwitchEnabled(await readPanelValue(videoSwitch), settings.videoEnabled);
   // The curated allow-list is read on every poll, not only when a fresh
   // catalogue arrived: a /models save must reach the picker even on a poll
-  // that serves a cached catalogue.
+  // that serves a cached catalogue. It is read for the RESPONSE — the write
+  // below deliberately passes `undefined` ("keep the stored list") instead, so
+  // a save landing between this read and the write cannot be overwritten by
+  // the stale copy a poll happens to be holding.
   const enabledIds = await catalogStore.listEnabledIds().catch(() => providerState.enabledIds);
   // The only side effects `buildSnapshotBody` triggers (catalogue persist +
   // provider republish) go through the ONE writer in `catalog-refresh.ts` —
   // the same object the Host's tick calls, serialized there so a poll and a
   // tick cannot both pass the signature check. Everything above this point is a
   // pure projection of the console results.
-  const { offered } = await catalogEffects.run(catalog, enabledIds, unavailableModelIds);
+  const { offered } = await catalogEffects.run(catalog, undefined, unavailableModelIds);
   // The counts describe the OFFER, not the catalogue: the adapter is built
   // from the allow-list-filtered entries, so a panel line that quoted the raw
   // count would claim to have registered models that were ticked off.
@@ -618,6 +632,13 @@ export async function buildSnapshotBody({
   // the key value.
   const llmStatus = {
     ...keyState,
+    // Why the catalogue read failed, or `null` when it worked. This is the ONE
+    // read that exercises the inference key, so it is the only place a revoked
+    // key can surface: without it `hasApiKey` stays true, the persisted roster
+    // still lists models, and the panel has nothing to say while every
+    // conversation 401s. Shaped like the quota block's failure entries, so the
+    // panel reads one vocabulary rather than two.
+    catalogError: catalogError === null ? null : oneFailure("catalog", catalogError),
     registerProvider: providerSwitch.enabled,
     registerSource: providerSwitch.source,
     llmAvailable: providerState.llmAvailable,

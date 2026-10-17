@@ -346,6 +346,33 @@ async function rejects(fn) {
     fail("defineDrawTool success path", error);
   }
   {
+    // A base64 answer must CARRY its bytes. The result used to drop `b64Json`
+    // on the floor while the hint told the agent to render a `data:` URI it had
+    // never been given — and the parser suite pinned the extraction, which is
+    // where the false confidence came from.
+    const b64Tool = makeTool({
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ model: "Agnes-u1-fast", data: [{ b64_json: "iVBORw0KGgo" }] })
+      })
+    });
+    const inline = await b64Tool.execute({ prompt: "a cat", return_base64: true });
+    check("a base64 answer carries its payload in `url` as a data URI",
+      inline.url === "data:image/png;base64,iVBORw0KGgo", inline.url);
+    check("... and the hint no longer asks for bytes the result lacks",
+      !/请以 data:image/.test(inline.hint) && /url 字段/.test(inline.hint), inline.hint);
+  }
+  {
+    // Neither field present: say so, rather than render an image that is not
+    // there. The draw already spent its quota, so the model id still travels.
+    const emptyTool = makeTool({
+      fetchImpl: async () => ({ ok: true, json: async () => ({ model: "Agnes-u1-fast", data: [{}] }) })
+    });
+    const empty = await emptyTool.execute({ prompt: "a cat" });
+    check("an answer with neither url nor b64_json is reported as such",
+      empty.url === "" && /既没返回 url 也没返回 b64_json/.test(empty.hint), empty.hint);
+  }
+  {
     const message = await rejects(() => makeTool({ resolveApiKey: async () => "" }).execute({ prompt: "a cat" }));
     check("a missing key degrades with the actionable message", /AGNES_TOKEN_PLAN_API_KEY/.test(message ?? ""), message);
   }

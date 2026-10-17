@@ -14,6 +14,7 @@ import { rosterIds } from "./models.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { Radio, Switch } from "./switch.ts";
+import { CLIENT_CODE } from "./snapshot.ts";
 import type { LlmData, LlmEchoPatch } from "./wire.ts";
 import { S } from "./styles.ts";
 
@@ -41,6 +42,19 @@ export function ProviderStatus({ llm, tt }: { llm?: LlmData | null; tt: Tt }): u
   rows.push(h("div", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" }, role: "status" }, sourceText));
   if (llm.ephemeral === true) {
     rows.push(h("div", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } }, tt("llm.ephemeral")));
+  }
+  // The catalogue is the ONLY read that exercises the inference key, so its
+  // refusal is the only place a revoked key can be seen: `hasApiKey` stays
+  // true and the persisted roster still lists models, which is why this used
+  // to be invisible until a conversation 401'd. A rejection is an alarm; any
+  // other catalogue failure is a quiet note (the key may be perfectly fine).
+  const catalogError = llm.catalogError ?? null;
+  if (catalogError !== null && catalogError.code === CLIENT_CODE.KEY_REJECTED) {
+    rows.push(h("div", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" }, role: "alert" },
+      tt("llm.keyRejected")));
+  } else if (catalogError !== null) {
+    rows.push(h("div", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary)" }, role: "status" },
+      format(tt("llm.catalogFailed"), { error: String(catalogError.message ?? "") })));
   }
   return h("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 } }, ...rows);
 }

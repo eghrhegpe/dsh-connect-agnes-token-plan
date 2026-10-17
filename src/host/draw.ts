@@ -319,7 +319,7 @@ export function defineDrawTool({
       size: { type: "string", description: "Image size: '2K' (2048x2048) or '4K' (4096x4096) tier constant, or exact WIDTHxHEIGHT (32-multiple, 512-4096, max 3:1 ratio), e.g. 2720x1536 — live-verified on the Agnes endpoint (probe ⑤)" },
       ratio: { type: "string", description: "Aspect ratio: 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2 (default 1:1); forwarded as extra_body.ratio" },
       image: { type: "array", items: { type: "string" }, description: "Reference image URL(s) / Data URIs for img2img; forwarded as extra_body.image" },
-      return_base64: { type: "boolean", description: "Request Base64 output instead of a URL (text2img only); forwarded as extra_body.return_base64" },
+      return_base64: { type: "boolean", description: "Request Base64 output instead of a URL (text2img only); forwarded as extra_body.return_base64. The bytes come back in the result's `url` field as a data: URI, which means they enter the conversation context — a 2K PNG is several MB of text. Leave it off unless you specifically need the bytes inline." },
       // The sentence states the platform's limit in words; `buildDrawBody`
       // hard-codes `n: 1` rather than reading it from here. That used to be
       // backed by an exported `DRAW_MAX_IMAGES` constant — which no longer had a
@@ -386,13 +386,23 @@ export function defineDrawTool({
       }
       const ids = imageGenModelIds(entries);
       const modelList = ids.length > 0 ? `\n可用出图模型: ${ids.join(", ")}` : "";
+      // The base64 branch used to say "render this as a data URI" while the
+      // payload stayed in `b64Json` and never reached the result: the agent was
+      // told to display bytes it had never been given (and `parseDrawResponse`
+      // extracting them made the parser suite green, which is where the false
+      // confidence came from). The bytes now ride in `url` as a data URI — the
+      // one field the result has — so "asked for base64" means "got base64".
+      const inline = result.b64Json !== "" ? `data:image/png;base64,${result.b64Json}` : "";
+      const source = result.url !== "" ? result.url : inline;
       const hint = result.url !== ""
         ? `图片已生成!\n模型: ${result.model}\nURL: ${result.url}\n请直接输出 Markdown: ![图](${result.url})${modelList}`
-        : `图片已生成!\n模型: ${result.model}\n(base64 图片数据，请以 data:image/png;base64,… 形式在对话中展示)${modelList}`;
+        : inline !== ""
+          ? `图片已生成!\n模型: ${result.model}\n平台按 return_base64 返回了 base64，已放进结果的 url 字段（data URI）。它已经在上下文里，不要再整段贴回对话；要落盘就写入文件，要展示就直接引用该字段。${modelList}`
+          : `图片已生成，但平台既没返回 url 也没返回 b64_json——模型: ${result.model}；重试时去掉 return_base64。${modelList}`;
       return {
         source: "agnes",
         model: result.model,
-        url: result.url,
+        url: source,
         prompt,
         hint
       };

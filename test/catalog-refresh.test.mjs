@@ -27,7 +27,7 @@
  * injected, and the timer is faked, so every branch is driven deterministically
  * with no sleeps and no peers to resolve.
  */
-import { createCatalogEffects, CATALOG_CACHE_MS } from "../src/host/catalog-refresh.ts";
+import { createCatalogEffects, CATALOG_CACHE_MS, CATALOG_RETRY_BASE_MS, CATALOG_RETRY_MAX_MS, retryDelayMs } from "../src/host/catalog-refresh.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -269,6 +269,45 @@ function harness(options = {}) {
         h.publisher.publishes.length === publishesAfterFirst + 1 && h.catalogStore.persisted.length === 1,
         `publishes=${h.publisher.publishes.length} persisted=${h.catalogStore.persisted.length}`);
     }
+    // A8: a background caller asserts the CATALOGUE, never the allow-list.
+    // `undefined` means "keep the stored list", so a refresh that started
+    // before a panel save cannot write the stale copy it was holding over it.
+    {
+      const h = harness({ catalogStore: makeCatalogStore({ enabledIds: ["Agnes-Vision"] }) });
+      await h.effects.run(CATALOG_A, undefined, []);
+      check("A8 an undefined allow-list is forwarded as undefined, not as a list",
+        h.catalogStore.persisted.length === 1 && h.catalogStore.persisted[0].enabledIds === undefined,
+        JSON.stringify(h.catalogStore.persisted[0]?.enabledIds));
+      check("A8b ... and the offer still quotes the STORED list",
+        JSON.stringify(h.publisher.publishes[0]?.enabledIds) === '["Agnes-Vision"]',
+        JSON.stringify(h.publisher.publishes[0]?.enabledIds));
+    }
+
+    // A9: the same run, but the save lands while the write is in flight. This is
+    // the lost-update shape the tick used to open: a list read before the write
+    // and asserted after it. The background path must not be able to do that.
+    {
+      let releaseReplace;
+      const gate = new Promise((resolve) => { releaseReplace = resolve; });
+      const store = makeCatalogStore({
+        async onReplace(entries, enabledIds) {
+          // The save lands in the window between "the store read the record"
+          // and "the store wrote it".
+          await gate;
+          store.persisted.push({ entries, enabledIds });
+          return true;
+        }
+      });
+      const h = harness({ catalogStore: store });
+      const running = h.effects.run(CATALOG_A, undefined, []);
+      await settle();
+      await store.setEnabledIds(["Agnes-Lite"]);   // the panel's save
+      releaseReplace();
+      await running;
+      check("A9 a save landing mid-write is not overwritten by the background run",
+        store.persisted[0]?.enabledIds === undefined,
+        JSON.stringify(store.persisted[0]?.enabledIds));
+    }
   } catch (error) { fail("A: run — the one writer", error); }
 }
 
@@ -329,12 +368,16 @@ function harness(options = {}) {
 
     // B5: a gateway failure is a soft failure. The persisted catalogue and the
     // live registration must survive it untouched (ARCHITECTURE §5 invariant 3).
+    // It is no longer SILENT, though: one line per failure STREAK is what makes
+    // the backoff visible instead of looking like a quiet Host (D4 pins the
+    // "once, not per attempt" half).
     {
       const h = harness({ fetchThrows: true });
       const threw = await h.effects.refresh().then(() => null, (error) => error);
       check("B5 a failing gateway does not reject the caller",
-        threw === null && h.logs.length === 0,
-        String(threw ?? "no throw") + ` logs=${h.logs.length}`);
+        threw === null, String(threw ?? "no throw"));
+      check("B5c a failing gateway is reported exactly once",
+        h.logs.length === 1, `logs=${JSON.stringify(h.logs)}`);
       check("B5b a failing gateway leaves the persisted catalogue alone",
         h.catalogStore.persisted.length === 0 && h.publisher.publishes.length === 0,
         `persisted=${h.catalogStore.persisted.length} published=${h.publisher.publishes.length}`);
@@ -359,6 +402,22 @@ function harness(options = {}) {
       check("B7 an unreadable allow-list falls back to the live one",
         h.publisher.publishes.length === 1 &&
           JSON.stringify(h.publisher.publishes[0]?.enabledIds) === '["Agnes-Lite"]',
+        JSON.stringify(h.publisher.publishes[0]?.enabledIds));
+    }
+    // B8: the tick asserts the catalogue, never the allow-list. It has no
+    // curation of its own, so the only list it could pass is one it read
+    // earlier — which is exactly the stale copy a save can land behind.
+    {
+      const h = harness({
+        cachedAt: Date.now() - (CATALOG_CACHE_MS + 60_000),
+        catalogStore: makeCatalogStore({ enabledIds: ["Agnes-Vision"] })
+      });
+      await h.effects.refresh();
+      check("B8 refresh forwards 'keep the stored list', not a copy it read",
+        h.catalogStore.persisted.length === 1 && h.catalogStore.persisted[0].enabledIds === undefined,
+        JSON.stringify(h.catalogStore.persisted[0]?.enabledIds));
+      check("B8b ... and the offer still quotes the stored list",
+        JSON.stringify(h.publisher.publishes[0]?.enabledIds) === '["Agnes-Vision"]',
         JSON.stringify(h.publisher.publishes[0]?.enabledIds));
     }
   } catch (error) { fail("B: refresh — the read half", error); }
@@ -459,6 +518,126 @@ function harness(options = {}) {
   } catch (error) { fail("C: start — the Host's clock", error); } finally {
     globalThis.setInterval = realSetInterval;
     globalThis.clearInterval = realClearInterval;
+  }
+}
+
+// === D. `refresh` — a refused gateway backs off ==========================
+// `sharedFetch` caches only SUCCESSES, so a failing fetch leaves the entry as
+// stale as it was. Without a backoff the "cache is fresh" exit above can never
+// fire and the tick's own interval becomes the retry rate: 120 requests an hour
+// at the default cadence, 2,880 a day, forever, against a gateway that is
+// already saying no. The clock is faked so the schedule is observable.
+{
+  const realNow = Date.now;
+  try {
+    const runHour = async (h) => {
+      // One simulated hour of ticks at the default 30 s cadence.
+      for (let elapsed = 0; elapsed < 3_600_000; elapsed += 30_000) {
+        await h.effects.refresh();
+        clock += 30_000;
+      }
+    };
+    let clock = 50_000_000;
+    Date.now = () => clock;
+
+    // D1: the next tick after a failure does not fetch.
+    {
+      const h = harness({ cachedAt: null, fetchThrows: true });
+      await h.effects.refresh();
+      await h.effects.refresh();
+      check("D1 a refused gateway is not retried on the very next tick",
+        h.fetchCalls.length === 1, `fetch calls = ${h.fetchCalls.length}`);
+      clock += CATALOG_RETRY_BASE_MS;
+      await h.effects.refresh();
+      check("D1b the retry fires once the first backoff has elapsed",
+        h.fetchCalls.length === 2, `fetch calls = ${h.fetchCalls.length}`);
+    }
+
+    // D2: the wait doubles, so a persistent refusal cannot hold the tick rate.
+    {
+      const h = harness({ cachedAt: null, fetchThrows: true });
+      await h.effects.refresh();                 // failure 1 → wait 30 s
+      clock += CATALOG_RETRY_BASE_MS;
+      await h.effects.refresh();                 // failure 2 → wait 60 s
+      clock += CATALOG_RETRY_BASE_MS;            // 30 s into a 60 s wait
+      await h.effects.refresh();
+      check("D2 the second wait is twice the first",
+        h.fetchCalls.length === 2, `fetch calls = ${h.fetchCalls.length}`);
+      clock += CATALOG_RETRY_BASE_MS;            // exactly 60 s
+      await h.effects.refresh();
+      check("D2b ... and it fires exactly at the doubled delay",
+        h.fetchCalls.length === 3, `fetch calls = ${h.fetchCalls.length}`);
+    }
+
+    // D3: the number this whole section exists for.
+    {
+      const h = harness({ cachedAt: null, fetchThrows: true });
+      await runHour(h);
+      check("D3 an hour of a dead gateway costs at most 8 attempts, not 120",
+        h.fetchCalls.length <= 8, `fetch calls in one hour = ${h.fetchCalls.length}`);
+    }
+
+    // D4: the streak is announced once — a line per attempt would trade a
+    // request flood for a log flood.
+    {
+      const h = harness({ cachedAt: null, fetchThrows: true });
+      await h.effects.refresh();
+      await h.effects.refresh();
+      clock += CATALOG_RETRY_BASE_MS;
+      await h.effects.refresh();
+      check("D4 a failure streak is logged exactly once",
+        h.logs.length === 1, `logs=${JSON.stringify(h.logs)}`);
+      check("D4b the line says it is backing off, and for how long",
+        /backing off/.test(h.logs[0] ?? "") && /30s/.test(h.logs[0] ?? ""), String(h.logs[0]));
+    }
+
+    // D5: a success resets the schedule — the next failure starts at the base
+    // delay again, not at wherever the old streak had climbed to.
+    {
+      const h = harness({ cachedAt: null });
+      h.effects = createCatalogEffects({
+        settings: makeSettings(),
+        cache: new Map(),
+        inflight: new Map(),
+        apiKeyStore: makeKeyStore("sk-test"),
+        catalogStore: makeCatalogStore(),
+        publisher: makePublisher(),
+        logger: { warn: (message) => h.logs.push(message) },
+        fetchCatalog: async (...args) => {
+          h.fetchCalls.push(args);
+          // Fail twice, then succeed, then fail again.
+          if (h.fetchCalls.length <= 2 || h.fetchCalls.length === 4) throw new Error("gateway down");
+          return CATALOG_A;
+        }
+      });
+      await h.effects.refresh();                 // fail 1 → 30 s
+      clock += CATALOG_RETRY_BASE_MS;
+      await h.effects.refresh();                 // fail 2 → 60 s
+      clock += 60_000;
+      await h.effects.refresh();                 // success → reset
+      check("D5 a success logs the recovery",
+        h.logs.some((line) => /recovered after 2/.test(line)), JSON.stringify(h.logs));
+      // The cache is now fresh, so the next failure has to come from an expired
+      // entry — advance past it, then let the fake fail once more.
+      clock += CATALOG_CACHE_MS;
+      await h.effects.refresh();                 // fail 3
+      const before = h.fetchCalls.length;
+      await h.effects.refresh();                 // still inside the NEW 30 s wait
+      check("D5b the schedule restarts at the base delay after a success",
+        before === 4 && h.fetchCalls.length === 4, `fetch calls = ${h.fetchCalls.length}`);
+    }
+
+    // D6: the schedule is capped, and the cap is what bounds recovery time.
+    {
+      check("D6 the delay doubles up to the cap and stays there",
+        retryDelayMs(1) === CATALOG_RETRY_BASE_MS &&
+          retryDelayMs(2) === 2 * CATALOG_RETRY_BASE_MS &&
+          retryDelayMs(99) === CATALOG_RETRY_MAX_MS &&
+          retryDelayMs(1e9) === CATALOG_RETRY_MAX_MS,
+        [retryDelayMs(1), retryDelayMs(2), retryDelayMs(99), retryDelayMs(1e9)].join(","));
+    }
+  } catch (error) { fail("D: refresh — the backoff", error); } finally {
+    Date.now = realNow;
   }
 }
 
