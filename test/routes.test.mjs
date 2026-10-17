@@ -198,6 +198,10 @@ async function mount(credentials, config = {}, deps = {}) {
     get: (s) => services[s],
     emit: deps.emit ?? (() => {}),
     effect: () => () => {},
+    // `HostCtx.logger` is REQUIRED (types.ts), so the fake has to carry one:
+    // `apply` reads it for the mount-time config warning, and a fake that
+    // omitted it would make a typo'd row crash here instead of logging.
+    logger: deps.logger ?? { warn() {} },
     webServer: { register(spec) { handlers.set(spec.path, spec.handler); return () => {}; } }
   }, { consoleBase: "https://console.test", cacheSeconds: 5, ...config }, {
     loadAdapterModule: deps.loadAdapterModule,
@@ -1732,6 +1736,36 @@ async function withNetwork(stub, body) {
 }
 
 // The Host routes are exercised against a stubbed console; nothing here may
+// === H. the mount-time unknown-key warning actually reaches the log ======
+// `config.test.mjs` pins the DETECTOR (which keys are unknown); this pins the
+// WIRE. Without it the detector could be perfect and the message still never be
+// written — the repo's "naming a guardian instead of checking it" trap
+// (PITFALLS §39), which is exactly what a log line is: an assertion nobody
+// asserts. The control case matters as much as the positive one: a clean row
+// that logged a warning would train operators to ignore the line.
+{
+  const warns = [];
+  const quiet = [];
+  const mountWith = async (config, sink) => {
+    const host = await import(`../src/host/index.ts?unknown=${Math.random()}`);
+    host.apply({
+      get: () => null,
+      emit: () => {},
+      effect: () => () => {},
+      logger: { warn: (message) => sink.push(String(message)) },
+      webServer: { register() { return () => {}; } }
+    }, { consoleBase: "https://console.test", ...config });
+  };
+  await mountWith({ drawEnabledd: true }, warns);
+  check("an unknown config key is named in the Host log at mount",
+    warns.some((line) => line.includes("drawEnabledd")), JSON.stringify(warns));
+  check("the warning is logged once, not once per poll or per route",
+    warns.filter((line) => line.includes("drawEnabledd")).length === 1, JSON.stringify(warns));
+
+  await mountWith({ drawEnabled: true, pollSeconds: 45 }, quiet);
+  check("a clean row logs no config warning", quiet.length === 0, JSON.stringify(quiet));
+}
+
 // reach the real one. See the same guard in test/auth.test.mjs.
 const unstubbed = releaseNetworkGuard();
 restoreHostEnv();

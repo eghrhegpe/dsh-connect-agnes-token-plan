@@ -46,7 +46,8 @@
 - `agnes-auth.ts`：**一跳**账号密码登录（`POST {consoleBase}/api/user/login`）+ 失败分类 + `Retry-After` 解析。`refresh()` 永远抛 `NO_REFRESH_TOKEN`，store 靠这个码落到重登。没有 OIDC / PKCE / JWE。
 - `console-client.ts`：控制台与模型目录的网络请求，带信封解包（`{code,message,data}`）、短生命周期缓存与 single-flight（并发轮询只发一次请求）。
 - `parsers.ts`：响应解析层——字符串数值 / epoch / ISO 归一、`checkShape` 漂移检测、`parseUsageSeries` 分桶求和、`quotaWindows` 四窗口、`matchCurrentPlan` 套餐匹配、`identifyVisionModel` 视觉模型识别。
-- `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 四窗口与累计用量组装 / vision 识别 / `llm` 状态块组装。HTTP 面在 `routes/` 家族（见下条），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。
+- `snapshot-aggregate.ts`：快照路由的数据聚合（peer-free）——并行取数 / 解析 / 形状漂移 / 四窗口与累计用量组装 / vision 识别 / `llm` 状态块组装。HTTP 面在 `routes/` 家族（见下条），聚合逻辑在此，`test/routes.test.mjs` 可无容器地钉住每个分支。它**不再写盘、不再发布**：目录的落盘与 provider 重建已移到 `catalog-refresh.ts`。
+- `catalog-refresh.ts`：模型目录的**单一写入器 + 宿主自己的节拍**（peer-free，见 [ADR-015](./ADR.md)）。`run` 是「签名判等 → 落盘 → 只在落盘成功时推进签名 → 重建注册」的唯一入口（路由与 tick 共用同一个实例，内部串行链保证两次写入不交错）；`start` 按 `pollSeconds` tick，成本由 `CATALOG_CACHE_MS`（1 小时）界定——缓存新鲜时只是一次 `Map` 查找，没配推理 Key 时直接返回（后台零流量）。行为由 `test/catalog-refresh.test.mjs` 冻结。
 - `routes.ts` + `routes/`：路由的门面与分册（2026-10 拆分，照 token-store 术式先冻结再搬——`routes.test.mjs` / `agnescode.test.mjs` / `wiring.test.mjs` 拆分前后计数一致零漂移）。`routes.ts` 只保留 `registerRoutes` 门面（wiring 注入、注册顺序、每个路由一个 `off()` 回执）；子目录按域拆成 `http`（`writeJson`、同源闸拒答、限额 body 读取等共享原语）/ `snapshot` / `account` / `api-key` / `provider` / `models` / `tool-switch`（draw 与 video 共用一份 handler 体）/ `agnescode`（switch / harvest，route 作用域状态）八块。
 - `trace.ts`：登录 trace 落盘（成功/失败，值级脱敏，仅留最近 20 个，权限 0600）。
 - `util.ts`：共享工具函数（`str` / `num` / `obj` 等类型安全读取器）。
@@ -76,6 +77,8 @@ GET /api/dsh-connect-agnes-token-plan/snapshot   ← Host 半边
    │  2) 五源同一 Promise.all 并行取：overview（认证探针，失败不再致命）/
    │     series / subscription / 公开 plans / GET /v1/models（一律可降级）
    │  3) 按 consoleBase 等配置聚合，Host 缓存 cacheSeconds 秒
+   │  4) 本次取到的目录若变了 → 落盘 + 重建 provider 注册（与宿主自己的
+   │     tick 共用同一个写入器，见下段「目录的节拍归宿主」）
    ▼
 {snapshot}  ──HTTP 200，body 内 ok:true/false 区分成败──►
    │
@@ -107,6 +110,8 @@ client.js: interpretSnapshot(body) → {data, error}
 **为什么 `overview` 与其余取数并行、却仍不是唯一致命的**：认证探针的角色没变——它的结果是 `quota.consoleConnected`，401 时 store 换新令牌，各源带着活令牌重试。变的是执行形状：它曾**串行**放在批量之前（「批量拿着活令牌出门」的交换），代价是账号失效时登录超时链（15 s）与批量超时链（15 s）叠加——单次快照最坏 30 s 起（401-dance 全超时链 ~45 s），而 API tab 的保存/开关切反馈又走这条同路由的全量 reload（回显耦合），AgnesCode 侧另加一次 30 s + 30 s 的顺序 BFF 读，两个 tab 的操作反馈全被拖在慢路径后面。现在五源并行：最坏从「和」压到「max」；串行给的两样好处各自保留——换新靠 `getToken` 单飞（`token-store.ts`，并发 401 收敛成一次 sign-in，防锁号纪律不变），`not_configured` 仍是各源本地失败、零往返。`test/routes.test.mjs` B 组钉住新形状：每个认证源至多出示一次死令牌、每次轮询至多一次登录。账本见 [ADR-014](./ADR.md)。
 
 变的是它**不再把失败变成整个快照的失败**。它曾经是唯一致命源：失败即冒泡到路由的 catch，整个 body 走 `ok:false`，面板只剩登录表单——把 API Key tab（不读控制台）和 AgnesCode tab（连的是另一个上游、有自己的凭据）一起埋掉，正是 §5 不变量 3 禁止的形状。现在它失败只意味着 `quota.consoleConnected:false`：`quota.totals` 是 `null` 而不是零值块（否则一次读取失败会被渲染成「0 次请求」——把失败伪装成测量），面板在额度 tab 内点名「控制台未连接」，另外两个 tab 一个点击之外。
+
+**目录的节拍归宿主，不归浏览器**：`/v1/models` 的「取 → 落盘 → 重建注册」整条链在 `catalog-refresh.ts`，宿主按 `pollSeconds` 自己 tick。此前整条链挂在 `GET /snapshot` 上，于是浏览器就是宿主的时钟——没有面板开着、也没有会话跑在 `agnes-*` 模型上时没人轮询，平台新上的模型在进程活着的整段时间里都看不见，重启才恢复；两个客户端同时轮询时还会各自读到旧签名，把同一次目录变更落盘两次、发布两次。现在写入只有 `run` 一个入口（路由与 tick 共用同一个实例，内部串行），tick 的成本由缓存 TTL 而不是由节拍决定：`CATALOG_CACHE_MS`（1 小时）内的一次 tick 只是一次 `Map` 查找，所以面板关着时最多每小时一次 `/v1/models`，面板开着时两边命中同一条缓存条目（请求数不增）。它只读推理 Key、不碰控制台（不登录、不进节流窗口），因此没有锁号暴露面；没配 Key 时在「无 Key」出口直接返回，后台零流量。账本见 [ADR-015](./ADR.md)。
 
 ---
 

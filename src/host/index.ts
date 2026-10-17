@@ -14,6 +14,7 @@
  *   - `console-client.ts` console/catalog fetch with cache + single-flight
  *   - `parsers.ts`        response normalization + shape-drift detection
  *   - `snapshot-aggregate.ts` the snapshot body's data aggregation
+ *   - `catalog-refresh.ts` the catalogue's single writer + the Host's tick
  *   - `provider-publish.ts`  the provider registration state machine
  *   - `state-store.ts`    atomic state-file primitives for the three stores
  *   - `trace.ts`          login-trace persistence (already sanitized upstream)
@@ -28,6 +29,7 @@
 
 import { createAuth } from "./agnes-auth.ts";
 import { createTokenStore } from "./token-store.ts";
+import { fetchModelCatalog } from "./console-client.ts";
 import { createFileThrottleStore } from "./throttle-store.ts";
 import { createFileCatalogStore } from "./catalog-store.ts";
 import { createFileProviderStore } from "./provider-store.ts";
@@ -40,6 +42,7 @@ import { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
 import { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
 import { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 import { createProviderPublisher } from "./provider-publish.ts";
+import { createCatalogEffects } from "./catalog-refresh.ts";
 import { emitAdaptersUpdated } from "./publish-core.ts";
 import { registerRoutes } from "./routes.ts";
 import { startSideEffects, teardown } from "./lifecycle.ts";
@@ -48,6 +51,7 @@ import { writeLoginTrace } from "./trace.ts";
 import {
   resolveSettings,
   resolveAuthOverrides,
+  unknownConfigKeys,
   CONFIG_DEFAULTS,
   isAdmitted,
   hostName,
@@ -99,8 +103,20 @@ export { catalogSignature } from "./provider-publish.ts";
 function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDeps = {}) {
   // A malformed row is reported through the snapshot rather than thrown out of
   // `apply`, which would take the whole plugin down at mount.
-  const { settings, configError: rowError } = resolveSettings(config);
+  const { settings, configError: rowError, unknownKeys } = resolveSettings(config);
   let configError = rowError;
+  // A key this row never reads is almost always a typo (`drawEnabledd`), and
+  // without this line it fails in the worst possible way: the feature simply
+  // stays off and nothing anywhere says why. There is no DSH Config schema to
+  // reject it at the boundary, so the mount is the last place that can.
+  //
+  // Logged, never fatal: a retired key still sitting in an older patch row must
+  // not blank the panel (ARCHITECTURE.md §5). The nested `auth:` block stays a
+  // throw for the opposite reason — there the ignored value sends a password to
+  // the real platform.
+  if (unknownKeys.length > 0) {
+    ctx.logger.warn?.(`${name}: unknown config key(s) ignored: ${unknownKeys.join(", ")}`);
+  }
   // Build the auth instance once, at mount: after this every console call,
   // token renewal, and password seal uses the configured hosts. A malformed
   // override must fail loudly here rather than become a baffling network error
@@ -212,6 +228,32 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     publisher.publish(entries, enabledIds, unavailableModelIds);
   const releaseProvider = () => publisher.release();
 
+  // The catalogue's ONE writer (ADR-015): persist + republish, plus the
+  // background refresh that used to be a side effect of `GET /snapshot`.
+  //
+  // Before this, the browser was the Host's clock: with no panel open and no
+  // conversation on an `agnes-*` model nothing polled, so a model the platform
+  // added stayed invisible for the life of the process — and two open clients
+  // could drive the same control-plane write. The route still calls `run` with
+  // the catalogue it fetched (an open panel refreshes immediately); the tick is
+  // what keeps discovery alive when nobody is looking.
+  //
+  // Never reads the console (that is `token-store.ts`'s lockout discipline):
+  // this path needs only the inference key and is served by the gateway.
+  const catalogEffects = createCatalogEffects({
+    settings,
+    cache,
+    inflight,
+    apiKeyStore,
+    catalogStore,
+    publisher,
+    logger: ctx.logger,
+    // Defaulted here rather than inside the module for the reason
+    // `agnescodeFetch` is: `exactOptionalPropertyTypes` refuses to write a
+    // `| undefined` into an optional property.
+    fetchCatalog: deps.fetchCatalog ?? fetchModelCatalog
+  });
+
   // ── Desktop-app upstream provider: AgnesCode (爱思编程) — ROADMAP §6.3 ──
   // The plugin's FIRST "local-login-state harvest" line (workbuddy precedent
   // family): the credential is read from the desktop App's os_crypt session
@@ -305,6 +347,10 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     providerState,
     publishProvider,
     releaseProvider,
+    // The catalogue's single writer, shared by the snapshot route and the tick
+    // (ADR-015). One instance, so "one write at a time" is a property of the
+    // object rather than of the number of callers.
+    catalogEffects,
     resolveApiKey,
     visionPublish,
     logger: ctx.logger,
@@ -337,14 +383,27 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     videoFetch: deps.videoFetch ?? ((url, options) => fetch(url, options))
   });
 
+  // The Host's clock for the catalogue (ADR-015), started at the cadence the
+  // Host already declares to the panel — `pollSeconds` is "how often we look",
+  // and the two consumers agreeing on it is the point. What bounds the actual
+  // upstream rate is `CATALOG_CACHE_MS` (one hour), not this number: the tick
+  // is a cache check that only becomes a request when the hour is up.
+  //
+  // NOT started when the row is misconfigured: a broken row must not spawn a
+  // background poller pointed at whatever half-parsed settings survived, and
+  // the panel that explains the error is the one thing that must keep working.
+  const stopCatalogTick = configError === null
+    ? catalogEffects.start(settings.pollSeconds * 1_000)
+    : () => {};
+
   ctx.effect(() => {
     // The effect callback returns the unmount cleanup: Cordis runs it when
     // this fiber disposes, NOT at registration — a teardown that ran early
     // would unregister every route the moment they were created.
     return () => {
-      teardown(wiring, offs);
+      teardown(wiring, offs, stopCatalogTick);
     };
   }, `${name}: routes`);
 }
 
-export { apply, inject, name, resolveSettings, resolveAuthOverrides, CONFIG_DEFAULTS, hostName, isAdmitted };
+export { apply, inject, name, resolveSettings, resolveAuthOverrides, CONFIG_DEFAULTS, hostName, isAdmitted, unknownConfigKeys };

@@ -6,7 +6,7 @@
 ## 项目一句话
 
 DSH 插件：从 Agnes 控制台 API 读 Token Plan 额度，渲染到 Harness **Plugins 页的插件卡**（三个 tab：积分额度 / 接入 API / AgnesCode），外加会话输入框右侧的**用量胶囊**（`conversation.input.right` 座席，见事实 1）。算法参考历史上的游 `sensenova-usage-dashboard`（本地副本现已不在本机，恢复方式见 `docs/ARCHITECTURE.md` §1）；参照件容器 `upstream/` 的清单、版本与纪律见 `docs/REFERENCES.md`——**探测/参照产物一律落进 `upstream/`，绝不留在仓库根的未跟踪区**。
-Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/user/login`，无 OIDC / 无 refresh token，令牌死了就重登一次）；Client（React bundle）轮询本地路由。
+Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/user/login`，无 OIDC / 无 refresh token，令牌死了就重登一次）；Client（React bundle）轮询本地路由。**模型目录的节拍不在 client 那条链上**——它归宿主（`src/host/catalog-refresh.ts`，ADR-015）：关掉面板也每小时续一次，写入只有 `run` 一个入口。
 
 **三条事实**（写代码前先认清你在动哪一条）：
 
@@ -91,7 +91,9 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 3. **auth overrides 是 patch 行的顶层键**（`loginPath`、`loginTimeoutMs`、
    `fallbackExpiresInSeconds`），不是嵌套 `auth:` 块。嵌套会被静默忽略，面板拿着
    出厂默认值打到**真平台**——这条已经锁过一次号。`resolveAuthOverrides` 对嵌套块
-   直接抛错，别放宽它。
+   直接抛错，别放宽它。**其余未知键不抛错**（老 patch 的遗留键不该把面板打成配置
+   错误），但 `resolveSettings` 会把它们放进 `unknownKeys`，`apply` 在挂载时记一行
+   `unknown config key(s) ignored: …`——`drawEnabledd` 这类拼写错误至少不再静默。
 4. **`consoleOrigin` 必须是后端源站** `https://platform-backend.agnes-ai.cn`，不是控制台
    前端 `platform.agnes-ai.cn`。前端源站的 `/api/*` 是 Next.js 404 外壳，打到那里会以
    「路径不对」的样子失败，而真实原因是「主机不对」。后端源站字面量有**两处**且必须

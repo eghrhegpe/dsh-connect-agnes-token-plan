@@ -183,6 +183,60 @@ export const CONFIG_DEFAULTS = Object.freeze({
 });
 
 /**
+ * Every key this row actually reads: `CONFIG_DEFAULTS`, minus the one entry
+ * that is a VALUE HOLDER rather than an input, plus the three login overrides
+ * that live at the TOP level (red line 3) and the one retired spelling
+ * `resolveAuthOverrides` still honours.
+ *
+ * Derived from the defaults object rather than a second hand-kept list, so a
+ * new setting becomes "known" the moment it gets a default. The failure this
+ * prevents is a warning that fires on a key the plugin does read — a detector
+ * that cries wolf on `allowedHosts` would be worse than no detector, and it
+ * nearly shipped that way: `CONFIG_DEFAULTS.admittedHosts` is the *default* the
+ * resolver starts from, while the operator writes `allowedHosts`
+ * (`resolveAllowedHosts` reads only the latter). The rename is the one place
+ * where "has a default" and "is an input" disagree.
+ */
+const READ_KEYS: ReadonlySet<string> = new Set([
+  ...Object.keys(CONFIG_DEFAULTS).filter((key) => key !== "admittedHosts"),
+  // The operator-facing spelling of the host list (SETUP.md §3,
+  // `cordis.patch.yml`); `admittedHosts` above is deliberately NOT accepted, so
+  // a row that copies the internal name is told it was ignored.
+  "allowedHosts",
+  "loginPath",
+  "loginTimeoutMs",
+  "fallbackExpiresInSeconds",
+  // The pre-rename spelling of `loginTimeoutMs`: still honoured when it is the
+  // only one set, so flagging it as unknown would be a lie.
+  "requestTimeoutMs"
+]);
+
+/**
+ * Keys in the operator's patch row that this plugin never reads.
+ *
+ * There is no DSH Config schema (see `index.ts`), so a row arrives unvalidated
+ * and at that boundary a typo is indistinguishable from a key this plugin has
+ * never heard of. The cost of that was one-directional: `drawEnabledd: true`
+ * left the tool off with nothing said anywhere. This is the detection half
+ * only — `resolveSettings` hands the list to `apply`, which logs it once at
+ * mount.
+ *
+ * Deliberately NOT a `configError`. A row that still carries a retired key (the
+ * SenseNova-era OIDC knobs, `usageHours`) must not blank the panel: that is the
+ * "one module's absence must not bury the rest" shape (ARCHITECTURE.md §5), and
+ * it would turn an upgrade into a broken screen. Naming the key in the log is
+ * the honest middle — the typo is no longer silent, and a stale key is not
+ * fatal. `resolveAuthOverrides` still throws on a nested `auth:` block, which
+ * is a different class: there the ignored value sends a password to the real
+ * platform.
+ * @param config - the row's raw patch config.
+ * @returns {string[]} the unrecognised keys, sorted so the log line is stable.
+ */
+export function unknownConfigKeys(config: Record<string, unknown>): string[] {
+  return Object.keys(obj(config)).filter((key) => !READ_KEYS.has(key)).sort();
+}
+
+/**
  * Sanitize the operator's pseudo-multiplier map: keep only string keys and
  * finite positive numbers, preserving insertion order (matching is
  * first-key-wins). A non-object or empty input falls back to the shipped
@@ -234,7 +288,7 @@ export function clampInt(raw: unknown, def: number, min: number, max: number = I
  * @param {object} config - the row's raw patch config.
  * @returns {{settings: Settings, configError: string|null}}
  */
-export function resolveSettings(config: Record<string, unknown>): { settings: Settings; configError: string | null } {
+export function resolveSettings(config: Record<string, unknown>): { settings: Settings; configError: string | null; unknownKeys: string[] } {
   const source = obj(config);
   const consoleBase = str(source.consoleBase, CONFIG_DEFAULTS.consoleBase).replace(/\/+$/, "");
   const apiBase = str(source.apiBase, CONFIG_DEFAULTS.apiBase).replace(/\/+$/, "");
@@ -304,7 +358,10 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
         videoNumFrames: clampInt(source.videoNumFrames, CONFIG_DEFAULTS.videoNumFrames, 1),
         videoFrameRate: clampInt(source.videoFrameRate, CONFIG_DEFAULTS.videoFrameRate, 1)
       },
-      configError: null
+      configError: null,
+      // Reported even on the success path: a row can be perfectly valid and
+      // still carry a typo, and that is the common case.
+      unknownKeys: unknownConfigKeys(source)
     };
   } catch (error) {
     // Fall back to the shipped defaults so the panel still mounts and can show
@@ -340,7 +397,11 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
         imageModelIds: CONFIG_DEFAULTS.imageModelIds,
         visionModels: CONFIG_DEFAULTS.visionModels
       },
-      configError: error instanceof Error ? error.message : String(error)
+      configError: error instanceof Error ? error.message : String(error),
+      // Carried on the fallback too: when a row is already broken, the unknown
+      // key is often the reason, and dropping it here would hide the one clue
+      // that explains the config error.
+      unknownKeys: unknownConfigKeys(source)
     };
   }
 }

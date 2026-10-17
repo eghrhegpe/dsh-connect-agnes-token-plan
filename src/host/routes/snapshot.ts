@@ -47,7 +47,7 @@ function failureCode(error) {
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerSnapshotRoute(ctx: HostCtx, wiring: HostWiring) {
-  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, providerStore, drawStore, videoStore, publisher, visionPublish, logger } = wiring;
+  const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, catalogEffects, providerStore, drawStore, videoStore, publisher, visionPublish, logger } = wiring;
 
   return ctx.webServer.register({
     kind: "exact",
@@ -86,6 +86,7 @@ export function registerSnapshotRoute(ctx: HostCtx, wiring: HostWiring) {
           apiKeyStore,
           publisher,
           catalogStore,
+          catalogEffects,
           panelSwitch: () => providerStore.enabled().catch(() => null),
           drawSwitch: async () => (drawStore ? await drawStore.enabled().catch(() => null) : null),
           drawModelId: async () => (drawStore ? await drawStore.modelId().catch(() => null) : null),

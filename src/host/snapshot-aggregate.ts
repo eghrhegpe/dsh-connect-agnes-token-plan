@@ -34,13 +34,15 @@
  *
  * Pure by design: it takes the resolved `settings`, the shared `cache` /
  * `inflight` maps, the `tokenStore`, the `apiKeyStore`, the `publisher` (from
- * `provider-publish.ts`) and the `catalogStore`, and returns the exact
- * snapshot body the route writes. No HTTP surface or module-level state of its
- * own; the one side effect it triggers — the catalogue persist and provider
- * republish — is isolated in `applyCatalogEffects` (below), so the projection
- * above it stays pure and `test/routes.test.mjs` can pin every branch (the
- * snapshot contract, the vision-vs-catalog distinction, the registration
- * re-publish) without mounting the full container.
+ * `provider-publish.ts`), the `catalogStore` and the catalogue's effect surface
+ * (`catalog-refresh.ts`), and returns the exact snapshot body the route writes.
+ * No HTTP surface or module-level state of its own; the one side effect it
+ * triggers — the catalogue persist and provider republish — belongs to that
+ * effect surface, whose single-flight chain is also what the Host's own tick
+ * goes through (ADR-015), so the projection above it stays pure and
+ * `test/routes.test.mjs` can pin every branch (the snapshot contract, the
+ * vision-vs-catalog distinction, the registration re-publish) without mounting
+ * the full container.
  *
  * @module dsh-connect-agnes-token-plan/snapshot-aggregate
  */
@@ -58,7 +60,6 @@ import {
   checkShape
 } from "./parsers.ts";
 import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT, visionOf } from "./llm-models.ts";
-import { catalogSignature } from "./provider-publish.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
 import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video-models.ts";
 import { redactSecrets, str } from "./util.ts";
@@ -68,6 +69,7 @@ import type { createTokenStore } from "./token-store.ts";
 import type { createApiKeyStore } from "./api-key-store.ts";
 import type { createFileCatalogStore } from "./catalog-store.ts";
 import type { createProviderPublisher } from "./provider-publish.ts";
+import type { CatalogEffects } from "./catalog-refresh.ts";
 
 /** The authenticated console paths this poll reads. */
 const USAGE_OVERVIEW_PATH = "/api/usage/overview";
@@ -349,75 +351,6 @@ function buildShapeWarnings(
 }
 
 /**
- * The ONLY side effects `buildSnapshotBody` performs, isolated here so the
- * aggregator above stays a pure projection of the console results.
- *
- * Persists the freshly-fetched catalogue to its private state file and rebuilds
- * the registered provider — but ONLY when the offered set actually changed (the
- * catalogue is cached for an hour while the panel polls every 30 s, so a
- * write/re-register per poll would be pure churn). The signature logic and the
- * PITFALLS §40 write-failure handling are copied verbatim from the inline form
- * it replaced; `routes.test.mjs` pins the call order, so this is a move, not a
- * behaviour change.
- * @param {object} args
- * @param {object} args.catalogStore - the `createFileCatalogStore` instance.
- * @param {object} args.publisher - the `createProviderPublisher` instance.
- * @param {object} args.providerState - the publisher's live `state` (mutated in place).
- * @param {unknown} args.catalog - the fetched `/v1/models` answer, or null.
- * @param {string[]} args.enabledIds - the curated allow-list.
- * @param {string[]} args.unavailableModelIds - the (empty) blocked-set.
- * @returns {Promise<{offered: any, catalogChanged: boolean}>} what to offer and whether the catalogue branch published.
- */
-async function applyCatalogEffects({
-  catalogStore,
-  publisher,
-  providerState,
-  catalog,
-  enabledIds,
-  unavailableModelIds
-}: {
-  catalogStore: ReturnType<typeof createFileCatalogStore>;
-  publisher: ReturnType<typeof createProviderPublisher>;
-  providerState: ReturnType<typeof createProviderPublisher>["state"];
-  catalog: any;
-  enabledIds: string[];
-  unavailableModelIds: string[];
-}): Promise<{ offered: any; catalogChanged: boolean }> {
-  let offered: any = providerState.entries;
-  let catalogChanged = false;
-  if (Array.isArray(catalog)) {
-    const freshSignature = catalogSignature(catalog, enabledIds);
-    if (freshSignature !== providerState.signature) {
-      catalogChanged = true;
-      // `replace()` swallows a write failure (a read-only Home must not break
-      // the panel). The signature's ONLY job is "equal → skip publish", so it
-      // must describe what the disk holds: advancing it past a failed write
-      // would make the next poll — serving the same catalog from cache — skip
-      // the write that would fix it, and the disk would keep the old catalog
-      // until a restart re-seeds it (PITFALLS §40). Not persisted → retry next
-      // poll, which is the abnormal case anyway.
-      const persisted = await catalogStore.replace(catalog, enabledIds);
-      if (persisted) providerState.signature = freshSignature;
-      await publisher.publish(catalog, enabledIds, unavailableModelIds);
-    }
-    offered = catalog;
-  }
-  // The unavailable set can flip without the catalogue changing. When it does,
-  // rebuild the registration so the picker drops/restores the affected models —
-  // `PiAiAdapter` memoizes the profiles snapshot on Map identity, so only a
-  // fresh registration can change the offered set (ROADMAP.md §3.3). Skip when
-  // the catalogue branch already published this exact set a moment ago.
-  const quotaSig = [...unavailableModelIds].sort().join(",");
-  if (quotaSig !== providerState.quotaSignature) {
-    providerState.quotaSignature = quotaSig;
-    if (!catalogChanged) {
-      await publisher.publish(providerState.entries, providerState.enabledIds, unavailableModelIds);
-    }
-  }
-  return { offered, catalogChanged };
-}
-
-/**
  * Fetch the four console sources plus the model catalogue — the NETWORK half of
  * the poll, kept apart from the projection that shapes the answer.
  *
@@ -541,7 +474,8 @@ async function fetchQuotaSources({
  * The NETWORK half is {@link fetchQuotaSources}: this function starts from its
  * `{value, error}` outcomes, so every field below is either a degraded source
  * or a value read off a store, and the only side effects it performs are the
- * catalogue persist + provider republish isolated in `applyCatalogEffects`.
+ * catalogue persist + provider republish, delegated to `catalogEffects.run`
+ * (the same writer the Host's background tick uses — ADR-015).
  * The five requests' parallelism, caching and 401 handling are that function's
  * concern, not this one's.
  *
@@ -574,6 +508,7 @@ export async function buildSnapshotBody({
   apiKeyStore,
   publisher,
   catalogStore,
+  catalogEffects,
   panelSwitch,
   drawSwitch,
   drawModelId,
@@ -587,6 +522,8 @@ export async function buildSnapshotBody({
   apiKeyStore: ReturnType<typeof createApiKeyStore>;
   publisher: ReturnType<typeof createProviderPublisher>;
   catalogStore: ReturnType<typeof createFileCatalogStore>;
+  /** The catalogue's ONE writer (ADR-015); the Host's tick calls the same one. */
+  catalogEffects: CatalogEffects;
   panelSwitch: () => Promise<boolean | null>;
   drawSwitch?: () => Promise<boolean | null>;
   drawModelId?: () => Promise<string | null>;
@@ -668,16 +605,11 @@ export async function buildSnapshotBody({
   // that serves a cached catalogue.
   const enabledIds = await catalogStore.listEnabledIds().catch(() => providerState.enabledIds);
   // The only side effects `buildSnapshotBody` triggers (catalogue persist +
-  // provider republish) are isolated in `applyCatalogEffects` — see its header.
-  // Everything above this point is a pure projection of the console results.
-  const { offered } = await applyCatalogEffects({
-    catalogStore,
-    publisher,
-    providerState,
-    catalog,
-    enabledIds,
-    unavailableModelIds
-  });
+  // provider republish) go through the ONE writer in `catalog-refresh.ts` —
+  // the same object the Host's tick calls, serialized there so a poll and a
+  // tick cannot both pass the signature check. Everything above this point is a
+  // pure projection of the console results.
+  const { offered } = await catalogEffects.run(catalog, enabledIds, unavailableModelIds);
   // The counts describe the OFFER, not the catalogue: the adapter is built
   // from the allow-list-filtered entries, so a panel line that quoted the raw
   // count would claim to have registered models that were ticked off.

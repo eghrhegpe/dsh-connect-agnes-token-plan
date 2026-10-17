@@ -20,6 +20,7 @@ import type { createFileDrawStore } from "./draw-store.ts";
 import type { createFileVideoStore } from "./video-store.ts";
 import type { createProviderPublisher } from "./provider-publish.ts";
 import type { PublisherLogger } from "./publish-core.ts";
+import type { CatalogEffects } from "./catalog-refresh.ts";
 import type { createAgnescodeStore } from "./agnescode-store.ts";
 import type { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
 import type { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
@@ -69,6 +70,17 @@ export interface HostDeps {
    * signature must not advance past a swallowed write failure).
    */
   catalogStore?: any;
+  /**
+   * The `/v1/models` fetch, injected by the tests (ADR-015).
+   *
+   * The catalogue's refresh moved out of the snapshot route and into a Host
+   * tick, so the branch "cache expired → fetch → persist → republish" is no
+   * longer reachable by calling a route with a stubbed `fetch`. This seam is
+   * what lets the offline suite drive that branch — including "the fetch
+   * failed", which must leave the persisted catalogue and the registration
+   * exactly as they were.
+   */
+  fetchCatalog?: any;
 }
 
 /**
@@ -357,6 +369,12 @@ export interface HostWiring {
   tokenStore: ReturnType<typeof createTokenStore>;
   apiKeyStore: ReturnType<typeof createApiKeyStore>;
   catalogStore: ReturnType<typeof createFileCatalogStore>;
+  /**
+   * The catalogue's ONE writer: persist + provider rebuild, serialized. The
+   * snapshot route and the Host's own refresh tick both go through it, which is
+   * what keeps "the browser is the clock" from coming back (ADR-015).
+   */
+  catalogEffects: CatalogEffects;
   providerStore: ReturnType<typeof createFileProviderStore>;
   drawStore: ReturnType<typeof createFileDrawStore>;
   videoStore: ReturnType<typeof createFileVideoStore>;

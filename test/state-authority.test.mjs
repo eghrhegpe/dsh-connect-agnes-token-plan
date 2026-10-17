@@ -61,7 +61,12 @@ const PREDICTIVE_ASSIGN = /(?:providerState|publisher\.state|state)\.signature\s
 const SANCTIONED = new Map([
   // §40 方案②已落地：`replace()`/`setEnabledIds()` 返回「是否真的落盘」，两处签名
   // 只在落盘成功后才推进——写盘失败时签名停在旧值，下一次轮询会重试写盘并重发。
-  ["src/host/snapshot-aggregate.ts", { count: 1, why: "轮询去抖；仅 replace 落盘成功才推进签名（PITFALLS §40 方案②）" }],
+  //
+  // 2026-10-17 起这处写入搬到 `catalog-refresh.ts`（ADR-015：目录的写入与节拍归
+  // 宿主）。权威归属不变——仍然是「磁盘说了算」，失败取向也仍然是 §40 方案②
+  // （写失败不推进签名、下次 tick 重试）；`snapshot-aggregate.ts` 因此不再持有
+  // 任何写入点，它现在只做纯聚合。
+  ["src/host/catalog-refresh.ts", { count: 1, why: "目录落盘去抖；仅 replace 落盘成功才推进签名（PITFALLS §40 方案②，ADR-015 搬入）" }],
   ["src/host/routes/models.ts", { count: 1, why: "save 后采用刚下发的签名；仅 setEnabledIds 落盘成功才推进（§40 方案②）" }],
   ["src/host/routes/api-key.ts", { count: 1, why: "清除 key 时置空签名，强制下次重注册" }],
   // seed 是「从磁盘读回后同步内存」——方向相反，不是预测。

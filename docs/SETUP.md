@@ -73,6 +73,8 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 > 上表主机层字段的默认值（含 `allowedHosts` 的 `localhost`/`127.0.0.1`/`::1`）统一定义在 `host-config.ts` 的 `CONFIG_DEFAULTS`，并由 `test/config.test.mjs` 与 `cordis.patch.yml` 双向钉住；登录类字段留空即表示"使用平台默认"，其生效值定义在 `agnes-auth.ts` 的 `AUTH_DEFAULTS`，不在此重复。
 >
 > **登录覆盖项是 patch 行的顶层键**（`loginPath`、`loginTimeoutMs`、`fallbackExpiresInSeconds`），**不是嵌套的 `auth:` 块**。嵌套块会被 loader 接受、被插件静默忽略，面板于是拿着出厂默认值打到**真平台**——这条已经锁过一次号，`resolveAuthOverrides` 现在对嵌套块直接抛错，别放宽它。
+>
+> **拼错的键会在 Host 日志里点名。** 上表之外、也不属于登录覆盖项的键会被忽略，但挂载时会记一行 `unknown config key(s) ignored: …`（`resolveSettings` 返回 `unknownKeys`，`apply` 只记日志）。刻意**不**设 `config_error`：老 patch 里遗留的键（商汤时代的 OIDC 字段、`usageHours`）不该把整块面板打成配置错误——那与「一个模块缺席不许埋掉别的模块」相反（`ARCHITECTURE.md` §5）。所以它只让拼写错误不再静默，不让遗留键变成故障。`requestTimeoutMs` 是 `loginTimeoutMs` 的旧名、仍然生效，不会被点名。
 
 ### AgnesCode 续期限制（已知，非特性）
 

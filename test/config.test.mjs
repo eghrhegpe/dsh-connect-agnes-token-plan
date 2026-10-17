@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey, hostName, isAdmitted, name } from "../src/host/index.ts";
+import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey, hostName, isAdmitted, name, unknownConfigKeys } from "../src/host/index.ts";
 import { resolveTrendMultipliers } from "../src/host/host-config.ts";
 import { AUTH_DEFAULTS } from "../src/host/agnes-auth.ts";
 
@@ -385,6 +385,69 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
   check("a malformed row keeps the auth overrides on the same (configured) origin",
     stubbed.settings.auth.consoleOrigin === stub,
     stubbed.settings.auth.consoleOrigin);
+}
+
+// --- unknown config keys are NAMED, never fatal --------------------------
+//
+// `resolveSettings` validates every key it knows and drops the rest. With no
+// DSH Config schema in front of the row (index.ts says so), a typo is therefore
+// indistinguishable from "a key this plugin has never heard of" — and the cost
+// lands entirely on the user: `drawEnabledd: true` leaves the tool off with
+// nothing said anywhere. `apply` now logs the list at mount, which is only
+// worth anything if the detector is right in BOTH directions. A detector that
+// stays silent on the typo fixes nothing; one that fires on a key the plugin
+// really reads (`loginPath`, the retired `requestTimeoutMs`) trains people to
+// ignore the line, which is worse than no line at all.
+{
+  const typo = resolveSettings({ drawEnabledd: true });
+  check("a typo'd key is reported", typo.unknownKeys.join(",") === "drawEnabledd", typo.unknownKeys.join(","));
+  // Not fatal, by design: a retired key still sitting in an older patch row must
+  // not blank the panel (ARCHITECTURE §5). The nested `auth:` block stays a
+  // throw for the opposite reason — there the ignored value sends a password to
+  // the real platform.
+  check("a typo'd key does not become a config error", typo.configError === null, String(typo.configError));
+  check("the rest of the row still resolves while a typo is present",
+    typo.settings.pollSeconds === CONFIG_DEFAULTS.pollSeconds && typo.settings.drawEnabled === CONFIG_DEFAULTS.drawEnabled,
+    `pollSeconds=${typo.settings.pollSeconds} drawEnabled=${typo.settings.drawEnabled}`);
+
+  // The accepted top-level login overrides are NOT in `CONFIG_DEFAULTS` (they
+  // live in `AUTH_DEFAULTS`), and `requestTimeoutMs` is a retired spelling that
+  // still wins when it is the only one set. All four must stay silent.
+  const overrides = { loginPath: "/api/user/login", loginTimeoutMs: 9000, fallbackExpiresInSeconds: 600, requestTimeoutMs: 8000 };
+  check("the accepted login overrides (incl. the retired spelling) are not reported",
+    unknownConfigKeys(overrides).length === 0, unknownConfigKeys(overrides).join(","));
+
+  // The schema itself is the other half of the same pin: every key the plugin
+  // ships a default for is by definition one it reads. Derived from
+  // `CONFIG_DEFAULTS`, so adding a setting cannot forget this list.
+  check("every CONFIG_DEFAULTS key is a known key",
+    unknownConfigKeys(CONFIG_DEFAULTS).filter((k) => k !== "admittedHosts").length === 0,
+    unknownConfigKeys(CONFIG_DEFAULTS).join(","));
+
+  // …with exactly ONE exception, and it is the one that bit: `admittedHosts` is
+  // the default the resolver starts from, `allowedHosts` is what an operator
+  // writes (`resolveAllowedHosts` reads only that). A detector built naively
+  // from `CONFIG_DEFAULTS` therefore reported the SUPPORTED key and stayed quiet
+  // on the unsupported one — the exact inversion, caught by routes.test.mjs
+  // mounting a row with `allowedHosts` before this check existed.
+  check("the host list is known by its OPERATOR spelling, not its default holder",
+    unknownConfigKeys({ allowedHosts: ["panel.internal"] }).length === 0 &&
+      unknownConfigKeys({ admittedHosts: ["panel.internal"] }).join(",") === "admittedHosts",
+    `allowedHosts=${unknownConfigKeys({ allowedHosts: [] }).join(",") || "ok"}; ` +
+    `admittedHosts=${unknownConfigKeys({ admittedHosts: [] }).join(",") || "ok"}`);
+
+  // Sorted, so the one log line is stable across runs (object key order is
+  // insertion order, and two rows with the same typos can arrive in any order).
+  check("the report is sorted", unknownConfigKeys({ zebraTypo: 1, alphaTypo: 2 }).join(",") === "alphaTypo,zebraTypo",
+    unknownConfigKeys({ zebraTypo: 1, alphaTypo: 2 }).join(","));
+
+  // The fallback branch reports them too: when a row is already broken, the
+  // unknown key is often the reason, and dropping it there would hide the one
+  // clue that explains the config error.
+  const broken = resolveSettings({ auth: { loginPath: "/x" }, drawEnabledd: true });
+  check("the fallback branch still names the unknown key",
+    broken.configError !== null && broken.unknownKeys.join(",") === "drawEnabledd",
+    `${String(broken.configError)} | ${broken.unknownKeys.join(",")}`);
 }
 
 console.log(JSON.stringify(results, null, 2));

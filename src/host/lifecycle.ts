@@ -348,6 +348,8 @@ export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSid
 /**
  * Unmount, in the order PITFALLS §18 pins:
  *
+ *   0. `stopTick` — the catalogue's background refresh (ADR-015) stops FIRST,
+ *      so no new publish can be started while the rest is being withdrawn;
  *   1. `dispose` — a publish still in flight (the mount seed's, or a poll's)
  *      must not register into a Host that is letting this plugin go;
  *   2. `release` — stop offering the provider first, so a request cannot be
@@ -360,10 +362,19 @@ export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSid
  * @param {Function} wiring.releaseProvider - `publisher.release()`.
  * @param {object} wiring.publisher - the `createProviderPublisher` instance.
  * @param {Function[]} offs - the unregister callbacks from {@link registerRoutes}.
+ * @param {Function} [stopTick] - the `catalogEffects.start()` stopper.
  * @returns {void}
  */
-export function teardown(wiring: HostWiring, offs: Array<() => void>) {
+export function teardown(wiring: HostWiring, offs: Array<() => void>, stopTick?: () => void) {
   const { publisher, releaseProvider, agnescodePublisher } = wiring;
+  // The background clock goes first: it is the one thing that can still START
+  // work, and every step below is about not letting work land in a Host that is
+  // letting this plugin go.
+  try {
+    stopTick?.();
+  } catch {
+    // A stopper that throws is already stopped as far as this teardown cares.
+  }
   // Before anything else: a publish still in flight (the mount seed's, or a
   // poll's) must not register into a Host that is letting this plugin go.
   publisher.dispose();
