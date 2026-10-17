@@ -58,11 +58,11 @@
  */
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import { S } from "./styles.ts";
-import { clockSameDay, count, format } from "./format.ts";
+import { clockLong, clockSameDay, count, format } from "./format.ts";
 import { AGNESCODE_PATH, AGNESCODE_PROVIDER_ID, PROVIDER_ID, SNAPSHOT_PATH } from "./const.ts";
 import { interpretSnapshot } from "./snapshot.ts";
 import { usageTier, windowPercent } from "./cards.ts";
-import { AGNESCODE_POLL_MS } from "./agnescode-tab.ts";
+import { AGNESCODE_POLL_MS, agnescodePoolNotes } from "./agnescode-tab.ts";
 import type { Tt } from "./runtime.ts";
 import type { AgnescodeStateData, QuotaWindowData, SnapshotData } from "./wire.ts";
 
@@ -72,6 +72,33 @@ const PILL_CLASS = "dsh-agnes-composer-pill";
 /** The two console windows the pill reads: the request group's 5-hour / weekly pair. */
 const WINDOW_5H = "requests5h";
 const WINDOW_WEEKLY = "requestsWeekly";
+
+/**
+ * The click detail card's wrapper marker. Closing works on a DOCUMENT
+ * `pointerdown` (not a `click`): a click on the trigger would close the card
+ * and the same gesture's toggle would re-open it — the sibling pill that
+ * shipped this shape hit exactly that race and pinned the listener choice in
+ * its source. The marker is what an outside-down is compared against.
+ */
+const PILL_ROOT_ATTR = "data-dsh-agnes-pill-root";
+
+/** The card's element-id PREFIX; one sequence per instance (below). */
+const PILL_POPOVER_ID = "dsh-agnes-composer-pill-popover";
+
+/**
+ * A card id that is unique per mounted pill. A module-level constant id would
+ * be hand-fed to two co-mounted seats of the same provider: two open cards
+ * with the same DOM id, and `aria-controls` could name whichever one a reader
+ * resolves first. `useId` is not in the runtime seam (the host's React
+ * version is unknown), so stability comes from the `useState` initializer
+ * with a module sequence instead — a double-invoked initializer still gets a
+ * unique number, which is the one property the id needs.
+ */
+let popoverIdSeq = 0;
+function nextPopoverId(): string {
+  popoverIdSeq += 1;
+  return `${PILL_POPOVER_ID}-${popoverIdSeq}`;
+}
 
 /** The slice of the `modelSelection` projection this decision needs. */
 export interface ModelSelectionLike {
@@ -446,7 +473,99 @@ function useAgnescodeState(): RemoteReading<AgnescodeStateData> {
   return useRemoteRead(AGNESCODE_ROUTE, AGNESCODE_POLL_MS);
 }
 
-/** The shared shell: the tier dot, the upstream prefix, the reading. */
+/**
+ * Close the open detail card.
+ *
+ * Two closers, both mounted ONLY while the card is open (an always-on
+ * document listener would outlive every closed pill and leak across the
+ * re-mounts the seat does on a model switch):
+ *   - an OUTSIDE `pointerdown`. Not a `click`: a click on the trigger would
+ *     fire the close and, in the very same gesture, the toggle's re-open, so
+ *     the card would snap shut and flicker open again. A pointerdown on the
+ *     trigger or the card is swallowed — the root element is the instance's
+ *     own, via a ref, so one pill's open card is not closed by another
+ *     pill's outside-click check (first-match `querySelector` would do
+ *     exactly that when two seats co-mount).
+ *   - `Escape`, but ONLY when the key lands on this instance's own element:
+ *     a stacked dialog answers to Esc while IT holds focus, so two cards open
+ *     in one document close one per press, in focus order — never both.
+ *
+ * The close is a plain state flip in the owning variant — this hook owns the
+ * listeners, not the decision. `rootRef` is the wrapper span the card is
+ * anchored to, settled at the commit phase (before this effect's first run),
+ * so the outside check always sees a live root while the card is open.
+ */
+function usePopoverClose(open: boolean, close: () => void, rootRef: { current: HTMLElement | null }): void {
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const root = rootRef.current;
+      if (root !== null && root.contains(target)) return;
+      close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Ownership, the same way the outside-down check is owned: the key only
+      // lands on this instance's own element when FOCUS does — the trigger or
+      // the card, both inside the root. Two cards open in one document then
+      // close one per press, in focus order, instead of both at once.
+      if (rootRef.current === null) return;
+      if (!rootRef.current.contains(document.activeElement)) return;
+      close();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, close, rootRef]);
+}
+
+/**
+ * The dialog's focus discipline: on open the card receives focus (so a reader
+ * who opened it by keyboard is TOLD what just appeared — `role="dialog"`
+ * without a focus move is not announced). On close focus returns to the
+ * trigger ONLY while it is UNOWNED — still sitting on this card (the Esc
+ * path) or claimed nowhere at all. The outside-pointerdown path is the trap:
+ * the element the reader just pressed already holds the focus, and yanking
+ * it back to the trigger would send the next keystroke somewhere they never
+ * went. The card is a read-only detail — no interactive descendants — so
+ * there is no focus trap to keep in: Tab leaves the card, and that is the
+ * reader's choice, not a pinned dead zone.
+ *
+ * The `prevOpen` ref keeps the MOUNT from stealing focus: on the first run
+ * `open` is false and `prevOpen` is false too, and only an edge — a real
+ * transition — moves focus.
+ */
+function usePopoverFocus(
+  open: boolean,
+  cardRef: { current: HTMLElement | null },
+  triggerRef: { current: HTMLElement | null }
+): void {
+  const prevOpen = useRef(open);
+  useEffect(() => {
+    const was = prevOpen.current;
+    prevOpen.current = open;
+    if (open && !was) {
+      cardRef.current?.focus();
+    } else if (!open && was) {
+      const active = document.activeElement;
+      const unowned = active === null
+        || active === document.body
+        || (cardRef.current !== null && cardRef.current.contains(active));
+      if (unowned) triggerRef.current?.focus();
+    }
+  }, [open, cardRef, triggerRef]);
+}
+
+/**
+ * The shared shell: the tier dot, the upstream prefix, the reading — and, when
+ * the variant passed a toggle, the click affordance around it: a pointer
+ * cursor, the dialog's a11y trio, and the onClick that opens the card.
+ */
 function PillBody(props: {
   tt: Tt;
   /** Which upstream's numbers these are — the reason a bare reading is readable. */
@@ -455,8 +574,17 @@ function PillBody(props: {
   stale: boolean;
   title: string;
   children?: unknown;
+  /** Present = the trigger opens a detail card; absent = the pill is display-only. */
+  onToggle?: () => void;
+  /** Whether that card is open — the a11y trio mirrors it. */
+  popoverOpen?: boolean;
+  /** The open card's per-instance id; `aria-controls` must name THAT card. */
+  popoverId?: string;
+  /** The owning variant's trigger ref — the focus-return target on close. */
+  buttonRef?: { current: HTMLElement | null };
 }) {
-  const { tt, planLabel, tier, stale, title, children } = props;
+  const { tt, planLabel, tier, stale, title, children, onToggle, popoverOpen, popoverId, buttonRef } = props;
+  const interactive = onToggle !== undefined;
   return h(
     "button",
     {
@@ -464,7 +592,16 @@ function PillBody(props: {
       className: PILL_CLASS,
       title,
       "aria-label": title,
-      style: S.pillTrigger
+      // A host-element ref: the variant's own ref object, set on the button so
+      // close can hand focus back to the trigger.
+      ref: buttonRef,
+      // The dialog trio: `aria-haspopup` announces the affordance, `expanded`
+      // mirrors the open state, `controls` names the card while it is open.
+      "aria-haspopup": interactive ? "dialog" : undefined,
+      "aria-expanded": interactive ? popoverOpen === true : undefined,
+      "aria-controls": interactive && popoverOpen ? popoverId : undefined,
+      onClick: onToggle,
+      style: { ...S.pillTrigger, ...(interactive ? { cursor: "pointer" } : undefined) }
     },
     h("span", {
       className: `${PILL_CLASS}-dot`,
@@ -529,18 +666,74 @@ function ConsoleQuotaPill({ tt }: { tt: Tt }) {
     .join(" · ");
   const windowText = (label: string, pct: number | null) => `${label} ${percentText(pct)}`;
 
-  return h(PillBody, {
-    tt,
-    planLabel: tt("composer.planPrefix"),
-    tier,
-    stale,
-    title,
-    children: [
-      h("span", { key: WINDOW_5H, style: S.pillReading }, windowText(tt("composer.window5h"), p5)),
-      " · ",
-      h("span", { key: WINDOW_WEEKLY, style: S.pillReading }, windowText(tt("composer.windowWeekly"), pWeekly))
-    ]
-  });
+  // The card: the trigger's toggle state lives here, not in the shared shell —
+  // each variant carries its own rows, so the open/close decision stays local.
+  const [popoverId] = useState(nextPopoverId);
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  usePopoverClose(open, close, rootRef);
+  usePopoverFocus(open, cardRef, triggerRef);
+
+  // The rows the 28px body has no room for, in the order the reader asks
+  // them: what is being spent, when it resets, what is wrong (if anything),
+  // and when the card's numbers last moved.
+  const popoverRows = [
+    h("div", { key: "title", style: S.pillPopTitle },
+      planName === "" ? tt("composer.pillTitle") : `${tt("composer.pillTitle")} · ${planName}`),
+    h("div", { key: "w5h-row" }, windowText(tt("composer.window5h"), p5)),
+    h("div", { key: "ww-row" }, windowText(tt("composer.windowWeekly"), pWeekly)),
+    resetAt > 0
+      ? h("div", { key: "reset", style: S.pillPopMuted },
+          format(tt("quota.resetAt"), { time: clockSameDay(resetAt) }))
+      : null,
+    disconnected ? h("div", { key: "disc", style: S.pillPopMuted }, tt("composer.notConnected")) : null,
+    reading.loadedOnce && !disconnected && windows.length === 0
+      ? h("div", { key: "nowin", style: S.pillPopMuted }, tt("composer.noWindows"))
+      : null,
+    stale ? h("div", { key: "stale", style: S.pillPopMuted }, tt("composer.stale")) : null,
+    reading.updatedAt > 0
+      ? h("div", { key: "last", style: S.pillPopMuted },
+          format(tt("composer.popoverLastRead"), { time: clockLong(reading.updatedAt / 1000) }))
+      : null
+  ];
+
+  return h(
+    "span",
+    { ref: rootRef, [PILL_ROOT_ATTR]: "true", style: S.pillRoot },
+    h(PillBody, {
+      tt,
+      planLabel: tt("composer.planPrefix"),
+      tier,
+      stale,
+      title,
+      onToggle: () => setOpen(!open),
+      popoverOpen: open,
+      popoverId,
+      buttonRef: triggerRef,
+      children: [
+        h("span", { key: WINDOW_5H, style: S.pillReading }, windowText(tt("composer.window5h"), p5)),
+        " · ",
+        h("span", { key: WINDOW_WEEKLY, style: S.pillReading }, windowText(tt("composer.windowWeekly"), pWeekly))
+      ]
+    }),
+    open
+      ? h("div",
+        {
+          // `tabIndex -1` + the focus-on-open effect: a dialog the reader was
+          // moved into, not just announced past.
+          ref: cardRef,
+          id: popoverId,
+          tabIndex: -1,
+          role: "dialog",
+          "aria-label": tt("composer.pillTitle"),
+          style: S.pillPopover
+        },
+        ...popoverRows)
+      : null
+  );
 }
 
 /**
@@ -615,18 +808,75 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
     .filter(Boolean)
     .join(" · ");
 
-  return h(PillBody, {
-    tt,
-    planLabel: tt("composer.balancePrefix"),
-    tier,
-    stale,
-    title,
-    children: h(
-      "span",
-      { style: S.pillReading },
-      pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`
-    )
-  });
+  // The card's open/close is this variant's own: the rows it carries (the
+  // stock, the split, the platform grants, this plugin's rate-limit record,
+  // the account's real spend) are the pill body's three facts with the room
+  // to breathe.
+  const [popoverId] = useState(nextPopoverId);
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  usePopoverClose(open, close, rootRef);
+  usePopoverFocus(open, cardRef, triggerRef);
+  const nickname = state?.loggedIn === true ? String(state.nickname ?? "") : "";
+
+  // The three pool-notes lines are the TAB's own (one vocabulary, one
+  // source): each is `null` while its figure is unread, so they drop out of
+  // the card without presenting a measurement nobody took.
+  const popoverRows = [
+    h("div", { key: "bal-title", style: S.pillPopTitle }, tt("composer.balanceTitle")),
+    nickname !== ""
+      ? h("div", { key: "nick", style: S.pillPopMuted },
+          format(tt("agnescode.loggedIn"), { nick: nickname }))
+      : null,
+    h("div", { key: "bal" },
+      pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`),
+    split !== null ? h("div", { key: "split", style: S.pillPopMuted }, split) : null,
+    ...agnescodePoolNotes(state?.balance ?? null, state?.rateLimit ?? null, state?.ledger ?? null, tt),
+    why !== null ? h("div", { key: "why", style: S.pillPopMuted }, why) : null,
+    stale ? h("div", { key: "stale", style: S.pillPopMuted }, tt("composer.stale")) : null,
+    reading.updatedAt > 0
+      ? h("div", { key: "last", style: S.pillPopMuted },
+          format(tt("composer.popoverLastRead"), { time: clockLong(reading.updatedAt / 1000) }))
+      : null
+  ];
+
+  return h(
+    "span",
+    { ref: rootRef, [PILL_ROOT_ATTR]: "true", style: S.pillRoot },
+    h(PillBody, {
+      tt,
+      planLabel: tt("composer.balancePrefix"),
+      tier,
+      stale,
+      title,
+      onToggle: () => setOpen(!open),
+      popoverOpen: open,
+      popoverId,
+      buttonRef: triggerRef,
+      children: h(
+        "span",
+        { style: S.pillReading },
+        pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`
+      )
+    }),
+    open
+      ? h("div",
+        {
+          // `tabIndex -1` + the focus-on-open effect: a dialog the reader was
+          // moved into, not just announced past.
+          ref: cardRef,
+          id: popoverId,
+          tabIndex: -1,
+          role: "dialog",
+          "aria-label": tt("composer.balanceTitle"),
+          style: S.pillPopover
+        },
+        ...popoverRows)
+      : null
+  );
 }
 
 /**

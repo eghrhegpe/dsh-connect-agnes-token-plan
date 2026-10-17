@@ -275,5 +275,26 @@ export const S = {
   pillTierOk: { background: "var(--dsw-alias-state-success-primary, #22c55e)" },
   pillTierWarn: { background: "var(--dsw-alias-state-warn-primary, #f59e0b)" },
   pillTierError: { background: "var(--dsw-alias-state-error-primary, #ef4444)" },
-  pillTierUnknown: { background: "var(--dsw-alias-label-secondary)" }
+  pillTierUnknown: { background: "var(--dsw-alias-label-secondary)" },
+  // ── the pill's click-opened detail card ────────────────────────────────────
+  // The root span is the card's anchor: the composer row does not clip, and a
+  // sibling pill proved this exact shape in this same seat — an absolute card
+  // on a relative wrapper, NO createPortal (this bundle gets `react`, not
+  // `react-dom`, so the portal the other sibling uses is not on the table).
+  pillRoot: { display: "inline-flex", alignItems: "center", position: "relative", flexShrink: 0 },
+  // The card itself: the host's own layer / border tokens, so a theme or a
+  // light-dark flip carries it with the chrome it floats above.
+  pillPopover: {
+    position: "absolute", bottom: "calc(100% + 8px)", right: 0,
+    width: 280, maxWidth: "80vw",
+    padding: "10px 12px", borderRadius: 10,
+    border: "1px solid var(--dsw-alias-border-l2, #36373b)",
+    background: "var(--dsw-alias-bg-layer-3, #202126)",
+    boxShadow: "0 8px 24px rgba(0,0,0,.4)",
+    display: "flex", flexDirection: "column", gap: 6,
+    zIndex: 40, fontVariantNumeric: "tabular-nums",
+    fontSize: 12, lineHeight: "18px", color: "inherit", textAlign: "left"
+  },
+  pillPopTitle: { fontSize: 12, fontWeight: 600 },
+  pillPopMuted: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" }
 };

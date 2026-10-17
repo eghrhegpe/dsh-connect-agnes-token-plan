@@ -121,6 +121,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"composer.balanceUnit": "积分",
 			"composer.balanceUnread": "本次没能读到余额",
 			"composer.stale": "上次数据",
+			"composer.popoverLastRead": "最近读取 {time}",
 			"usage.none": "该区间内没有用量记录。",
 			"usage.period": "近 {days} 天",
 			"usage.periodUnknown": "用量区间",
@@ -370,6 +371,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"composer.balanceUnit": "credits",
 			"composer.balanceUnread": "the balance could not be read this time",
 			"composer.stale": "last reading",
+			"composer.popoverLastRead": "Last read {time}",
 			"usage.none": "No usage recorded in this range.",
 			"usage.period": "Last {days} days",
 			"usage.periodUnknown": "Usage range",
@@ -1535,7 +1537,42 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			pillTierOk: { background: "var(--dsw-alias-state-success-primary, #22c55e)" },
 			pillTierWarn: { background: "var(--dsw-alias-state-warn-primary, #f59e0b)" },
 			pillTierError: { background: "var(--dsw-alias-state-error-primary, #ef4444)" },
-			pillTierUnknown: { background: "var(--dsw-alias-label-secondary)" }
+			pillTierUnknown: { background: "var(--dsw-alias-label-secondary)" },
+			pillRoot: {
+				display: "inline-flex",
+				alignItems: "center",
+				position: "relative",
+				flexShrink: 0
+			},
+			pillPopover: {
+				position: "absolute",
+				bottom: "calc(100% + 8px)",
+				right: 0,
+				width: 280,
+				maxWidth: "80vw",
+				padding: "10px 12px",
+				borderRadius: 10,
+				border: "1px solid var(--dsw-alias-border-l2, #36373b)",
+				background: "var(--dsw-alias-bg-layer-3, #202126)",
+				boxShadow: "0 8px 24px rgba(0,0,0,.4)",
+				display: "flex",
+				flexDirection: "column",
+				gap: 6,
+				zIndex: 40,
+				fontVariantNumeric: "tabular-nums",
+				fontSize: 12,
+				lineHeight: "18px",
+				color: "inherit",
+				textAlign: "left"
+			},
+			pillPopTitle: {
+				fontSize: 12,
+				fontWeight: 600
+			},
+			pillPopMuted: {
+				fontSize: 11,
+				color: "var(--dsw-alias-label-secondary)"
+			}
 		};
 	}));
 
@@ -4411,7 +4448,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 
 //#endregion
 //#region src/client/composer-usage-pill.ts
-/**
+	function nextPopoverId() {
+		popoverIdSeq += 1;
+		return `${PILL_POPOVER_ID}-${popoverIdSeq}`;
+	}
+	/**
 	* The provider the session is currently pointed at, `next` winning over
 	* `lastUsed` — with one repair: an EMPTY `next` (the transient frame right after
 	* a picker switch, before it carries the new selection) must not shadow a
@@ -4619,15 +4660,110 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	function useAgnescodeState() {
 		return useRemoteRead(AGNESCODE_ROUTE, AGNESCODE_POLL_MS);
 	}
-	/** The shared shell: the tier dot, the upstream prefix, the reading. */
+	/**
+	* Close the open detail card.
+	*
+	* Two closers, both mounted ONLY while the card is open (an always-on
+	* document listener would outlive every closed pill and leak across the
+	* re-mounts the seat does on a model switch):
+	*   - an OUTSIDE `pointerdown`. Not a `click`: a click on the trigger would
+	*     fire the close and, in the very same gesture, the toggle's re-open, so
+	*     the card would snap shut and flicker open again. A pointerdown on the
+	*     trigger or the card is swallowed — the root element is the instance's
+	*     own, via a ref, so one pill's open card is not closed by another
+	*     pill's outside-click check (first-match `querySelector` would do
+	*     exactly that when two seats co-mount).
+	*   - `Escape`, but ONLY when the key lands on this instance's own element:
+	*     a stacked dialog answers to Esc while IT holds focus, so two cards open
+	*     in one document close one per press, in focus order — never both.
+	*
+	* The close is a plain state flip in the owning variant — this hook owns the
+	* listeners, not the decision. `rootRef` is the wrapper span the card is
+	* anchored to, settled at the commit phase (before this effect's first run),
+	* so the outside check always sees a live root while the card is open.
+	*/
+	function usePopoverClose(open, close, rootRef) {
+		useEffect(() => {
+			if (!open) return;
+			const onPointerDown = (event) => {
+				const target = event.target;
+				if (!(target instanceof Node)) return;
+				const root = rootRef.current;
+				if (root !== null && root.contains(target)) return;
+				close();
+			};
+			const onKeyDown = (event) => {
+				if (event.key !== "Escape") return;
+				if (rootRef.current === null) return;
+				if (!rootRef.current.contains(document.activeElement)) return;
+				close();
+			};
+			document.addEventListener("pointerdown", onPointerDown);
+			document.addEventListener("keydown", onKeyDown);
+			return () => {
+				document.removeEventListener("pointerdown", onPointerDown);
+				document.removeEventListener("keydown", onKeyDown);
+			};
+		}, [
+			open,
+			close,
+			rootRef
+		]);
+	}
+	/**
+	* The dialog's focus discipline: on open the card receives focus (so a reader
+	* who opened it by keyboard is TOLD what just appeared — `role="dialog"`
+	* without a focus move is not announced). On close focus returns to the
+	* trigger ONLY while it is UNOWNED — still sitting on this card (the Esc
+	* path) or claimed nowhere at all. The outside-pointerdown path is the trap:
+	* the element the reader just pressed already holds the focus, and yanking
+	* it back to the trigger would send the next keystroke somewhere they never
+	* went. The card is a read-only detail — no interactive descendants — so
+	* there is no focus trap to keep in: Tab leaves the card, and that is the
+	* reader's choice, not a pinned dead zone.
+	*
+	* The `prevOpen` ref keeps the MOUNT from stealing focus: on the first run
+	* `open` is false and `prevOpen` is false too, and only an edge — a real
+	* transition — moves focus.
+	*/
+	function usePopoverFocus(open, cardRef, triggerRef) {
+		const prevOpen = useRef(open);
+		useEffect(() => {
+			const was = prevOpen.current;
+			prevOpen.current = open;
+			if (open && !was) cardRef.current?.focus();
+			else if (!open && was) {
+				const active = document.activeElement;
+				if (active === null || active === document.body || cardRef.current !== null && cardRef.current.contains(active)) triggerRef.current?.focus();
+			}
+		}, [
+			open,
+			cardRef,
+			triggerRef
+		]);
+	}
+	/**
+	* The shared shell: the tier dot, the upstream prefix, the reading — and, when
+	* the variant passed a toggle, the click affordance around it: a pointer
+	* cursor, the dialog's a11y trio, and the onClick that opens the card.
+	*/
 	function PillBody(props) {
-		const { tt, planLabel, tier, stale, title, children } = props;
+		const { tt, planLabel, tier, stale, title, children, onToggle, popoverOpen, popoverId, buttonRef } = props;
+		const interactive = onToggle !== void 0;
 		return h("button", {
 			type: "button",
 			className: PILL_CLASS,
 			title,
 			"aria-label": title,
-			style: S.pillTrigger
+			ref: buttonRef,
+			"aria-haspopup": interactive ? "dialog" : void 0,
+			"aria-expanded": interactive ? popoverOpen === true : void 0,
+			"aria-controls": interactive && popoverOpen ? popoverId : void 0,
+			onClick: onToggle,
+			style: {
+				...S.pillTrigger,
+				...interactive ? { cursor: "pointer" } : void 0
+			}
 		}, h("span", {
 			className: `${PILL_CLASS}-dot`,
 			"aria-hidden": "true",
@@ -4675,12 +4811,56 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			stale ? tt("composer.stale") : null
 		].filter(Boolean).join(" · ");
 		const windowText = (label, pct) => `${label} ${percentText(pct)}`;
-		return h(PillBody, {
+		const [popoverId] = useState(nextPopoverId);
+		const [open, setOpen] = useState(false);
+		const close = useCallback(() => setOpen(false), []);
+		const rootRef = useRef(null);
+		const cardRef = useRef(null);
+		const triggerRef = useRef(null);
+		usePopoverClose(open, close, rootRef);
+		usePopoverFocus(open, cardRef, triggerRef);
+		const popoverRows = [
+			h("div", {
+				key: "title",
+				style: S.pillPopTitle
+			}, planName === "" ? tt("composer.pillTitle") : `${tt("composer.pillTitle")} · ${planName}`),
+			h("div", { key: "w5h-row" }, windowText(tt("composer.window5h"), p5)),
+			h("div", { key: "ww-row" }, windowText(tt("composer.windowWeekly"), pWeekly)),
+			resetAt > 0 ? h("div", {
+				key: "reset",
+				style: S.pillPopMuted
+			}, format(tt("quota.resetAt"), { time: clockSameDay(resetAt) })) : null,
+			disconnected ? h("div", {
+				key: "disc",
+				style: S.pillPopMuted
+			}, tt("composer.notConnected")) : null,
+			reading.loadedOnce && !disconnected && windows.length === 0 ? h("div", {
+				key: "nowin",
+				style: S.pillPopMuted
+			}, tt("composer.noWindows")) : null,
+			stale ? h("div", {
+				key: "stale",
+				style: S.pillPopMuted
+			}, tt("composer.stale")) : null,
+			reading.updatedAt > 0 ? h("div", {
+				key: "last",
+				style: S.pillPopMuted
+			}, format(tt("composer.popoverLastRead"), { time: clockLong(reading.updatedAt / 1e3) })) : null
+		];
+		return h("span", {
+			ref: rootRef,
+			[PILL_ROOT_ATTR]: "true",
+			style: S.pillRoot
+		}, h(PillBody, {
 			tt,
 			planLabel: tt("composer.planPrefix"),
 			tier,
 			stale,
 			title,
+			onToggle: () => setOpen(!open),
+			popoverOpen: open,
+			popoverId,
+			buttonRef: triggerRef,
 			children: [
 				h("span", {
 					key: WINDOW_5H,
@@ -4692,7 +4872,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					style: S.pillReading
 				}, windowText(tt("composer.windowWeekly"), pWeekly))
 			]
-		});
+		}), open ? h("div", {
+			ref: cardRef,
+			id: popoverId,
+			tabIndex: -1,
+			role: "dialog",
+			"aria-label": tt("composer.pillTitle"),
+			style: S.pillPopover
+		}, ...popoverRows) : null);
 	}
 	/**
 	* One credit balance as a number, or `null` when the state declared none.
@@ -4746,14 +4933,66 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			why,
 			stale ? tt("composer.stale") : null
 		].filter(Boolean).join(" · ");
-		return h(PillBody, {
+		const [popoverId] = useState(nextPopoverId);
+		const [open, setOpen] = useState(false);
+		const close = useCallback(() => setOpen(false), []);
+		const rootRef = useRef(null);
+		const cardRef = useRef(null);
+		const triggerRef = useRef(null);
+		usePopoverClose(open, close, rootRef);
+		usePopoverFocus(open, cardRef, triggerRef);
+		const nickname = state?.loggedIn === true ? String(state.nickname ?? "") : "";
+		const popoverRows = [
+			h("div", {
+				key: "bal-title",
+				style: S.pillPopTitle
+			}, tt("composer.balanceTitle")),
+			nickname !== "" ? h("div", {
+				key: "nick",
+				style: S.pillPopMuted
+			}, format(tt("agnescode.loggedIn"), { nick: nickname })) : null,
+			h("div", { key: "bal" }, pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`),
+			split !== null ? h("div", {
+				key: "split",
+				style: S.pillPopMuted
+			}, split) : null,
+			...agnescodePoolNotes(state?.balance ?? null, state?.rateLimit ?? null, state?.ledger ?? null, tt),
+			why !== null ? h("div", {
+				key: "why",
+				style: S.pillPopMuted
+			}, why) : null,
+			stale ? h("div", {
+				key: "stale",
+				style: S.pillPopMuted
+			}, tt("composer.stale")) : null,
+			reading.updatedAt > 0 ? h("div", {
+				key: "last",
+				style: S.pillPopMuted
+			}, format(tt("composer.popoverLastRead"), { time: clockLong(reading.updatedAt / 1e3) })) : null
+		];
+		return h("span", {
+			ref: rootRef,
+			[PILL_ROOT_ATTR]: "true",
+			style: S.pillRoot
+		}, h(PillBody, {
 			tt,
 			planLabel: tt("composer.balancePrefix"),
 			tier,
 			stale,
 			title,
+			onToggle: () => setOpen(!open),
+			popoverOpen: open,
+			popoverId,
+			buttonRef: triggerRef,
 			children: h("span", { style: S.pillReading }, pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`)
-		});
+		}), open ? h("div", {
+			ref: cardRef,
+			id: popoverId,
+			tabIndex: -1,
+			role: "dialog",
+			"aria-label": tt("composer.balanceTitle"),
+			style: S.pillPopover
+		}, ...popoverRows) : null);
 	}
 	/**
 	* The composer pill.
@@ -4772,7 +5011,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		if (provider === "agnescode") return h(AgnescodeBalancePill, { tt });
 		return null;
 	}
-	var PILL_CLASS, WINDOW_5H, WINDOW_WEEKLY, TIER_INK, SNAPSHOT_ROUTE, AGNESCODE_ROUTE, SNAPSHOT_RETRY_FALLBACK_MS;
+	var PILL_CLASS, WINDOW_5H, WINDOW_WEEKLY, PILL_ROOT_ATTR, PILL_POPOVER_ID, popoverIdSeq, TIER_INK, SNAPSHOT_ROUTE, AGNESCODE_ROUTE, SNAPSHOT_RETRY_FALLBACK_MS;
 	var init_composer_usage_pill = __esmMin((() => {
 		init_runtime();
 		init_styles();
@@ -4784,6 +5023,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		PILL_CLASS = "dsh-agnes-composer-pill";
 		WINDOW_5H = "requests5h";
 		WINDOW_WEEKLY = "requestsWeekly";
+		PILL_ROOT_ATTR = "data-dsh-agnes-pill-root";
+		PILL_POPOVER_ID = "dsh-agnes-composer-pill-popover";
+		popoverIdSeq = 0;
 		TIER_INK = {
 			error: S.pillTierError,
 			warn: S.pillTierWarn,

@@ -836,6 +836,169 @@ try {
     fetched.length > 0 && fetched.every((path) => path === SNAPSHOT_PATH)
       && text(backToConsole.container).includes("Token Plan"),
     `routes=${JSON.stringify(fetched)} text=${text(backToConsole.container).slice(0, 120)}`);
+
+  // ── the click detail card: the pill OPENS on a click, closes on an OUTSIDE
+  //    pointerdown or Escape ─────────────────────────────────────────────────
+  // The card is the tooltip's content with room to breathe; it is a surface of
+  // its own (not the hover title), and its open/close is the pill's own state.
+  // Each instance keys its outside-click check to ITS root element, so two
+  // co-mounted seats don't close each other's cards.
+  selection.next = { provider: "agnes-token-plan", model: "agnes-pro" };
+  windows = [
+    { key: "requests5h", unit: "requests", limit: 1000, windowHours: 5, used: 500, usagePct: 12.3, resetAt: Math.floor(Date.now() / 1000) + 3600 },
+    { key: "requestsWeekly", unit: "requests", limit: 100000, windowHours: 168, used: 4000, usagePct: 4 }
+  ];
+  quotaExtra = {};
+  status = 200;
+  const cardPill = await readPill();
+  const cardBtn = () => cardPill.button();
+  // The card's id is per-INSTANCE (a module constant would hand two co-mounted
+  // seats of one provider a shared DOM id), so select on the shared prefix.
+  const card = () => cardPill.container.querySelector("[id^=dsh-agnes-composer-pill-popover-]");
+  check("a closed trigger announces the card via the dialog a11y trio",
+    cardBtn()?.getAttribute("aria-haspopup") === "dialog"
+      && cardBtn()?.getAttribute("aria-expanded") === "false"
+      && card() === null,
+    `haspopup=${cardBtn()?.getAttribute("aria-haspopup")} expanded=${cardBtn()?.getAttribute("aria-expanded")}`);
+  await act(async () => { cardBtn()?.click(); });
+  await settle();
+  check("a click opens the card with the two window readings",
+    card() !== null
+      && cardBtn()?.getAttribute("aria-expanded") === "true"
+      && cardBtn()?.getAttribute("aria-controls") === card()?.id
+      && card()?.textContent.includes("5 小时")
+      && card()?.textContent.includes("本周"),
+    `card=${card()?.textContent?.slice(0, 160) ?? "absent"}`);
+  check("opening moves focus into the card (a dialog the reader was moved into)",
+    dom.window.document.activeElement === card(),
+    `active=${dom.window.document.activeElement?.tagName ?? "null"}`);
+  // The card's "last read" stamp is a stamp of TODAY: the formatter takes
+  // epoch SECONDS, and a millisecond `updatedAt` fed straight in would print
+  // a month-day from some fifty millennia out. The read and the assert are
+  // milliseconds apart, so a date turn between them is the only way this can
+  // misread — a seconds window, at midnight.
+  const nowDate = new Date();
+  const pad2 = (v) => String(v).padStart(2, "0");
+  const todayStamp = `${pad2(nowDate.getMonth() + 1)}-${pad2(nowDate.getDate())}`;
+  const lastReadPrefix = zh["composer.popoverLastRead"].split("{")[0].trim();
+  check("the 'last read' stamp prints today's date (formatter fed seconds, not ms)",
+    card()?.textContent.includes(`${lastReadPrefix} ${todayStamp}`) === true,
+    `card=${card()?.textContent?.slice(0, 240) ?? "absent"}`);
+  // A pointerdown INSIDE the card (or its trigger) is swallowed, not a close.
+  await act(async () => { card()?.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true })); });
+  await settle();
+  check("an inside pointerdown does not close the card", card() !== null, `card=${card() !== null}`);
+  // A pointerdown OUTSIDE the card's own root closes it.
+  await act(async () => { dom.window.document.body.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true })); });
+  await settle();
+  check("an outside pointerdown closes the card",
+    card() === null && cardBtn()?.getAttribute("aria-expanded") === "false",
+    `card=${card() !== null}`);
+  check("closing returns focus to the trigger",
+    dom.window.document.activeElement === cardBtn(),
+    `active=${dom.window.document.activeElement?.tagName ?? "null"}`);
+  // The outside-pointerdown path must not STEAL focus either: a close hands
+  // it back to the trigger only while it is unowned. The reader's key has
+  // already landed on another focusable element — the element they actually
+  // pressed — and yanking it back would send the next keystroke somewhere
+  // they never went.
+  const elsewhere = dom.window.document.createElement("button");
+  dom.window.document.body.appendChild(elsewhere);
+  await act(async () => { cardBtn()?.click(); });
+  await settle();
+  check("a re-opened card holds the focus",
+    card() !== null && dom.window.document.activeElement === card(),
+    `active=${dom.window.document.activeElement?.tagName ?? "null"}`);
+  elsewhere.focus();
+  await act(async () => { elsewhere.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true })); });
+  await settle();
+  check("an outside pointerdown from a focusable element does not steal the focus",
+    card() === null && dom.window.document.activeElement === elsewhere,
+    `active=${dom.window.document.activeElement?.tagName ?? "null"}`);
+  elsewhere.remove();
+  // Escape closes it too.
+  await act(async () => { cardBtn()?.click(); });
+  await settle();
+  check("a second click re-opens the card", card() !== null, `card=${card() !== null}`);
+  await act(async () => { dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  await settle();
+  check("Escape closes the card",
+    card() === null && cardBtn()?.getAttribute("aria-expanded") === "false",
+    `card=${card() !== null}`);
+
+  // Two co-mounted seats of the SAME upstream: each instance's outside-click
+  // check is keyed to ITS OWN root (a module-level `querySelector` first-match
+  // would let seat B's card survive a down that sits outside it, and close A
+  // on a down inside B), and each card's DOM id is per-instance, so two open
+  // dialogs cannot hand a reader one shared id.
+  const seatA = await readPill();
+  const seatB = await readPill();
+  const seatACard = () => seatA.container.querySelector("[id^=dsh-agnes-composer-pill-popover-]");
+  const seatBCard = () => seatB.container.querySelector("[id^=dsh-agnes-composer-pill-popover-]");
+  await act(async () => { seatA.button()?.click(); });
+  await settle();
+  await act(async () => { seatB.button()?.click(); });
+  await settle();
+  check("two co-mounted seats carry two distinct card ids, each named by its own trigger",
+    seatACard() !== null && seatBCard() !== null
+      && seatACard()?.id !== seatBCard()?.id
+      && seatA.button()?.getAttribute("aria-controls") === seatACard()?.id
+      && seatB.button()?.getAttribute("aria-controls") === seatBCard()?.id,
+    `A=${seatACard()?.id ?? "absent"} B=${seatBCard()?.id ?? "absent"}`);
+  // A down INSIDE seat A's card is inside A's root and outside B's root:
+  // A answers to its own boundary and stays open; B sees an outside down.
+  await act(async () => { seatACard()?.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true })); });
+  await settle();
+  check("an inside-A pointerdown leaves A open and closes B",
+    seatACard() !== null && seatBCard() === null,
+    `A=${seatACard() !== null} B=${seatBCard() !== null}`);
+  // Two cards open at once: the stacked-dialog rule — Escape is OWNED by the
+  // card that holds the key. One press closes exactly one, in focus order;
+  // an unowned Esc (focus nowhere on either card) closes nothing.
+  await act(async () => { seatB.button()?.click(); });
+  await settle();
+  check("re-opening B leaves two cards open, the key on B's card",
+    seatACard() !== null && seatBCard() !== null
+      && dom.window.document.activeElement === seatBCard(),
+    `active=${dom.window.document.activeElement?.tagName ?? "null"}`);
+  await act(async () => { dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  await settle();
+  check("an Esc with two cards open closes only the one that owns the focus",
+    seatBCard() === null && seatACard() !== null,
+    `A=${seatACard() !== null} B=${seatBCard() !== null}`);
+  await act(async () => { seatACard()?.focus(); });
+  await act(async () => { dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  await settle();
+  check("…and after the key moves over, the Esc lands on A instead",
+    seatACard() === null,
+    `A=${seatACard() !== null}`);
+
+  // The desktop variant's card carries the stock, the split and the pool notes.
+  agnescode = {
+    ok: true, enabled: true, loggedIn: true, nickname: "阿格",
+    balance: {
+      totalBalance: 1200, timeSensitiveBalance: 40, permanentBalance: 1160,
+      dailyFreeCredits: 10, subscriptionCredits: 30, dailyEffectQuota: 20, effectQuotaBalance: 15
+    },
+    rateLimit: { today: 2, last30d: 5, lastAt: 1788408000000 },
+    ledger: {
+      total: 82, fetchedCount: 82, todayCredits: 600, todayDebits: 35,
+      last30dCredits: 606, last30dDebits: 123, covered30d: true, lastDebitAt: 1788408000000, at: 1788408000000
+    }
+  };
+  selection.next = { provider: "agnescode", model: "agnes-pro" };
+  const acCardPill = await readPill();
+  const acCard = () => acCardPill.container.querySelector("[id^=dsh-agnes-composer-pill-popover-]");
+  await act(async () => { acCardPill.button()?.click(); });
+  await settle();
+  check("the AgnesCode card carries the stock, the split and the pool notes",
+    acCard() !== null
+      && acCard()?.textContent.includes("1200 积分")
+      && acCard()?.textContent.includes("时效 40")
+      && acCard()?.textContent.includes("每日免费 10")
+      && acCard()?.textContent.includes("限流记录")
+      && acCard()?.textContent.includes("账户流水"),
+    `card=${acCard()?.textContent?.slice(0, 240) ?? "absent"}`);
 } finally {
   await unmountAll();
 }
