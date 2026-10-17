@@ -162,6 +162,12 @@ export interface AdapterConfig {
   enabledIds?: string[];
   unavailableModelIds?: string[];
   baseUrl?: string;
+  /**
+   * Exact model id → output ceiling (AgnesCode route only; already sanitized by
+   * `host-config.resolveMaxTokensOverrides`, so every value here is a positive
+   * integer). Absent or empty = the roster's own figures are authoritative.
+   */
+  maxTokensOverrides?: Record<string, number>;
 }
 
 /**
@@ -211,6 +217,12 @@ export interface AgnescodePublisherDeps {
   emit?: (event: string) => void;
   /** Cordis logger (loose: the peer ships no declarations here). */
   logger?: { warn: (message: string) => void };
+  /**
+   * The resolved settings row, read for `maxTokensOverrides` only. `Partial`
+   * for the same reason {@link ProviderPublisherDeps.settings} is: `apply()` may
+   * pass none, and the reader falls back to "no overrides".
+   */
+  settings?: Partial<Settings>;
 }
 
 /** Options for the AgnesCode adapter factory (`agnescode-llm-adapter.ts`). */
@@ -223,6 +235,11 @@ export interface AgnescodeAdapterOptions {
   resolveToken?: () => Promise<string>;
   /** Service resolver for the image hooks (`attachments`, `fs`). */
   get?: (service: string) => any;
+  /**
+   * Exact model id → output ceiling (the operator's `maxTokensOverrides`, already
+   * sanitized). Absent or empty = the roster rows' own `maxOutputLength` stands.
+   */
+  maxTokensOverrides?: Record<string, number> | null;
 }
 
 /**
@@ -271,6 +288,8 @@ export interface Settings {
   allowedHosts: Set<string>;
   trendMultipliers: Record<string, number>;
   registerProvider: boolean;
+  /** Exact model id → AgnesCode output ceiling; empty = the roster is authoritative. */
+  maxTokensOverrides: Record<string, number>;
   drawEnabled: boolean;
   drawModelId: string;
   drawTimeoutMs: number;

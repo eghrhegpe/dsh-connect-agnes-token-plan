@@ -241,6 +241,27 @@ export const zh = {
   "agnescode.balanceLabel": "积分余额",
   "agnescode.balanceTimeLabel": "时效",
   "agnescode.balancePermanentLabel": "永久",
+  // The pool's three cards carry the SPENDABLE balance; this line carries the
+  // platform's GRANTS. A free account reads 每日免费 0 · 订阅 0 · 每日生效额度 0
+  // — that is the honest answer to "is there a hidden daily free quota I am
+  // about to hit", and it is why a 0 renders instead of disappearing.
+  "agnescode.grantLine": "每日免费 {dailyFree} · 订阅 {sub} · 每日生效额度 {dailyEffect} · 生效余额 {effect}",
+  "agnescode.grantHint": "平台公布的每日/订阅额度；0 表示平台未发放。",
+  // The rate-limit record is the SYMPTOM of the cap, not a threshold: the
+  // platform never publishes a requests-per-minute figure, so the panel says
+  // "you hit it N times" instead of inventing a number. 0 is a measurement.
+  "agnescode.rateLimitLine": "限流记录：今日 {today} 次 · 近 30 天 {last30d} 次 · 最近 {last}",
+  "agnescode.rateLimitNever": "无",
+  "agnescode.rateLimitHint": "仅统计本插件自身的请求；限频阈值未公布，0 表示未触发过。",
+  // The ledger line is the platform-sourced "real consumption" aggregate — it
+  // counts the WHOLE account (desktop app included), unlike the rate-limit
+  // record above, which counts this plugin only. When the 30-day window
+  // outlives the fetched pages, `debits30` is pre-composed with the "at
+  // least" prefix by the tab (a lower bound is never shown as a total).
+  "agnescode.ledgerLine": "账户流水（含桌面端）：今日 入 {creditsToday} 出 {debitsToday} · 近 30 天出 {debits30} · 最近 {lastDebit}",
+  "agnescode.ledgerAtLeast": "至少",
+  "agnescode.ledgerLastNever": "无",
+  "agnescode.ledgerHint": "账户级积分流水，含桌面 App 的消耗；30 天取不尽时合计为下限（带「至少」前缀）。",
   "agnescode.models": "模型（{count}）",
   // Printed when the roster the picker shows is the BUILT-IN fallback: its
   // rates were captured at probe time and may have moved since. The date is
@@ -495,6 +516,21 @@ export const en: typeof zh = {
   "agnescode.balanceLabel": "Credit balance",
   "agnescode.balanceTimeLabel": "Time-limited",
   "agnescode.balancePermanentLabel": "Permanent",
+  // See the zh keys for why the GRANTS render even when they read 0.
+  "agnescode.grantLine": "Daily free {dailyFree} · Subscription {sub} · Daily effect quota {dailyEffect} · Effect balance {effect}",
+  "agnescode.grantHint": "Daily/subscription grants as published by the platform; 0 means no grant issued.",
+  "agnescode.rateLimitLine": "Rate-limit record: {today} today · {last30d} in 30 days · last {last}",
+  "agnescode.rateLimitNever": "never",
+  "agnescode.rateLimitHint": "Counts this plugin's own requests only; the platform's rate cap is unpublished, 0 means never hit.",
+  // The ledger line is the platform-sourced "real consumption" aggregate — it
+  // counts the WHOLE account (desktop app included), unlike the rate-limit
+  // record above, which counts this plugin only. When the 30-day window
+  // outlives the fetched pages, `debits30` is pre-composed with the "at
+  // least" prefix by the tab (a lower bound is never shown as a total).
+  "agnescode.ledgerLine": "Account ledger (incl. desktop): today in {creditsToday} out {debitsToday} · 30 days out {debits30} · latest {lastDebit}",
+  "agnescode.ledgerAtLeast": "at least",
+  "agnescode.ledgerLastNever": "never",
+  "agnescode.ledgerHint": "Account-level credit ledger, including the desktop app's spend; when the 30-day window is not fully fetched, the total is a lower bound (prefixed with \"at least\").",
   "agnescode.models": "Models ({count})",
   "agnescode.fallbackRoster": "Live catalogue unavailable — showing the built-in list, rates as of {asOf}.",
   "agnescode.memberOnly": "member",

@@ -283,7 +283,8 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     // both registrations announce themselves with the one tested emitter, so a
     // third copy cannot grow here again.
     emit: emitAdaptersUpdate,
-    logger: ctx.logger
+    logger: ctx.logger,
+    settings
   });
   // Mount seed: if the switch survived a restart, re-register from the
   // fallback roster + the stored credential's per-account base.

@@ -694,7 +694,7 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
  * usage-overview — the panel must not render it with quota semantics.
  * @param {object} credential - `{ accessToken, bffBase }`.
  * @param {typeof fetch} [fetcher] - injected fetch.
- * @returns {Promise<object|null>} `{totalBalance, timeSensitiveBalance, permanentBalance, subscriptionCredits, dailyFreeCredits, level}` or `null`.
+ * @returns {Promise<object|null>} `{totalBalance, timeSensitiveBalance, permanentBalance, subscriptionCredits, dailyFreeCredits, dailyEffectQuota, effectQuotaBalance, level}` or `null`.
  */
 export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fetch) {
   const effective = fetcher ?? globalThis.fetch;
@@ -718,6 +718,8 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
       permanentBalance: numZeroOk(data.permanent_balance) ?? 0,
       subscriptionCredits: numZeroOk(data.subscription_credits) ?? 0,
       dailyFreeCredits: numZeroOk(data.daily_free_credits) ?? 0,
+      dailyEffectQuota: numZeroOk(data.daily_effect_quota) ?? 0,
+      effectQuotaBalance: numZeroOk(data.effect_quota_balance) ?? 0,
       level: num(data.level)
     };
   } catch {
@@ -727,6 +729,145 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
 
 // numOrNullSafe was merged into util.numZeroOk (PITFALLS §49): the credits API
 // returns real numbers, so the typeof-strict reader is correct and the duplicate is gone.
+
+/** Credits-transaction window for the panel: a 30-day lookback plus a local-day
+ * "today" slice. Exported so the tests can pin the contract. */
+export const AGNESCODE_LEDGER_PAGE_SIZE = 100;
+export const AGNESCODE_LEDGER_MAX_PAGES = 5;
+export const AGNESCODE_LEDGER_WINDOW_DAYS = 30;
+
+/**
+ * Read the account's credits transaction ledger and aggregate it into window
+ * totals. Read-only; the endpoint is a POST (its one query body is the
+ * pagination/filter page request) against the SAME trusted BFF as the balance,
+ * so it inherits the origin pinning and the `Authorization`/`X-App-Id` header
+ * discipline.
+ *
+ * WHY the panel wants this: the balance endpoint only shows the pool total
+ * (600), not WHERE it went. The ledger is the only platform-sourced "real
+ * consumption" signal — it includes BOTH this plugin's chat calls AND the
+ * desktop app's usage, so it is the honest answer to "am I close to a limit".
+ *
+ * The list is NEWEST-FIRST (probed), so the page fetch walks back in time:
+ *   - `today*`  aggregates entries whose `created_at` is at/after local midnight
+ *   - `last30d*` aggregates entries at/after `now - AGNESCODE_LEDGER_WINDOW_DAYS`
+ *   - `covered30d` is true only when the fetched range reaches that boundary (or
+ *     the whole ledger is shorter than the window) — otherwise the 30-day sum is
+ *     a lower bound and the panel must say "at least".
+ *
+ * @param {object} credential - `{ accessToken, bffBase }`.
+ * @param {typeof fetch} [fetcher] - injected fetch.
+ * @param {number} [now] - clock override (ms) for tests; defaults to Date.now().
+ * @returns {Promise<object|null>} `{total, fetchedCount, todayCredits, todayDebits,
+ *   last30dCredits, last30dDebits, covered30d, lastDebitAt, at}` or `null` on any
+ *   page failure (a partial ledger is never presented as a complete one).
+ */
+export async function fetchAgnescodeLedger(
+  credential: any,
+  fetcher?: typeof fetch,
+  now = Date.now()
+) {
+  const effective = fetcher ?? globalThis.fetch;
+  const source = obj(credential);
+  const bffBase = trustAgnescodeBffBase(source.bffBase);
+  if (bffBase === null) return null;
+  const startOfToday = (() => {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  })();
+  const startOfWindow = now - AGNESCODE_LEDGER_WINDOW_DAYS * 86_400_000;
+
+  // Defensive ms-or-s normalizer: the probed value is epoch SECONDS (~1.79e9);
+  // treat anything already >= 1e12 as ms so a future unit change cannot blow up.
+  // `num(v, null)` — the two-argument form is load-bearing: a missing or
+  // non-numeric value must read as `null`, because the caller's
+  // `createdMs === null` guard only catches `null` (a bare `num(v)` returns
+  // `undefined`, which slips through and would count an undated row).
+  const toMs = (v: unknown): number | null => {
+    const raw = num(v, null);
+    if (raw === null) return null;
+    return raw < 1_000_000_000_000 ? raw * 1000 : raw;
+  };
+
+  let total: number | null = null;
+  let fetchedCount = 0;
+  let creditsToday = 0;
+  let debitsToday = 0;
+  let creditsWindow = 0;
+  let debitsWindow = 0;
+  let lastDebitAt: number | null = null;
+  let oldestSeen: number | null = null;
+
+  for (let page = 1; page <= AGNESCODE_LEDGER_MAX_PAGES; page++) {
+    let list: unknown[] | null = null;
+    try {
+      const response = await effective(`${agnescodeApiRoot(bffBase)}/api/v1/subscription/credits-transactions`, {
+        method: "POST",
+        headers: { ...agnescodeHeaders(source), "Content-Type": "application/json" },
+        body: JSON.stringify({ page, page_size: AGNESCODE_LEDGER_PAGE_SIZE, filter: 0 }),
+        signal: AbortSignal.timeout(30_000)
+      });
+      if (!response.ok) return null;
+      const envelope = obj(await response.json().catch(() => ({})));
+      if (str(envelope.code, "") !== "000000" || envelope.data === null || typeof envelope.data !== "object") return null;
+      const data = obj(envelope.data);
+      list = Array.isArray(data.list) ? data.list : null;
+      // `total` may legitimately be 0 (an empty ledger), so it is read through
+      // `numZeroOk` — a bare `num()` would collapse 0 into "missing" and the
+      // page-drain stop below would then depend on the short-page break alone.
+      const pagenum = numZeroOk(obj(data.pagination).total);
+      if (pagenum !== undefined) total = pagenum;
+    } catch {
+      return null;
+    }
+    if (list === null) return null;
+
+    for (const item of list) {
+      const row = obj(item);
+      const createdMs = toMs(row.created_at);
+      if (createdMs === null) continue;
+      fetchedCount += 1;
+      if (oldestSeen === null || createdMs < oldestSeen) oldestSeen = createdMs;
+      const amount = numZeroOk(row.amount) ?? 0;
+      const direction = num(row.direction, null);
+      const isCredit = direction === 1;
+      const isDebit = direction === 2;
+      // A direction outside {1,2} is an unknown op: count it in fetchedCount
+      // (it IS part of the ledger) but not in either window sum.
+      if (createdMs >= startOfToday) {
+        if (isCredit) creditsToday += amount;
+        if (isDebit) debitsToday += amount;
+      }
+      if (createdMs >= startOfWindow) {
+        if (isCredit) creditsWindow += amount;
+        if (isDebit) {
+          debitsWindow += amount;
+          if (lastDebitAt === null || createdMs > lastDebitAt) lastDebitAt = createdMs;
+        }
+      }
+    }
+
+    // Newest-first: stop once we have either drained the ledger or stepped past
+    // the 30-day boundary (no further entries can fall inside the window).
+    if (list.length < AGNESCODE_LEDGER_PAGE_SIZE) break;
+    if (oldestSeen !== null && oldestSeen < startOfWindow) break;
+    if (total !== null && fetchedCount >= total) break;
+  }
+
+  const covered30d = total !== null ? total <= fetchedCount : oldestSeen === null || oldestSeen >= startOfWindow;
+  return {
+    total,
+    fetchedCount,
+    todayCredits: creditsToday,
+    todayDebits: debitsToday,
+    last30dCredits: creditsWindow,
+    last30dDebits: debitsWindow,
+    covered30d,
+    lastDebitAt,
+    at: now
+  };
+}
 
 /**
  * When the frozen rates above were last re-probed. Exported so the panel can

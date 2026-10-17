@@ -552,6 +552,18 @@ const GOOD_SESSION = {
     check("the balance maps the subscription-pool envelope",
       balance?.totalBalance === 1200 && balance?.timeSensitiveBalance === 1200 && balance?.permanentBalance === 0,
       JSON.stringify(balance));
+    // The platform's GRANTS travel too: daily_free_credits, the subscription
+    // grant, and the effect quota pair. These are the fields that answer "is
+    // there a hidden daily free quota I am about to hit" — a free account
+    // reads all zeros, which the panel renders as published facts.
+    const granted = await fetchAgnescodeBalance(credential, fetchJson({ code: "000000", message: "success", data: {
+      total_balance: 600, time_sensitive_balance: 600, permanent_balance: 0,
+      subscription_credits: 30, daily_free_credits: 10, daily_effect_quota: 20, effect_quota_balance: 15, level: 0
+    } }));
+    check("the balance maps the daily/subscription/effect quota grants",
+      granted?.dailyFreeCredits === 10 && granted?.subscriptionCredits === 30
+        && granted?.dailyEffectQuota === 20 && granted?.effectQuotaBalance === 15,
+      JSON.stringify(granted));
     check("a refused balance envelope reads as null",
       await fetchAgnescodeBalance(credential, fetchJson({ code: "400000", message: "no" })) === null);
     check("a balance without a total reads as null",
@@ -750,6 +762,51 @@ const GOOD_SESSION = {
 
     const built = buildAgnescodeDescriptors([...rows, rows[0]], { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" });
     check("the builder dedupes by id", built.length === rows.length);
+
+    // ── the output ceiling (agnescodeMaxTokensFor) ──────────────────────
+    // Three separate defects used to live here; each is pinned below.
+    const BFF = "https://api-agnes-code.agnes-ai.cn/v1";
+    const ceilingOf = (row, opts = {}) => agnescodeToDescriptor(row, { bffBase: BFF, ...opts }).maxTokens;
+
+    // (1) A row that states its own ceiling is believed.
+    check("a row's own maxOutputLength becomes maxTokens",
+      ceilingOf({ id: "stated", contextWindow: 1000, maxOutputLength: 65536 }) === 65536,
+      String(ceilingOf({ id: "stated", contextWindow: 1000, maxOutputLength: 65536 })));
+
+    // (2) The invented `?? 32_000` is GONE. A row with no ceiling now reads the
+    // same model's line out of the fallback roster — never a number made up in
+    // the mapping function. kimi-k3's real figure is 131_072; the old code would
+    // have silently shipped 32000, i.e. a quarter of the budget.
+    check("a row that states NO ceiling borrows its own fallback-table figure (not an invented 32000)",
+      ceilingOf({ id: "kimi-k3", contextWindow: 1000 }) === 131_072,
+      String(ceilingOf({ id: "kimi-k3", contextWindow: 1000 })));
+    check("…and never the old 32000 sentinel",
+      ceilingOf({ id: "kimi-k3", contextWindow: 1000 }) !== 32000);
+
+    // (3) A model known to NEITHER source omits the key entirely: the host's
+    // own `defaultMaxTokens ?? 32768` then applies, and "we don't know" is
+    // honest instead of disguised as a number.
+    check("an unknown model with no ceiling omits maxTokens (host default applies)",
+      ceilingOf({ id: "totally-unknown-model", contextWindow: 1000 }) === undefined,
+      String(ceilingOf({ id: "totally-unknown-model", contextWindow: 1000 })));
+
+    // (4) The operator's exact-id override wins over both.
+    check("an override beats the roster's own figure",
+      ceilingOf({ id: "stated", contextWindow: 1000, maxOutputLength: 65536 }, { maxTokensOverrides: { stated: 131072 } }) === 131072);
+    check("an override rescues a model the roster understates",
+      ceilingOf({ id: "kimi-k3", contextWindow: 1000 }, { maxTokensOverrides: { "kimi-k3": 65536 } }) === 65536);
+    check("an override for another id does not leak across models",
+      ceilingOf({ id: "kimi-k3", contextWindow: 1000 }, { maxTokensOverrides: { "glm-5.2": 131072 } }) === 131_072);
+    check("an override CAN declare a ceiling no roster states",
+      ceilingOf({ id: "totally-unknown-model", contextWindow: 1000 }, { maxTokensOverrides: { "totally-unknown-model": 8192 } }) === 8192);
+    check("a non-positive override is ignored rather than sent as 0",
+      ceilingOf({ id: "stated", contextWindow: 1000, maxOutputLength: 65536 }, { maxTokensOverrides: { stated: 0 } }) === 65536);
+
+    // (5) The PANEL quotes the same resolution, so badge and wire cannot disagree.
+    const badgeOf = (overrides) =>
+      agnescodeRoster([{ id: "stated", name: "S", contextWindow: 1000, maxOutputLength: 65536 }], overrides)[0].maxOutputLength;
+    check("the panel badge quotes the roster figure without an override", badgeOf(null) === 65536, String(badgeOf(null)));
+    check("the panel badge quotes the OVERRIDE when one is set", badgeOf({ stated: 131072 }) === 131072, String(badgeOf({ stated: 131072 })));
   } catch (error) {
     fail("descriptors", error);
   }
@@ -1133,6 +1190,55 @@ const GOOD_SESSION = {
       !("agnescode.balanceLine" in dictionaries.zh) && !("agnescode.balanceLine" in dictionaries.en));
     check("the retired combined-split key is gone (three cards replaced it)",
       !("agnescode.balanceSplit" in dictionaries.zh) && !("agnescode.balanceSplit" in dictionaries.en));
+
+    // The three pool-notes lines carry the platform's GRANTS, this plugin's
+    // own rate-limit record, and the account's real SPEND (the ledger, which
+    // counts the whole account including the desktop app). Each must exist in
+    // both languages: a free account renders 每日免费 0 · 订阅 0, and that only
+    // reads correctly if the line is actually there to render a zero in.
+    const poolNoteKeys = ["agnescode.grantLine", "agnescode.grantHint", "agnescode.rateLimitLine", "agnescode.rateLimitNever", "agnescode.rateLimitHint", "agnescode.ledgerLine", "agnescode.ledgerAtLeast", "agnescode.ledgerLastNever", "agnescode.ledgerHint"];
+    check("the pool-notes keys exist in both languages",
+      poolNoteKeys.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""
+        && typeof dictionaries.en[key] === "string" && dictionaries.en[key] !== ""),
+      poolNoteKeys.filter((key) => typeof dictionaries.zh[key] !== "string" || typeof dictionaries.en[key] !== "string").join(","));
+
+    // The pool-notes lines are hook-free on purpose: the tab's data is internal
+    // state, so the unlinked frame never renders them. Mounted directly, they
+    // must report the platform grants (0 included — it is a published fact, not
+    // a missing value), this plugin's own hits, and the account's spend.
+    const notes = clientSurface.agnescodePoolNotes(
+      { totalBalance: 600, timeSensitiveBalance: 600, permanentBalance: 0, dailyFreeCredits: 0, subscriptionCredits: 0, dailyEffectQuota: 0, effectQuotaBalance: 0 },
+      { today: 2, last30d: 5, lastAt: 1788408000000 },
+      { total: 82, fetchedCount: 82, todayCredits: 600, todayDebits: 23, last30dCredits: 1875, last30dDebits: 152, covered30d: false, lastDebitAt: 1788408000000, at: 1788408000000 },
+      tt
+    );
+    const notesText = texts(notes);
+    check("pool notes render the platform grants, zeros included",
+      notesText.some((t) => t.includes("每日免费 0") && t.includes("订阅 0")),
+      notesText.filter((t) => t.includes("每日免费")).join(" | "));
+    check("pool notes render the rate-limit record with counts and a time",
+      notesText.some((t) => t.includes("今日 2 次") && t.includes("近 30 天 5 次")),
+      notesText.filter((t) => t.includes("限流记录")).join(" | "));
+    check("pool notes render the ledger line with the 30-day out total",
+      notesText.some((t) => t.includes("账户流水") && t.includes("今日 入 600 出 23")),
+      notesText.filter((t) => t.includes("账户流水")).join(" | "));
+    // covered30d=false with a positive total: the 30-day figure is a LOWER BOUND,
+    // so it must carry the 至少 / "at least" prefix — never a bare total.
+    check("an uncovered 30-day ledger total renders as a lower bound",
+      notesText.some((t) => t.includes("近 30 天出 至少 152")),
+      notesText.filter((t) => t.includes("账户流水")).join(" | "));
+    // covered30d=true: the same total is a COMPLETE figure and must NOT carry
+    // the prefix (a "at least" on a known total is a lie in the other
+    // direction).
+    const coveredNotes = texts(clientSurface.agnescodePoolNotes(null, null, { total: 82, fetchedCount: 82, todayCredits: 0, todayDebits: 0, last30dCredits: 0, last30dDebits: 152, covered30d: true, lastDebitAt: 1788408000000, at: 1788408000000 }, tt));
+    check("a covered 30-day ledger total renders bare, without the lower-bound prefix",
+      coveredNotes.some((t) => t.includes("近 30 天出 152") && !t.includes("至少")),
+      coveredNotes.filter((t) => t.includes("账户流水")).join(" | "));
+    // Unread figures draw NOTHING — a rendered zero would present a measurement
+    // nobody took as a measurement (same discipline as `balance === null`).
+    const emptyNotes = texts(clientSurface.agnescodePoolNotes(null, null, null, tt));
+    check("pool notes draw nothing when the figures are unread",
+      emptyNotes.length === 0, JSON.stringify(emptyNotes));
 
     // The explainer sits in the tab's CLOSING block, after the state the
     // reader came to check — it used to open the tab and push the switch and
@@ -1713,7 +1819,7 @@ const GOOD_SESSION = {
 // hiccup must not freeze「暂无数据」for a minute). The counting fetcher via
 // `wiring.agnescodeFetch` is the seam that proves the de-duplication.
 {
-  section("route surface (the GET de-duplicates the two BFF reads)");
+  section("route surface (the GET de-duplicates the three BFF reads)");
   try {
     const { registerRoutes } = await import("../src/host/routes.ts");
     const routes = new Map();
@@ -1727,13 +1833,19 @@ const GOOD_SESSION = {
     };
     const unused = new Proxy({}, { get: () => async () => null });
     // Counted per endpoint: the catalogue walks the live BFF once per cache
-    // window, the balance once per window while logged in.
-    const fetchCalls = { balance: 0, catalog: 0 };
+    // window, the balance once per window while logged in, and the ledger
+    // aggregate once per its own 5-minute window (a slow fact, decoupled from
+    // the 60-second read TTL, so both GETs below share that single prime).
+    const fetchCalls = { balance: 0, catalog: 0, ledger: 0 };
     const fetcher = async (url) => {
       const target = String(url);
       if (target.includes("/api/v2/subscription/credits-balance")) {
         fetchCalls.balance += 1;
         return new Response(JSON.stringify({ code: "000000", data: { total_balance: 120, time_sensitive_balance: 20, permanent_balance: 100, subscription_credits: 0, daily_free_credits: 0, level: 1 } }), { headers: { "content-type": "application/json" } });
+      }
+      if (target.includes("/api/v1/subscription/credits-transactions")) {
+        fetchCalls.ledger += 1;
+        return new Response(JSON.stringify({ code: "000000", data: { list: [], pagination: { page: 1, page_size: 100, total: 0 } } }), { headers: { "content-type": "application/json" } });
       }
       fetchCalls.catalog += 1;
       return new Response(JSON.stringify({ data: [{ id: "glm-5.2", name: "GLM-5.2", model_type: "text", max_input_tokens: 200000, max_output_tokens: 32768 }] }), { headers: { "content-type": "application/json" } });
@@ -1782,14 +1894,14 @@ const GOOD_SESSION = {
     // Two consecutive GETs inside one cache window: both readers (the tab and
     // the pill) must share ONE upstream read per kind.
     const first = await read();
-    check("the first GET reaches the BFF for both kinds",
-      fetchCalls.balance === 1 && fetchCalls.catalog === 1, JSON.stringify(fetchCalls));
+    check("the first GET reaches the BFF for all three kinds",
+      fetchCalls.balance === 1 && fetchCalls.catalog === 1 && fetchCalls.ledger === 1, JSON.stringify(fetchCalls));
     check("the first GET reports a live roster with no fallback date",
       first.modelsSource === "live" && first.modelsAsOf === undefined,
       JSON.stringify({ modelsSource: first.modelsSource, modelsAsOf: first.modelsAsOf }));
     const second = await read();
     check("the cached GET answers without a second upstream call",
-      fetchCalls.balance === 1 && fetchCalls.catalog === 1, JSON.stringify(fetchCalls));
+      fetchCalls.balance === 1 && fetchCalls.catalog === 1 && fetchCalls.ledger === 1, JSON.stringify(fetchCalls));
     check("the cached GET still serves the same balance",
       second?.balance?.totalBalance === first?.balance?.totalBalance,
       JSON.stringify(second?.balance));
@@ -1833,9 +1945,16 @@ const GOOD_SESSION = {
     const otherResponse = { status: 0, body: "", writeHead(status) { this.status = status; }, end(payload) { this.body = payload; } };
     await otherHandler({ method: "GET", headers: { host: "127.0.0.1" } }, otherResponse);
     const otherBody = JSON.parse(otherResponse.body);
+    // One GET now costs THREE upstream reads: balance + catalog (both awaited)
+    // and the credits-ledger background prime (served on the next poll). All
+    // three FAIL here (the fetcher returns 500 for everything), and a failure
+    // is never cached — so the next poll retries each one; none "inherits" a
+    // stored null. The ledger's failed read soft-degrades to `null`, not an
+    // object.
     check("a failed BFF read is not cached (the next poll retries, it does not inherit null)",
-      fetchCalls2 === 2 && otherBody.balance === null && otherBody.modelsSource === "fallback",
-      JSON.stringify({ fetchCalls2, balance: otherBody.balance, modelsSource: otherBody.modelsSource }));
+      fetchCalls2 === 3 && otherBody.balance === null && otherBody.modelsSource === "fallback"
+        && otherBody.ledger === null,
+      JSON.stringify({ fetchCalls2, balance: otherBody.balance, modelsSource: otherBody.modelsSource, ledger: otherBody.ledger }));
     check("the fallback roster carries its as-of date (a frozen price must be datable)",
       otherBody.modelsAsOf === "2026-10-04", String(otherBody.modelsAsOf));
   } catch (error) {

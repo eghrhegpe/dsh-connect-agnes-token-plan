@@ -183,11 +183,27 @@ export function reclassifyFinish(chunk: any) {
 
 /**
  * 包裹一个 adapter 的 async iterator 流：对每个 finish chunk 做重判。
+ *
+ * `onFinish` 是**可选观察者**，只对 `finish` chunk 触发（数据 chunk 不触发，
+ * 一次正常回答可能上千个 token，逐 chunk 回调既无意义也不该发生）。它收到
+ * 的是**纠正后**的 chunk，所以既能看到"peer 原本就判为 RATE_LIMIT"的命中，
+ * 也能看到"被本层从 QUOTA 纠正回 RATE_LIMIT"的命中——两者的共同含义是
+ * "这一请求撞上了限频"，正是限流记录要数的东西。观察者不改变任何数据流，
+ * 不 import 状态存储，只是把每个失败结论递出去；记不记、记在哪由调用方决定，
+ * 本模块保持纯函数。
  * @param {AsyncIterableIterator<object>} source - 内层 adapter 的流。
+ * @param {(chunk: object) => void} [onFinish] - 每个 `finish` chunk 的观察回调。
  * @returns {AsyncGenerator<object>} 纠正后的流。
  */
-export async function* reclassifyStream(source: AsyncIterableIterator<any>) {
+export async function* reclassifyStream(
+  source: AsyncIterableIterator<any>,
+  onFinish?: (chunk: any) => void
+) {
   for await (const chunk of source) {
-    yield reclassifyFinish(chunk);
+    const out = reclassifyFinish(chunk);
+    if (onFinish !== undefined && out !== null && typeof out === "object" && out.type === "finish") {
+      onFinish(out);
+    }
+    yield out;
   }
 }

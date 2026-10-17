@@ -54,6 +54,42 @@ export const AGNESCODE_PROVIDER_ID = "agnescode";
 /** What the DSH model picker shows as the AgnesCode provider's name. */
 export const AGNESCODE_DISPLAY_NAME = "AgnesCode";
 
+/**
+ * This model's output ceiling when the live roster row carries none.
+ *
+ * The old code wrote `num(row?.maxOutputLength) ?? 32_000` — an INVENTED number
+ * that exists nowhere else: below the harness's own `defaultMaxTokens` (32768),
+ * far below the ceilings `AGNESCODE_FALLBACK_MODELS` states for most of these
+ * models (65_536 … 393_216), and below the platform cap the sibling token-plan
+ * route probed (65_536). A row that merely stopped carrying the field would
+ * therefore have silently cut users to a fraction of their real budget, with
+ * nothing anywhere saying so.
+ *
+ * So: prefer THIS model's own statement in the fallback table (the same table
+ * `agnescodeRoster` already falls back to when the catalogue is unavailable,
+ * so the two paths cannot disagree), and return `undefined` — omit the key, let
+ * pi-ai's `defaultMaxTokens ?? 32768` take over — only when the model is in
+ * neither place. Never a number invented here.
+ *
+ * @param {string} id - the model id (already known non-empty by the caller).
+ * @param {unknown} declared - the roster row's own `maxOutputLength` reading.
+ * @param {Record<string, number>|null} [overrides] - the operator's exact-id
+ *   ceiling map (`maxTokensOverrides`, already sanitized).
+ * @returns {number|undefined} the ceiling to declare, or `undefined` to omit.
+ */
+export function agnescodeMaxTokensFor(
+  id: string,
+  declared: unknown,
+  overrides?: Record<string, number> | null
+): number | undefined {
+  const override = overrides?.[id];
+  if (typeof override === "number" && Number.isInteger(override) && override > 0) return override;
+  const own = num(declared);
+  if (own !== undefined) return own;
+  const known = (AGNESCODE_FALLBACK_MODELS as readonly { id: string; maxOutputLength?: number }[]).find((row) => row.id === id);
+  return num(known?.maxOutputLength);
+}
+
 /** The zero-cost sentinel: per-token prices are unknowable (credit-gated). */
 const NO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
@@ -100,13 +136,17 @@ export function agnescodeVisionOf(row: Record<string, unknown>) {
  * @param {object[]|null} [catalog] - the `fetchAgnescodeCatalog` result.
  * @returns {object[]} the AgnesCode model rows.
  */
-export function agnescodeRoster(catalog: unknown) {
+export function agnescodeRoster(catalog: unknown, maxTokensOverrides?: Record<string, number> | null) {
   const rows = Array.isArray(catalog) && catalog.length > 0 ? catalog : AGNESCODE_FALLBACK_MODELS;
   const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow: number; maxOutputLength: number }> = [];
   for (const row of rows) {
     const id = str(row?.id, "");
     if (id === "") continue;
     const multiplier = numZeroOk(row?.multiplier);
+    // The SAME resolver the descriptor build uses, so the badge the user reads
+    // and the `max_tokens` the request carries cannot disagree. `0` is the
+    // roster's existing "nothing stated" encoding (the panel draws no segment).
+    const maxOutputLength = agnescodeMaxTokensFor(id, row?.maxOutputLength, maxTokensOverrides);
     out.push({
       id,
       name: str(row?.name, id),
@@ -120,7 +160,7 @@ export function agnescodeRoster(catalog: unknown) {
       // `exactOptionalPropertyTypes` rejects the row.
       ...(multiplier === undefined ? {} : { multiplier }),
       contextWindow: num(row?.contextWindow),
-      maxOutputLength: num(row?.maxOutputLength)
+      maxOutputLength: maxOutputLength ?? 0
     });
   }
   return out;
@@ -171,7 +211,10 @@ export function agnescodeThinkingLevelMap() {
  * @param {object} [options] - `{ bffBase }` — the pinned per-account base.
  * @returns {object} the pi-ai descriptor.
  */
-export function agnescodeToDescriptor(row: Record<string, unknown>, options: { bffBase?: string } = {}) {
+export function agnescodeToDescriptor(
+  row: Record<string, unknown>,
+  options: { bffBase?: string; maxTokensOverrides?: Record<string, number> | null } = {}
+) {
   const id = str(row?.id, "");
   if (id === "") throw new Error("agnescodeToDescriptor: row has no id");
   const bffBase = str(options.bffBase, "");
@@ -190,6 +233,11 @@ export function agnescodeToDescriptor(row: Record<string, unknown>, options: { b
   const multiplier = numZeroOk(row?.multiplier);
   const name = str(row?.name, id);
   const displayName = multiplier === undefined ? name : `${name} · x${multiplier.toFixed(2)}`;
+  // Read ONCE (the codebase's read-once discipline — see `multiplier` above and
+  // `agnescodeRoster`'s note): two reads could disagree if the source mutated
+  // between them, and the descriptor could then claim a `maxTokens` the panel
+  // does not show.
+  const maxTokens = agnescodeMaxTokensFor(id, row?.maxOutputLength, options.maxTokensOverrides);
   return {
     id,
     name: displayName,
@@ -207,7 +255,10 @@ export function agnescodeToDescriptor(row: Record<string, unknown>, options: { b
     // A positive window is required (pi-ai does arithmetic on it); the
     // AgnesCode catalogue always declares one, but guard against shape drift.
     contextWindow: num(row?.contextWindow) ?? 512_000,
-    maxTokens: num(row?.maxOutputLength) ?? 32_000,
+    // `agnescodeMaxTokensFor` owns the fallback chain (this row → this model's
+    // own fallback-table line → omit). **Not** a locally invented constant: the
+    // old `?? 32_000` sat below every figure either source states.
+    ...(maxTokens === undefined ? {} : { maxTokens }),
     headers: agnescodeRequestHeaders(),
     // Same OpenAI-compat CN gateway family: pin the
     // classic `max_tokens` field and the legacy system role (the developer
@@ -219,10 +270,13 @@ export function agnescodeToDescriptor(row: Record<string, unknown>, options: { b
 /**
  * Build the whole descriptor list for one AgnesCode roster.
  * @param {object[]} [roster] - the {@link agnescodeRoster} result.
- * @param {object} [options] - `{ bffBase }`.
+ * @param {object} [options] - `{ bffBase, maxTokensOverrides }`.
  * @returns {object[]} the pi-ai descriptors.
  */
-export function buildAgnescodeDescriptors(roster: unknown, options: { bffBase?: string } = {}) {
+export function buildAgnescodeDescriptors(
+  roster: unknown,
+  options: { bffBase?: string; maxTokensOverrides?: Record<string, number> | null } = {}
+) {
   const list = (Array.isArray(roster) ? roster : agnescodeRoster(null)) as Record<string, unknown>[];
   const out: ReturnType<typeof agnescodeToDescriptor>[] = [];
   const seen = new Set();

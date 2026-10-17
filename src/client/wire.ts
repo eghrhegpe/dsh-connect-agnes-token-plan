@@ -320,6 +320,45 @@ export interface AgnescodeStateData {
     totalBalance?: number;
     timeSensitiveBalance?: number;
     permanentBalance?: number;
+    /** Platform-published daily free grant (`daily_free_credits`). A 0 is a
+     *  published "no daily free grant", not a missing value. */
+    dailyFreeCredits?: number;
+    /** Platform-published subscription grant (`subscription_credits`). */
+    subscriptionCredits?: number;
+    /** Platform-published daily effect quota (`daily_effect_quota`). */
+    dailyEffectQuota?: number;
+    /** Platform-published remaining effect quota (`effect_quota_balance`). */
+    effectQuotaBalance?: number;
+  } | null;
+  /**
+   * Host-side aggregate of this plugin's OWN rate-limit hits — the windowed
+   * counts and the last-hit time only. The daily breakdown never leaves the
+   * Host. `today` / `last30d` of 0 are measurements ("no hit"), not absences.
+   */
+  rateLimit?: {
+    today?: number;
+    last30d?: number;
+    lastAt?: number | null;
+  } | null;
+  /**
+   * Window aggregate of the account's credits LEDGER — the platform-sourced
+   * "real consumption" signal. It includes BOTH this plugin's chat calls AND
+   * the desktop app's usage, so it answers "how much did I actually spend".
+   * `covered30d` being false means the fetched pages did not reach the 30-day
+   * boundary, so `last30d*` totals are LOWER BOUNDS (the panel says "at
+   * least"). `null` when not logged in, or before the background prime has
+   * settled (first poll after a fresh login) — the panel hides the row then.
+   */
+  ledger?: {
+    total?: number | null;
+    fetchedCount?: number;
+    todayCredits?: number;
+    todayDebits?: number;
+    last30dCredits?: number;
+    last30dDebits?: number;
+    covered30d?: boolean;
+    lastDebitAt?: number | null;
+    at?: number;
   } | null;
   models?: AgnescodeModelData[];
   /**

@@ -72,7 +72,7 @@ export const AGNESCODE_SEED_DELAY_MS = 300;
  * @returns {{publisher: object, seed: () => Promise<void>}} the publisher and
  *   its mount-seed function.
  */
-export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm, loadAdapterModule, emit, logger, seedOptions = {} }: {
+export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm, loadAdapterModule, emit, logger, settings, seedOptions = {} }: {
   store: {
     resolve: () => Promise<{ credential: { accessToken: string; bffBase?: string } | null }>;
     isExpired: () => Promise<boolean>;
@@ -84,6 +84,8 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
   loadAdapterModule?: () => Promise<{ createAgnescodeAdapter: (...args: any[]) => any }>;
   emit?: (event: string) => void;
   logger?: any;
+  /** The resolved settings row, read for `maxTokensOverrides` only. */
+  settings?: Partial<import("./types.ts").Settings>;
   seedOptions?: { attempts?: number; delayMs?: number };
 }) {
   // Single-flight + backoff state shared across all resolveToken calls for
@@ -177,7 +179,8 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
     getLlm,
     loadAdapterModule: loadAdapterModule ?? (() => import("./agnescode-llm-adapter.ts")),
     emit: emit ?? (() => {}),
-    logger
+    logger,
+    ...(settings ? { settings } : {})
   });
   holder.current = publisher;
 

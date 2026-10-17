@@ -124,6 +124,30 @@ export const CONFIG_DEFAULTS = Object.freeze({
    */
   registerProvider: false,
   /**
+   * Explicit per-model output ceiling for the **AgnesCode** route, keyed by
+   * EXACT model id; absent or empty means the roster's own figures stand.
+   *
+   * Precedence: this override > the live roster row's `maxOutputLength` > the
+   * same model's line in `AGNESCODE_FALLBACK_MODELS` > omit the key (pi-ai's
+   * `defaultMaxTokens ?? 32768`).
+   *
+   * Why only the AgnesCode route: its ceiling is ENVIRONMENT-DEPENDENT (a
+   * per-account BFF answers, and a rotated session can report a different
+   * roster), so when the BFF understates a model there is no local source of
+   * truth to correct it — the operator is. The sibling token-plan route is the
+   * opposite case: its cap is PROBED platform-wide (`PROBED_MAX_TOKENS`), so an
+   * override there would only let someone type a number the platform has
+   * already been proven to refuse. That asymmetry is deliberate.
+   *
+   * Keys are matched EXACTLY (no substring): the value is a REQUEST PARAMETER,
+   * and a loose key would silently retune models the operator never named —
+   * the same reasoning that makes `trendMultipliers` a display-only map.
+   *
+   * Read by `agnescodeMaxTokensFor`, which BOTH the descriptor build and the
+   * panel roster call, so the badge and the wire cannot disagree.
+   */
+  maxTokensOverrides: {} as Record<string, number>,
+  /**
    * Draw absorption (ARCHITECTURE §5.4 route B): register the
    * `agnes_draw_image` agent tool. When true AND the Host exposes a tools
    * service, image-generation requests go to `{apiBase}/images/generations`
@@ -265,6 +289,33 @@ export function resolveTrendMultipliers(raw: unknown) {
 }
 
 /**
+ * Sanitize the operator's AgnesCode output-ceiling override map.
+ *
+ * Deliberately stricter than {@link resolveTrendMultipliers} in two ways,
+ * because this map is a REQUEST PARAMETER, not a display multiplier:
+ *   1. keys are matched EXACTLY downstream (`agnescodeMaxTokensFor`), so a key
+ *      like `flash` retunes nothing — the operator must name the model id;
+ *      a substring-matching map here would silently move models never named.
+ *   2. values must be positive INTEGERS: `0` is reserved downstream for
+ *      "undeclared" (it means *omit the key*, not *send zero*, which upstream
+ *      rejects).
+ * A non-object or array input falls back to the shipped default (empty).
+ * Exported so `test/config.test.mjs` drives the same sanitizer the resolve path
+ * uses, instead of a copy that could drift.
+ * @param {unknown} raw - the raw `maxTokensOverrides` config value.
+ * @returns {Record<string, number>} the sanitized map.
+ */
+export function resolveMaxTokensOverrides(raw: unknown): Record<string, number> {
+  if (raw === undefined || raw === null) return { ...CONFIG_DEFAULTS.maxTokensOverrides };
+  if (typeof raw !== "object" || Array.isArray(raw)) return { ...CONFIG_DEFAULTS.maxTokensOverrides };
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (key !== "" && typeof value === "number" && Number.isInteger(value) && value > 0) out[key] = value;
+  }
+  return out;
+}
+
+/**
  * Clamp a raw numeric setting to its effective integer.
  *
  * Every numeric field in {@link resolveSettings} follows the same shape: floor
@@ -345,6 +396,10 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
         // Step three opt-in: register the OpenAI-compatible LLM provider
         // directly (strict boolean, like writeImageModelIds).
         registerProvider: source.registerProvider === true,
+        // Per-model AgnesCode output ceilings. Sanitized HERE so every
+        // downstream reader (descriptor build, panel roster) sees one already-
+        // valid map and none of them re-implements the rules.
+        maxTokensOverrides: resolveMaxTokensOverrides(source.maxTokensOverrides),
         // Draw absorption opt-in (strict boolean, same reasoning as
         // registerProvider) plus its two knobs. The deadline has its own
         // floor: image models regularly take tens of seconds, and a chat-
@@ -389,6 +444,7 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
         // `imageModelIds` must not find it absent just because a typo elsewhere
         // pushed the whole row onto the default branch.
         registerProvider: CONFIG_DEFAULTS.registerProvider,
+        maxTokensOverrides: CONFIG_DEFAULTS.maxTokensOverrides,
         drawEnabled: CONFIG_DEFAULTS.drawEnabled,
         drawModelId: CONFIG_DEFAULTS.drawModelId,
         drawTimeoutMs: CONFIG_DEFAULTS.drawTimeoutMs,

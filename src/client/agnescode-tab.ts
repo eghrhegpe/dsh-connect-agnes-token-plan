@@ -112,6 +112,71 @@ export function agnescodeView(
 }
 
 /**
+ * The two muted lines that follow the credit-pool cards.
+ *
+ * Split out of {@link AgnescodeTab} for the same reason the rosters are: the
+ * tab's data is internal state, so the render suite can only reach the
+ * UNLINKED frame — and both lines sit behind `loggedIn`, which is `false`
+ * there. Hook-free, they can be mounted directly with a sample balance and a
+ * sample rate-limit record.
+ *
+ * What each line is FOR, so the wording never drifts:
+ *   - `grantLine`: the platform's GRANTS (daily free / subscription / effect).
+ *     A free account reads 每日免费 0 · 订阅 0 — that is the honest answer to
+ *     "is there a hidden daily free quota I am about to hit", which is why a
+ *     0 renders instead of disappearing.
+ *   - `rateLimitLine`: this plugin's OWN rate-limit hits. The RPM ceiling is
+ *     unpublished and untested, so the panel reports the symptom (hits today /
+ *     30 days, last hit) rather than inventing a threshold. A 0 is a
+ *     measurement, not a missing value.
+ *   - `ledgerLine`: the account's real SPEND, aggregated by the Host from the
+ *     platform's credits ledger (today and 30-day in/out). Unlike the rate-
+ *     limit record it counts the WHOLE account (desktop app included). When
+ *     `covered30d` is false the 30-day out total is a LOWER BOUND, so it is
+ *     pre-composed with the "at least" prefix before it reaches the template.
+ * @param {object|null} balance - the pool the route reported; `null` draws nothing.
+ * @param {object|null} rateLimit - the windowed counts the Host aggregated; `null` draws nothing.
+ * @param {object|null} ledger - the windowed credits-ledger aggregate; `null` draws nothing.
+ * @param {Tt} tt - the dictionary.
+ * @returns {Array<unknown|null>} the three status lines.
+ */
+export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, tt: Tt) {
+  const debits30 = ledger !== null
+    ? (ledger.covered30d === false && (ledger.last30dDebits ?? 0) > 0
+        ? tt("agnescode.ledgerAtLeast") + " " + count(ledger.last30dDebits ?? 0)
+        : count(ledger.last30dDebits ?? 0))
+    : "";
+  return [
+    balance !== null
+      ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.grantHint") },
+          format(tt("agnescode.grantLine"), {
+            dailyFree: count(balance.dailyFreeCredits ?? 0),
+            sub: count(balance.subscriptionCredits ?? 0),
+            dailyEffect: count(balance.dailyEffectQuota ?? 0),
+            effect: count(balance.effectQuotaBalance ?? 0)
+          }))
+      : null,
+    rateLimit !== null
+      ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.rateLimitHint") },
+          format(tt("agnescode.rateLimitLine"), {
+            today: count(rateLimit.today ?? 0),
+            last30d: count(rateLimit.last30d ?? 0),
+            last: rateLimit.lastAt ? clockLong(rateLimit.lastAt) : tt("agnescode.rateLimitNever")
+          }))
+      : null,
+    ledger !== null
+      ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.ledgerHint") },
+          format(tt("agnescode.ledgerLine"), {
+            creditsToday: count(ledger.todayCredits ?? 0),
+            debitsToday: count(ledger.todayDebits ?? 0),
+            debits30,
+            lastDebit: ledger.lastDebitAt ? clockLong(ledger.lastDebitAt) : tt("agnescode.ledgerLastNever")
+          }))
+      : null
+  ];
+}
+
+/**
  * The AgnesCode tab body.
  * @param {object} props
  * @param {Tt} props.tt - the dictionary.
@@ -324,6 +389,11 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   const models = Array.isArray(state?.models) ? state.models : [];
   const attempts = Array.isArray(state?.harvest?.attempts) ? state.harvest.attempts : [];
   const balance = state?.balance ?? null;
+  const rateLimit = state?.rateLimit ?? null;
+  // The windowed credits-ledger aggregate (today / 30-day totals, the "covered"
+  // flag, last debit). `null` until the route's background prime settles, so
+  // the ledger line simply does not render yet — the other lines do.
+  const ledger = state?.ledger ?? null;
   // WHICH roster `models` is. The fallback's rates are FROZEN at probe time —
   // the multiplier chip on a fallback row is a captured snapshot, not a live
   // price, and the picker must say so instead of presenting it as today's.
@@ -529,7 +599,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     loggedIn
       ? h("div", { style: { marginTop: 12 } },
           balance !== null
-            ? h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 } },
+            ? h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 } },
                 h("div", { style: { ...S.pool, flex: "1 1 160px", minWidth: 120 } },
                   h("div", { style: S.cardHead },
                     h("span", { style: S.poolHead }, tt("agnescode.balanceLabel"))),
@@ -546,6 +616,18 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                   h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },
                     count(balance.permanentBalance ?? 0))))
             : null,
+          // The cards carry the SPENDABLE pool; these three muted lines carry the facts
+          // that answer "will an invisible quota limit me": the platform's
+          // GRANTS (a free account reads 每日免费 0 · 订阅 0, which is the honest
+          // answer — there is no hidden daily free quota to hit), this
+          // plugin's own rate-limit record (the SYMPTOM of a cap the platform
+          // never publishes a number for, so the panel says "you hit it N
+          // times" instead of inventing a threshold), and the account's real
+          // SPEND aggregated from the platform's credits ledger (whole account,
+          // desktop included; "at least" when the 30-day window was not fully
+          // fetched). All three are hook-free via
+          // {@link agnescodePoolNotes} so the render suite can reach them.
+          ...agnescodePoolNotes(balance, rateLimit, ledger, tt),
           models.length > 0
             ? h("div", null,
                 // One quiet line ABOVE the picker when the roster is the

@@ -96,6 +96,27 @@
         #「模型接入」switch (POST /api/<name>/provider) overrides it live,
         # with no restart. See docs/PROVIDER-HOT-RELOAD.md.
         registerProvider: false
+        # Explicit per-model OUTPUT CEILING, for the AgnesCode route only.
+        # Keys are EXACT model ids (no substring matching — unlike
+        # trendMultipliers above, this value is a REQUEST PARAMETER, so a loose
+        # key would silently retune models you never named); values are positive
+        # integers. Precedence: this map > the live roster row's own
+        # maxOutputLength > the same model's line in the built-in fallback
+        # roster > the host's default (undeclared, 32768).
+        #
+        # Why only the AgnesCode route: its ceiling is ENVIRONMENT-DEPENDENT
+        # (a per-account BFF answers and a rotated session can report a
+        # different roster), so when the BFF understates a model there is no
+        # local source of truth to correct it — you are. The sibling
+        # `agnes-token-plan` route is the opposite case: its cap is PROBED
+        # platform-wide (65536, always sent as `max_tokens`), so an override
+        # there would only let you type a number the platform has been proven to
+        # refuse (`max_tokens 不能超过 65536`).
+        #
+        # Empty by default. The panel's 「最大输出」 badge quotes this same
+        # resolution, so the figure you read is the figure the request carries.
+        # Example: { "kimi-k3": 65536 }
+        maxTokensOverrides: {}
         # ------------------------------------------------------------------
         # Draw absorption (docs/ARCHITECTURE.md §5.4, route B): when true AND
         # the Host exposes a tools service, the agent gains an

@@ -30,12 +30,14 @@ import { obj, redactSecrets, str } from "../util.ts";
 import {
   fetchAgnescodeCatalog,
   fetchAgnescodeBalance,
+  fetchAgnescodeLedger,
   harvestAgnescodeLocalSession,
   decodeAgnescodeJwtExpMs,
   AGNESCODE_FALLBACK_MODELS,
   AGNESCODE_FALLBACK_ASOF
 } from "../agnescode.ts";
-import { filterAgnescodeRows } from "../agnescode-models.ts";
+import { filterAgnescodeRows, agnescodeRoster } from "../agnescode-models.ts";
+import { createFileAgnescodeStatsStore } from "../agnescode-stats-store.ts";
 import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBody } from "./http.ts";
 import type { CacheMap, HostCtx, HostWiring, InflightMap } from "../types.ts";
 
@@ -67,6 +69,15 @@ const AGNESCODE_SELF_HEAL_COOLDOWN_MS = 60_000;
  * previous answer is still fresh (two panels, two sessions, a re-render).
  */
 const AGNESCODE_READ_CACHE_MS = 60_000;
+
+/**
+ * How long one credits-ledger aggregate is reused. It is a SLOW-CHANGING fact
+ * (window totals over 30 days), NOT a per-poll read: re-walking up to five
+ * pages on every 60 s poll would pound the BFF. A 5-minute TTL keeps the
+ * numbers fresh enough for "am I close to the limit" while capping upstream
+ * load; the panel picks up the settled value on its next tick.
+ */
+const AGNESCODE_LEDGER_TTL_MS = 5 * 60_000;
 
 /** The keys THIS route owns inside the shared cache map. */
 const AGNESCODE_CACHE_PREFIX = "agnescode:";
@@ -173,6 +184,42 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
   // publish per window, so a persistently failing publish cannot rebuild the
   // adapter on every panel poll.
   let agnescodeSelfHealAt = 0;
+  // The plugin's own rate-limit record. NOT per-profile: the count is a fact
+  // about this machine's traffic against the account, so a restarted profile
+  // must still see what the other logged minutes ago (PITFALLS §23, same
+  // reasoning as the throttle store).
+  const agnescodeStats = createFileAgnescodeStatsStore();
+
+  // ── Ledger aggregate: its OWN route-scoped cache + single-flight ──
+  // Decoupled from the shared `cache`/`inflight` on purpose:
+  //   * it is a SLOW-CHANGING fact, so it gets the longer `AGNESCODE_LEDGER_TTL_MS`
+  //     (the shared sweep runs on the 60 s read TTL and would thrash it);
+  //   * the GET must NEVER await the multi-page walk. `readOrPrimeLedger` serves
+  //     whatever is cached (or null) and primes a BACKGROUND refresh when the
+  //     entry is stale — the panel's 60 s poll picks up the settled value on the
+  //     next tick. First appearance is one poll late: an honest "not yet", not
+  //     a failure, and the panel renders the rest of the card meanwhile.
+  const ledgerCache = new Map<string, { body: unknown; at: number }>();
+  const ledgerInflight = new Map<string, Promise<unknown>>();
+  const readOrPrimeLedger = (key: string, produce: () => Promise<unknown>): Promise<unknown> => {
+    const cached = ledgerCache.get(key);
+    const isFresh = cached !== undefined && Date.now() - cached.at < AGNESCODE_LEDGER_TTL_MS;
+    if (!isFresh && ledgerInflight.get(key) === undefined) {
+      const flight = (async () => {
+        let body: unknown = null;
+        try {
+          body = await produce();
+        } catch {
+          body = null;
+        }
+        if (body !== null && body !== undefined) ledgerCache.set(key, { body, at: Date.now() });
+        return body;
+      })();
+      flight.finally(() => ledgerInflight.delete(key));
+      ledgerInflight.set(key, flight);
+    }
+    return Promise.resolve(cached?.body ?? null);
+  };
 
   return ctx.webServer.register({
     kind: "exact",
@@ -231,6 +278,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // to the SLOWER of the two. (A DEAD token is the fast case: the BFF
         // refuses it in seconds, so it never reaches either ceiling.)
         let models: unknown = null;
+        let ledger: unknown = null;
         if (credential?.accessToken) {
           // Both reads go through the account-keyed cache + single-flight, so
           // the two readers of this route (the tab and the composer pill, both
@@ -248,6 +296,19 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           ]);
           balance = b;
           models = m;
+          // The ledger is account-scoped, so it gates on `loggedIn` exactly like
+          // balance: no stored identity, no call. It is a SLOW-CHANGING window
+          // aggregate, so it goes through `readOrPrimeLedger` (background
+          // prime, serve-cached) rather than `readThroughAgnescode` (awaited):
+          // this GET's worst case stays the SLOWER of balance/catalog, and the
+          // multi-page walk settles out of band for the next poll. See the
+          // block above for why that decoupling exists.
+          if (loggedIn) {
+            ledger = await readOrPrimeLedger(
+              agnescodeReadKey("ledger", credential),
+              () => fetchAgnescodeLedger(credential, agnescodeFetch)
+            );
+          }
         }
         // WHICH roster the panel is about to show — the live `/v2/models`
         // answer or the built-in list of FROZEN rates — decided once, so the
@@ -255,12 +316,22 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // `asOf` date, so a rate captured at probe time is never presented as a
         // live one.
         const liveRoster = models !== null && Array.isArray(models) && models.length > 0;
-        const roster = liveRoster ? models : AGNESCODE_FALLBACK_MODELS;
+        // Through `agnescodeRoster`, NOT the raw array: it applies
+        // `maxTokensOverrides` with the same resolver the descriptor build uses,
+        // so the "最大输出" badge the panel prints is the figure the request
+        // actually carries. Passing the bare catalogue here was the trap — the
+        // panel would have shown the platform's claim while the wire sent the
+        // operator's correction.
+        const roster = agnescodeRoster(liveRoster ? models : AGNESCODE_FALLBACK_MODELS, settings.maxTokensOverrides);
         const publisherState = agnescodePublisher?.state ?? null;
         // The curated subset (empty = no curation = push the roster whole).
         const enabledModelIds = agnescodeModels !== null && agnescodeModels !== undefined
           ? await agnescodeModels.listEnabledIds().catch(() => [])
           : [];
+        // Host-side aggregate of this plugin's OWN rate-limit hits. The daily
+        // breakdown stays here — only the windowed counts and the last-hit time
+        // go out, so the wire never carries per-day history.
+        const rateLimit = await agnescodeStats.read();
         return {
           ok: true,
           enabled: effectiveEnabled,
@@ -273,6 +344,12 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           expiresAtMs,
           expired,
           balance,
+          rateLimit,
+          // Window aggregate of the credits ledger (today / last-30-day totals
+          // plus the "covered" flag). Account-scoped; `null` when not logged in
+          // or the background prime has not settled yet (first poll after a
+          // fresh login). The panel renders a row for it only when present.
+          ledger,
           models: roster,
           // Flat scalars, not a nested block: §11b's contract fence walks this
           // literal by brace depth, and `modelsSource` is what lets the panel

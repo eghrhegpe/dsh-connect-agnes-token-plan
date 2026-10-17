@@ -40,6 +40,7 @@ import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME, buildAgnescodeDescriptor
 import { DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
 import { buildRetryPolicyConfig } from "./llm-retry.ts";
 import { createWrappedPiAiAdapter, STREAM_IDLE_TIMEOUT_MS, REQUEST_IMAGE_BUDGETS } from "./pi-ai-adapter-core.ts";
+import { createFileAgnescodeStatsStore } from "./agnescode-stats-store.ts";
 import type { AgnescodeAdapterOptions } from "./types.ts";
 
 /**
@@ -64,9 +65,15 @@ export function createAgnescodeAdapter({
   rows,
   bffBase,
   resolveToken,
-  get
+  get,
+  maxTokensOverrides
 }: AgnescodeAdapterOptions = {}) {
-  const models = buildAgnescodeDescriptors(rows ?? agnescodeRoster(null), { bffBase: String(bffBase ?? "") });
+  const models = buildAgnescodeDescriptors(rows ?? agnescodeRoster(null), {
+    bffBase: String(bffBase ?? ""),
+    // Threaded, never read back from settings here: the caller (`provider-publish`)
+    // already holds the resolved row, and re-reading would add a second source.
+    ...(maxTokensOverrides ? { maxTokensOverrides } : {})
+  });
 
   const provider = {
     ...createProvider({
@@ -116,10 +123,25 @@ export function createAgnescodeAdapter({
   // The live AgnesCode JWT, re-read per request so a re-harvest needs no
   // re-registration. Both image hooks and the 429 correction layer come from
   // the shared core.
+  //
+  // The observer records this route's OWN rate-limit hits. The core already
+  // narrowed the stream's finish chunks to the ones that ended as rate-limit
+  // failures, so here there is nothing to classify — just record. This is the
+  // only way to surface a limit the platform never publishes a number for: the
+  // credit balance says "you have 600", the catalogue says "this model is ×1",
+  // and neither says "how fast" — the RPM ceiling is untested and unpublished,
+  // so the panel shows the symptom (hits today / 30 days) instead of inventing
+  // a threshold. Recording is fire-and-forget: a rate-limit failure must not
+  // fail a second time because the write did, and the store swallows its own
+  // misses.
+  const stats = createFileAgnescodeStatsStore();
   const adapter = createWrappedPiAiAdapter({
     profiles,
     resolveApiKey: async () => resolveToken?.() ?? "",
-    get
+    get,
+    onRateLimit: () => {
+      void stats.recordRateLimit();
+    }
   });
 
   return { adapter, providerIds: [AGNESCODE_PROVIDER_ID] };

@@ -82,10 +82,15 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     getLlm,
     loadAdapterModule,
     emit,
-    logger
+    logger,
+    settings
   } = deps;
   const effectivePanelSwitch = panelSwitch ?? (async () => null);
   const effectiveResolveToken = resolveToken ?? (async () => "");
+  // Read on EVERY publish, not snapshotted at construction: editing the override
+  // map must take effect on the next rebuild without a restart (the same
+  // reason `apiBase` is read per publish on the Token Plan side).
+  const maxTokensOverrides = settings?.maxTokensOverrides ?? {};
   const effectiveLoadAdapterModule = loadAdapterModule ?? (() => import("./agnescode-llm-adapter.ts"));
   const effectiveGetLlm = getLlm ?? (() => null);
   const effectiveEmit = emit ?? (() => {});
@@ -189,7 +194,8 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
         rows: state.rows,
         bffBase: state.bffBase,
         resolveToken: effectiveResolveToken,
-        get: effectiveGetLlm
+        get: effectiveGetLlm,
+        ...(Object.keys(maxTokensOverrides).length > 0 ? { maxTokensOverrides } : {})
       });
       if (!isBuiltAdapter(built)) throw new Error(BAD_FACTORY_SHAPE_ERROR);
     } catch (error) {

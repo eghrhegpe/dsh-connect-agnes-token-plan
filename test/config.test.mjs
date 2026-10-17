@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveSettings, CONFIG_DEFAULTS, resolveAuthOverrides, credentialKey, hostName, isAdmitted, name, unknownConfigKeys } from "../src/host/index.ts";
-import { resolveTrendMultipliers } from "../src/host/host-config.ts";
+import { resolveTrendMultipliers, resolveMaxTokensOverrides } from "../src/host/host-config.ts";
 import { AUTH_DEFAULTS } from "../src/host/agnes-auth.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -265,6 +265,43 @@ check("patch tokenSkewSeconds matches code default", Number(activeValue("tokenSk
     JSON.stringify(resolveTrendMultipliers("glm-5.2=10")) === JSON.stringify(CONFIG_DEFAULTS.trendMultipliers), "");
   check("an array falls back to the shipped defaults",
     JSON.stringify(resolveTrendMultipliers([10])) === JSON.stringify(CONFIG_DEFAULTS.trendMultipliers), "");
+}
+
+// --- 7c. maxTokensOverrides (the output-ceiling override map) --------
+// Stricter than trendMultipliers on purpose: the value is a REQUEST PARAMETER,
+// so keys are matched exactly and values must be positive INTEGERS (0 means
+// "undeclared" downstream, not "send zero" — the platform rejects that).
+{
+  const kept = resolveMaxTokensOverrides({ "kimi-k3": 65536, "glm-5.2": 131072 });
+  check("a well-formed override survives",
+    JSON.stringify(kept) === JSON.stringify({ "kimi-k3": 65536, "glm-5.2": 131072 }), JSON.stringify(kept));
+
+  const dropped = resolveMaxTokensOverrides({
+    "": 5, zero: 0, negative: -2, nan: NaN, inf: Infinity, frac: 1.5, text: "10", "glm-5.2": 131072
+  });
+  check("empty / non-positive / non-integer / non-number entries are dropped",
+    JSON.stringify(dropped) === JSON.stringify({ "glm-5.2": 131072 }), JSON.stringify(dropped));
+
+  const verbatim = resolveMaxTokensOverrides({ "DeepSeek-V4-Flash": 393216 });
+  check("keys are taken verbatim (exact matching, no normalisation)",
+    Object.keys(verbatim).join(",") === "DeepSeek-V4-Flash", Object.keys(verbatim).join(","));
+
+  check("an explicit {} leaves the roster authoritative",
+    Object.keys(resolveMaxTokensOverrides({})).length === 0, JSON.stringify(resolveMaxTokensOverrides({})));
+
+  check("undefined falls back to the shipped default",
+    JSON.stringify(resolveMaxTokensOverrides(undefined)) === JSON.stringify(CONFIG_DEFAULTS.maxTokensOverrides), "");
+  check("a non-object falls back to the shipped default",
+    JSON.stringify(resolveMaxTokensOverrides("kimi-k3=65536")) === JSON.stringify(CONFIG_DEFAULTS.maxTokensOverrides), "");
+  check("an array falls back to the shipped default",
+    JSON.stringify(resolveMaxTokensOverrides([65536])) === JSON.stringify(CONFIG_DEFAULTS.maxTokensOverrides), "");
+
+  const viaSettings = resolveSettings({ maxTokensOverrides: { "kimi-k3": 65536, bad: 0 } }).settings.maxTokensOverrides;
+  check("resolveSettings routes the map through the sanitizer",
+    JSON.stringify(viaSettings) === JSON.stringify({ "kimi-k3": 65536 }), JSON.stringify(viaSettings));
+
+  check("the shipped default is empty (roster authoritative out of the box)",
+    Object.keys(CONFIG_DEFAULTS.maxTokensOverrides).length === 0, JSON.stringify(CONFIG_DEFAULTS.maxTokensOverrides));
 }
 
 // --- 8. numeric field clamping boundaries ----------------------------

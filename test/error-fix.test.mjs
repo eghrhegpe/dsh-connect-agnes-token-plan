@@ -242,6 +242,29 @@ function fail(name, error) {
   );
 }
 
+// --- 4b. reclassifyStream 的可选观察者：只对 finish chunk 触发 -------------
+// `onFinish` 是限流记录的数据来源：adapter 核心把它收窄成"只报 RATE_LIMIT 命中"
+// 再递出去。本段只验本层职责——观察者不改变任何数据流、不 import 状态存储。
+{
+  // 只对 finish chunk 触发；数据 chunk（正常回答里占多数）绝不触发。
+  const seen = [];
+  async function* mixed() {
+    yield { type: "text", text: "hello" };
+    yield { type: "text", text: " world" };
+    yield { type: "finish", reason: { kind: "stop" } };
+  }
+  for await (const c of reclassifyStream(mixed(), (chunk) => seen.push(chunk))) { /* consume */ }
+  check("onFinish fires once, on the finish chunk only", seen.length === 1, JSON.stringify(seen.length));
+  check("onFinish receives the (possibly corrected) chunk", seen[0]?.type === "finish", JSON.stringify(seen[0]));
+
+  // 未传 onFinish 时原样工作，不抛。
+  let threw = false;
+  try {
+    for await (const c of reclassifyStream(mixed())) { /* consume */ }
+  } catch { threw = true; }
+  check("omitting onFinish leaves the stream intact", threw === false);
+}
+
 console.log(JSON.stringify(results, null, 2));
 const failedChecks = results.filter((r) => !r.pass);
 if (failedChecks.length > 0) {

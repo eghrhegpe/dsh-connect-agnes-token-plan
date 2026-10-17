@@ -23,7 +23,7 @@
  */
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { resolveImageAttachmentAccess } from "@deepseek-ai/dsh-llm";
-import { reclassifyStream } from "./llm-error-fix.ts";
+import { reclassifyStream, CODE } from "./llm-error-fix.ts";
 
 /** Idle ceiling while one stream read is outstanding (dsh-llm-pi-ai default). */
 export const STREAM_IDLE_TIMEOUT_MS = 300_000;
@@ -96,15 +96,25 @@ export const INERT_AUTH = Object.freeze({
  *   credential per request.
  * @param {(service: string) => any} [options.get] - service resolver for the
  *   image hooks (`attachments`, `fs`); resolved lazily per request.
+ * @param {(chunk: any) => void} [options.onRateLimit] - optional observer on a
+ *   `finish` chunk that ended as a RATE-LIMIT failure, AFTER the 429 correction
+ *   layer has run. The core narrows the generic finish observer to this class,
+ *   so the caller never has to know the failure-code vocabulary — and so the
+ *   correction layer's patch stays applied in exactly this one place. OPTIONAL
+ *   so the Token Plan shell, which needs nothing observed, can omit it; the
+ *   AgnesCode shell passes one that records rate-limit hits. Threaded to both
+ *   the `stream(...)` and the `prepareCall(...).stream` wrappers, so a request
+ *   on either path is observed.
  * @returns {object} the adapter, with the 429 correction layer applied.
  */
-export function createWrappedPiAiAdapter({ profiles, resolveApiKey, get }: {
+export function createWrappedPiAiAdapter({ profiles, resolveApiKey, get, onRateLimit }: {
   profiles: Map<string, any>;
   resolveApiKey: () => Promise<string>;
   // `| undefined` is required, not cosmetic: `exactOptionalPropertyTypes` is on,
   // so an optional property without it would reject a caller that forwards its
   // own optional `get` straight through (both shells do).
   get?: ((service: string) => any) | undefined;
+  onRateLimit?: ((chunk: any) => void) | undefined;
 }) {
   const inner = new PiAiAdapter({
     profiles: () => profiles,
@@ -128,24 +138,38 @@ export function createWrappedPiAiAdapter({ profiles, resolveApiKey, get }: {
   // ONE copy for both routes on purpose: this is a patch against an immutable
   // peer with its own expiry date, and a second hand-maintained copy is how one
   // route keeps the bug after the other is fixed.
+  // Narrow the generic finish observer to rate-limit failures, so the caller
+  // never has to know the failure-code vocabulary. An original `RATE_LIMIT` and
+  // a `QUOTA` this layer just corrected back are the SAME observable event from
+  // the caller's point of view — "this request hit the rate cap" — and both
+  // reach `onRateLimit`. A hard-quota failure (left as `QUOTA`) does not.
+  const onFinish = onRateLimit === undefined
+    ? undefined
+    : (chunk: any) => {
+        const reason = chunk?.reason;
+        if (reason?.kind === "error" && reason.failure?.code === CODE.RATE_LIMIT) {
+          onRateLimit(chunk);
+        }
+      };
+
   return new Proxy(inner, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       // `stream(...)` 与 `prepareCall(...).stream` 都返回一个 async iterable；
       // 二者据此包裹重判流。其它成员（含 image/resolveApiKey 等）原样放行。
       if (prop === "stream") {
-        return (options: any) => reclassifyStream(target.stream(options));
+        return (options: any) => reclassifyStream(target.stream(options), onFinish);
       }
       if (typeof value === "function" && prop === "prepareCall") {
         return (...args: any[]) => {
           const prepared = value.apply(target, args);
           if (prepared && typeof prepared.then === "function") {
             return prepared.then((p: any) => p && typeof p.stream === "function"
-              ? { ...p, stream: (o: any) => reclassifyStream(p.stream(o)) }
+              ? { ...p, stream: (o: any) => reclassifyStream(p.stream(o), onFinish) }
               : p);
           }
           return prepared && typeof prepared.stream === "function"
-            ? { ...prepared, stream: (o: any) => reclassifyStream(prepared.stream(o)) }
+            ? { ...prepared, stream: (o: any) => reclassifyStream(prepared.stream(o), onFinish) }
             : prepared;
         };
       }

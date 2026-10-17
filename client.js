@@ -243,6 +243,15 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.balanceLabel": "积分余额",
 			"agnescode.balanceTimeLabel": "时效",
 			"agnescode.balancePermanentLabel": "永久",
+			"agnescode.grantLine": "每日免费 {dailyFree} · 订阅 {sub} · 每日生效额度 {dailyEffect} · 生效余额 {effect}",
+			"agnescode.grantHint": "平台公布的每日/订阅额度；0 表示平台未发放。",
+			"agnescode.rateLimitLine": "限流记录：今日 {today} 次 · 近 30 天 {last30d} 次 · 最近 {last}",
+			"agnescode.rateLimitNever": "无",
+			"agnescode.rateLimitHint": "仅统计本插件自身的请求；限频阈值未公布，0 表示未触发过。",
+			"agnescode.ledgerLine": "账户流水（含桌面端）：今日 入 {creditsToday} 出 {debitsToday} · 近 30 天出 {debits30} · 最近 {lastDebit}",
+			"agnescode.ledgerAtLeast": "至少",
+			"agnescode.ledgerLastNever": "无",
+			"agnescode.ledgerHint": "账户级积分流水，含桌面 App 的消耗；30 天取不尽时合计为下限（带「至少」前缀）。",
 			"agnescode.models": "模型（{count}）",
 			"agnescode.fallbackRoster": "未取到实时目录，以下为内置清单，倍率截至 {asOf}。",
 			"agnescode.memberOnly": "会员",
@@ -483,6 +492,15 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.balanceLabel": "Credit balance",
 			"agnescode.balanceTimeLabel": "Time-limited",
 			"agnescode.balancePermanentLabel": "Permanent",
+			"agnescode.grantLine": "Daily free {dailyFree} · Subscription {sub} · Daily effect quota {dailyEffect} · Effect balance {effect}",
+			"agnescode.grantHint": "Daily/subscription grants as published by the platform; 0 means no grant issued.",
+			"agnescode.rateLimitLine": "Rate-limit record: {today} today · {last30d} in 30 days · last {last}",
+			"agnescode.rateLimitNever": "never",
+			"agnescode.rateLimitHint": "Counts this plugin's own requests only; the platform's rate cap is unpublished, 0 means never hit.",
+			"agnescode.ledgerLine": "Account ledger (incl. desktop): today in {creditsToday} out {debitsToday} · 30 days out {debits30} · latest {lastDebit}",
+			"agnescode.ledgerAtLeast": "at least",
+			"agnescode.ledgerLastNever": "never",
+			"agnescode.ledgerHint": "Account-level credit ledger, including the desktop app's spend; when the 30-day window is not fully fetched, the total is a lower bound (prefixed with \"at least\").",
 			"agnescode.models": "Models ({count})",
 			"agnescode.fallbackRoster": "Live catalogue unavailable — showing the built-in list, rates as of {asOf}.",
 			"agnescode.memberOnly": "member",
@@ -3439,6 +3457,81 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		};
 	}
 	/**
+	* The two muted lines that follow the credit-pool cards.
+	*
+	* Split out of {@link AgnescodeTab} for the same reason the rosters are: the
+	* tab's data is internal state, so the render suite can only reach the
+	* UNLINKED frame — and both lines sit behind `loggedIn`, which is `false`
+	* there. Hook-free, they can be mounted directly with a sample balance and a
+	* sample rate-limit record.
+	*
+	* What each line is FOR, so the wording never drifts:
+	*   - `grantLine`: the platform's GRANTS (daily free / subscription / effect).
+	*     A free account reads 每日免费 0 · 订阅 0 — that is the honest answer to
+	*     "is there a hidden daily free quota I am about to hit", which is why a
+	*     0 renders instead of disappearing.
+	*   - `rateLimitLine`: this plugin's OWN rate-limit hits. The RPM ceiling is
+	*     unpublished and untested, so the panel reports the symptom (hits today /
+	*     30 days, last hit) rather than inventing a threshold. A 0 is a
+	*     measurement, not a missing value.
+	*   - `ledgerLine`: the account's real SPEND, aggregated by the Host from the
+	*     platform's credits ledger (today and 30-day in/out). Unlike the rate-
+	*     limit record it counts the WHOLE account (desktop app included). When
+	*     `covered30d` is false the 30-day out total is a LOWER BOUND, so it is
+	*     pre-composed with the "at least" prefix before it reaches the template.
+	* @param {object|null} balance - the pool the route reported; `null` draws nothing.
+	* @param {object|null} rateLimit - the windowed counts the Host aggregated; `null` draws nothing.
+	* @param {object|null} ledger - the windowed credits-ledger aggregate; `null` draws nothing.
+	* @param {Tt} tt - the dictionary.
+	* @returns {Array<unknown|null>} the three status lines.
+	*/
+	function agnescodePoolNotes(balance, rateLimit, ledger, tt) {
+		const debits30 = ledger !== null ? ledger.covered30d === false && (ledger.last30dDebits ?? 0) > 0 ? tt("agnescode.ledgerAtLeast") + " " + count(ledger.last30dDebits ?? 0) : count(ledger.last30dDebits ?? 0) : "";
+		return [
+			balance !== null ? h("div", {
+				style: {
+					...S.muted,
+					fontSize: 12,
+					marginBottom: 8
+				},
+				role: "status",
+				title: tt("agnescode.grantHint")
+			}, format(tt("agnescode.grantLine"), {
+				dailyFree: count(balance.dailyFreeCredits ?? 0),
+				sub: count(balance.subscriptionCredits ?? 0),
+				dailyEffect: count(balance.dailyEffectQuota ?? 0),
+				effect: count(balance.effectQuotaBalance ?? 0)
+			})) : null,
+			rateLimit !== null ? h("div", {
+				style: {
+					...S.muted,
+					fontSize: 12,
+					marginBottom: 8
+				},
+				role: "status",
+				title: tt("agnescode.rateLimitHint")
+			}, format(tt("agnescode.rateLimitLine"), {
+				today: count(rateLimit.today ?? 0),
+				last30d: count(rateLimit.last30d ?? 0),
+				last: rateLimit.lastAt ? clockLong(rateLimit.lastAt) : tt("agnescode.rateLimitNever")
+			})) : null,
+			ledger !== null ? h("div", {
+				style: {
+					...S.muted,
+					fontSize: 12,
+					marginBottom: 8
+				},
+				role: "status",
+				title: tt("agnescode.ledgerHint")
+			}, format(tt("agnescode.ledgerLine"), {
+				creditsToday: count(ledger.todayCredits ?? 0),
+				debitsToday: count(ledger.todayDebits ?? 0),
+				debits30,
+				lastDebit: ledger.lastDebitAt ? clockLong(ledger.lastDebitAt) : tt("agnescode.ledgerLastNever")
+			})) : null
+		];
+	}
+	/**
 	* The AgnesCode tab body.
 	* @param {object} props
 	* @param {Tt} props.tt - the dictionary.
@@ -3583,6 +3676,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const models = Array.isArray(state?.models) ? state.models : [];
 		const attempts = Array.isArray(state?.harvest?.attempts) ? state.harvest.attempts : [];
 		const balance = state?.balance ?? null;
+		const rateLimit = state?.rateLimit ?? null;
+		const ledger = state?.ledger ?? null;
 		const modelsSource = state?.modelsSource === "fallback" ? "fallback" : "live";
 		const modelsAsOf = typeof state?.modelsAsOf === "string" ? state.modelsAsOf : "";
 		return h("div", null, view.showError ? h("div", {
@@ -3687,7 +3782,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			display: "flex",
 			gap: 8,
 			flexWrap: "wrap",
-			marginBottom: 10
+			marginBottom: 6
 		} }, h("div", { style: {
 			...S.pool,
 			flex: "1 1 160px",
@@ -3709,7 +3804,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balancePermanentLabel"))), h("div", { style: {
 			...S.quotaRemaining,
 			marginTop: 4
-		} }, count(balance.permanentBalance ?? 0)))) : null, models.length > 0 ? h("div", null, modelsSource === "fallback" ? h("div", {
+		} }, count(balance.permanentBalance ?? 0)))) : null, ...agnescodePoolNotes(balance, rateLimit, ledger, tt), models.length > 0 ? h("div", null, modelsSource === "fallback" ? h("div", {
 			style: {
 				...S.muted,
 				fontSize: 12,
@@ -4831,6 +4926,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				errorOfStatus,
 				barPlan,
 				agnescodeView,
+				agnescodePoolNotes,
 				dictionaries: Object.freeze({
 					zh,
 					en

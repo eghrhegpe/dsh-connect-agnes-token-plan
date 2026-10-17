@@ -220,12 +220,25 @@ export function contextWindowOf(entry: Record<string, unknown>) {
 /**
  * Read the platform's declared per-request output ceiling, 0 when unknown.
  *
- * This is a DISPLAY fact only. The descriptor pins the PROBED platform cap
- * (`PROBED_MAX_TOKENS`, module header decision 2) as its request parameter;
- * this roster figure still reads the catalog, which on Agnes declares nothing
- * (0 = the panel draws no segment — never guess). It says what the platform
- * can emit at most per the catalog's own claim, so the user learns why a long
- * reply can still stop with `finish_reason: length`.
+ * ⚠️ Whether this figure becomes a request parameter depends on WHICH route
+ * consumes it — the two are deliberately different, and the old wording
+ * ("This is a DISPLAY fact only") described neither accurately:
+ *
+ *  - **Token-plan route** (`toPiDescriptor`, this module): the descriptor pins
+ *    the PROBED platform cap as its request parameter (`maxTokens:
+ *    PROBED_MAX_TOKENS`, module header decision 2). This roster figure does NOT
+ *    feed it — it is display-only *for this route*. But it is not "nothing is
+ *    sent": 65536 IS sent, as a constant. Saying "display only" invited the
+ *    reader to picture an undeclared model, which is the halved-32768 case
+ *    decision 2 exists to avoid.
+ *  - **AgnesCode route** (`agnescodeMaxTokensFor` in `agnescode-models.ts`):
+ *    here the per-model reading IS the request parameter, so it is emphatically
+ *    not display-only.
+ *
+ * On Agnes the catalog itself declares nothing (0 = the panel draws no segment
+ * — never guess). It says what the platform can emit at most per the catalog's
+ * own claim, so the user learns why a long reply can still stop with
+ * `finish_reason: length`.
  * Same spelling-first policy as {@link contextWindowOf}.
  * @param {object} entry - one normalized catalog entry.
  * @returns {number} the declared ceiling, or 0 when the entry states none.
