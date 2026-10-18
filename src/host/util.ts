@@ -31,9 +31,20 @@ import type { PluginError } from "./types.ts";
  * the plugin did not author (a console response, a state file, a settings row),
  * so the honest type at this boundary is "could be anything". Narrowing the
  * PARAMETER costs callers nothing (everything is assignable to `unknown`) and
- * stops the `any` from propagating inward — the returns stay loose because the
- * fallback is the caller's own value and is passed straight back.
+ * stops the `any` from propagating inward.
+ *
+ * The SAME overload discipline as {@link str} and {@link verbatim}: when the
+ * fallback is OMITTED the result can be `undefined`, and a bare `: any` would
+ * let that absence flow into a caller as if it were a value — the one place
+ * that would have been caught is a call site whose own row annotation claimed
+ * `contextWindow: number` while shipping `undefined`. Call sites that must
+ * resolve the absence do so explicitly (`?? 512_000`, `?? 0`), which is where
+ * a missing reading belongs as a DECISION rather than an accident of typing.
+ * The two-argument form stays loose because the fallback is the caller's own
+ * value and is passed straight back.
  */
+export function num(value: unknown, fallback: any): any;
+export function num(value: unknown): number | undefined;
 export function num(value: unknown, fallback?: any): any {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }

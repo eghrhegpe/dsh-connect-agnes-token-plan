@@ -490,12 +490,13 @@ const GOOD_SESSION = {
       { id: "auto", model_type: "text", max_input_tokens: 512000, max_output_tokens: 65536, allowed_subscription: [] },
       { id: "dup", model_type: "text", max_input_tokens: 1, max_output_tokens: 1 },
       { id: "dup", model_type: "text", max_input_tokens: 1, max_output_tokens: 1 },
-      { id: "media-x", model_type: "video", max_input_tokens: 1, max_output_tokens: 1 }
+      { id: "media-x", model_type: "video", max_input_tokens: 1, max_output_tokens: 1 },
+      { id: "undeclared", model_type: "text", allowed_subscription: [] }
     ];
     const fetchJson = (body, status = 200) => async () => ({ ok: status >= 200 && status < 300, status, json: async () => body });
     const catalog = await fetchAgnescodeCatalog(credential, fetchJson({ data: rows }));
     check("the catalogue normalizes to the roster shape with memberOnly kept",
-      catalog?.length === 3 && catalog[0].id === "agnes-3.0-flash" && catalog[0].memberOnly === false
+      catalog?.length === 4 && catalog[0].id === "agnes-3.0-flash" && catalog[0].memberOnly === false
       && catalog[1].memberOnly === true && catalog[1].contextWindow === 1048576,
       JSON.stringify(catalog));
     // The gating fact MOVED FIELDS in v2 (boolean -> subscription list). This
@@ -512,6 +513,14 @@ const GOOD_SESSION = {
       catalog?.[1].multiplier === 5.3, String(catalog?.[1]?.multiplier));
     check("an ABSENT multiplier stays absent (no invented 1, no undefined key)",
       catalog !== null && !("multiplier" in catalog[2]), JSON.stringify(catalog?.[2]));
+    // A window the source never states rides as `0` (this roster's established
+    // "not stated" code), never as an absent key: an `undefined` key cannot be
+    // told from "not read", and a reader that skips the presence check would
+    // treat it as a zero-length context. The descriptor re-resolves the absence
+    // to its own 512k guard, so `0` never reaches a caller as a real claim.
+    check("an absent context window rides as 0, not an absent key",
+      catalog !== null && catalog[3].contextWindow === 0 && catalog[3].maxOutputLength === 0,
+      JSON.stringify(catalog?.[3]));
     // `auto` exists only in v2 and is a routing alias, not a model.
     check("the v2-only `auto` alias is excluded from the roster",
       !catalog.some((row) => row.id === "auto"), JSON.stringify(catalog.map((r) => r.id)));

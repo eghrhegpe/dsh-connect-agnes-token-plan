@@ -269,7 +269,9 @@ export interface AgnescodeModelData {
   multiplier?: number;
   /** A promotional tag the platform publishes on the row (`限时七折`); empty = none. */
   displayLabel?: string;
+  /** Declared context window; `0` when the source states none. Render only `> 0`. */
   contextWindow?: number;
+  /** Declared output ceiling; `0` when the source states none. Render only `> 0`. */
   maxOutputLength?: number;
 }
 

@@ -142,7 +142,10 @@ export function agnescodeVisionOf(row: Record<string, unknown>) {
  */
 export function agnescodeRoster(catalog: unknown, maxTokensOverrides?: Record<string, number> | null) {
   const rows = Array.isArray(catalog) && catalog.length > 0 ? catalog : AGNESCODE_FALLBACK_MODELS;
-  const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow: number; maxOutputLength: number }> = [];
+  // `contextWindow` is OPTIONAL on the annotation: a roster row comes from a
+  // catalogue entry whose window field can be absent, so the honest shape is
+  // "may not state a window" — the `?? 0` below resolves that absence.
+  const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow?: number; maxOutputLength: number }> = [];
   for (const row of rows) {
     const id = str(row?.id, "");
     if (id === "") continue;
@@ -163,7 +166,11 @@ export function agnescodeRoster(catalog: unknown, maxTokensOverrides?: Record<st
       // stay absent rather than become an explicit `undefined`, or
       // `exactOptionalPropertyTypes` rejects the row.
       ...(multiplier === undefined ? {} : { multiplier }),
-      contextWindow: num(row?.contextWindow),
+      // `0` is this roster's established "the source states no window" code
+      // (see `maxOutputLength` below), not a measured value — the descriptor
+      // re-resolves the absence to its own 512k guard and the panel renders
+      // only a positive window, so the zero never reaches a reader as a claim.
+      contextWindow: num(row?.contextWindow) ?? 0,
       maxOutputLength: maxOutputLength ?? 0
     });
   }

@@ -640,7 +640,12 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
     const body = obj(await response.json().catch(() => ({})));
     const models = Array.isArray(body.data) ? body.data : [];
     const seen = new Set();
-    const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; displayLabel?: string; contextWindow: number; maxOutputLength: number }> = [];
+    // `contextWindow`/`maxOutputLength` are OPTIONAL on the annotation: the
+    // live row is the catalogue's raw field and the catalogue can omit
+    // either. The `?? 0` below resolves the absence deliberately — declaring
+    // them required would have leaned on `num()`'s `any` return to smuggle
+    // `undefined` past `exactOptionalPropertyTypes`.
+    const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; displayLabel?: string; contextWindow?: number; maxOutputLength?: number }> = [];
     for (const raw of models) {
       const model = obj(raw);
       const id = str(model.id, "");
@@ -678,8 +683,10 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
         memberOnly: allowed.length > 0,
         ...(multiplier === undefined ? {} : { multiplier }),
         ...(displayLabel === "" ? {} : { displayLabel }),
-        contextWindow: num(model.max_input_tokens),
-        maxOutputLength: num(model.max_output_tokens)
+        // `0` = the source states no such field (see `agnescodeRoster`); the
+        // descriptor re-resolves the absence to its own 512k guard.
+        contextWindow: num(model.max_input_tokens) ?? 0,
+        maxOutputLength: num(model.max_output_tokens) ?? 0
       });
     }
     return out.length > 0 ? out : null;

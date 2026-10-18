@@ -381,7 +381,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // carry `multiplier` on every row, so inference would make it required
         // and reject a LIVE catalogue row whose model has no published price
         // (`auto` is excluded, but a future unpriced model would hit this).
-        let rows: ReadonlyArray<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow: number; maxOutputLength: number }> = AGNESCODE_FALLBACK_MODELS;
+        let rows: ReadonlyArray<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow?: number; maxOutputLength: number }> = AGNESCODE_FALLBACK_MODELS;
         let bffBase = "";
         try {
           const { credential } = agnescodeStore ? await agnescodeStore.resolve().catch(() => ({ credential: null })) : { credential: null };
