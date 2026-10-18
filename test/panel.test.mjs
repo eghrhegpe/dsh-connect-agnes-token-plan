@@ -410,6 +410,18 @@ const healthy = {
     noteLine.join(" | "));
   check("an unstated cache age falls back to the numberless variant",
     /tt\("note\.noCache"\)/.test(source), noteLine.join(" | "));
+
+  // A failed first read must not permanently stop the panel's polling. The
+  // effect distinguishes the two `null` states ("never asked yet" vs "asked,
+  // got no rate") by `loadedOnce`, and the retry rate is the pill's own
+  // constant — imported, not re-spelled — because two readers of one route
+  // that disagreed about this would be a second, silent copy of the bug.
+  check("the polling effect depends on loadedOnce to distinguish the two nulls",
+    /\[load,\s*cadenceMs,\s*loadedOnce\]/.test(source),
+    "the effect deps must include loadedOnce");
+  check("a failed first read retries at the pill's fallback, not a new literal",
+    /SNAPSHOT_RETRY_FALLBACK_MS/.test(source) && !/cadenceMs\s*\?\?\s*\d/.test(source),
+    "the fallback must be the pill's constant, not a bare number");
 }
 
 // === F5. the API tab's card order and its open-by-default set ==============

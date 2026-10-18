@@ -512,16 +512,28 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
               // that reaches the panel, so it is redacted at this single choke
               // point rather than trusting the harvest to remember.
               const attempts = redactHarvestAttempts(walk.attempts);
-              lastHarvest = { ok: walk.ok, attempts };
-              if (walk.ok !== true) return { ok: false, attempts };
+              if (walk.ok !== true) {
+                lastHarvest = { ok: false, attempts };
+                return { ok: false, attempts };
+              }
               const expMs = decodeAgnescodeJwtExpMs(walk.session.accessToken);
-              await agnescodeStore.save({
-                accessToken: walk.session.accessToken,
-                bffBase: walk.session.bffBase,
-                ...(walk.session.userId !== "" ? { userId: walk.session.userId } : {}),
-                ...(walk.session.nickname !== "" ? { nickname: walk.session.nickname } : {}),
-                ...(expMs !== undefined ? { expiresAtMs: expMs } : {})
-              });
+              try {
+                await agnescodeStore.save({
+                  accessToken: walk.session.accessToken,
+                  bffBase: walk.session.bffBase,
+                  ...(walk.session.userId !== "" ? { userId: walk.session.userId } : {}),
+                  ...(walk.session.nickname !== "" ? { nickname: walk.session.nickname } : {}),
+                  ...(expMs !== undefined ? { expiresAtMs: expMs } : {})
+                });
+              } catch (saveError) {
+                // The store refused the credential: the harvest WALKED ok, but
+                // nothing was persisted. Mark the attempt failed so the next GET
+                // does not report success for a save that never landed, then
+                // rethrow so the route's catch answers the POST with the error.
+                lastHarvest = { ok: false, attempts };
+                throw saveError;
+              }
+              lastHarvest = { ok: true, attempts };
               return { ok: true, attempts };
             })().finally(() => {
               agnescodeHarvestInFlight = null;

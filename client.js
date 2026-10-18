@@ -1756,7 +1756,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		} }, tt("auth.parked")) : null, cooling ? h("p", { style: {
 			...S.formNote,
 			color: "var(--dsw-alias-state-warn-primary)"
-		} }, format(tt("auth.retryAfter"), { minutes: coolingMinutes })) : null, h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved")), h("p", { style: S.formNote }, auth?.autoRecoverArmed === true ? tt("auth.autoRecoverOn") : tt("auth.autoRecoverOff"))));
+		} }, format(tt("auth.retryAfter"), { minutes: coolingMinutes })) : null, auth !== null ? h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved")) : null, h("p", { style: S.formNote }, auth?.autoRecoverArmed === true ? tt("auth.autoRecoverOn") : tt("auth.autoRecoverOff"))));
 	}
 	var init_account_form = __esmMin((() => {
 		init_const();
@@ -1821,12 +1821,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* The next allow-list after a bulk "tick all" / "untick all" over one set
 	* of targets, computed against the WHOLE roster.
 	*
-	* The targets are the ids the reader is looking at right now (a filtered
-	* view); the rows outside them keep whatever the Host already offers, so
-	* the result stays a complete allow-list rather than a diff. Both id lists
-	* must be STRINGS — `rosterIds` drops anything that is not one, so a roster
-	* of `{id}` rows would filter to nothing and the whole call would collapse
-	* to the hide-all sentinel no matter which way the button was pressed.
+	* The `roster` is string-guarded (`rosterIds` drops non-strings); `targets`
+	* is NOT — the caller must pass pre-normalized string ids (both call sites in
+	* `roster-draft.ts` map through `String(row?.id ?? "")`). A non-iterable
+	* `targets` throws; non-string elements are stored and never match a real id
+	* (silent no-op, not a collapse to the hide-all sentinel).
 	*/
 	function bulkModelsIn(enabledIds, roster, targets, allOn) {
 		const on = new Set(rosterIds(roster).filter((model) => modelIsOn(enabledIds, model)));
@@ -4086,402 +4085,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	}));
 
 //#endregion
-//#region src/client/panel-page.ts
-/**
-	* What the pinned bar owes the tab that is on screen.
-	*
-	* Module scope and pure so the Node-side suite drives the real decision
-	* instead of scraping the JSX for it — the same reason `viewOf` lives outside
-	* the component.
-	*
-	* The bar is a SHELL: it owns no page-wide reading. It used to be titled
-	* 「积分面板」, stamp every tab with the snapshot's clock, and offer a refresh
-	* that reloaded the snapshot no matter which tab was open — so on the
-	* AgnesCode tab it claimed a freshness and a reload it never had. What it may
-	* say per tab:
-	*
-	*   quota      the shared snapshot's stamp, the console-token chip, its stale
-	*              warning, snapshot reload.
-	*   api        the SAME snapshot (its `llm` block is what this tab renders),
-	*              so the same stamp and reload — but NOT the chip: that token is
-	*              the quota tab's credential, while this tab works off the stored
-	*              API key.
-	*   agnescode  its own route, its own cadence (60 s), so its own stamp and its
-	*              own reload. No chip: this tab's credential is the desktop App's
-	*              session JWT, which has NO refresh endpoint — a "token renews
-	*              itself" pill here would state the opposite of the truth.
-	*/
-	function barPlan(tab, hasSnapshot, hasAgnescode) {
-		if (tab === "agnescode") return {
-			stamp: hasAgnescode ? "agnescode" : null,
-			authChip: false,
-			staleWarning: false,
-			refresh: "agnescode"
-		};
-		return {
-			stamp: hasSnapshot ? "snapshot" : null,
-			authChip: tab === "quota",
-			staleWarning: hasSnapshot,
-			refresh: "snapshot"
-		};
-	}
-	function PanelPage({ onClose, tt, localeSubscribe }) {
-		const [data, setData] = useState(null);
-		const [error, setError] = useState(null);
-		const [loadedOnce, setLoadedOnce] = useState(false);
-		const [refreshing, setRefreshing] = useState(false);
-		const [updatedAt, setUpdatedAt] = useState(0);
-		const [, setLocaleRevision] = useState(0);
-		const [openSections, setOpenSections] = useState({
-			quota: true,
-			catalogue: false,
-			usage: true,
-			account: false,
-			provider: true,
-			draw: true,
-			video: true,
-			llm: false
-		});
-		const [activeTab, setActiveTab] = useState("quota");
-		const [tabStatus, setTabStatus] = useState(null);
-		const publishTabStatus = useCallback((status) => setTabStatus(status), []);
-		useEffect(() => {
-			if (typeof localeSubscribe !== "function") return void 0;
-			return localeSubscribe(() => setLocaleRevision((revision) => revision + 1));
-		}, [localeSubscribe]);
-		const [cadenceMs, setCadenceMs] = useState(null);
-		const generation = useRef(0);
-		const inFlight = useRef(null);
-		const load = useCallback(async () => {
-			generation.current += 1;
-			const mine = generation.current;
-			const isCurrent = () => generation.current === mine;
-			setRefreshing(true);
-			inFlight.current?.abort?.();
-			const controller = typeof AbortController === "function" ? new AbortController() : null;
-			inFlight.current = controller;
-			try {
-				const response = await fetch(SNAPSHOT_PATH, {
-					headers: { accept: "application/json" },
-					cache: "no-store",
-					signal: controller ? controller.signal : null
-				});
-				if (!isCurrent()) return;
-				if (!response.ok) {
-					let reason = "";
-					try {
-						const envelope = await response.json();
-						if (envelope && typeof envelope === "object" && typeof envelope.error === "string") reason = envelope.error;
-					} catch {
-						reason = "";
-					}
-					if (!isCurrent()) return;
-					setError(errorOfStatus(response.status, reason));
-					return;
-				}
-				const body = await response.json();
-				if (!isCurrent()) return;
-				const read = interpretSnapshot(body);
-				if (read.data === null) {
-					setData(null);
-					setError(read.error);
-					return;
-				}
-				setData(read.data);
-				setError(null);
-				setUpdatedAt(Date.now());
-				const stated = read.data?.pollSeconds;
-				if (typeof stated === "number" && Number.isFinite(stated) && stated > 0) setCadenceMs(Math.floor(stated) * 1e3);
-			} catch (reason) {
-				if (!isCurrent()) return;
-				setError(reason instanceof Error ? reason.message : String(reason));
-			} finally {
-				if (isCurrent()) setLoadedOnce(true);
-				if (isCurrent()) setRefreshing(false);
-				if (inFlight.current === controller) inFlight.current = null;
-			}
-		}, []);
-		const dataRef = useRef(null);
-		useEffect(() => {
-			dataRef.current = data;
-		}, [data]);
-		const echoLlm = useCallback((patch) => {
-			generation.current += 1;
-			inFlight.current?.abort?.();
-			if (dataRef.current === null) {
-				load();
-				return;
-			}
-			setData((current) => current === null ? current : {
-				...current,
-				llm: {
-					...current.llm ?? {},
-					...patch
-				}
-			});
-		}, [load]);
-		const toggleSection = useCallback((key) => {
-			setOpenSections((current) => ({
-				...current,
-				[key]: !current[key]
-			}));
-		}, []);
-		useEffect(() => {
-			let alive = true;
-			let timer = null;
-			const run = () => {
-				if (alive) load();
-			};
-			const start = () => {
-				if (timer === null && cadenceMs !== null) timer = setInterval(run, cadenceMs);
-			};
-			const stop = () => {
-				if (timer !== null) {
-					clearInterval(timer);
-					timer = null;
-				}
-			};
-			if (cadenceMs === null) {
-				run();
-				return () => {
-					alive = false;
-					stop();
-				};
-			}
-			start();
-			const onVisibility = () => {
-				if (!alive) return;
-				if (document.visibilityState === "hidden") stop();
-				else {
-					run();
-					start();
-				}
-			};
-			if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", onVisibility);
-			return () => {
-				alive = false;
-				stop();
-				if (typeof document !== "undefined" && typeof document.addEventListener === "function") document.removeEventListener("visibilitychange", onVisibility);
-			};
-		}, [load, cadenceMs]);
-		const openedAccountOnce = useRef(false);
-		useEffect(() => {
-			if (openedAccountOnce.current) return;
-			if (data?.quota?.consoleConnected !== false) return;
-			openedAccountOnce.current = true;
-			setOpenSections((current) => ({
-				...current,
-				account: true
-			}));
-		}, [data]);
-		const quota = data?.quota;
-		const usage = data?.usage;
-		const weeklyResetAt = (Array.isArray(quota?.windows) ? quota.windows.find((entry) => entry?.key === "requestsWeekly")?.resetAt : void 0) ?? null;
-		const { failure, auth, needsSetup, guidance, shapeWarnings } = viewOf(data, error, tt);
-		const showSetupForm = needsSetup && loadedOnce;
-		const authChip = auth === null ? null : auth.error || !auth.configured ? h("span", {
-			style: S.chip,
-			title: auth.error || guidance || ""
-		}, tt("auth.needsLogin")) : h("span", { style: S.chip }, tt("auth.selfRenew"));
-		const authManage = shouldShowAccountManagement(auth);
-		const tabBar = h("div", {
-			style: S.tabBar,
-			role: "tablist"
-		}, h("button", {
-			type: "button",
-			role: "tab",
-			"aria-selected": activeTab === "quota",
-			style: {
-				...S.tab,
-				...activeTab === "quota" ? S.tabActive : {}
-			},
-			onClick: () => setActiveTab("quota")
-		}, tt("tab.quota")), h("button", {
-			type: "button",
-			role: "tab",
-			"aria-selected": activeTab === "api",
-			style: {
-				...S.tab,
-				...activeTab === "api" ? S.tabActive : {}
-			},
-			onClick: () => setActiveTab("api")
-		}, tt("tab.api")), h("button", {
-			type: "button",
-			role: "tab",
-			"aria-selected": activeTab === "agnescode",
-			style: {
-				...S.tab,
-				...activeTab === "agnescode" ? S.tabActive : {}
-			},
-			onClick: () => setActiveTab("agnescode")
-		}, tt("tab.agnescode")));
-		const quotaPlaceholder = showSetupForm ? h(AccountForm, {
-			auth,
-			onDone: () => void load(),
-			tt,
-			bare: true,
-			hasSnapshot: false
-		}) : h("div", { style: S.empty }, failure === null ? tt("panel.loading") : h("div", null, h("div", { role: "alert" }, guidance ?? format(tt("panel.error"), { error: failure.message }))));
-		const body = h("div", null, tabBar, activeTab === "quota" && shapeWarnings.length > 0 ? h("div", {
-			style: S.formError,
-			role: "status"
-		}, format(tt("panel.shapeDrift"), { detail: shapeWarnings.map((entry) => `${tt("shape.api")} ${entry.api} ${tt("shape.missing")} ${entry.missing}`).join("; ") })) : null, activeTab === "quota" ? data === null ? quotaPlaceholder : h("div", null, h(SectionCard, {
-			title: tt("section.quota"),
-			open: openSections.quota,
-			onToggle: () => toggleSection("quota"),
-			tt
-		}, quota?.consoleConnected === false ? h("div", {
-			style: {
-				...S.formNote,
-				marginTop: 0,
-				marginBottom: 12
-			},
-			role: "status"
-		}, h("div", null, guidance ?? tt("quota.consoleOffline")), needsSetup ? h("div", { style: { marginTop: 6 } }, format(tt("quota.consoleOfflineHint"), { section: tt("auth.title") })) : null) : quota?.error ? h("div", {
-			style: {
-				...S.formNote,
-				marginTop: 0,
-				marginBottom: 12
-			},
-			role: "status"
-		}, format(tt("quota.error"), {
-			source: String(quota.error.source ?? ""),
-			message: String(quota.error.message ?? "")
-		})) : null, h(PlanCard, {
-			quota,
-			tt
-		}), Array.isArray(data.visionModels) && data.visionModels.length > 0 ? h("div", { style: {
-			...S.muted,
-			fontSize: 12,
-			marginTop: 10
-		} }, format(tt("pool.vision"), { models: data.visionModels.map((entry) => entry.id).join(" · ") + (data.visionModels.every((entry) => entry.source === "name") ? tt("pool.visionInferred") : "") })) : null), Array.isArray(quota?.plans) && quota.plans.length > 0 ? h(SectionCard, {
-			title: format(tt("section.catalogue"), { count: quota.plans.length }),
-			open: openSections.catalogue,
-			onToggle: () => toggleSection("catalogue"),
-			tt
-		}, h(CatalogueCard, {
-			plans: quota.plans,
-			tt
-		})) : null, h(SectionCard, {
-			title: tt("section.usage"),
-			open: openSections.usage,
-			onToggle: () => toggleSection("usage"),
-			tt
-		}, h("div", { style: {
-			...S.muted,
-			fontSize: 12,
-			marginBottom: 12
-		} }, tt("quota.windowNote")), h(UsageTotals, {
-			totals: quota?.totals,
-			label: tt("quota.accountTotals"),
-			tt
-		}), h("div", { style: {
-			...S.muted,
-			fontSize: 12,
-			marginTop: 16,
-			marginBottom: 8
-		} }, typeof usage?.days === "number" && usage.days > 0 ? format(tt("usage.period"), { days: usage.days }) : tt("usage.periodUnknown")), h(UsageChart, {
-			usage,
-			weeklyResetAt,
-			tt
-		})), h("div", { style: S.note }, typeof data?.cacheSeconds === "number" ? format(tt("note"), { cache: data.cacheSeconds }) : tt("note.noCache")), authManage ? h(SectionCard, {
-			title: tt("auth.title"),
-			open: openSections.account,
-			onToggle: () => toggleSection("account"),
-			tt
-		}, h(AccountForm, {
-			auth,
-			onDone: () => void load(),
-			tt,
-			bare: true,
-			hasSnapshot: true
-		})) : null) : activeTab === "agnescode" ? h("div", { style: { marginTop: 22 } }, h(SectionCard, {
-			title: tt("agnescode.title"),
-			open: true,
-			onToggle: () => {},
-			tt
-		}, h(AgnescodeTab, {
-			tt,
-			onStatus: publishTabStatus
-		}))) : h("div", null, h(SectionCard, {
-			title: tt("llm.providerTitle"),
-			open: openSections.provider,
-			onToggle: () => toggleSection("provider"),
-			tt
-		}, h(ProviderForm, {
-			llm: data?.llm ?? null,
-			onDone: () => void load(),
-			onEcho: echoLlm,
-			tt
-		})), h(SectionCard, {
-			title: tt("draw.title"),
-			open: openSections.draw,
-			onToggle: () => toggleSection("draw"),
-			tt
-		}, h(DrawSwitch, {
-			llm: data?.llm ?? null,
-			onDone: () => void load(),
-			onEcho: echoLlm,
-			tt
-		})), h(SectionCard, {
-			title: tt("video.title"),
-			open: openSections.video,
-			onToggle: () => toggleSection("video"),
-			tt
-		}, h(VideoSwitch, {
-			llm: data?.llm ?? null,
-			onDone: () => void load(),
-			onEcho: echoLlm,
-			tt
-		})), h(SectionCard, {
-			title: tt("llm.title"),
-			open: openSections.llm,
-			onToggle: () => toggleSection("llm"),
-			tt
-		}, h(ApiKeyForm, {
-			llm: data?.llm ?? null,
-			onDone: () => void load(),
-			tt,
-			bare: true
-		})), h(RpmNote, { tt })));
-		const plan = barPlan(activeTab, data !== null, tabStatus !== null && tabStatus.updatedAt > 0);
-		const stamp = plan.stamp === "snapshot" ? data ? format(tt("panel.updated"), { time: clock(updatedAt / 1e3) }) : "" : plan.stamp === "agnescode" ? format(tt("panel.updated"), { time: clock((tabStatus?.updatedAt ?? 0) / 1e3) }) : "";
-		const refresh = plan.refresh === "agnescode" ? tabStatus?.refresh ?? null : () => void load();
-		return h("div", {
-			style: S.page,
-			"data-dsh-plugin": PANEL_ID
-		}, h("div", { style: S.headerBar }, h("div", { style: S.header }, h("span", { style: S.updated }, stamp), plan.authChip ? authChip : null, h("span", { style: S.spacer }), plan.staleWarning && failure && data ? h("span", {
-			style: S.error,
-			role: "status",
-			title: failure.message
-		}, format(tt("panel.error"), { error: failure.message })) : null, h("button", {
-			type: "button",
-			style: refresh === null ? {
-				...S.button,
-				...S.primaryBusy
-			} : S.button,
-			disabled: refresh === null,
-			onClick: () => refresh?.()
-		}, refreshing && plan.refresh === "snapshot" ? tt("panel.refreshing") : tt("panel.refresh")), onClose ? h("button", {
-			type: "button",
-			style: S.button,
-			onClick: () => onClose()
-		}, tt("panel.back")) : null)), h("div", { style: S.scroll }, h("div", { style: S.content }, body)));
-	}
-	var init_panel_page = __esmMin((() => {
-		init_account_form();
-		init_api_key_form();
-		init_const();
-		init_format();
-		init_snapshot();
-		init_runtime();
-		init_styles();
-		init_cards();
-		init_provider_controls();
-		init_agnescode_tab();
-	}));
-
-//#endregion
 //#region src/client/composer-usage-pill.ts
 	function nextPopoverId() {
 		popoverIdSeq += 1;
@@ -5115,6 +4718,408 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}
 		};
 		SNAPSHOT_RETRY_FALLBACK_MS = 3e4;
+	}));
+
+//#endregion
+//#region src/client/panel-page.ts
+/**
+	* What the pinned bar owes the tab that is on screen.
+	*
+	* Module scope and pure so the Node-side suite drives the real decision
+	* instead of scraping the JSX for it — the same reason `viewOf` lives outside
+	* the component.
+	*
+	* The bar is a SHELL: it owns no page-wide reading. It used to be titled
+	* 「积分面板」, stamp every tab with the snapshot's clock, and offer a refresh
+	* that reloaded the snapshot no matter which tab was open — so on the
+	* AgnesCode tab it claimed a freshness and a reload it never had. What it may
+	* say per tab:
+	*
+	*   quota      the shared snapshot's stamp, the console-token chip, its stale
+	*              warning, snapshot reload.
+	*   api        the SAME snapshot (its `llm` block is what this tab renders),
+	*              so the same stamp and reload — but NOT the chip: that token is
+	*              the quota tab's credential, while this tab works off the stored
+	*              API key.
+	*   agnescode  its own route, its own cadence (60 s), so its own stamp and its
+	*              own reload. No chip: this tab's credential is the desktop App's
+	*              session JWT, which has NO refresh endpoint — a "token renews
+	*              itself" pill here would state the opposite of the truth.
+	*/
+	function barPlan(tab, hasSnapshot, hasAgnescode) {
+		if (tab === "agnescode") return {
+			stamp: hasAgnescode ? "agnescode" : null,
+			authChip: false,
+			staleWarning: false,
+			refresh: "agnescode"
+		};
+		return {
+			stamp: hasSnapshot ? "snapshot" : null,
+			authChip: tab === "quota",
+			staleWarning: hasSnapshot,
+			refresh: "snapshot"
+		};
+	}
+	function PanelPage({ onClose, tt, localeSubscribe }) {
+		const [data, setData] = useState(null);
+		const [error, setError] = useState(null);
+		const [loadedOnce, setLoadedOnce] = useState(false);
+		const [refreshing, setRefreshing] = useState(false);
+		const [updatedAt, setUpdatedAt] = useState(0);
+		const [, setLocaleRevision] = useState(0);
+		const [openSections, setOpenSections] = useState({
+			quota: true,
+			catalogue: false,
+			usage: true,
+			account: false,
+			provider: true,
+			draw: true,
+			video: true,
+			llm: false
+		});
+		const [activeTab, setActiveTab] = useState("quota");
+		const [tabStatus, setTabStatus] = useState(null);
+		const publishTabStatus = useCallback((status) => setTabStatus(status), []);
+		useEffect(() => {
+			if (typeof localeSubscribe !== "function") return void 0;
+			return localeSubscribe(() => setLocaleRevision((revision) => revision + 1));
+		}, [localeSubscribe]);
+		const [cadenceMs, setCadenceMs] = useState(null);
+		const generation = useRef(0);
+		const inFlight = useRef(null);
+		const load = useCallback(async () => {
+			generation.current += 1;
+			const mine = generation.current;
+			const isCurrent = () => generation.current === mine;
+			setRefreshing(true);
+			inFlight.current?.abort?.();
+			const controller = typeof AbortController === "function" ? new AbortController() : null;
+			inFlight.current = controller;
+			try {
+				const response = await fetch(SNAPSHOT_PATH, {
+					headers: { accept: "application/json" },
+					cache: "no-store",
+					signal: controller ? controller.signal : null
+				});
+				if (!isCurrent()) return;
+				if (!response.ok) {
+					let reason = "";
+					try {
+						const envelope = await response.json();
+						if (envelope && typeof envelope === "object" && typeof envelope.error === "string") reason = envelope.error;
+					} catch {
+						reason = "";
+					}
+					if (!isCurrent()) return;
+					setError(errorOfStatus(response.status, reason));
+					return;
+				}
+				const body = await response.json();
+				if (!isCurrent()) return;
+				const read = interpretSnapshot(body);
+				if (read.data === null) {
+					setData(null);
+					setError(read.error);
+					return;
+				}
+				setData(read.data);
+				setError(null);
+				setUpdatedAt(Date.now());
+				const stated = read.data?.pollSeconds;
+				if (typeof stated === "number" && Number.isFinite(stated) && stated > 0) setCadenceMs(Math.floor(stated) * 1e3);
+			} catch (reason) {
+				if (!isCurrent()) return;
+				setError(reason instanceof Error ? reason.message : String(reason));
+			} finally {
+				if (isCurrent()) setLoadedOnce(true);
+				if (isCurrent()) setRefreshing(false);
+				if (inFlight.current === controller) inFlight.current = null;
+			}
+		}, []);
+		const dataRef = useRef(null);
+		useEffect(() => {
+			dataRef.current = data;
+		}, [data]);
+		const echoLlm = useCallback((patch) => {
+			generation.current += 1;
+			inFlight.current?.abort?.();
+			if (dataRef.current === null) {
+				load();
+				return;
+			}
+			setData((current) => current === null ? current : {
+				...current,
+				llm: {
+					...current.llm ?? {},
+					...patch
+				}
+			});
+		}, [load]);
+		const toggleSection = useCallback((key) => {
+			setOpenSections((current) => ({
+				...current,
+				[key]: !current[key]
+			}));
+		}, []);
+		useEffect(() => {
+			let alive = true;
+			let timer = null;
+			const run = () => {
+				if (alive) load();
+			};
+			const effectiveCadence = cadenceMs ?? (loadedOnce ? 3e4 : null);
+			const start = () => {
+				if (timer === null && effectiveCadence !== null) timer = setInterval(run, effectiveCadence);
+			};
+			const stop = () => {
+				if (timer !== null) {
+					clearInterval(timer);
+					timer = null;
+				}
+			};
+			if (effectiveCadence === null) {
+				run();
+				return () => {
+					alive = false;
+					stop();
+				};
+			}
+			start();
+			const onVisibility = () => {
+				if (!alive) return;
+				if (document.visibilityState === "hidden") stop();
+				else {
+					run();
+					start();
+				}
+			};
+			if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", onVisibility);
+			return () => {
+				alive = false;
+				stop();
+				if (typeof document !== "undefined" && typeof document.addEventListener === "function") document.removeEventListener("visibilitychange", onVisibility);
+			};
+		}, [
+			load,
+			cadenceMs,
+			loadedOnce
+		]);
+		const openedAccountOnce = useRef(false);
+		useEffect(() => {
+			if (openedAccountOnce.current) return;
+			if (data?.quota?.consoleConnected !== false) return;
+			openedAccountOnce.current = true;
+			setOpenSections((current) => ({
+				...current,
+				account: true
+			}));
+		}, [data]);
+		const quota = data?.quota;
+		const usage = data?.usage;
+		const weeklyResetAt = (Array.isArray(quota?.windows) ? quota.windows.find((entry) => entry?.key === "requestsWeekly")?.resetAt : void 0) ?? null;
+		const { failure, auth, needsSetup, guidance, shapeWarnings } = viewOf(data, error, tt);
+		const showSetupForm = needsSetup && loadedOnce;
+		const authChip = auth === null ? null : auth.error || !auth.configured ? h("span", {
+			style: S.chip,
+			title: auth.error || guidance || ""
+		}, tt("auth.needsLogin")) : h("span", { style: S.chip }, tt("auth.selfRenew"));
+		const authManage = shouldShowAccountManagement(auth);
+		const tabBar = h("div", {
+			style: S.tabBar,
+			role: "tablist"
+		}, h("button", {
+			type: "button",
+			role: "tab",
+			"aria-selected": activeTab === "quota",
+			style: {
+				...S.tab,
+				...activeTab === "quota" ? S.tabActive : {}
+			},
+			onClick: () => setActiveTab("quota")
+		}, tt("tab.quota")), h("button", {
+			type: "button",
+			role: "tab",
+			"aria-selected": activeTab === "api",
+			style: {
+				...S.tab,
+				...activeTab === "api" ? S.tabActive : {}
+			},
+			onClick: () => setActiveTab("api")
+		}, tt("tab.api")), h("button", {
+			type: "button",
+			role: "tab",
+			"aria-selected": activeTab === "agnescode",
+			style: {
+				...S.tab,
+				...activeTab === "agnescode" ? S.tabActive : {}
+			},
+			onClick: () => setActiveTab("agnescode")
+		}, tt("tab.agnescode")));
+		const quotaPlaceholder = showSetupForm ? h(AccountForm, {
+			auth,
+			onDone: () => void load(),
+			tt,
+			bare: true,
+			hasSnapshot: false
+		}) : h("div", { style: S.empty }, failure === null ? tt("panel.loading") : h("div", null, h("div", { role: "alert" }, guidance ?? format(tt("panel.error"), { error: failure.message }))));
+		const body = h("div", null, tabBar, activeTab === "quota" && shapeWarnings.length > 0 ? h("div", {
+			style: S.formError,
+			role: "status"
+		}, format(tt("panel.shapeDrift"), { detail: shapeWarnings.map((entry) => `${tt("shape.api")} ${entry.api} ${tt("shape.missing")} ${entry.missing}`).join("; ") })) : null, activeTab === "quota" ? data === null ? quotaPlaceholder : h("div", null, h(SectionCard, {
+			title: tt("section.quota"),
+			open: openSections.quota,
+			onToggle: () => toggleSection("quota"),
+			tt
+		}, quota?.consoleConnected === false ? h("div", {
+			style: {
+				...S.formNote,
+				marginTop: 0,
+				marginBottom: 12
+			},
+			role: "status"
+		}, h("div", null, guidance ?? tt("quota.consoleOffline")), needsSetup ? h("div", { style: { marginTop: 6 } }, format(tt("quota.consoleOfflineHint"), { section: tt("auth.title") })) : null) : quota?.error ? h("div", {
+			style: {
+				...S.formNote,
+				marginTop: 0,
+				marginBottom: 12
+			},
+			role: "status"
+		}, format(tt("quota.error"), {
+			source: String(quota.error.source ?? ""),
+			message: String(quota.error.message ?? "")
+		})) : null, h(PlanCard, {
+			quota,
+			tt
+		}), Array.isArray(data.visionModels) && data.visionModels.length > 0 ? h("div", { style: {
+			...S.muted,
+			fontSize: 12,
+			marginTop: 10
+		} }, format(tt("pool.vision"), { models: data.visionModels.map((entry) => entry.id).join(" · ") + (data.visionModels.every((entry) => entry.source === "name") ? tt("pool.visionInferred") : "") })) : null), Array.isArray(quota?.plans) && quota.plans.length > 0 ? h(SectionCard, {
+			title: format(tt("section.catalogue"), { count: quota.plans.length }),
+			open: openSections.catalogue,
+			onToggle: () => toggleSection("catalogue"),
+			tt
+		}, h(CatalogueCard, {
+			plans: quota.plans,
+			tt
+		})) : null, h(SectionCard, {
+			title: tt("section.usage"),
+			open: openSections.usage,
+			onToggle: () => toggleSection("usage"),
+			tt
+		}, h("div", { style: {
+			...S.muted,
+			fontSize: 12,
+			marginBottom: 12
+		} }, tt("quota.windowNote")), h(UsageTotals, {
+			totals: quota?.totals,
+			label: tt("quota.accountTotals"),
+			tt
+		}), h("div", { style: {
+			...S.muted,
+			fontSize: 12,
+			marginTop: 16,
+			marginBottom: 8
+		} }, typeof usage?.days === "number" && usage.days > 0 ? format(tt("usage.period"), { days: usage.days }) : tt("usage.periodUnknown")), h(UsageChart, {
+			usage,
+			weeklyResetAt,
+			tt
+		})), h("div", { style: S.note }, typeof data?.cacheSeconds === "number" ? format(tt("note"), { cache: data.cacheSeconds }) : tt("note.noCache")), authManage ? h(SectionCard, {
+			title: tt("auth.title"),
+			open: openSections.account,
+			onToggle: () => toggleSection("account"),
+			tt
+		}, h(AccountForm, {
+			auth,
+			onDone: () => void load(),
+			tt,
+			bare: true,
+			hasSnapshot: true
+		})) : null) : activeTab === "agnescode" ? h("div", { style: { marginTop: 22 } }, h(SectionCard, {
+			title: tt("agnescode.title"),
+			open: true,
+			onToggle: () => {},
+			tt
+		}, h(AgnescodeTab, {
+			tt,
+			onStatus: publishTabStatus
+		}))) : h("div", null, h(SectionCard, {
+			title: tt("llm.providerTitle"),
+			open: openSections.provider,
+			onToggle: () => toggleSection("provider"),
+			tt
+		}, h(ProviderForm, {
+			llm: data?.llm ?? null,
+			onDone: () => void load(),
+			onEcho: echoLlm,
+			tt
+		})), h(SectionCard, {
+			title: tt("draw.title"),
+			open: openSections.draw,
+			onToggle: () => toggleSection("draw"),
+			tt
+		}, h(DrawSwitch, {
+			llm: data?.llm ?? null,
+			onDone: () => void load(),
+			onEcho: echoLlm,
+			tt
+		})), h(SectionCard, {
+			title: tt("video.title"),
+			open: openSections.video,
+			onToggle: () => toggleSection("video"),
+			tt
+		}, h(VideoSwitch, {
+			llm: data?.llm ?? null,
+			onDone: () => void load(),
+			onEcho: echoLlm,
+			tt
+		})), h(SectionCard, {
+			title: tt("llm.title"),
+			open: openSections.llm,
+			onToggle: () => toggleSection("llm"),
+			tt
+		}, h(ApiKeyForm, {
+			llm: data?.llm ?? null,
+			onDone: () => void load(),
+			tt,
+			bare: true
+		})), h(RpmNote, { tt })));
+		const plan = barPlan(activeTab, data !== null, tabStatus !== null && tabStatus.updatedAt > 0);
+		const stamp = plan.stamp === "snapshot" ? data ? format(tt("panel.updated"), { time: clock(updatedAt / 1e3) }) : "" : plan.stamp === "agnescode" ? format(tt("panel.updated"), { time: clock((tabStatus?.updatedAt ?? 0) / 1e3) }) : "";
+		const refresh = plan.refresh === "agnescode" ? tabStatus?.refresh ?? null : () => void load();
+		return h("div", {
+			style: S.page,
+			"data-dsh-plugin": PANEL_ID
+		}, h("div", { style: S.headerBar }, h("div", { style: S.header }, h("span", { style: S.updated }, stamp), plan.authChip ? authChip : null, h("span", { style: S.spacer }), plan.staleWarning && failure && data ? h("span", {
+			style: S.error,
+			role: "status",
+			title: failure.message
+		}, format(tt("panel.error"), { error: failure.message })) : null, h("button", {
+			type: "button",
+			style: refresh === null ? {
+				...S.button,
+				...S.primaryBusy
+			} : S.button,
+			disabled: refresh === null,
+			onClick: () => refresh?.()
+		}, refreshing && plan.refresh === "snapshot" ? tt("panel.refreshing") : tt("panel.refresh")), onClose ? h("button", {
+			type: "button",
+			style: S.button,
+			onClick: () => onClose()
+		}, tt("panel.back")) : null)), h("div", { style: S.scroll }, h("div", { style: S.content }, body)));
+	}
+	var init_panel_page = __esmMin((() => {
+		init_account_form();
+		init_api_key_form();
+		init_const();
+		init_format();
+		init_snapshot();
+		init_runtime();
+		init_styles();
+		init_cards();
+		init_provider_controls();
+		init_agnescode_tab();
+		init_composer_usage_pill();
 	}));
 
 //#endregion

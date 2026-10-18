@@ -35,7 +35,11 @@ export function ProviderStatus({ llm, tt }: { llm?: LlmData | null; tt: Tt }): u
   if (!llm || typeof llm !== "object") return null;
   const rows: unknown[] = [];
   // Where the key came from. `memory` and `env` are both real answers;
-  // an unknown source degrades to the raw tag rather than a blank line.
+  // The source label: a known source (credentials / env / memory) has its
+  // own `llm.src.*` entry. The `||` fallback below is dead in practice — a
+  // missing key yields the key string (truthy), so the right arm never fires —
+  // but `test/render.test.mjs` pins the source set against `API_KEY_SOURCES`
+  // in both directions, so an unknown source never reaches here anyway.
   const sourceText = llm.hasApiKey === true
     ? format(tt("llm.keyPresent"), { source: tt(`llm.src.${String(llm.keySource ?? "")}`) || String(llm.keySource ?? "") })
     : tt("llm.noKey");

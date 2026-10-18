@@ -9,7 +9,7 @@
  * @module dsh-connect-agnes-token-plan/host-config
  */
 
-import { str, obj, num } from "./util.ts";
+import { str, obj, num, numZeroOk } from "./util.ts";
 import type { Settings, AuthOverrides } from "./types.ts";
 
 /**
@@ -377,8 +377,12 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
         // replaced.
         allowedHosts: resolveAllowedHosts(source),
         // Renew the console token this long before it actually expires, so a
-        // panel poll never races the expiry boundary.
-        tokenSkewSeconds: clampInt(source.tokenSkewSeconds, CONFIG_DEFAULTS.tokenSkewSeconds, 0),
+        // panel poll never races the expiry boundary. `0` is a real value here
+        // ("renew exactly at expiry"), so `numZeroOk` is used instead of `num`:
+        // `num()` rejects 0 (red line ⑦ — never compute "remaining"), and
+        // `clampInt` builds on `num()`, so a `min: 0` floor through that path
+        // would be unreachable — `tokenSkewSeconds: 0` would silently become 120.
+        tokenSkewSeconds: Math.max(0, Math.floor(numZeroOk(source.tokenSkewSeconds) ?? CONFIG_DEFAULTS.tokenSkewSeconds)),
         // Console login-flow overrides, handed to `createAuth` verbatim: it owns
         // the platform defaults, so only what the operator actually set travels.
         auth: resolveAuthOverrides(source, consoleBase),

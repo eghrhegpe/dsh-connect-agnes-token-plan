@@ -69,6 +69,7 @@ import type { createTokenStore } from "./token-store.ts";
 import type { createApiKeyStore } from "./api-key-store.ts";
 import type { createFileCatalogStore } from "./catalog-store.ts";
 import type { createProviderPublisher } from "./provider-publish.ts";
+import { CATALOG_CACHE_MS } from "./catalog-refresh.ts";
 import type { CatalogEffects } from "./catalog-refresh.ts";
 
 /** The authenticated console paths this poll reads. */
@@ -464,12 +465,12 @@ async function fetchQuotaSources({
     // one quota source that survives everything except the platform being
     // unreachable, and it is what lets the panel answer "is upgrading worth
     // it" with the platform's own numbers.
-    soft(() => fetchPlans(settings, 3600_000, cache, inflight)),
+    soft(() => fetchPlans(settings, CATALOG_CACHE_MS, cache, inflight)),
     // Optional: a missing API key degrades the model lists, not the quota.
     (async () => {
       const apiKey = await resolveApiKey();
       if (apiKey === "") return null;
-      return fetchModelCatalog(settings, 3600_000, cache, inflight, apiKey).catch((error: unknown) => {
+      return fetchModelCatalog(settings, CATALOG_CACHE_MS, cache, inflight, apiKey).catch((error: unknown) => {
         catalogFailure.error = (error instanceof Error ? error : new Error(String(error))) as Error & { code?: unknown };
         return null;
       });

@@ -54,7 +54,7 @@
  */
 import { fetchModelCatalog } from "./console-client.ts";
 import { catalogSignature } from "./provider-publish.ts";
-import { num } from "./util.ts";
+import { num, redactSecrets } from "./util.ts";
 import type { CacheMap, InflightMap, Settings } from "./types.ts";
 import type { createApiKeyStore } from "./api-key-store.ts";
 import type { createFileCatalogStore } from "./catalog-store.ts";
@@ -203,14 +203,14 @@ export function createCatalogEffects(deps: CatalogEffectsDeps): CatalogEffects {
    * would trade a request flood for a log flood. The message names the wait so
    * an operator reading the log knows the tick is still alive and backing off
    * rather than wedged.
-   * @param {string} reason - why the attempt failed (already redacted upstream).
+   * @param {string} reason - why the attempt failed (redacted at the log exit below).
    */
   function recordFailure(reason: string) {
     failures += 1;
     const delay = retryDelayMs(failures);
     retryAt = Date.now() + delay;
     if (failures === 1) {
-      logger?.warn?.(`catalog refresh failed (${reason}); backing off, next attempt in ${Math.round(delay / 1000)}s`);
+      logger?.warn?.(`catalog refresh failed (${redactSecrets(reason)}); backing off, next attempt in ${Math.round(delay / 1000)}s`);
     }
   }
 
@@ -326,7 +326,7 @@ export function createCatalogEffects(deps: CatalogEffectsDeps): CatalogEffects {
       void refresh().catch((error) => {
         // A background refresh must never take the Host down or spam the log:
         // one line per failed tick, and only when a logger is there.
-        logger?.warn?.(`catalog refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+        logger?.warn?.(`catalog refresh failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`);
       });
     };
     // No immediate `tick()`: see {@link CatalogEffects.start} — mount stays

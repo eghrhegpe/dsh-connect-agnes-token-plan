@@ -184,6 +184,12 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
         ? format(tt("auth.failed"), { reason: body?.error ?? "" })
         : (body?.error ?? tt("auth.network")));
     } catch {
+      // A network failure (Host unreachable, CORS, DNS) degrades to the
+      // generic "network" line: the specific reason is not recoverable from
+      // the browser (PITFALLS §42 — Host-side errors never reach F12), and a
+      // raw Error message would name a transport detail the reader cannot act
+      // on. The Host's own refusal taxonomy (above) already covers every
+      // answer the Host DID return.
       setFormError(tt("auth.network"));
     } finally {
       setBusy(false);
@@ -320,7 +326,9 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
         ? h("p", { style: { ...S.formNote, color: "var(--dsw-alias-state-warn-primary)" } },
             format(tt("auth.retryAfter"), { minutes: coolingMinutes }))
         : null,
-      h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved")),
+      auth !== null
+        ? h("p", { style: S.formNote }, auth?.ephemeral === true ? tt("auth.ephemeral") : tt("auth.saved"))
+        : null,
       // The auto-recovery readiness is a boolean from the Host (`state()`):
       // whether the environment carries `AGNES_PASSWORD`. The value
       // itself never reaches the bundle; the line only tells the user

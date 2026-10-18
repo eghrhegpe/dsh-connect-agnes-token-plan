@@ -74,12 +74,11 @@ export function setAllModelsIn(roster: unknown, allOn: boolean): string[] {
  * The next allow-list after a bulk "tick all" / "untick all" over one set
  * of targets, computed against the WHOLE roster.
  *
- * The targets are the ids the reader is looking at right now (a filtered
- * view); the rows outside them keep whatever the Host already offers, so
- * the result stays a complete allow-list rather than a diff. Both id lists
- * must be STRINGS — `rosterIds` drops anything that is not one, so a roster
- * of `{id}` rows would filter to nothing and the whole call would collapse
- * to the hide-all sentinel no matter which way the button was pressed.
+ * The `roster` is string-guarded (`rosterIds` drops non-strings); `targets`
+ * is NOT — the caller must pass pre-normalized string ids (both call sites in
+ * `roster-draft.ts` map through `String(row?.id ?? "")`). A non-iterable
+ * `targets` throws; non-string elements are stored and never match a real id
+ * (silent no-op, not a collapse to the hide-all sentinel).
  */
 export function bulkModelsIn(enabledIds: unknown, roster: unknown, targets: unknown, allOn: boolean): string[] {
   const on = new Set(rosterIds(roster).filter((model) => modelIsOn(enabledIds, model)));

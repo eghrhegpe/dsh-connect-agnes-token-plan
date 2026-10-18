@@ -17,6 +17,10 @@ import { PlanCard, CatalogueCard, SectionCard, UsageChart, UsageTotals } from ".
 import { DrawSwitch, RpmNote, VideoSwitch, ProviderForm } from "./provider-controls.ts";
 import { AgnescodeTab } from "./agnescode-tab.ts";
 import type { TabStatus } from "./agnescode-tab.ts";
+// The ONE spelling of the retry rate for the route BOTH readers poll. The panel
+// keeps its cadence `null` until the Host states one, so a failed first read
+// needs the same fallback the pill carries — see the polling effect below.
+import { SNAPSHOT_RETRY_FALLBACK_MS } from "./composer-usage-pill.ts";
 
 /** The three fixed perspectives the panel switches between. */
 export type TabName = "quota" | "api" | "agnescode";
@@ -129,6 +133,11 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // state that a plausible-looking number hides. `null` keeps that state
   // visible: the polling effect below fires its first load immediately and
   // installs the timer only once the Host has actually stated a cadence.
+  //
+  // `null` is right only while the Host has not ANSWERED. Once a read has
+  // happened and stated no rate, "not yet known" is false — and the polling
+  // effect retries at `SNAPSHOT_RETRY_FALLBACK_MS` (the pill's own number)
+  // instead of stopping after one request for the rest of the session.
   const [cadenceMs, setCadenceMs] = useState<number | null>(null);
 
   // A snapshot only writes if it is still the newest one: the interval can
@@ -271,12 +280,21 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // then the cadence the Host last stated. Re-running on `cadenceMs` is
   // what lets a changed rate take effect without a reload.
   //
-  // `cadenceMs === null` means the Host has not stated a rate yet, which is
-  // every render before the first answer: the load still fires (that request
-  // IS what produces the answer), but no timer is installed. Because the
-  // first answer flips this dependency, the effect re-runs once with the real
-  // cadence — and that second pass installs the interval WITHOUT loading
-  // again, which is what keeps the mount-time request from being duplicated.
+  // `cadenceMs === null` means the Host has not stated a rate. That is TRUE
+  // only until the first answer arrives: the load still fires (that request IS
+  // what produces the answer), and no timer is installed, so exactly one
+  // request is made and the effect re-runs once the real cadence lands —
+  // WITHOUT loading again, which is what keeps the mount-time request from
+  // being duplicated.
+  //
+  // It is FALSE after a FAILED first answer, and that case used to be the
+  // bug: "not yet known" had stopped being true, but nothing acted on it, so
+  // the panel polled once and then never again for the rest of the session —
+  // the same stall the composer pill guards against with its own fallback.
+  // The effect therefore distinguishes the two `null`s by `loadedOnce`: before
+  // any read, no timer; after a failed one, the pill's retry rate. The two
+  // readers of this one route must not disagree about it, which is why the
+  // number is imported rather than spelled a second time.
   //
   // The interval is stopped while the tab is hidden — nobody is watching
   // the screen, and every poll keeps a Host connection open — and a single
@@ -288,8 +306,12 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     const run = () => {
       if (alive) void load();
     };
+    // The rate to follow: the Host's own while it has stated one, the retry
+    // fallback once a read has happened and stated none, and `null` before any
+    // read has happened (one request, no timer).
+    const effectiveCadence = cadenceMs ?? (loadedOnce ? SNAPSHOT_RETRY_FALLBACK_MS : null);
     const start = () => {
-      if (timer === null && cadenceMs !== null) timer = setInterval(run, cadenceMs);
+      if (timer === null && effectiveCadence !== null) timer = setInterval(run, effectiveCadence);
     };
     const stop = () => {
       if (timer !== null) {
@@ -297,8 +319,8 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
         timer = null;
       }
     };
-    if (cadenceMs === null) {
-      // No stated rate yet: ask once, install nothing.
+    if (effectiveCadence === null) {
+      // No stated rate and no failed read yet: ask once, install nothing.
       run();
       return () => {
         alive = false;
@@ -324,7 +346,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
         document.removeEventListener("visibilitychange", onVisibility);
       }
     };
-  }, [load, cadenceMs]);
+  }, [load, cadenceMs, loadedOnce]);
 
   // The account editor starts collapsed — it is a maintenance action, one
   // click away. The one case where that is the wrong default is a console that

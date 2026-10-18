@@ -460,8 +460,16 @@ const AGNESCODE_ROUTE: RemoteRoute<AgnescodeStateData> = {
  * `pollSeconds` (30, `CONFIG_DEFAULTS` in `host-config.ts`): the operator's
  * rate is what the reader follows the moment it learns it, and this is only
  * "keep trying until we do".
+ *
+ * Exported because `PanelPage` reads the SAME route and needs the same rule.
+ * The panel keeps its cadence state `null` until the Host states one, which is
+ * right for "never asked yet" and wrong for "asked, and got no rate": without
+ * this number there, a failed first read leaves the panel polling exactly once
+ * and then never again for the rest of the session. Two readers of one route
+ * that disagreed about that would be a second, silent copy of this bug, so the
+ * value has exactly one spelling and the panel imports it.
  */
-const SNAPSHOT_RETRY_FALLBACK_MS = 30_000;
+export const SNAPSHOT_RETRY_FALLBACK_MS = 30_000;
 
 /** The console reader (the pill's `/snapshot` loop). */
 function useConsoleQuota(): RemoteReading<SnapshotData> {
