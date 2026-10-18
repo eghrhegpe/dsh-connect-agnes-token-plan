@@ -3550,7 +3550,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}, format(tt("agnescode.rateLimitLine"), {
 				today: count(rateLimit.today ?? 0),
 				last30d: count(rateLimit.last30d ?? 0),
-				last: rateLimit.lastAt ? clockLong(rateLimit.lastAt) : tt("agnescode.rateLimitNever")
+				last: rateLimit.lastAt ? clockLong(rateLimit.lastAt / 1e3) : tt("agnescode.rateLimitNever")
 			})) : null,
 			ledger !== null ? h("div", {
 				style: {
@@ -3564,7 +3564,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				creditsToday: count(ledger.todayCredits ?? 0),
 				debitsToday: count(ledger.todayDebits ?? 0),
 				debits30,
-				lastDebit: ledger.lastDebitAt ? clockLong(ledger.lastDebitAt) : tt("agnescode.ledgerLastNever")
+				lastDebit: ledger.lastDebitAt ? clockLong(ledger.lastDebitAt / 1e3) : tt("agnescode.ledgerLastNever")
 			})) : null
 		];
 	}
@@ -3747,7 +3747,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			...S.quotaUsed,
 			whiteSpace: "nowrap",
 			...state?.expired === true ? { color: "var(--dsw-alias-state-warn-primary)" } : {}
-		} }, format(tt(state?.expired === true ? "agnescode.expiresAtExpired" : "agnescode.expiresAt"), { time: clockLong(state.expiresAtMs) })) : null), state?.expired === true ? h("div", {
+		} }, format(tt(state?.expired === true ? "agnescode.expiresAtExpired" : "agnescode.expiresAt"), { time: clockLong(state.expiresAtMs / 1e3) })) : null), state?.expired === true ? h("div", {
 			style: {
 				...S.formNote,
 				fontSize: 12,

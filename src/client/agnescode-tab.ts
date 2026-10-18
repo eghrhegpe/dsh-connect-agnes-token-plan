@@ -161,7 +161,9 @@ export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, tt
           format(tt("agnescode.rateLimitLine"), {
             today: count(rateLimit.today ?? 0),
             last30d: count(rateLimit.last30d ?? 0),
-            last: rateLimit.lastAt ? clockLong(rateLimit.lastAt) : tt("agnescode.rateLimitNever")
+            // `lastAt` is epoch MS (the stats store's `at.getTime()`); clockLong
+            // eats SECONDS — feeding ms straight in prints a date ~58 000 years out.
+            last: rateLimit.lastAt ? clockLong(rateLimit.lastAt / 1000) : tt("agnescode.rateLimitNever")
           }))
       : null,
     ledger !== null
@@ -170,7 +172,9 @@ export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, tt
             creditsToday: count(ledger.todayCredits ?? 0),
             debitsToday: count(ledger.todayDebits ?? 0),
             debits30,
-            lastDebit: ledger.lastDebitAt ? clockLong(ledger.lastDebitAt) : tt("agnescode.ledgerLastNever")
+            // `lastDebitAt` is epoch MS (the Host's ledger walk normalizes
+            // `created_at` to ms); clockLong eats SECONDS.
+            lastDebit: ledger.lastDebitAt ? clockLong(ledger.lastDebitAt / 1000) : tt("agnescode.ledgerLastNever")
           }))
       : null
   ];
@@ -480,8 +484,10 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                                 : {})
                             }
                           },
+                            // `expiresAtMs` is epoch MS (readJwtExpiry decodes the JWT
+                            // `exp` in milliseconds); clockLong eats SECONDS.
                             format(tt(state?.expired === true ? "agnescode.expiresAtExpired" : "agnescode.expiresAt"),
-                              { time: clockLong(state.expiresAtMs) }))
+                              { time: clockLong(state.expiresAtMs / 1000) }))
                           : null
                       ),
                       // The date alone used to be the whole story: a credential

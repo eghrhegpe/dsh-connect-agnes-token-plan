@@ -44,6 +44,20 @@ function check(name, condition, detail = "") {
   results.push({ name, pass: Boolean(condition), detail: String(detail).slice(0, 400) });
 }
 
+/**
+ * The expected `clockLong` reading of an epoch-MS value: the same `MM-DD HH:mm`
+ * shape the shipped formatter prints, mirrored FROM MS here (production must
+ * divide by 1000 before formatting). Pins the AgnesCode pool-note / credential
+ * stamps: feeding raw ms into the seconds-eating formatter prints a month-day
+ * from ~58 000 years out, and `MM-DD` carries no year, so it reads as
+ * plausible — a regression the shape-only checks above cannot see.
+ */
+const msStamp = (ms) => {
+  const date = new Date(ms);
+  const p = (v) => String(v).padStart(2, "0");
+  return `${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`;
+};
+
 // ── 0. dependencies: SKIP loudly when devDependencies are absent ────────────
 // `jsdom` loads first and installs the DOM globals BEFORE react-dom is
 // required: `canUseDOM` is computed at react-dom MODULE LOAD, and a react-dom
@@ -999,6 +1013,18 @@ try {
       && acCard()?.textContent.includes("限流记录")
       && acCard()?.textContent.includes("账户流水"),
     `card=${acCard()?.textContent?.slice(0, 240) ?? "absent"}`);
+  // The pool-note stamps are EPOCH MS (the stats store's `at.getTime()`, the
+  // ledger walk's normalized `lastDebitAt`); the formatter eats SECONDS, so
+  // the card divides by 1000 before formatting. A regression that feeds the
+  // ms straight back in prints a month-day from ~58 000 years out, and `MM-DD`
+  // carries no year, so it reads as plausible. The fixture is 2026-09-03
+  // 13:46 in this zone; BOTH the rate-limit and the ledger line end in
+  // `最近 <stamp>` — count both.
+  const fixtureStamp = msStamp(1788408000000); // == the fixture's lastAt / lastDebitAt
+  const lastStamps = (acCard()?.textContent ?? "").split(`最近 ${fixtureStamp}`).length - 1;
+  check("the rate-limit / ledger 'last' stamps print the fixture date (ms divided to seconds, both lines)",
+    lastStamps === 2,
+    `stamps=${lastStamps} card=${acCard()?.textContent?.slice(0, 240) ?? "absent"}`);
 } finally {
   await unmountAll();
 }
@@ -1016,7 +1042,11 @@ try {
   const agyOn = {
     ok: true, enabled: true, loggedIn: true, nickname: "阿格",
     balance: { totalBalance: 1200, timeSensitiveBalance: 40, permanentBalance: 1160 },
-    models: [], providerRegistered: false
+    models: [], providerRegistered: false,
+    // The credential caption's stamp is EPOCH MS (`readJwtExpiry` decodes the
+    // JWT `exp` in milliseconds); the tab divides before the seconds-eating
+    // formatter. 1788408000000 ms = 2026-09-03 13:46 in this zone.
+    expiresAtMs: 1788408000000
   };
   const agyOff = { ...agyOn, enabled: false };
   const held = [];
@@ -1046,6 +1076,9 @@ try {
   check("the AgnesCode tab shows the provider switch in the ON state",
     switchInput()?.checked === true,
     `checked=${String(switchInput()?.checked)}`);
+  check("the credential-valid-until stamp prints the fixture date (ms divided to seconds)",
+    container.textContent?.includes(`凭据有效期至 ${msStamp(1788408000000)}`) === true,
+    `stamp=${msStamp(1788408000000)}`);
 
   // Arm the gate and trigger a NEW GET through the tab's OWN visibility wake
   // (hidden → visible loads once, the same handoff `PanelPage` makes).

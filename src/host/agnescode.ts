@@ -751,9 +751,10 @@ export const AGNESCODE_LEDGER_WINDOW_DAYS = 30;
  * The list is NEWEST-FIRST (probed), so the page fetch walks back in time:
  *   - `today*`  aggregates entries whose `created_at` is at/after local midnight
  *   - `last30d*` aggregates entries at/after `now - AGNESCODE_LEDGER_WINDOW_DAYS`
- *   - `covered30d` is true only when the fetched range reaches that boundary (or
- *     the whole ledger is shorter than the window) — otherwise the 30-day sum is
- *     a lower bound and the panel must say "at least".
+ *   - `covered30d` is true only when the walk PROVED it fetched everything: a
+ *     stated `total` drained, or a short final page. Running out of OUR page
+ *     budget at the cap proves nothing — the 30-day sum is then a lower bound
+ *     and the panel must say "at least".
  *
  * @param {object} credential - `{ accessToken, bffBase }`.
  * @param {typeof fetch} [fetcher] - injected fetch.
@@ -798,6 +799,10 @@ export async function fetchAgnescodeLedger(
   let debitsWindow = 0;
   let lastDebitAt: number | null = null;
   let oldestSeen: number | null = null;
+  // Set only at the short-page break: proof the walk reached the ledger's end
+  // itself. The other breaks (boundary step, total drain, cap exhaustion) do
+  // NOT prove an end — see the `covered30d` calculation below.
+  let drained = false;
 
   for (let page = 1; page <= AGNESCODE_LEDGER_MAX_PAGES; page++) {
     let list: unknown[] | null = null;
@@ -829,6 +834,12 @@ export async function fetchAgnescodeLedger(
       if (createdMs === null) continue;
       fetchedCount += 1;
       if (oldestSeen === null || createdMs < oldestSeen) oldestSeen = createdMs;
+      // Sign convention (ROADMAP §6.3.1 shape fact ④, live-probed 2026-10-18,
+      // 130 rows: direction 1 AND 2 are 100% positive): `amount` is a
+      // MAGNITUDE — the sign lives in `direction`, never in the number. This
+      // walk therefore sums without abs(). If a future re-probe ever finds
+      // SIGNED amounts, change this line to `Math.abs` and re-probe the
+      // fixtures — never assume the sign.
       const amount = numZeroOk(row.amount) ?? 0;
       const direction = num(row.direction, null);
       const isCredit = direction === 1;
@@ -850,12 +861,26 @@ export async function fetchAgnescodeLedger(
 
     // Newest-first: stop once we have either drained the ledger or stepped past
     // the 30-day boundary (no further entries can fall inside the window).
-    if (list.length < AGNESCODE_LEDGER_PAGE_SIZE) break;
+    if (list.length < AGNESCODE_LEDGER_PAGE_SIZE) {
+      drained = true;
+      break;
+    }
     if (oldestSeen !== null && oldestSeen < startOfWindow) break;
     if (total !== null && fetchedCount >= total) break;
   }
 
-  const covered30d = total !== null ? total <= fetchedCount : oldestSeen === null || oldestSeen >= startOfWindow;
+  // Drain evidence. With a stated total the test is `total <= fetchedCount`.
+  // WITHOUT one, coverage may rest only on the walk reaching the ledger's END
+  // itself: `drained` (a short page — the authoritative end under any
+  // page_size) or `oldestSeen === null` (no dated rows at all). Running the
+  // PAGE CAP is neither: the cap is OUR budget, not the account's boundary,
+  // and rows past it are simply unprobed. (Review 2026-10-18: the first form
+  // of this line accepted `oldestSeen >= startOfWindow` alone, so a cap-
+  // exhausted walk whose last page was full and in-window reported the 30-day
+  // sum as exact — the one shape the lower-bound flag exists to catch.)
+  const covered30d = total !== null
+    ? total <= fetchedCount
+    : oldestSeen === null || (drained && oldestSeen >= startOfWindow);
   return {
     total,
     fetchedCount,

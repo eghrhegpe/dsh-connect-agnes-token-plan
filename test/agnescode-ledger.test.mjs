@@ -45,6 +45,12 @@ const sec = (ms) => Math.round(ms / 1000);
 // Every fixture row carries a description: the aggregation must DROP it —
 // the returned shape is the red line, so the fixture makes its survival
 // observable.
+// Amounts are POSITIVE in both directions: the pinned live shape fact
+// (docs/ROADMAP.md §6.3.1 ④, re-probed 2026-10-18: 130 rows, 18 credit /
+// 112 debit, all positive `number`) — the sign lives in `direction`, so the
+// aggregation sums without abs(). If a future re-probe finds signed
+// amounts, change the aggregation to Math.abs FIRST, then extend these
+// fixtures; do not "fix" the sign by hand here.
 const row = (createdAt, direction, amount) => ({
   created_at: createdAt,
   direction,
@@ -238,6 +244,24 @@ const envelope = (list, total) => ({
   check("an empty ledger is covered (nothing left to fetch)",
     empty?.fetchedCount === 0 && empty?.covered30d === true && empty?.lastDebitAt === null,
     JSON.stringify(empty));
+
+  // Regression (review 2026-10-18): 5 FULL pages, every row in-window, NO
+  // pagination envelope anywhere. The walk exits at OUR cap with `oldestSeen`
+  // still inside the window — the shape the first `covered30d` formula read as
+  // "covered". It is NOT: the cap is our budget, not the ledger's end, so rows
+  // past page 5 are simply unprobed. `drained` stays false (no short page), so
+  // the sum is a lower bound.
+  {
+    const full = Array.from({ length: AGNESCODE_LEDGER_PAGE_SIZE }, (_, i) => row(sec(startOfToday + i * 1000), 2, 1));
+    const capPages = {};
+    for (let p = 1; p <= AGNESCODE_LEDGER_MAX_PAGES; p++) capPages[p] = envelope(full); // total omitted
+    const { calls, fetcher: fCap } = ledgerHarness(capPages);
+    const capped = await fetchAgnescodeLedger(CREDENTIAL, fCap, BASE);
+    check("a cap-exhausted walk with no pagination and in-window rows is NOT covered",
+      calls.length === AGNESCODE_LEDGER_MAX_PAGES
+        && capped?.total === null && capped?.covered30d === false,
+      `${calls.length} calls, fetched ${capped?.fetchedCount}, covered ${capped?.covered30d}`);
+  }
 }
 
 // --- 7. untrusted base：发请求前即 null ----------------------------------
