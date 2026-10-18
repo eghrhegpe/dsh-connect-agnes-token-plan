@@ -430,6 +430,26 @@ async function rejects(fn) {
     const message = await rejects(() => makeTool({ isDisposed: () => true }).execute({ prompt: "a cat" }));
     check("a disposed plugin refuses draws", /no longer mounted/.test(message ?? ""), message);
   }
+  {
+    // A CALLER CANCELLATION is not a failed draw: the tools peer cannot
+    // hard-kill same-process code, so the body has to observe `exec.signal`
+    // itself, and tripping the cooldown for a stop the agent asked for would
+    // punish the next attempt. Real fetch rejects an aborted request with a
+    // `DOMException` named `AbortError`, which is exactly the shape below.
+    let tripped = false;
+    const cancelled = makeTool({
+      fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("caller stopped", "AbortError")), { once: true });
+      }),
+      cooldown: { blocked: () => tripped, trip: () => { tripped = true; }, remainingMs: () => 0 }
+    });
+    const controller = new AbortController();
+    const message = await rejects(() => cancelled.execute({ prompt: "a cat" }, { signal: controller.signal }));
+    controller.abort();
+    check("a cancelled draw forwards exec.signal and rejects as aborted",
+      /caller stopped/.test(message ?? "") || /AbortError/.test(message ?? ""), message);
+    check("a cancellation does not trip the draw cooldown", tripped === false);
+  }
 }
 
 console.log(JSON.stringify(results, null, 2));

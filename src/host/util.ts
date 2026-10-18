@@ -319,3 +319,51 @@ export function pluginError(code: string, message: string, extra: { retryAfterMs
   if (extra.detail !== undefined) error.detail = extra.detail;
   return error;
 }
+
+/**
+ * Merge a caller's cancellation signal onto the deadline controller a request
+ * builds internally.
+ *
+ * The agent tools are registered with a `timeoutMs` declaration, which the
+ * tools peer reads as an assertion that the body forwards the caller's
+ * `exec.signal` into a cooperative implementation (the registry cannot hard-kill
+ * same-process code). Until this helper existed the tools aborted only their
+ * own deadline, so a cancelled call kept running to its full budget — for the
+ * video tool that meant the poll loop still spent its 600s wall-clock budget
+ * hammering the shared video rate-limit pool after the agent had already been
+ * told to stop.
+ *
+ * `AbortSignal.any` is used so the caller's abort reason travels verbatim into
+ * the fetch rejection, which lets callers tell a cancellation apart from a
+ * deadline (see {@link isAbortError}). When `signal` is absent the internal
+ * controller stands alone, so every caller that does not observe cancellation —
+ * the unit tests, which invoke `execute(params)` with one argument — keeps the
+ * exact behaviour it had.
+ * @param {AbortController} controller - the internal deadline controller.
+ * @param {AbortSignal|undefined} signal - the caller's cancellation signal.
+ * @returns {AbortSignal} the signal to hand to `fetch`.
+ */
+export function mergedSignal(controller: AbortController, signal?: AbortSignal | undefined): AbortSignal {
+  if (signal === undefined || signal === null) return controller.signal;
+  return AbortSignal.any([controller.signal, signal]);
+}
+
+/**
+ * Whether a thrown value is a CALLER CANCELLATION rather than a deadline or an
+ * HTTP failure.
+ *
+ * The tools treat the two differently, and conflating them misbehaves: a
+ * deadline trips the draw cooldown (the attempt genuinely failed) while a
+ * cancellation does not (the agent asked to stop, and punishing the next
+ * attempt for it would compound the interruption).
+ *
+ * The check reads the error `name`, because fetch rejects with the abort reason
+ * verbatim: the tools peer's caller signal is a `DOMException` named
+ * `AbortError`, while this plugin's own deadlines abort with a plain `Error` and
+ * therefore never match.
+ * @param {unknown} error - the thrown value.
+ * @returns {boolean} true when the failure is a caller cancellation.
+ */
+export function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { name?: unknown })?.name === "AbortError";
+}

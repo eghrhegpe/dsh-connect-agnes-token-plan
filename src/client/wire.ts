@@ -341,6 +341,29 @@ export interface AgnescodeStateData {
     lastAt?: number | null;
   } | null;
   /**
+   * This plugin's OWN per-client usage roll — the request count and token
+   * totals its streams reported, aggregated by the Host over the same 30-day
+   * window. It answers "how much have MY plugin calls spent", the question the
+   * sibling plugins surface. It is NOT the account total: the desktop App's
+   * traffic is invisible here (that is the `ledger`'s account-scoped job), so
+   * every figure is labelled per-client at the point of display. `todayTotal`
+   * is input + output tokens (reasoning already folded into output by the
+   * upstream); `todayCacheRead` is a SUBSET of input (the platform's cache hit),
+   * never an addition to the total. `lastAt` is epoch ms of the most recent
+   * usage-bearing turn, `null` when none. Absent (`undefined`/`null`) until the
+   * first recorded turn — the panel hides the line then, never a bare zero.
+   */
+  usage?: {
+    todayRequests?: number;
+    todayInput?: number;
+    todayOutput?: number;
+    todayCacheRead?: number;
+    todayTotal?: number;
+    last30dRequests?: number;
+    last30dTotal?: number;
+    lastAt?: number | null;
+  } | null;
+  /**
    * Window aggregate of the account's credits LEDGER — the platform-sourced
    * "real consumption" signal. It includes BOTH this plugin's chat calls AND
    * the desktop app's usage, so it answers "how much did I actually spend".

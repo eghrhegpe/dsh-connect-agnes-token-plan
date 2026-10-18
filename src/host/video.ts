@@ -154,14 +154,23 @@ export function defineVideoTool({
     // video_id of a task still running server-side, with no way to re-query
     // it. Covering the create deadline closes that gap (2026-10-03, review P2-1).
     timeoutMs: budget + VIDEO_REQUEST_TIMEOUT_MS,
-    async execute(params) {
+    async execute(params, exec) {
       if (isDisposed()) throw new Error("Agnes video tool is no longer mounted");
+      // The caller's cancellation signal, forwarded into create, poll and every
+      // in-between sleep so an aborted call settles at once instead of burning
+      // its whole wall-clock budget (and the shared video rate-limit pool) —
+      // the tools peer reads the `timeoutMs` declaration as an assertion that
+      // the body forwards `exec.signal`. The tests invoke `execute(params)` with
+      // one argument, so `exec` is optional and everything below tolerates its
+      // absence.
+      const signal = exec?.signal;
       const prompt = str(params?.prompt, "").trim();
       if (prompt === "") throw new Error("prompt is required");
       // Same shared preamble as the draw tool: key first (so an unconfigured
       // deployment costs no catalogue read), catalogue read defensively. The
       // family-dispatch checks below stay video-only.
       const { apiKey, entries } = await resolveToolInputs({ resolveApiKey, getEntries });
+      if (signal?.throwIfAborted) signal.throwIfAborted();
       const model = pickVideoModel(entries, params?.model, settings?.videoModelId);
       if (model === null) {
         throw new Error("catalog 中没有视频模型（`output_modalities` 字段与 `agnes-video-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含视频模型");
@@ -216,7 +225,8 @@ export function defineVideoTool({
         fetchImpl,
         endpoint: buildVideoEndpoint(settings?.apiBase),
         apiKey,
-        body
+        body,
+        signal
       });
       const videoId = videoTaskIdOf(created);
       const result = await pollVideoResult({
@@ -226,7 +236,8 @@ export function defineVideoTool({
         videoId,
         model,
         timeoutMs: budget,
-        isDisposed
+        isDisposed,
+        signal
       });
       if (result.status === "failed") {
         // The detail is the platform's own error object, spliced into a message

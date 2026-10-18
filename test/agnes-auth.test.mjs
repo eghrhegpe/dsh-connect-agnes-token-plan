@@ -201,6 +201,28 @@ function jwtWithExp(expSeconds) {
     check("a transport failure is LOGIN_FAILED (retryable), not a credential refusal",
       netErr?.code === CODE.LOGIN_FAILED, String(netErr?.code));
 
+    // A transport error's message can embed the header it was built from
+    // (axios/fetch), and it lands on TWO surfaces — the error the panel reads
+    // and the trace file users send in when login fails — so both must be
+    // redacted (PITFALLS §15, fourth surface; agnes-auth.ts:310-318).
+    const LEAK_KEY = "sk-leaked-bearer-value-123456";
+    const LEAK_TOKEN = jwtWithExp(Math.floor(Date.now() / 1000) + 7200);
+    stubFetch(new Error(`ECONNREFUSED ${LEAK_KEY}; authorization: Bearer ${LEAK_TOKEN}`));
+    const leakTraces = [];
+    let leakErr = null;
+    try {
+      await loginWith(CFG, ACCOUNT, { onTrace: (trace, error) => leakTraces.push({ trace, error }) });
+    } catch (error) {
+      leakErr = error;
+    }
+    restore();
+    check("a transport failure REDACTS a credential echoed in its message",
+      !String(leakErr?.message).includes(LEAK_KEY) && !String(leakErr?.message).includes(LEAK_TOKEN),
+      String(leakErr?.message));
+    const leakFlat = JSON.stringify(leakTraces[0]?.trace ?? "");
+    check("that redaction reaches the trace's transport-error hop",
+      !leakFlat.includes(LEAK_KEY) && !leakFlat.includes(LEAK_TOKEN), leakFlat.slice(0, 200));
+
     stubFetch({ status: 200, body: JSON.stringify({ code: 200, message: "ok", data: {} }) });
     let emptyErr = null;
     try {

@@ -23,7 +23,7 @@
  * @module dsh-connect-agnes-token-plan/video-client
  */
 
-import { str, num } from "./util.ts";
+import { str, num, mergedSignal } from "./util.ts";
 import {
   VIDEO_REQUEST_TIMEOUT_MS,
   VIDEO_DEFAULT_TIMEOUT_MS,
@@ -49,9 +49,11 @@ import {
  * @param {string} options.apiKey - the resolved `sk-` key.
  * @param {object} [options.body] - the wire body (POST only).
  * @param {number} [options.timeoutMs] - the per-call deadline.
+ * @param {AbortSignal} [options.signal] - the caller's cancellation signal,
+ *   merged onto the deadline so an aborted call stops here.
  * @returns {Promise<object>} the parsed JSON.
  */
-async function requestJson({ fetchImpl, url, method, apiKey, body = undefined, timeoutMs = VIDEO_REQUEST_TIMEOUT_MS }) {
+async function requestJson({ fetchImpl, url, method, apiKey, body = undefined, timeoutMs = VIDEO_REQUEST_TIMEOUT_MS, signal }) {
   if (typeof fetchImpl !== "function") throw new Error("video: fetchImpl is required");
   if (str(url, "") === "") throw new Error("video: endpoint is empty — check apiBase");
   const controller = new AbortController();
@@ -65,7 +67,7 @@ async function requestJson({ fetchImpl, url, method, apiKey, body = undefined, t
         Authorization: `Bearer ${apiKey}`
       },
       ...(method === "POST" ? { body: JSON.stringify(body ?? {}) } : {}),
-      signal: controller.signal
+      signal: mergedSignal(controller, signal)
     });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
@@ -81,12 +83,12 @@ async function requestJson({ fetchImpl, url, method, apiKey, body = undefined, t
 
 /**
  * Create one video task.
- * @param {object} options - `{ fetchImpl, endpoint, apiKey, body, timeoutMs }`.
+ * @param {object} options - `{ fetchImpl, endpoint, apiKey, body, timeoutMs, signal }`.
  * @returns {Promise<{videoId: string, taskId: string, status: string}>}
  * @throws {Error} when the platform refuses, or returns no task identifier.
  */
-export async function createVideoTask({ fetchImpl, endpoint, apiKey, body, timeoutMs = VIDEO_REQUEST_TIMEOUT_MS }) {
-  const data = await requestJson({ fetchImpl, url: endpoint, method: "POST", apiKey, body, timeoutMs });
+export async function createVideoTask({ fetchImpl, endpoint, apiKey, body, timeoutMs = VIDEO_REQUEST_TIMEOUT_MS, signal }) {
+  const data = await requestJson({ fetchImpl, url: endpoint, method: "POST", apiKey, body, timeoutMs, signal });
   const task = parseVideoTask(data);
   if (videoTaskIdOf(task) === "") {
     throw new Error(`video: 平台未返回 video_id/task_id，无法轮询：${JSON.stringify(data).slice(0, 300)}`);
@@ -96,10 +98,10 @@ export async function createVideoTask({ fetchImpl, endpoint, apiKey, body, timeo
 
 /**
  * Query one task's current state.
- * @param {object} options - `{ fetchImpl, queryEndpoint, apiKey, videoId, model, timeoutMs }`.
+ * @param {object} options - `{ fetchImpl, queryEndpoint, apiKey, videoId, model, timeoutMs, signal }`.
  * @returns {Promise<object>} a {@link parseVideoQuery} result.
  */
-export async function queryVideoTask({ fetchImpl, queryEndpoint, apiKey, videoId, model, timeoutMs = VIDEO_REQUEST_TIMEOUT_MS }) {
+export async function queryVideoTask({ fetchImpl, queryEndpoint, apiKey, videoId, model, timeoutMs = VIDEO_REQUEST_TIMEOUT_MS, signal }) {
   const params = new URLSearchParams();
   params.set("video_id", str(videoId, ""));
   // `model_name` is REQUIRED for the 2.5 family's keyframe/reference modes and
@@ -112,7 +114,8 @@ export async function queryVideoTask({ fetchImpl, queryEndpoint, apiKey, videoId
     url: `${queryEndpoint}${separator}${params.toString()}`,
     method: "GET",
     apiKey,
-    timeoutMs
+    timeoutMs,
+    signal
   });
   return parseVideoQuery(data);
 }
@@ -123,12 +126,32 @@ function defaultSleep(ms) {
 }
 
 /**
+ * A promise that settles when a caller's cancellation signal aborts.
+ *
+ * Resolves (never rejects) with the abort reason, so callers can race it
+ * against the injected sleeper without leaking an unhandled rejection: when the
+ * caller cancels, the poll loop wakes immediately instead of sleeping out its
+ * interval, and then throws the task-id message the agent needs.
+ * @param {AbortSignal|undefined} signal - the caller's cancellation signal.
+ * @returns {Promise<unknown>|null} the promise, or `null` when no signal exists.
+ */
+function abortPromise(signal) {
+  if (signal === undefined || signal === null) return null;
+  if (signal.aborted) return Promise.resolve(signal.reason);
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(signal.reason), { once: true });
+  });
+}
+
+/**
  * Poll a task until it reaches a terminal state or the budget runs out.
  *
  * The budget is wall-clock and enforced here rather than by a request count, so
  * a slow platform cannot stretch the wait past `timeoutMs`. The timeout error
  * carries the task id, because the task keeps running server-side — the agent
- * can come back for it instead of re-generating.
+ * can come back for it instead of re-generating. A caller cancellation does the
+ * same and stops the loop at once, so a stopped call does not keep spending the
+ * shared video rate-limit pool.
  * @param {object} options - wiring.
  * @param {Function} options.fetchImpl - the fetch to use.
  * @param {string} options.queryEndpoint - the `agnesapi` URL.
@@ -142,8 +165,10 @@ function defaultSleep(ms) {
  * @param {Function} [options.sleep] - injected sleeper.
  * @param {Function} [options.now] - injected clock.
  * @param {Function} [options.isDisposed] - `() => boolean`, true after unmount.
+ * @param {AbortSignal} [options.signal] - the caller's cancellation signal:
+ *   an aborted call settles at once and its error carries the task id.
  * @returns {Promise<object>} the terminal {@link parseVideoQuery} result.
- * @throws {Error} on timeout, disposal, or a refused query.
+ * @throws {Error} on timeout, disposal, cancellation, or a refused query.
  */
 export async function pollVideoResult({
   fetchImpl,
@@ -156,15 +181,36 @@ export async function pollVideoResult({
   queryRetries = VIDEO_QUERY_RETRIES,
   sleep = defaultSleep,
   now = Date.now,
-  isDisposed = () => false
+  isDisposed = () => false,
+  signal
 }) {
   const budget = Math.max(1_000, Math.floor(num(timeoutMs, VIDEO_DEFAULT_TIMEOUT_MS)));
   const interval = Math.max(100, Math.floor(num(pollIntervalMs, VIDEO_POLL_INTERVAL_MS)));
   const retries = Math.max(0, Math.floor(num(queryRetries, VIDEO_QUERY_RETRIES)));
   const deadline = now() + budget;
   let attempts = 0;
+  const cancelPromise = abortPromise(signal);
+  const cancelled = () => new Error(
+    `视频生成已取消（video_id=${videoId}）——任务仍在平台侧运行，可用 video_id=${videoId} 稍后重新查询，不要重复提交`
+  );
+  // Pause for `ms`, waking early when the caller cancels. Without the race a
+  // cancelled poll keeps sleeping out each interval; without the plain branch
+  // callers that pass no signal (the tests) would never pause at all.
+  const pause = async (ms) => {
+    if (cancelPromise) await Promise.race([sleep(ms), cancelPromise]);
+    else await sleep(ms);
+  };
   for (;;) {
-    if (isDisposed()) throw new Error("Agnes video tool is no longer mounted");
+    // An aborted call must settle at once instead of sleeping out the rest of
+    // its budget: the tools peer cannot hard-kill same-process code, and
+    // without this check the loop keeps spending the shared video rate-limit
+    // pool after the agent was told to stop.
+    if (signal?.aborted) throw cancelled();
+    if (isDisposed()) {
+      throw new Error(
+        `Agnes video tool is no longer mounted（video_id=${videoId}）——任务仍在平台侧运行，可用 video_id=${videoId} 稍后重新查询，不要重复提交`
+      );
+    }
     if (++attempts > VIDEO_MAX_POLLS) {
       throw new Error(
         `视频生成轮询超过 ${VIDEO_MAX_POLLS} 次仍未结束（video_id=${videoId}）——任务仍在平台侧运行，请稍后用 video_id 重新查询，不要重复提交`
@@ -174,9 +220,10 @@ export async function pollVideoResult({
     let retried = 0;
     for (;;) {
       try {
-        value = await queryVideoTask({ fetchImpl, queryEndpoint, apiKey, videoId, model });
+        value = await queryVideoTask({ fetchImpl, queryEndpoint, apiKey, videoId, model, signal });
         break;
       } catch (queryError) {
+        if (signal?.aborted) throw cancelled();
         // A REFUSED query is not a terminal task: the platform still holds it,
         // and a transient 429/5xx on the query endpoint should not cost the
         // agent the task id. Retry a bounded number of times, then hand the id
@@ -191,7 +238,8 @@ export async function pollVideoResult({
           );
         }
         retried += 1;
-        await sleep(Math.min(interval, deadline - now()));
+        await pause(Math.min(interval, deadline - now()));
+        if (signal?.aborted) throw cancelled();
       }
     }
     if (isVideoTerminal(value.status)) return value;
@@ -201,6 +249,7 @@ export async function pollVideoResult({
         `视频生成超时（超过 ${budget}ms，任务仍处于 ${value.status === "" ? "unknown" : value.status}）——任务仍在平台侧运行，可用 video_id=${videoId} 稍后重新查询，不要重复提交`
       );
     }
-    await sleep(Math.min(interval, remaining));
+    await pause(Math.min(interval, remaining));
+    if (signal?.aborted) throw cancelled();
   }
 }

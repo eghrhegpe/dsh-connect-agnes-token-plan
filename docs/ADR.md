@@ -187,3 +187,12 @@
 - **历史表述不改写**：`docs/PITFALLS.md` §40 与 §50 里的 `applyCatalogEffects` 是当时的事实记录，按考古纪律保留原文；它的现行地址是 `catalog-refresh.ts` 的 `runNow`。
 - **与既有条目的关系**：ADR-005 的容器申报在本条被真正用了一次（先出文件与基线，再实现）；ADR-012 的四问首次有了一份填完的实例。不改变 ADR-001～014 任何裁定。
 
+## ADR-016 本地 stats 存储补每客户端用量段，推翻「不记 token/轮次」旧裁法
+
+- **日期**：2026-10-18
+- **状态**：现行（取代同日「每日额度事实透出 + 本地限流症状记录」段里「不记 token/轮次」那半句；不改变限流症状记录本身，也不改变 ADR-007/004 软失败不变量）
+- **裁定**：`src/host/agnescode-stats-store.ts` 在既有 `rateLimit` 段旁新增 `usage` 兄弟段，记本插件自身的**每轮用量**（请求次数 + `input`/`output`/`cacheRead` token，按本地日聚合、同一 30 天窗口）。`STATS_VERSION` 保持 1：新段是可选的，两个读路径各自忽略不认识的段，升版只会白白丢掉既有 `rateLimit` 历史。观测钩是 `reclassifyStream` 新增的第二路 `onUsage`（收流上每个 `usage` chunk，与只收 finish 的 `onRateLimit` 正交）。全零轮次跳过，不虚增请求数。面板与胶囊各显示一行「经本插件：今日 N 次 · X tokens（其中缓存 Y）」。
+- **理由（旧裁法为何作废）**：同日早先的裁定以「平台无 token 口径可读；本地自记会漏桌面 App 消耗而严重低估」为由拒绝记 token。它**混淆了两个不同的问题**——「我的账号一共花了多少」（credit 流水 `ledger` 的职责，含桌面 App）与「我经本插件的调用花了多少」（读者真正在问、且兄弟插件 qoder/trae 都在透出的数）。修法不是藏起这个数，而是**限定并标明口径**：label 写死「经本插件 / via this plugin」，账号总量继续留给流水。带对口径标签的数是诚实的；同一个数没标签，才是旧裁法真正要防的那个谎。兄弟插件 qoder 的「今日经本客户端请求 N 次 · 消耗 X tokens」正是「诚实 + 有用」可以并存的实证。
+- **胶囊侧的连带**：本条同时是「积分余额胶囊 2026-10-18 简化」放回来的**唯一**一行——那条简化把 grants/限流/流水三行页脚与昵称从 28px 胶囊移除（它们是页脚、且免费账号读起来是一片 0）；用量行不属于被移除的三行，它是本客户端自身流量、是余额之外读者扫一眼就想要的那个数，且无记录时不渲染，故不回填空态杂乱。
+- **受影响的文件**：`src/host/agnescode-stats-store.ts`（`usage` 段 + `recordUsage` + `readUsage`）、`src/host/llm-error-fix.ts`（`reclassifyStream` 加 `onUsage`）、`src/host/pi-ai-adapter-core.ts` + `src/host/agnescode-llm-adapter.ts`（透传 + 落盘）、`src/host/routes/agnescode.ts`（GET 带 `usage`）、`src/client/{wire,agnescode-tab,composer-usage-pill,index,i18n}.ts`（读数 + 文案 + 胶囊行）、`test/{agnescode-stats,agnescode,dom-render}.test.mjs`、本账本条目、`docs/ROADMAP.md` 同日段、`README.md` 胶囊段、`lib/` + `client.js`（随 src 同 commit 重建）。
+

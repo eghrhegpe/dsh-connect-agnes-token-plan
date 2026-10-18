@@ -33,7 +33,7 @@
  */
 
 import { CODE } from "./codes.ts";
-import { str, obj, num, pluginError } from "./util.ts";
+import { str, obj, num, pluginError, redactSecrets } from "./util.ts";
 
 /**
  * Shipped defaults for the login flow.
@@ -309,8 +309,12 @@ export async function loginWith(
     });
   } catch (cause) {
     // A transport failure is not a refusal: nothing was judged, so the panel
-    // must offer a retry rather than an account form.
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    // must offer a retry rather than an account form. The cause's message is
+    // redacted BEFORE it reaches either surface it lands on — the trace file
+    // (`hop.detail`) and the error the panel reads — because an axios/fetch
+    // error can embed the header it was built from, and this trace is the one
+    // users send in when login fails (PITFALLS §15, fourth surface).
+    const detail = redactSecrets(cause instanceof Error ? cause.message : String(cause));
     trace.hop({ step: "login-transport-error", detail });
     const error = pluginError(CODE.LOGIN_FAILED, `could not reach the Agnes console: ${detail}`);
     finish(error);

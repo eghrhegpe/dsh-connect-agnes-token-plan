@@ -26,7 +26,12 @@ function fail(name, error) {
     "429 Too Many Requests — out of rate budget, retry later",
     "请求过于频繁，请稍后再试 (429)",
     "rate.limit: request frequency limited, throttle",
-    "Error 429: too many requests per minute"
+    "Error 429: too many requests per minute",
+    // Agnes 官方 FAQ 给出的 429 限频体就是这句（docs/AGNES-API.md §7.3.1）。
+    // 修复前 `hardQuota` 命中泛化的 "quota exceeded/exhausted/reached"，把这类体
+    // 留在 QUOTA 不重试——本层在其最主要触发体上不生效（2026-10-18 修复）。
+    "429 quota exceeded, please wait 1 minute",
+    "HTTP 429: quota exhausted, retry after 1 minute"
   ];
   for (const msg of rateCases) {
     check(`looksLikeRateLimit true: ${msg.slice(0, 40)}`, looksLikeRateLimit(msg) === true);
@@ -39,7 +44,11 @@ function fail(name, error) {
     "insufficient balance: out of credits",
     "额度已用尽，请升级套餐",
     "balance depleted — no remaining quota",
-    "QUOTA: usage limit reached for this billing period"
+    "QUOTA: usage limit reached for this billing period",
+    // 带 429 与 retry 字样也仍算真耗尽：退避重试对一个余额耗尽没有意义，
+    // 硬额度判据优先于限频信号与速率字样。
+    "429: monthly quota exceeded, no credits left",
+    "429 balance exhausted, retry later"
   ];
   for (const msg of quotaCases) {
     check(`looksLikeRateLimit false (hard quota): ${msg.slice(0, 40)}`, looksLikeRateLimit(msg) === false);
@@ -130,7 +139,12 @@ function fail(name, error) {
     // 仅内层 message 带 rpm（无完整 JSON）：纯文本启发也要接住。
     { code: CODE.QUOTA, message: "rpm exhausted" },
     // tpm/rpm 速率上限的另一种措辞。
-    { code: CODE.QUOTA, message: '{"message":"inference exceeds tpm/rpm limit","type":"quota_exceeded_error","code":"8"}' }
+    { code: CODE.QUOTA, message: '{"message":"inference exceeds tpm/rpm limit","type":"quota_exceeded_error","code":"8"}' },
+    // Agnes 官方 FAQ 给出的 429 限频体（带结构化 type）：修复前 rateCapWords
+    // 只认 rpm/tpm/per-minute 等，认不出 "wait 1 minute"，这类体也漏判。
+    { code: CODE.QUOTA, message: '429: {"message":"quota exceeded, please wait 1 minute","type":"quota_exceeded_error"}' },
+    // 无结构化 type 的纯文本等价体。
+    { code: CODE.QUOTA, message: "429 quota exceeded, please wait 1 minute" }
   ];
   for (const failure of bodies) {
     check(`shouldReclassifyQuotaToRate true for ${failure.message.slice(0, 46)}`,
@@ -145,7 +159,11 @@ function fail(name, error) {
   // 真配额耗尽（token/credit/balance），即使 type 是 quota_exceeded_error 也保留 QUOTA。
   const realQuota = [
     { code: CODE.QUOTA, message: '{"message":"token quota exceeded","type":"quota_exceeded_error","code":"8"}' },
-    { code: CODE.QUOTA, message: '{"message":"月额度已用尽","type":"quota_exceeded_error","code":"8"}' }
+    { code: CODE.QUOTA, message: '{"message":"月额度已用尽","type":"quota_exceeded_error","code":"8"}' },
+    // 结构化分支的硬额度优先：type 是 quota_exceeded_error 且句子带 retry，但
+    // 订阅/余额耗尽措辞命中 → 仍保留 QUOTA。
+    { code: CODE.QUOTA, message: '429: {"message":"subscription quota exhausted, retry after upgrade","type":"quota_exceeded_error"}' },
+    { code: CODE.QUOTA, message: '429: {"message":"no credits left, retry later","type":"quota_exceeded_error"}' }
   ];
   for (const failure of realQuota) {
     check(`shouldReclassifyQuotaToRate false (true quota): ${failure.message.slice(0, 40)}`,

@@ -745,6 +745,40 @@ function errResponse(status, text) {
     check("a disposed plugin stops polling", /no longer mounted/.test(message ?? ""), message);
   }
   {
+    // A CALLER CANCELLATION must settle the poll at once and still name the
+    // video_id: the tools peer cannot hard-kill same-process code, so the loop
+    // observes `exec.signal` itself. Without it a stopped call keeps spending
+    // the shared video rate-limit pool for its whole budget while the task the
+    // agent no longer sees keeps running server-side.
+    const controller = new AbortController();
+    controller.abort();
+    const message = await rejects(() => pollVideoResult({ ...base, signal: controller.signal }));
+    check("an aborted poll settles at once and names the video_id",
+      /取消/.test(message ?? "") && /video_id=v-1/.test(message ?? ""), message);
+    check("the cancellation tells the agent not to re-submit",
+      /不要重复提交/.test(message ?? ""), message);
+  }
+  {
+    // Cancellation while the loop is PAUSED — not mid-request — must wake it
+    // too: the pause is raced against the abort promise, otherwise the loop
+    // sleeps out its whole interval before it can notice the stop.
+    let queries = 0;
+    const controller = new AbortController();
+    const pending = pollVideoResult({
+      ...base,
+      fetchImpl: async () => { queries += 1; return okResponse({ status: "queued" }); },
+      sleep: () => new Promise(() => {}), // never resolves on its own
+      now: () => 0,
+      signal: controller.signal
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.abort();
+    const message = await rejects(() => pending);
+    check("an abort wakes the loop out of a pending pause",
+      queries === 1 && /取消/.test(message ?? "") && /video_id=v-1/.test(message ?? ""),
+      `queries=${queries}, message=${message}`);
+  }
+  {
     let waited = [];
     let calls = 0;
     const value = await pollVideoResult({

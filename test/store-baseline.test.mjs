@@ -459,6 +459,21 @@ define("S10 saveAccount then forgetAccount leaves the grant serving", async ({ f
   await frame("getToken keeps serving the surviving grant", () => s.getToken(), deps);
 });
 
+// S12 — [login lifecycle] an ownerless grant that has ALREADY expired is
+// reaped when there is no account to re-login with. S7a covers the refresh
+// branch; Agnes has no refresh endpoint (stored grants carry no refresh token)
+// so that branch's own reap is unreachable here — this scenario is the live
+// one: after "forget account", once the token's clock expires.
+define("S12 expired grant with no account is reaped", async ({ frame, service, throttle, auth, store, grant, GRANT_KEY, T0 }) => {
+  const svc = service({ [GRANT_KEY]: grant("AT1", "", T0 - 1_000) });
+  const thr = throttle();
+  const a = auth({});
+  const s = store({ service: svc, auth: a, env: {}, throttleStore: thr });
+  const deps = { service: svc, throttleStore: thr };
+  await frame("getToken reports not configured", () => s.getToken(), deps);
+  await frame("state after the reap", () => s.state(), deps);
+});
+
 // S11 — [throttle->login] an explicit corrected resubmit is the one path
 // that clears a park; the countdown disappears.
 define("S11 wrong-password park is cleared by a corrected resubmit", async ({ frame, service, throttle, auth, store, failure }) => {

@@ -62,7 +62,7 @@ import { clockLong, clockSameDay, count, format } from "./format.ts";
 import { AGNESCODE_PATH, AGNESCODE_PROVIDER_ID, PROVIDER_ID, SNAPSHOT_PATH } from "./const.ts";
 import { interpretSnapshot } from "./snapshot.ts";
 import { usageTier, windowPercent } from "./cards.ts";
-import { AGNESCODE_POLL_MS, agnescodePoolNotes } from "./agnescode-tab.ts";
+import { AGNESCODE_POLL_MS, agnescodeUsageText } from "./agnescode-tab.ts";
 import type { Tt } from "./runtime.ts";
 import type { AgnescodeStateData, QuotaWindowData, SnapshotData } from "./wire.ts";
 
@@ -765,12 +765,33 @@ function partOf(state: AgnescodeStateData | null | undefined, key: "timeSensitiv
  * The desktop-app reading: the gateway's own credit balance.
  *
  * It is a STOCK, not a meter — see {@link balanceOf} — so the body carries the
- * figure and the tooltip carries the three facts that have no room there: which
- * account (`nickname`), how the total splits (time-limited / permanent), and —
- * when there is no figure at all — WHICH fact is missing. "The desktop App is
- * not signed in", "the provider switch is off" and "the gateway did not answer
- * this time" are three different problems, and a bare dash beside them left the
- * reader guessing (the same repair the sibling's capsule made for its gateway).
+ * figure and the tooltip carries the three facts that have no room there: how
+ * the total splits (time-limited / permanent), and — when there is no figure at
+ * all — WHICH fact is missing. "The desktop App is not signed in", "the provider
+ * switch is off" and "the gateway did not answer this time" are three different
+ * problems, and a bare dash beside them left the reader guessing (the same
+ * repair the sibling's capsule made for its gateway).
+ *
+ * WHAT THE CARD DOES NOT CARRY (the 2026-10-18 simplification). The card used
+ * to splice in {@link agnescodePoolNotes} — the tab's three footer lines (the
+ * platform's GRANTS, this plugin's rate-limit record, the account ledger) — and
+ * to lead with the linked account's nickname. Both were a reuse mistake, not a
+ * feature: those lines are a FOOTER designed to sit under the tab's three pool
+ * cards, and dropping them into a 28px glance surface buried the one number the
+ * reader came for under seven zeros and a wall of diagnostics, while the
+ * nickname is a private figure to render on a credential card, not on a pill
+ * that may be on screen when the window is shared or photographed. The deep
+ * record stays where it belongs — the AgnesCode tab — and the card keeps the
+ * glanceable stock: the balance, its split, why a figure is missing, and when
+ * it was last read.
+ *
+ * The ONE line the simplification later let back in (same day) is the
+ * per-client usage roll — "经本插件：今日 N 次 · X tokens". It is not part of the
+ * dropped trio: where grants / rate-limit / ledger are a free account's wall of
+ * zeros or an account-scoped figure that does not belong on a per-conversation
+ * pill, the usage roll is THIS client's own traffic and the one thing beside
+ * the balance a reader glancing at the pill wants. It renders only when a turn
+ * has actually been recorded, so it adds nothing to the empty-state clutter.
  */
 function AgnescodeBalancePill({ tt }: { tt: Tt }) {
   const reading = useAgnescodeState();
@@ -796,11 +817,15 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
   const split = timeLimited === null || permanent === null
     ? null
     : `${tt("agnescode.balanceTimeLabel")} ${count(timeLimited)} · ${tt("agnescode.balancePermanentLabel")} ${count(permanent)}`;
+  // This plugin's OWN usage today (requests + tokens), same roll the tab's
+  // footer carries. It is the one non-balance figure that earns a place on the
+  // glance card: unlike the grants / rate-limit / ledger lines it is a fact of
+  // THIS client's traffic the reader is asking about, and it stays quiet (no
+  // line) until there is a recorded turn. The rate-limit record — the always-0
+  // clutter — is NOT here; it stays in the tab.
+  const usageText = agnescodeUsageText(state?.usage ?? null, tt);
   const title = [
     tt("composer.balanceTitle"),
-    state?.loggedIn === true && String(state.nickname ?? "") !== ""
-      ? format(tt("agnescode.loggedIn"), { nick: String(state.nickname) })
-      : null,
     split,
     why,
     stale ? tt("composer.stale") : null
@@ -808,10 +833,12 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
     .filter(Boolean)
     .join(" · ");
 
-  // The card's open/close is this variant's own: the rows it carries (the
-  // stock, the split, the platform grants, this plugin's rate-limit record,
-  // the account's real spend) are the pill body's three facts with the room
-  // to breathe.
+  // The card's open/close is this variant's own. The rows it carries are the
+  // pill body's facts with room to breathe — the stock (set in the panel's own
+  // `quotaRemaining` weight so the number reads as the headline, not a line of
+  // text), its split, why a figure is missing, and when it was last read. The
+  // deep record (grants / rate-limit / ledger) and the nickname are NOT here —
+  // see the variant's header for why they were dropped.
   const [popoverId] = useState(nextPopoverId);
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -820,21 +847,13 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
   const triggerRef = useRef<HTMLElement | null>(null);
   usePopoverClose(open, close, rootRef);
   usePopoverFocus(open, cardRef, triggerRef);
-  const nickname = state?.loggedIn === true ? String(state.nickname ?? "") : "";
 
-  // The three pool-notes lines are the TAB's own (one vocabulary, one
-  // source): each is `null` while its figure is unread, so they drop out of
-  // the card without presenting a measurement nobody took.
   const popoverRows = [
     h("div", { key: "bal-title", style: S.pillPopTitle }, tt("composer.balanceTitle")),
-    nickname !== ""
-      ? h("div", { key: "nick", style: S.pillPopMuted },
-          format(tt("agnescode.loggedIn"), { nick: nickname }))
-      : null,
-    h("div", { key: "bal" },
+    h("div", { key: "bal", style: S.quotaRemaining },
       pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`),
     split !== null ? h("div", { key: "split", style: S.pillPopMuted }, split) : null,
-    ...agnescodePoolNotes(state?.balance ?? null, state?.rateLimit ?? null, state?.ledger ?? null, tt),
+    usageText !== null ? h("div", { key: "usage", style: S.pillPopMuted }, usageText) : null,
     why !== null ? h("div", { key: "why", style: S.pillPopMuted }, why) : null,
     stale ? h("div", { key: "stale", style: S.pillPopMuted }, tt("composer.stale")) : null,
     reading.updatedAt > 0

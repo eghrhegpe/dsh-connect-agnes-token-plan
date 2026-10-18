@@ -30,7 +30,7 @@
  * @module dsh-connect-agnes-token-plan/draw
  */
 
-import { str, num, redactSecrets, resolveToolInputs } from "./util.ts";
+import { str, num, redactSecrets, resolveToolInputs, mergedSignal, isAbortError } from "./util.ts";
 import { isImageGenModel } from "./modality.ts";
 import type { DrawRequest } from "./types.ts";
 
@@ -222,9 +222,12 @@ export function describeDrawFailure(status, bodyText) {
  * @param {string} options.apiKey - the resolved `sk-` key.
  * @param {object} options.body - the wire body (`buildDrawBody`).
  * @param {number} [options.timeoutMs] - the deadline.
+ * @param {AbortSignal} [options.signal] - the caller's cancellation signal
+ *   (`exec.signal`); merged onto the deadline so a cancelled call stops here
+ *   instead of running to its full budget.
  * @returns {Promise<{url: string, b64Json: string, revisedPrompt: string, model: string}>}
  */
-export async function drawOnce({ fetchImpl, endpoint, apiKey, body, timeoutMs = DRAW_DEFAULT_TIMEOUT_MS }) {
+export async function drawOnce({ fetchImpl, endpoint, apiKey, body, timeoutMs = DRAW_DEFAULT_TIMEOUT_MS, signal }) {
   if (typeof fetchImpl !== "function") throw new Error("drawOnce: fetchImpl is required");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error(`draw timeout after ${timeoutMs}ms`)), Math.max(1_000, timeoutMs));
@@ -237,7 +240,7 @@ export async function drawOnce({ fetchImpl, endpoint, apiKey, body, timeoutMs = 
         Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify(body),
-      signal: controller.signal
+      signal: mergedSignal(controller, signal)
     });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
@@ -346,8 +349,15 @@ export function defineDrawTool({
       render: (_args, result) => [{ type: "text", text: result?.hint || "图片已生成" }]
     },
     timeoutMs: timeoutMs + 10_000,
-    async execute(params) {
+    async execute(params, exec) {
       if (isDisposed()) throw new Error("Agnes draw tool is no longer mounted");
+      // The caller's cancellation signal, forwarded into the request so an
+      // aborted call settles at once instead of running to its full budget
+      // (the tools peer reads the `timeoutMs` declaration as an assertion that
+      // the body forwards `exec.signal`). The tests invoke `execute(params)`
+      // with one argument, so `exec` is optional and everything below
+      // tolerates its absence.
+      const signal = exec?.signal;
       const prompt = str(params?.prompt, "").trim();
       if (prompt === "") throw new Error("prompt is required");
       if (cooldown.blocked()) {
@@ -357,6 +367,7 @@ export function defineDrawTool({
       // before the catalogue is touched, so an unconfigured deployment costs no
       // read. The cooldown gate above stays draw-only (video has no cooldown).
       const { apiKey, entries } = await resolveToolInputs({ resolveApiKey, getEntries });
+      if (signal?.throwIfAborted) signal.throwIfAborted();
       const model = pickDrawModel(entries, params?.model, settings?.drawModelId);
       if (model === null || model === undefined) {
         throw new Error(
@@ -378,10 +389,13 @@ export function defineDrawTool({
           endpoint: buildDrawEndpoint(settings?.apiBase),
           apiKey,
           body,
-          timeoutMs
+          timeoutMs,
+          signal
         });
       } catch (error) {
-        cooldown.trip();
+        // A cancelled call is not a failed draw: tripping the cooldown would
+        // punish the next attempt for a stop the agent asked for.
+        if (!isAbortError(error)) cooldown.trip();
         throw error;
       }
       const ids = imageGenModelIds(entries);

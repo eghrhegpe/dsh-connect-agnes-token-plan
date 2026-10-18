@@ -124,16 +124,24 @@ export function createAgnescodeAdapter({
   // re-registration. Both image hooks and the 429 correction layer come from
   // the shared core.
   //
-  // The observer records this route's OWN rate-limit hits. The core already
-  // narrowed the stream's finish chunks to the ones that ended as rate-limit
-  // failures, so here there is nothing to classify — just record. This is the
-  // only way to surface a limit the platform never publishes a number for: the
-  // credit balance says "you have 600", the catalogue says "this model is ×1",
-  // and neither says "how fast" — the RPM ceiling is untested and unpublished,
-  // so the panel shows the symptom (hits today / 30 days) instead of inventing
-  // a threshold. Recording is fire-and-forget: a rate-limit failure must not
-  // fail a second time because the write did, and the store swallows its own
-  // misses.
+  // The core narrows the stream's finish chunks to the ones that ended as
+  // rate-limit failures, so here there is nothing to classify — just record.
+  // This is the only way to surface a limit the platform never publishes a
+  // number for: the credit balance says "you have 600", the catalogue says
+  // "this model is ×1", and neither says "how fast" — the RPM ceiling is
+  // untested and unpublished, so the panel shows the symptom (hits today / 30
+  // days) instead of inventing a threshold. Recording is fire-and-forget: a
+  // rate-limit failure must not fail a second time because the write did, and
+  // the store swallows its own misses.
+  //
+  // `onUsage` is the SECOND observer, on the separate `usage` channel: pi-ai
+  // emits a `{type:"usage", usage:{inputTokens,outputTokens,cacheReadTokens}}`
+  // chunk right before every finish, which the finish observer never sees. This
+  // is what lets the panel answer "how much have MY plugin calls spent" — the
+  // per-client tally the sibling plugins surface. It is deliberately labelled
+  // per-client at the display layer (never presented as the account total,
+  // which is the credit ledger's job), so it does not repeat the mistake of an
+  // unqualified plugin-only number. Fire-and-forget like the rate-limit record.
   const stats = createFileAgnescodeStatsStore();
   const adapter = createWrappedPiAiAdapter({
     profiles,
@@ -141,6 +149,9 @@ export function createAgnescodeAdapter({
     get,
     onRateLimit: () => {
       void stats.recordRateLimit();
+    },
+    onUsage: (chunk: any) => {
+      void stats.recordUsage(chunk?.usage);
     }
   });
 

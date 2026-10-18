@@ -1415,6 +1415,80 @@
     ]
   },
   {
+    "name": "S12 expired grant with no account is reaped",
+    "frames": [
+      {
+        "t": 0,
+        "note": "getToken reports not configured",
+        "calls": [
+          {
+            "via": "credentials",
+            "op": "readRecord",
+            "key": "$SCOPE/$GRANT"
+          },
+          {
+            "via": "credentials",
+            "op": "resolve",
+            "ref": "$USER"
+          },
+          {
+            "via": "credentials",
+            "op": "unset",
+            "ref": "$PASS"
+          },
+          {
+            "via": "credentials",
+            "op": "deleteRecord",
+            "key": "$SCOPE/$GRANT"
+          }
+        ],
+        "records": {},
+        "refs": {},
+        "throttle": null,
+        "error": {
+          "code": "not_configured",
+          "message": "no console account is configured"
+        }
+      },
+      {
+        "t": 0,
+        "note": "state after the reap",
+        "calls": [
+          {
+            "via": "credentials",
+            "op": "readRecord",
+            "key": "$SCOPE/$GRANT"
+          },
+          {
+            "via": "credentials",
+            "op": "resolve",
+            "ref": "$USER"
+          },
+          {
+            "via": "credentials",
+            "op": "resolve",
+            "ref": "$USER"
+          }
+        ],
+        "records": {},
+        "refs": {},
+        "throttle": null,
+        "result": {
+          "configured": false,
+          "hasAccount": false,
+          "autoRecoverArmed": false,
+          "hasRefreshToken": false,
+          "expiresAt": null,
+          "needsAccount": true,
+          "ephemeral": false,
+          "retryAfterMs": null,
+          "needsUserAction": false,
+          "error": "no console account is configured"
+        }
+      }
+    ]
+  },
+  {
     "name": "S11 wrong-password park is cleared by a corrected resubmit",
     "frames": [
       {

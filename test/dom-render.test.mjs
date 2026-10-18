@@ -804,10 +804,10 @@ try {
     text(balance.container).includes("AgnesCode · 1200 积分")
       && !text(balance.container).includes("Token Plan"),
     `text=${text(balance.container).slice(0, 160)}`);
-  check("the tooltip carries the account, the split and no invented percentage",
-    balance.button()?.getAttribute("title")?.includes("阿格") === true
-      && balance.button()?.getAttribute("title")?.includes("时效 40") === true
+  check("the tooltip carries the split and no invented percentage, and no longer the nickname",
+    balance.button()?.getAttribute("title")?.includes("时效 40") === true
       && balance.button()?.getAttribute("title")?.includes("永久 1160") === true
+      && balance.button()?.getAttribute("title")?.includes("阿格") === false
       && !text(balance.container).includes("%"),
     `title=${balance.button()?.getAttribute("title")}`);
 
@@ -995,6 +995,10 @@ try {
       dailyFreeCredits: 10, subscriptionCredits: 30, dailyEffectQuota: 20, effectQuotaBalance: 15
     },
     rateLimit: { today: 2, last30d: 5, lastAt: 1788408000000 },
+    usage: {
+      todayRequests: 4, todayInput: 15200, todayOutput: 15700, todayCacheRead: 15200,
+      todayTotal: 30900, last30dRequests: 4, last30dTotal: 30900, lastAt: 1788408000000
+    },
     ledger: {
       total: 82, fetchedCount: 82, todayCredits: 600, todayDebits: 35,
       last30dCredits: 606, last30dDebits: 123, covered30d: true, lastDebitAt: 1788408000000, at: 1788408000000
@@ -1005,26 +1009,27 @@ try {
   const acCard = () => acCardPill.container.querySelector("[id^=dsh-agnes-composer-pill-popover-]");
   await act(async () => { acCardPill.button()?.click(); });
   await settle();
-  check("the AgnesCode card carries the stock, the split and the pool notes",
+  // The card is a GLANCE surface: it carries the stock, its split, and the ONE
+  // non-balance line the 2026-10-18 simplification let back in — the per-client
+  // usage roll. It still does NOT carry the tab's deep record (grants /
+  // rate-limit / ledger) or the nickname. The fixture ships all of that; the
+  // point is the card renders the balance + usage and drops the rest. The
+  // ms→seconds regression for the tab lines is covered directly on
+  // `agnescodePoolNotes` in agnescode.test.mjs, so dropping them here loses no
+  // coverage.
+  check("the AgnesCode card carries the stock, the split and the usage roll, and not the tab's record",
     acCard() !== null
       && acCard()?.textContent.includes("1200 积分")
       && acCard()?.textContent.includes("时效 40")
-      && acCard()?.textContent.includes("每日免费 10")
-      && acCard()?.textContent.includes("限流记录")
-      && acCard()?.textContent.includes("账户流水"),
+      && acCard()?.textContent.includes("永久 1160")
+      && acCard()?.textContent.includes("经本插件")
+      && acCard()?.textContent.includes("今日 4 次")
+      && acCard()?.textContent.includes("31K tokens")
+      && !acCard()?.textContent.includes("每日免费")
+      && !acCard()?.textContent.includes("限流记录")
+      && !acCard()?.textContent.includes("账户流水")
+      && !acCard()?.textContent.includes("阿格"),
     `card=${acCard()?.textContent?.slice(0, 240) ?? "absent"}`);
-  // The pool-note stamps are EPOCH MS (the stats store's `at.getTime()`, the
-  // ledger walk's normalized `lastDebitAt`); the formatter eats SECONDS, so
-  // the card divides by 1000 before formatting. A regression that feeds the
-  // ms straight back in prints a month-day from ~58 000 years out, and `MM-DD`
-  // carries no year, so it reads as plausible. The fixture is 2026-09-03
-  // 13:46 in this zone; BOTH the rate-limit and the ledger line end in
-  // `最近 <stamp>` — count both.
-  const fixtureStamp = msStamp(1788408000000); // == the fixture's lastAt / lastDebitAt
-  const lastStamps = (acCard()?.textContent ?? "").split(`最近 ${fixtureStamp}`).length - 1;
-  check("the rate-limit / ledger 'last' stamps print the fixture date (ms divided to seconds, both lines)",
-    lastStamps === 2,
-    `stamps=${lastStamps} card=${acCard()?.textContent?.slice(0, 240) ?? "absent"}`);
 } finally {
   await unmountAll();
 }

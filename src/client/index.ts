@@ -92,7 +92,7 @@ import {
   windowByKey,
   worstTier
 } from "./composer-usage-pill.ts";
-import { AgnescodeModelPicker, AgnescodeRoster, AgnescodeTab, agnescodeView, agnescodePoolNotes } from "./agnescode-tab.ts";
+import { AgnescodeModelPicker, AgnescodeRoster, AgnescodeTab, agnescodeView, agnescodePoolNotes, agnescodeUsageText } from "./agnescode-tab.ts";
 
 function clientFactory(loaderRequire: (specifier: string) => unknown): {
   inject: string[];
@@ -129,6 +129,10 @@ function clientFactory(loaderRequire: (specifier: string) => unknown): {
     // directly with a sample balance/record; see the function for the honesty
     // contract (a 0 grant is a published fact, not a bug).
     agnescodePoolNotes,
+    // The per-client usage roll's string builder — hook-free, so the render
+    // suite can reach it directly with a sample usage record (and the pill
+    // reuses the exact same text, so one test pins both surfaces).
+    agnescodeUsageText,
     dictionaries: Object.freeze({ zh, en }),
     tables: Object.freeze({ GUIDANCE_BY_CODE, FORM_EXCLUDED_CODES, REFUSAL_TEXT, CLIENT_CODE, COOLDOWN_TEXT }),
     styles: S,

@@ -53,15 +53,44 @@ export const CODE = Object.freeze({
 });
 
 /**
+ * 硬额度措辞：命中即相信是配额，不纠正（避免把真耗尽也拉去重试）。
+ *
+ * 注意这里**刻意不含** `quota exceeded / exhausted / reached` 这个泛化措辞。
+ * Agnes 官方 FAQ 明说 429 = RPM 限频（「等待 1 分钟后重试」），而官方给出的 429
+ * 限频体文本恰恰是 "quota exceeded, please wait 1 minute"——把这条也算硬额度，
+ * 本层就在它**最主要**的触发体上不生效（2026-10-18 修复前确实如此：`hardQuota`
+ * 命中该体 → `looksLikeRateLimit` 返回 false → 429 限频被留在 QUOTA 不重试）。
+ * 429 里真正要保留 QUOTA 的只有：**订阅/套餐配额**，以及**明确的余额/积分耗尽**
+ * 措辞（balance/credits exhausted、out of credits/budget、no credits left、
+ * "额度 用尽/耗尽/不足"）。
+ * @param {string} message - 平台错误文本（小写化由调用方完成）。
+ * @returns {boolean} true 表示文本里出现硬额度措辞。
+ */
+function hasHardQuotaWording(message: string): boolean {
+  return (
+    /\b(?:balance|credits?)\s+(?:exhausted|depleted)\b/i.test(message) ||
+    /\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b/i.test(message) ||
+    /\bno\s+(?:more\s+)?(?:credits?|balance)\b/i.test(message) ||
+    /额度\s*(?:已)?\s*(?:用尽|耗尽|不足)/.test(message) ||
+    // Agnes 官方 FAQ 明说 429 也可能是「超过订阅配额」（Token Plan 配额用尽）：
+    // 命中订阅/套餐配额措辞必须保留 QUOTA，否则会被误判成限频去退避重试
+    // （docs/AGNES-API.md §7.3.1 结论 2 指出的演进点）。
+    /(?:subscription|token[\s_-]?plan)[\s_-]*(?:quota|credit)|订阅配额|套餐配额|Token[\s_-]?Plan\s*(?:配额|额度)/i.test(message)
+  );
+}
+
+/**
  * 一个 429 体是否"更可能是限频而非真配额耗尽"。
  *
  * 判据：消息里出现显式限频信号（429 状态码、rate limit、too many requests、
  * throttl、或中文"请求过于频繁/限流/频率"），且**没有**命中硬额度措辞
- * （balance/credits exhausted、out of credits/budget、"额度 用尽/耗尽/不足"、
- * quota exceeded/exhausted/reached）。
+ * （balance/credits exhausted、out of credits/budget、no credits left、
+ * "额度 用尽/耗尽/不足"、订阅/套餐配额——见 `hasHardQuotaWording`）。
  *
  * 关键区分："out of **rate** budget" / "rate limit budget" 是限频体，不在硬额度
- * 措辞里，所以仍判为限频——这正是本次误判的核心。
+ * 措辞里，所以仍判为限频——这正是本次误判的核心。反之，泛化的 "quota exceeded"
+ * **也不在**硬额度措辞里：Agnes 的 429 限频体就是这句话（见 `hasHardQuotaWording`
+ * 头注），把它算硬额度会漏掉最主要触发体。
  * @param {string} message - 平台错误文本（可能含状态码与 JSON）。
  * @returns {boolean} true 表示应纠正为 RATE_LIMIT。
  */
@@ -81,17 +110,7 @@ export function looksLikeRateLimit(message: string) {
     /请求过于频繁|限流|频率/.test(m);
   if (!hasRateSignal) return false;
 
-  // 硬额度措辞：命中则相信是配额，不纠正（避免把真耗尽也拉去重试）。
-  const hardQuota =
-    /\b(?:balance|credits?)\s+(?:exhausted|depleted)\b/i.test(m) ||
-    /\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b/i.test(m) ||
-    /额度\s*(?:已)?\s*(?:用尽|耗尽|不足)/.test(m) ||
-    /quota\s*(?:exceeded|exhausted|reached)/i.test(m) ||
-    // Agnes 官方 FAQ 明说 429 也可能是「超过订阅配额」（Token Plan 配额用尽）：
-    // 命中订阅/套餐配额措辞必须保留 QUOTA，否则会被误判成限频去退避重试
-    // （docs/AGNES-API.md §7.3.1 结论 2 指出的演进点）。
-    /(?:subscription|token[\s_-]?plan)[\s_-]*(?:quota|credit)|订阅配额|套餐配额|Token[\s_-]?Plan\s*(?:配额|额度)/i.test(m);
-  return !hardQuota;
+  return !hasHardQuotaWording(m);
 }
 
 /**
@@ -125,7 +144,9 @@ export function extractStructuredType(message: string) {
  *   - `type` 含 `rate_limit` → 本就是限频（peer 多数已判 RATE_LIMIT，这里是防御）。
  *   - `type` 含 `quota` 但仍带 rpm/tpm/rate-limit/per-minute/限流/频率 字样 →
  *     是"被错命名为 quota 的速率上限"，纠正为 RATE_LIMIT。
- *   - `type` 含 `quota` 且无任何速率字样（token/credit/balance 真耗尽）→ 保留 QUOTA。
+ *   - `type` 含 `quota` 且无任何速率字样（token/credit/balance 真耗尽）→ 保留 QUOTA；
+ *     若文本同时命中 `hasHardQuotaWording`（余额/积分/订阅套餐耗尽），即使带了
+ *     retry/wait 字样也保留 QUOTA——硬额度判据优先于速率字样。
  *   - 无结构化 `type` → 退回 v1 的纯文本启发 `looksLikeRateLimit`。
  *
  * 不纠正真配额耗尽：那是共享 Token Plan 池的硬耗尽，重试只会延长冷却窗口
@@ -142,8 +163,14 @@ export function shouldReclassifyQuotaToRate(failure: { code?: string; message?: 
     const t = type.toLowerCase();
     if (/rate[_\s-]?limit/.test(t)) return true; // 防御：已是限频类型
     if (/quota/.test(t)) {
-      // quota_exceeded_error 但带速率上限字样 → 错命名，纠正。
-      const rateCapWords = /\brpm\b|\btpm\b|rate[_\s-]?limit|per[\s_-]?(?:min|minute|sec|second)|too many|限流|频率|请求过于频繁/i;
+      // 真配额耗尽不纠正：余额/积分/订阅套餐措辞命中时，即使句子同时带了
+      // retry/wait 字样也保留 QUOTA——退避重试对一个余额耗尽没有意义，所以
+      // 硬额度判据先于速率上限字样。
+      if (hasHardQuotaWording(message)) return false;
+      // quota_exceeded_error 但带速率上限字样 → 错命名，纠正。Agnes 官方给出的
+      // 429 限频体是 "quota exceeded, please wait 1 minute"，所以 wait/retry/
+      // "稍后重试" 也算速率信号，否则这类体在结构化分支同样漏判。
+      const rateCapWords = /\brpm\b|\btpm\b|rate[_\s-]?limit|per[\s_-]?(?:min|minute|sec|second)|too many|\bwait\b|\bretry|限流|频率|请求过于频繁|稍后|重试|等待|秒|分钟/i;
       return rateCapWords.test(message);
     }
     return false; // 其它非 quota 类型，保守不纠正
@@ -191,15 +218,29 @@ export function reclassifyFinish(chunk: any) {
  * "这一请求撞上了限频"，正是限流记录要数的东西。观察者不改变任何数据流，
  * 不 import 状态存储，只是把每个失败结论递出去；记不记、记在哪由调用方决定，
  * 本模块保持纯函数。
+ *
+ * `onUsage` 是**第二个可选观察者**，只对 `usage` chunk 触发。它与 `onFinish`
+ * 是**两条独立的通道**，不是同一 chunk 的两种看法：pi-ai 的适配器在每次
+ * `finish` **之前**单独下发一个 `{type:"usage", usage:{...}}` chunk（成功路径
+ * `done` 与失败路径 `error` 都发，见 dsh-llm-pi-ai/lib/index.js 的 mapUsage），
+ * 而 `onFinish` 只在 `finish` 上触发，永远看不到那个 usage chunk。所以要把
+ * 每次请求的 token 用量记下来，必须另开这条 `usage`-chunk 通道——它收到的
+ * 是**原样**的 usage chunk（重判层不碰 usage，只碰 finish 的 failure.code）。
+ * 与 `onFinish` 同样：观察者不改变数据流，不 import 存储，记不记由调用方定。
  * @param {AsyncIterableIterator<object>} source - 内层 adapter 的流。
  * @param {(chunk: object) => void} [onFinish] - 每个 `finish` chunk 的观察回调。
+ * @param {(chunk: object) => void} [onUsage] - 每个 `usage` chunk 的观察回调。
  * @returns {AsyncGenerator<object>} 纠正后的流。
  */
 export async function* reclassifyStream(
   source: AsyncIterableIterator<any>,
-  onFinish?: (chunk: any) => void
+  onFinish?: (chunk: any) => void,
+  onUsage?: (chunk: any) => void
 ) {
   for await (const chunk of source) {
+    if (onUsage !== undefined && chunk !== null && typeof chunk === "object" && chunk.type === "usage") {
+      onUsage(chunk);
+    }
     const out = reclassifyFinish(chunk);
     if (onFinish !== undefined && out !== null && typeof out === "object" && out.type === "finish") {
       onFinish(out);

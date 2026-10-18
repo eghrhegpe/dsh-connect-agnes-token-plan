@@ -249,6 +249,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.rateLimitLine": "限流记录：今日 {today} 次 · 近 30 天 {last30d} 次 · 最近 {last}",
 			"agnescode.rateLimitNever": "无",
 			"agnescode.rateLimitHint": "仅统计本插件自身的请求；限频阈值未公布，0 表示未触发过。",
+			"agnescode.usageLine": "经本插件：今日 {requests} 次 · {tokens} tokens（其中缓存 {cacheRead}）",
+			"agnescode.usageHint": "仅统计经本插件（agnescode provider）的请求，不含桌面 App；缓存命中是输入里被平台复用的部分，不额外计费。",
 			"agnescode.ledgerLine": "账户流水（含桌面端）：今日 入 {creditsToday} 出 {debitsToday} · 近 30 天出 {debits30} · 最近 {lastDebit}",
 			"agnescode.ledgerAtLeast": "至少",
 			"agnescode.ledgerLastNever": "无",
@@ -499,6 +501,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.rateLimitLine": "Rate-limit record: {today} today · {last30d} in 30 days · last {last}",
 			"agnescode.rateLimitNever": "never",
 			"agnescode.rateLimitHint": "Counts this plugin's own requests only; the platform's rate cap is unpublished, 0 means never hit.",
+			"agnescode.usageLine": "Via this plugin: {requests} today · {tokens} tokens ({cacheRead} cached)",
+			"agnescode.usageHint": "Counts requests through this plugin (the agnescode provider) only, not the desktop app; cache hits are the part of the input the platform reused, not extra billed tokens.",
 			"agnescode.ledgerLine": "Account ledger (incl. desktop): today in {creditsToday} out {debitsToday} · 30 days out {debits30} · latest {lastDebit}",
 			"agnescode.ledgerAtLeast": "at least",
 			"agnescode.ledgerLastNever": "never",
@@ -3503,28 +3507,58 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* sample rate-limit record.
 	*
 	* What each line is FOR, so the wording never drifts:
+	*   - `usageLine` (FIRST of the group): this plugin's OWN traffic — request
+	*     count and token totals today. It answers "what did MY calls spend", the
+	*     question the reader actually brings. It is per-client and labelled so
+	*     (desktop app invisible), never the account total — that is the ledger's
+	*     job. An all-zero day draws NOTHING (unrecorded ≠ a recorded zero).
 	*   - `grantLine`: the platform's GRANTS (daily free / subscription / effect).
 	*     A free account reads 每日免费 0 · 订阅 0 — that is the honest answer to
 	*     "is there a hidden daily free quota I am about to hit", which is why a
 	*     0 renders instead of disappearing.
-	*   - `rateLimitLine`: this plugin's OWN rate-limit hits. The RPM ceiling is
-	*     unpublished and untested, so the panel reports the symptom (hits today /
-	*     30 days, last hit) rather than inventing a threshold. A 0 is a
-	*     measurement, not a missing value.
 	*   - `ledgerLine`: the account's real SPEND, aggregated by the Host from the
-	*     platform's credits ledger (today and 30-day in/out). Unlike the rate-
-	*     limit record it counts the WHOLE account (desktop app included). When
+	*     platform's credits ledger (today and 30-day in/out). Unlike the usage
+	*     line it counts the WHOLE account (desktop app included). When
 	*     `covered30d` is false the 30-day out total is a LOWER BOUND, so it is
 	*     pre-composed with the "at least" prefix before it reaches the template.
+	*   - `rateLimitLine` (LAST of the group): this plugin's OWN rate-limit hits.
+	*     The RPM ceiling is unpublished and untested, so the panel reports the
+	*     symptom (hits today / 30 days, last hit) rather than inventing a
+	*     threshold. A 0 is a measurement, not a missing value — but it is a
+	*     measurement that reads 0 almost always on a free account, so it was
+	*     demoted below the usage figure rather than leading the group.
 	* @param {object|null} balance - the pool the route reported; `null` draws nothing.
 	* @param {object|null} rateLimit - the windowed counts the Host aggregated; `null` draws nothing.
 	* @param {object|null} ledger - the windowed credits-ledger aggregate; `null` draws nothing.
+	* @param {object|null} usage - this plugin's OWN per-client usage roll; `null` draws nothing.
 	* @param {Tt} tt - the dictionary.
-	* @returns {Array<unknown|null>} the three status lines.
+	* @returns {Array<unknown|null>} the status lines.
 	*/
-	function agnescodePoolNotes(balance, rateLimit, ledger, tt) {
+	function agnescodeUsageText(usage, tt) {
+		if (usage === null || usage === void 0) return null;
+		const requests = typeof usage.todayRequests === "number" ? usage.todayRequests : 0;
+		const total = typeof usage.todayTotal === "number" ? usage.todayTotal : 0;
+		const cacheRead = typeof usage.todayCacheRead === "number" ? usage.todayCacheRead : 0;
+		if (requests === 0 && total === 0) return null;
+		return format(tt("agnescode.usageLine"), {
+			requests: count(requests),
+			tokens: tokenSize(total) || count(total),
+			cacheRead: tokenSize(cacheRead) || count(cacheRead)
+		});
+	}
+	function agnescodePoolNotes(balance, rateLimit, ledger, usage, tt) {
 		const debits30 = ledger !== null ? ledger.covered30d === false && (ledger.last30dDebits ?? 0) > 0 ? tt("agnescode.ledgerAtLeast") + " " + count(ledger.last30dDebits ?? 0) : count(ledger.last30dDebits ?? 0) : "";
+		const usageText = agnescodeUsageText(usage, tt);
 		return [
+			usageText !== null ? h("div", {
+				style: {
+					...S.muted,
+					fontSize: 12,
+					marginBottom: 8
+				},
+				role: "status",
+				title: tt("agnescode.usageHint")
+			}, usageText) : null,
 			balance !== null ? h("div", {
 				style: {
 					...S.muted,
@@ -3539,19 +3573,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				dailyEffect: count(balance.dailyEffectQuota ?? 0),
 				effect: count(balance.effectQuotaBalance ?? 0)
 			})) : null,
-			rateLimit !== null ? h("div", {
-				style: {
-					...S.muted,
-					fontSize: 12,
-					marginBottom: 8
-				},
-				role: "status",
-				title: tt("agnescode.rateLimitHint")
-			}, format(tt("agnescode.rateLimitLine"), {
-				today: count(rateLimit.today ?? 0),
-				last30d: count(rateLimit.last30d ?? 0),
-				last: rateLimit.lastAt ? clockLong(rateLimit.lastAt / 1e3) : tt("agnescode.rateLimitNever")
-			})) : null,
 			ledger !== null ? h("div", {
 				style: {
 					...S.muted,
@@ -3565,6 +3586,19 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				debitsToday: count(ledger.todayDebits ?? 0),
 				debits30,
 				lastDebit: ledger.lastDebitAt ? clockLong(ledger.lastDebitAt / 1e3) : tt("agnescode.ledgerLastNever")
+			})) : null,
+			rateLimit !== null ? h("div", {
+				style: {
+					...S.muted,
+					fontSize: 12,
+					marginBottom: 8
+				},
+				role: "status",
+				title: tt("agnescode.rateLimitHint")
+			}, format(tt("agnescode.rateLimitLine"), {
+				today: count(rateLimit.today ?? 0),
+				last30d: count(rateLimit.last30d ?? 0),
+				last: rateLimit.lastAt ? clockLong(rateLimit.lastAt / 1e3) : tt("agnescode.rateLimitNever")
 			})) : null
 		];
 	}
@@ -3715,6 +3749,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const balance = state?.balance ?? null;
 		const rateLimit = state?.rateLimit ?? null;
 		const ledger = state?.ledger ?? null;
+		const usage = state?.usage ?? null;
 		const modelsSource = state?.modelsSource === "fallback" ? "fallback" : "live";
 		const modelsAsOf = typeof state?.modelsAsOf === "string" ? state.modelsAsOf : "";
 		return h("div", null, view.showError ? h("div", {
@@ -3841,7 +3876,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balancePermanentLabel"))), h("div", { style: {
 			...S.quotaRemaining,
 			marginTop: 4
-		} }, count(balance.permanentBalance ?? 0)))) : null, ...agnescodePoolNotes(balance, rateLimit, ledger, tt), models.length > 0 ? h("div", null, modelsSource === "fallback" ? h("div", {
+		} }, count(balance.permanentBalance ?? 0)))) : null, ...agnescodePoolNotes(balance, rateLimit, ledger, usage, tt), models.length > 0 ? h("div", null, modelsSource === "fallback" ? h("div", {
 			style: {
 				...S.muted,
 				fontSize: 12,
@@ -4908,12 +4943,33 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* The desktop-app reading: the gateway's own credit balance.
 	*
 	* It is a STOCK, not a meter — see {@link balanceOf} — so the body carries the
-	* figure and the tooltip carries the three facts that have no room there: which
-	* account (`nickname`), how the total splits (time-limited / permanent), and —
-	* when there is no figure at all — WHICH fact is missing. "The desktop App is
-	* not signed in", "the provider switch is off" and "the gateway did not answer
-	* this time" are three different problems, and a bare dash beside them left the
-	* reader guessing (the same repair the sibling's capsule made for its gateway).
+	* figure and the tooltip carries the three facts that have no room there: how
+	* the total splits (time-limited / permanent), and — when there is no figure at
+	* all — WHICH fact is missing. "The desktop App is not signed in", "the provider
+	* switch is off" and "the gateway did not answer this time" are three different
+	* problems, and a bare dash beside them left the reader guessing (the same
+	* repair the sibling's capsule made for its gateway).
+	*
+	* WHAT THE CARD DOES NOT CARRY (the 2026-10-18 simplification). The card used
+	* to splice in {@link agnescodePoolNotes} — the tab's three footer lines (the
+	* platform's GRANTS, this plugin's rate-limit record, the account ledger) — and
+	* to lead with the linked account's nickname. Both were a reuse mistake, not a
+	* feature: those lines are a FOOTER designed to sit under the tab's three pool
+	* cards, and dropping them into a 28px glance surface buried the one number the
+	* reader came for under seven zeros and a wall of diagnostics, while the
+	* nickname is a private figure to render on a credential card, not on a pill
+	* that may be on screen when the window is shared or photographed. The deep
+	* record stays where it belongs — the AgnesCode tab — and the card keeps the
+	* glanceable stock: the balance, its split, why a figure is missing, and when
+	* it was last read.
+	*
+	* The ONE line the simplification later let back in (same day) is the
+	* per-client usage roll — "经本插件：今日 N 次 · X tokens". It is not part of the
+	* dropped trio: where grants / rate-limit / ledger are a free account's wall of
+	* zeros or an account-scoped figure that does not belong on a per-conversation
+	* pill, the usage roll is THIS client's own traffic and the one thing beside
+	* the balance a reader glancing at the pill wants. It renders only when a turn
+	* has actually been recorded, so it adds nothing to the empty-state clutter.
 	*/
 	function AgnescodeBalancePill({ tt }) {
 		const reading = useAgnescodeState();
@@ -4926,9 +4982,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const timeLimited = partOf(state, "timeSensitiveBalance");
 		const permanent = partOf(state, "permanentBalance");
 		const split = timeLimited === null || permanent === null ? null : `${tt("agnescode.balanceTimeLabel")} ${count(timeLimited)} · ${tt("agnescode.balancePermanentLabel")} ${count(permanent)}`;
+		const usageText = agnescodeUsageText(state?.usage ?? null, tt);
 		const title = [
 			tt("composer.balanceTitle"),
-			state?.loggedIn === true && String(state.nickname ?? "") !== "" ? format(tt("agnescode.loggedIn"), { nick: String(state.nickname) }) : null,
 			split,
 			why,
 			stale ? tt("composer.stale") : null
@@ -4941,22 +4997,23 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const triggerRef = useRef(null);
 		usePopoverClose(open, close, rootRef);
 		usePopoverFocus(open, cardRef, triggerRef);
-		const nickname = state?.loggedIn === true ? String(state.nickname ?? "") : "";
 		const popoverRows = [
 			h("div", {
 				key: "bal-title",
 				style: S.pillPopTitle
 			}, tt("composer.balanceTitle")),
-			nickname !== "" ? h("div", {
-				key: "nick",
-				style: S.pillPopMuted
-			}, format(tt("agnescode.loggedIn"), { nick: nickname })) : null,
-			h("div", { key: "bal" }, pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`),
+			h("div", {
+				key: "bal",
+				style: S.quotaRemaining
+			}, pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`),
 			split !== null ? h("div", {
 				key: "split",
 				style: S.pillPopMuted
 			}, split) : null,
-			...agnescodePoolNotes(state?.balance ?? null, state?.rateLimit ?? null, state?.ledger ?? null, tt),
+			usageText !== null ? h("div", {
+				key: "usage",
+				style: S.pillPopMuted
+			}, usageText) : null,
 			why !== null ? h("div", {
 				key: "why",
 				style: S.pillPopMuted
@@ -5169,6 +5226,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				barPlan,
 				agnescodeView,
 				agnescodePoolNotes,
+				agnescodeUsageText,
 				dictionaries: Object.freeze({
 					zh,
 					en

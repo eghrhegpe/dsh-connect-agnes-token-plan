@@ -328,10 +328,13 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         const enabledModelIds = agnescodeModels !== null && agnescodeModels !== undefined
           ? await agnescodeModels.listEnabledIds().catch(() => [])
           : [];
-        // Host-side aggregate of this plugin's OWN rate-limit hits. The daily
-        // breakdown stays here — only the windowed counts and the last-hit time
-        // go out, so the wire never carries per-day history.
-        const rateLimit = await agnescodeStats.read();
+        // Host-side aggregate of this plugin's OWN traffic. The daily breakdown
+        // stays here — only the windowed counts and the last-event times go
+        // out, so the wire never carries per-day history. `read()` returns the
+        // rate-limit roll and the per-client usage roll together; they are
+        // served as two sibling keys because they answer two different
+        // questions ("did I get throttled" vs "how much did my calls spend").
+        const { usage, ...rateLimit } = await agnescodeStats.read();
         return {
           ok: true,
           enabled: effectiveEnabled,
@@ -345,6 +348,10 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           expired,
           balance,
           rateLimit,
+          // This plugin's OWN per-client usage roll (request count + token
+          // totals, today and 30-day). Sibling of `rateLimit`, from the same
+          // stats read. Flat scalars only — the daily buckets stay Host-side.
+          usage,
           // Window aggregate of the credits ledger (today / last-30-day totals
           // plus the "covered" flag). Account-scoped; `null` when not logged in
           // or the background prime has not settled yet (first poll after a

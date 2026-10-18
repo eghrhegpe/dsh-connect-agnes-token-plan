@@ -1196,7 +1196,7 @@ const GOOD_SESSION = {
     // counts the whole account including the desktop app). Each must exist in
     // both languages: a free account renders 每日免费 0 · 订阅 0, and that only
     // reads correctly if the line is actually there to render a zero in.
-    const poolNoteKeys = ["agnescode.grantLine", "agnescode.grantHint", "agnescode.rateLimitLine", "agnescode.rateLimitNever", "agnescode.rateLimitHint", "agnescode.ledgerLine", "agnescode.ledgerAtLeast", "agnescode.ledgerLastNever", "agnescode.ledgerHint"];
+    const poolNoteKeys = ["agnescode.grantLine", "agnescode.grantHint", "agnescode.rateLimitLine", "agnescode.rateLimitNever", "agnescode.rateLimitHint", "agnescode.ledgerLine", "agnescode.ledgerAtLeast", "agnescode.ledgerLastNever", "agnescode.ledgerHint", "agnescode.usageLine", "agnescode.usageHint"];
     check("the pool-notes keys exist in both languages",
       poolNoteKeys.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""
         && typeof dictionaries.en[key] === "string" && dictionaries.en[key] !== ""),
@@ -1210,9 +1210,20 @@ const GOOD_SESSION = {
       { totalBalance: 600, timeSensitiveBalance: 600, permanentBalance: 0, dailyFreeCredits: 0, subscriptionCredits: 0, dailyEffectQuota: 0, effectQuotaBalance: 0 },
       { today: 2, last30d: 5, lastAt: 1788408000000 },
       { total: 82, fetchedCount: 82, todayCredits: 600, todayDebits: 23, last30dCredits: 1875, last30dDebits: 152, covered30d: false, lastDebitAt: 1788408000000, at: 1788408000000 },
+      { todayRequests: 4, todayInput: 15200, todayOutput: 15700, todayCacheRead: 15200, todayTotal: 30900, last30dRequests: 4, last30dTotal: 30900, lastAt: 1788408000000 },
       tt
     );
     const notesText = texts(notes);
+    // The per-client usage roll LEADS the group (the one fact of this set the
+    // reader acts on), and it is labelled "经本插件" so it never reads as the
+    // account total. 30900 → "31K", 15200 → "15K" via tokenSize.
+    check("pool notes lead with the per-client usage roll, labelled and token-sized",
+      notesText[0].includes("经本插件") && notesText[0].includes("今日 4 次")
+        && notesText[0].includes("31K tokens") && notesText[0].includes("缓存 15K"),
+      notesText[0]);
+    check("the rate-limit record is demoted to LAST of the pool notes",
+      notesText[notesText.length - 1].includes("限流记录") && notesText[notesText.length - 1].includes("今日 2 次"),
+      notesText[notesText.length - 1]);
     check("pool notes render the platform grants, zeros included",
       notesText.some((t) => t.includes("每日免费 0") && t.includes("订阅 0")),
       notesText.filter((t) => t.includes("每日免费")).join(" | "));
@@ -1230,15 +1241,35 @@ const GOOD_SESSION = {
     // covered30d=true: the same total is a COMPLETE figure and must NOT carry
     // the prefix (a "at least" on a known total is a lie in the other
     // direction).
-    const coveredNotes = texts(clientSurface.agnescodePoolNotes(null, null, { total: 82, fetchedCount: 82, todayCredits: 0, todayDebits: 0, last30dCredits: 0, last30dDebits: 152, covered30d: true, lastDebitAt: 1788408000000, at: 1788408000000 }, tt));
+    const coveredNotes = texts(clientSurface.agnescodePoolNotes(null, null, { total: 82, fetchedCount: 82, todayCredits: 0, todayDebits: 0, last30dCredits: 0, last30dDebits: 152, covered30d: true, lastDebitAt: 1788408000000, at: 1788408000000 }, null, tt));
     check("a covered 30-day ledger total renders bare, without the lower-bound prefix",
       coveredNotes.some((t) => t.includes("近 30 天出 152") && !t.includes("至少")),
       coveredNotes.filter((t) => t.includes("账户流水")).join(" | "));
     // Unread figures draw NOTHING — a rendered zero would present a measurement
     // nobody took as a measurement (same discipline as `balance === null`).
-    const emptyNotes = texts(clientSurface.agnescodePoolNotes(null, null, null, tt));
+    const emptyNotes = texts(clientSurface.agnescodePoolNotes(null, null, null, null, tt));
     check("pool notes draw nothing when the figures are unread",
       emptyNotes.length === 0, JSON.stringify(emptyNotes));
+
+    // The usage roll's string builder, reached directly (the pill reuses the
+    // exact same text, so this one check pins both surfaces).
+    const usageText = (u) => clientSurface.agnescodeUsageText(u, tt);
+    check("usage text is null for an unread (null/undefined) roll",
+      usageText(null) === null && usageText(undefined) === null);
+    // Unrecorded ≠ a recorded zero: a roll that exists but has no traffic draws
+    // nothing (contrast the grant line, which renders its published zeros).
+    check("usage text is null when the roll exists but recorded nothing",
+      usageText({ todayRequests: 0, todayTotal: 0, todayCacheRead: 0 }) === null,
+      String(usageText({ todayRequests: 0, todayTotal: 0, todayCacheRead: 0 })));
+    check("usage text renders a recorded day with the per-client label",
+      usageText({ todayRequests: 1, todayTotal: 500, todayCacheRead: 0 })?.includes("经本插件") === true
+        && usageText({ todayRequests: 1, todayTotal: 500, todayCacheRead: 0 })?.includes("今日 1 次") === true,
+      usageText({ todayRequests: 1, todayTotal: 500, todayCacheRead: 0 }));
+    // A request with a total but zero cache: the cache segment still renders a
+    // 0 (it is a measured zero, and the line's shape stays stable).
+    check("usage text keeps the cache segment at zero when nothing was reused",
+      usageText({ todayRequests: 2, todayTotal: 1200, todayCacheRead: 0 })?.includes("缓存 0") === true,
+      usageText({ todayRequests: 2, todayTotal: 1200, todayCacheRead: 0 }));
 
     // The explainer sits in the tab's CLOSING block, after the state the
     // reader came to check — it used to open the tab and push the switch and

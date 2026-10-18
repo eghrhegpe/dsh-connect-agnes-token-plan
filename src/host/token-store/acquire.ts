@@ -110,7 +110,16 @@ export async function acquire(
     // No account is not a refusal and no request was made, so there is
     // nothing to throttle: recording one would claim the user did something
     // wrong and would keep a fresh install looking "needs user action".
-    if (obj(error).code === CODE.NOT_CONFIGURED) throw error;
+    if (obj(error).code === CODE.NOT_CONFIGURED) {
+      // … but an ownerless grant that has already passed its clock expiry is
+      // dead for good: only an account could re-login and revive it, and there
+      // is none. Agnes has no refresh endpoint, so the renewal branch above can
+      // never fire its own reap — this is the path that does, otherwise the
+      // credentials file keeps an ownerless token pair forever after
+      // "forget account" (grant.ts:136-158 documents the reap's intent).
+      if (stored !== undefined) await purgeGrant(stored.accessToken);
+      throw error;
+    }
     // Otherwise record the refusal so the next poll does not walk into the
     // lock again. The platform's own error is what the panel shows, since it
     // carries the reason and any stated window; the throttle only governs

@@ -254,6 +254,14 @@ export const zh = {
   "agnescode.rateLimitLine": "限流记录：今日 {today} 次 · 近 30 天 {last30d} 次 · 最近 {last}",
   "agnescode.rateLimitNever": "无",
   "agnescode.rateLimitHint": "仅统计本插件自身的请求；限频阈值未公布，0 表示未触发过。",
+  // 本插件自身流量的用量账（请求数 + token 数），与「限流记录」同源、同样只覆盖
+  // 经本插件的请求——桌面 App 的消耗看不见，那是「账户流水」的活。所以每个数字
+  // 都带「经本插件」限定词，绝不冒充账户总量（红线⑦：不得把口径不同的两个数
+  // 拼成一个「剩余」）。todayTotal = 入 + 出（推理 token 已由上游折进「出」）；
+  // cacheRead 是「入」里被平台缓存命中的子集，只做「其中缓存」限定，不进总量。
+  // 全 0 时整行不渲染（未记录 ≠ 记录到 0），与 ledger 的「读不到就不画」同纪律。
+  "agnescode.usageLine": "经本插件：今日 {requests} 次 · {tokens} tokens（其中缓存 {cacheRead}）",
+  "agnescode.usageHint": "仅统计经本插件（agnescode provider）的请求，不含桌面 App；缓存命中是输入里被平台复用的部分，不额外计费。",
   // The ledger line is the platform-sourced "real consumption" aggregate — it
   // counts the WHOLE account (desktop app included), unlike the rate-limit
   // record above, which counts this plugin only. When the 30-day window
@@ -524,6 +532,15 @@ export const en: typeof zh = {
   "agnescode.rateLimitLine": "Rate-limit record: {today} today · {last30d} in 30 days · last {last}",
   "agnescode.rateLimitNever": "never",
   "agnescode.rateLimitHint": "Counts this plugin's own requests only; the platform's rate cap is unpublished, 0 means never hit.",
+  // See the zh keys: this is the per-client usage roll (requests + tokens),
+  // same scope as the rate-limit line (this plugin's own calls, the desktop app
+  // invisible — that is the ledger's account-scoped job). Every figure carries
+  // the "via this plugin" qualifier and never masquerades as the account total.
+  // todayTotal = input + output (reasoning already folded into output);
+  // cacheRead is a SUBSET of input, shown only as the "of which cached"
+  // qualifier. All-zero draws nothing (unrecorded ≠ a recorded zero).
+  "agnescode.usageLine": "Via this plugin: {requests} today · {tokens} tokens ({cacheRead} cached)",
+  "agnescode.usageHint": "Counts requests through this plugin (the agnescode provider) only, not the desktop app; cache hits are the part of the input the platform reused, not extra billed tokens.",
   // The ledger line is the platform-sourced "real consumption" aggregate — it
   // counts the WHOLE account (desktop app included), unlike the rate-limit
   // record above, which counts this plugin only. When the 30-day window

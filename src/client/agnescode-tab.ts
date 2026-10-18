@@ -121,32 +121,66 @@ export function agnescodeView(
  * sample rate-limit record.
  *
  * What each line is FOR, so the wording never drifts:
+ *   - `usageLine` (FIRST of the group): this plugin's OWN traffic — request
+ *     count and token totals today. It answers "what did MY calls spend", the
+ *     question the reader actually brings. It is per-client and labelled so
+ *     (desktop app invisible), never the account total — that is the ledger's
+ *     job. An all-zero day draws NOTHING (unrecorded ≠ a recorded zero).
  *   - `grantLine`: the platform's GRANTS (daily free / subscription / effect).
  *     A free account reads 每日免费 0 · 订阅 0 — that is the honest answer to
  *     "is there a hidden daily free quota I am about to hit", which is why a
  *     0 renders instead of disappearing.
- *   - `rateLimitLine`: this plugin's OWN rate-limit hits. The RPM ceiling is
- *     unpublished and untested, so the panel reports the symptom (hits today /
- *     30 days, last hit) rather than inventing a threshold. A 0 is a
- *     measurement, not a missing value.
  *   - `ledgerLine`: the account's real SPEND, aggregated by the Host from the
- *     platform's credits ledger (today and 30-day in/out). Unlike the rate-
- *     limit record it counts the WHOLE account (desktop app included). When
+ *     platform's credits ledger (today and 30-day in/out). Unlike the usage
+ *     line it counts the WHOLE account (desktop app included). When
  *     `covered30d` is false the 30-day out total is a LOWER BOUND, so it is
  *     pre-composed with the "at least" prefix before it reaches the template.
+ *   - `rateLimitLine` (LAST of the group): this plugin's OWN rate-limit hits.
+ *     The RPM ceiling is unpublished and untested, so the panel reports the
+ *     symptom (hits today / 30 days, last hit) rather than inventing a
+ *     threshold. A 0 is a measurement, not a missing value — but it is a
+ *     measurement that reads 0 almost always on a free account, so it was
+ *     demoted below the usage figure rather than leading the group.
  * @param {object|null} balance - the pool the route reported; `null` draws nothing.
  * @param {object|null} rateLimit - the windowed counts the Host aggregated; `null` draws nothing.
  * @param {object|null} ledger - the windowed credits-ledger aggregate; `null` draws nothing.
+ * @param {object|null} usage - this plugin's OWN per-client usage roll; `null` draws nothing.
  * @param {Tt} tt - the dictionary.
- * @returns {Array<unknown|null>} the three status lines.
+ * @returns {Array<unknown|null>} the status lines.
  */
-export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, tt: Tt) {
+export function agnescodeUsageText(usage: any, tt: Tt): string | null {
+  if (usage === null || usage === undefined) return null;
+  const requests = typeof usage.todayRequests === "number" ? usage.todayRequests : 0;
+  const total = typeof usage.todayTotal === "number" ? usage.todayTotal : 0;
+  const cacheRead = typeof usage.todayCacheRead === "number" ? usage.todayCacheRead : 0;
+  // Unrecorded is not a recorded zero: a day with no plugin traffic draws no
+  // line at all (same discipline as `balance === null` and the ledger row).
+  if (requests === 0 && total === 0) return null;
+  return format(tt("agnescode.usageLine"), {
+    requests: count(requests),
+    tokens: tokenSize(total) || count(total),
+    cacheRead: tokenSize(cacheRead) || count(cacheRead)
+  });
+}
+
+export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, usage: any, tt: Tt) {
   const debits30 = ledger !== null
     ? (ledger.covered30d === false && (ledger.last30dDebits ?? 0) > 0
         ? tt("agnescode.ledgerAtLeast") + " " + count(ledger.last30dDebits ?? 0)
         : count(ledger.last30dDebits ?? 0))
     : "";
+  const usageText = agnescodeUsageText(usage, tt);
   return [
+    // The per-client usage roll leads the diagnostic lines: it is the one fact
+    // of this group the reader acts on ("what did MY calls spend"). The
+    // rate-limit record is demoted to LAST — a free account almost always
+    // reads 0, and a permanent zero line is the clutter the glance card was
+    // simplified for. It stays visible (it is a measurement, not a missing
+    // value) but no longer competes with the usage figure for attention.
+    usageText !== null
+      ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.usageHint") },
+          usageText)
+      : null,
     balance !== null
       ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.grantHint") },
           format(tt("agnescode.grantLine"), {
@@ -154,16 +188,6 @@ export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, tt
             sub: count(balance.subscriptionCredits ?? 0),
             dailyEffect: count(balance.dailyEffectQuota ?? 0),
             effect: count(balance.effectQuotaBalance ?? 0)
-          }))
-      : null,
-    rateLimit !== null
-      ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.rateLimitHint") },
-          format(tt("agnescode.rateLimitLine"), {
-            today: count(rateLimit.today ?? 0),
-            last30d: count(rateLimit.last30d ?? 0),
-            // `lastAt` is epoch MS (the stats store's `at.getTime()`); clockLong
-            // eats SECONDS — feeding ms straight in prints a date ~58 000 years out.
-            last: rateLimit.lastAt ? clockLong(rateLimit.lastAt / 1000) : tt("agnescode.rateLimitNever")
           }))
       : null,
     ledger !== null
@@ -175,6 +199,16 @@ export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, tt
             // `lastDebitAt` is epoch MS (the Host's ledger walk normalizes
             // `created_at` to ms); clockLong eats SECONDS.
             lastDebit: ledger.lastDebitAt ? clockLong(ledger.lastDebitAt / 1000) : tt("agnescode.ledgerLastNever")
+          }))
+      : null,
+    rateLimit !== null
+      ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.rateLimitHint") },
+          format(tt("agnescode.rateLimitLine"), {
+            today: count(rateLimit.today ?? 0),
+            last30d: count(rateLimit.last30d ?? 0),
+            // `lastAt` is epoch MS (the stats store's `at.getTime()`); clockLong
+            // eats SECONDS — feeding ms straight in prints a date ~58 000 years out.
+            last: rateLimit.lastAt ? clockLong(rateLimit.lastAt / 1000) : tt("agnescode.rateLimitNever")
           }))
       : null
   ];
@@ -398,6 +432,10 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   // flag, last debit). `null` until the route's background prime settles, so
   // the ledger line simply does not render yet — the other lines do.
   const ledger = state?.ledger ?? null;
+  // This plugin's OWN per-client usage roll (requests + tokens today). `null`
+  // until the first recorded turn, so the usage line does not render yet — the
+  // other lines do. Per-client, never the account total (that is `ledger`).
+  const usage = state?.usage ?? null;
   // WHICH roster `models` is. The fallback's rates are FROZEN at probe time —
   // the multiplier chip on a fallback row is a captured snapshot, not a live
   // price, and the picker must say so instead of presenting it as today's.
@@ -633,7 +671,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
           // desktop included; "at least" when the 30-day window was not fully
           // fetched). All three are hook-free via
           // {@link agnescodePoolNotes} so the render suite can reach them.
-          ...agnescodePoolNotes(balance, rateLimit, ledger, tt),
+          ...agnescodePoolNotes(balance, rateLimit, ledger, usage, tt),
           models.length > 0
             ? h("div", null,
                 // One quiet line ABOVE the picker when the roster is the

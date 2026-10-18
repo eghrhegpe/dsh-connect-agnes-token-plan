@@ -186,10 +186,13 @@ async function withNetwork(stub, body) {
   }).catch((error) => fail("concurrent polls share one acquisition", error));
 }
 
-// --- 4. an expired grant with no account asks for sign-in -----------------
+// --- 4. an expired grant with no account is reaped -----------------------
 // Agnes issues no refresh token, so an expired grant cannot be renewed. With
 // no account stored there is no password to re-login with: the store reports
-// not_configured and leaves the grant alone for the user to replace.
+// not_configured. The ownerless, clock-expired pair is then reaped so no dead
+// token lingers in the credentials file (2026-10-18 fix — it used to be left
+// in place "for the user to replace", which kept the panel claiming
+// `configured` and every poll re-hitting the dead grant).
 {
   const credentials = fakeCredentials(grant(jwtExpiring(-5), "", -60));
   const store = createTokenStore({ credentials, credentialKey: credentialKeyFn, env: {}, skewMs: 120_000 });
@@ -198,9 +201,11 @@ async function withNetwork(stub, body) {
   check("an expired grant with no account throws", caught !== null);
   check("it reports not_configured", caught?.code === "not_configured", caught?.code);
   const state = await store.state();
-  check("the grant keeps the panel configured", state.configured === true, JSON.stringify(state));
-  check("the grant is left in place for the next sign-in",
-    (await credentials.readRecord(KEY)) !== undefined);
+  check("the reaped grant no longer claims the panel configured",
+    state.configured === false && state.needsAccount === true, JSON.stringify(state));
+  check("the ownerless dead pair is reaped",
+    (await credentials.readRecord(KEY)) === undefined,
+    JSON.stringify(await credentials.readRecord(KEY)));
 }
 
 // --- 5. nothing stored and no account -> not_configured -------------------

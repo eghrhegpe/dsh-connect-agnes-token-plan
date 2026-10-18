@@ -105,9 +105,17 @@ export const INERT_AUTH = Object.freeze({
  *   AgnesCode shell passes one that records rate-limit hits. Threaded to both
  *   the `stream(...)` and the `prepareCall(...).stream` wrappers, so a request
  *   on either path is observed.
+ * @param {(chunk: any) => void} [options.onUsage] - optional observer on every
+ *   `usage` chunk the adapter emits (the token roll pi-ai sends immediately
+ *   before each `finish`, on both the success and the error path). A SEPARATE
+ *   channel from `onRateLimit`: the finish observer never sees a usage chunk,
+ *   so recording per-request tokens needs its own. The core passes the chunk
+ *   through UN-narrowed — every usage chunk is a real usage report, nothing to
+ *   classify. OPTIONAL so the Token Plan shell can omit it; the AgnesCode shell
+ *   passes one that records per-client usage. Threaded to both stream wrappers.
  * @returns {object} the adapter, with the 429 correction layer applied.
  */
-export function createWrappedPiAiAdapter({ profiles, resolveApiKey, get, onRateLimit }: {
+export function createWrappedPiAiAdapter({ profiles, resolveApiKey, get, onRateLimit, onUsage }: {
   profiles: Map<string, any>;
   resolveApiKey: () => Promise<string>;
   // `| undefined` is required, not cosmetic: `exactOptionalPropertyTypes` is on,
@@ -115,6 +123,7 @@ export function createWrappedPiAiAdapter({ profiles, resolveApiKey, get, onRateL
   // own optional `get` straight through (both shells do).
   get?: ((service: string) => any) | undefined;
   onRateLimit?: ((chunk: any) => void) | undefined;
+  onUsage?: ((chunk: any) => void) | undefined;
 }) {
   const inner = new PiAiAdapter({
     profiles: () => profiles,
@@ -157,19 +166,21 @@ export function createWrappedPiAiAdapter({ profiles, resolveApiKey, get, onRateL
       const value = Reflect.get(target, prop, receiver);
       // `stream(...)` 与 `prepareCall(...).stream` 都返回一个 async iterable；
       // 二者据此包裹重判流。其它成员（含 image/resolveApiKey 等）原样放行。
+      // `onUsage` 与 `onFinish` 是 reclassifyStream 的两条独立观察通道，二者
+      // 一并透传：finish 收窄到限频命中，usage 原样递出每次请求的 token 账。
       if (prop === "stream") {
-        return (options: any) => reclassifyStream(target.stream(options), onFinish);
+        return (options: any) => reclassifyStream(target.stream(options), onFinish, onUsage);
       }
       if (typeof value === "function" && prop === "prepareCall") {
         return (...args: any[]) => {
           const prepared = value.apply(target, args);
           if (prepared && typeof prepared.then === "function") {
             return prepared.then((p: any) => p && typeof p.stream === "function"
-              ? { ...p, stream: (o: any) => reclassifyStream(p.stream(o), onFinish) }
+              ? { ...p, stream: (o: any) => reclassifyStream(p.stream(o), onFinish, onUsage) }
               : p);
           }
           return prepared && typeof prepared.stream === "function"
-            ? { ...prepared, stream: (o: any) => reclassifyStream(prepared.stream(o), onFinish) }
+            ? { ...prepared, stream: (o: any) => reclassifyStream(prepared.stream(o), onFinish, onUsage) }
             : prepared;
         };
       }
