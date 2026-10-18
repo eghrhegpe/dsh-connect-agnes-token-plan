@@ -728,8 +728,26 @@ const GOOD_SESSION = {
       descriptor.thinkingLevelMap?.high === "high");
     check("off is null: the BFF's reasoning_effort:\"none\" does NOT disable thinking, so \"off\" would be a silent lie",
       descriptor.thinkingLevelMap?.off === null);
-    check("xhigh/max stay closed on the BFF (never probed there)",
+    check("xhigh/max stay closed for agnes-2.5-flash (rows[0]; never probed there)",
       descriptor.thinkingLevelMap?.xhigh === null && descriptor.thinkingLevelMap?.max === null);
+    // 2026-10-18 live 400: the BFF rejected `reasoning_effort:"high"` on
+    // agnes-2.5-pro — platform text "Unexpected reasoning effort high. Supported
+    // types are xhigh (default), medium, and low". The map must keep `high`
+    // OFFERED (the profile pins `DEFAULT_REASONING_EFFORT`="high" provider-wide,
+    // and dsh-llm-pi-ai throws UNSUPPORTED_REASONING_EFFORT for a level outside
+    // the model's supported set) while dispatching it to `xhigh` — the platform
+    // default — so no wire `high` is ever sent for this model.
+    const pro = agnescodeToDescriptor(
+      { id: "agnes-2.5-pro", name: "Agnes 2.5 Pro", multiplier: 1, contextWindow: 512_000, maxOutputLength: 65_536 },
+      { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }
+    );
+    check("agnes-2.5-pro aliases high → xhigh (its platform default) and opens xhigh (both proven by the live 400 text)",
+      pro.thinkingLevelMap?.low === "low" && pro.thinkingLevelMap?.medium === "medium" &&
+      pro.thinkingLevelMap?.high === "xhigh" && pro.thinkingLevelMap?.xhigh === "xhigh");
+    check("agnes-2.5-pro keeps off/minimal/max closed (off would promise no thinking; max unprobed)",
+      pro.thinkingLevelMap?.off === null && pro.thinkingLevelMap?.minimal === null && pro.thinkingLevelMap?.max === null);
+    check("agnes-2.5-pro's default stays offered as \"high\" (the provider-wide pin) — wire-fixed, not label-dropped",
+      pro.reasoning === true);
     check("the descriptor headers carry the catalogue gates",
       agnescodeRequestHeaders()["X-App-Id"] === "1" && agnescodeRequestHeaders()["X-Platform"] === "1");
     check("the cost is the zero sentinel (credit-gated, per-token prices unknowable)",

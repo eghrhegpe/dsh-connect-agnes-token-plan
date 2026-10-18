@@ -196,3 +196,13 @@
 - **胶囊侧的连带**：本条同时是「积分余额胶囊 2026-10-18 简化」放回来的**唯一**一行——那条简化把 grants/限流/流水三行页脚与昵称从 28px 胶囊移除（它们是页脚、且免费账号读起来是一片 0）；用量行不属于被移除的三行，它是本客户端自身流量、是余额之外读者扫一眼就想要的那个数，且无记录时不渲染，故不回填空态杂乱。
 - **受影响的文件**：`src/host/agnescode-stats-store.ts`（`usage` 段 + `recordUsage` + `readUsage`）、`src/host/llm-error-fix.ts`（`reclassifyStream` 加 `onUsage`）、`src/host/pi-ai-adapter-core.ts` + `src/host/agnescode-llm-adapter.ts`（透传 + 落盘）、`src/host/routes/agnescode.ts`（GET 带 `usage`）、`src/client/{wire,agnescode-tab,composer-usage-pill,index,i18n}.ts`（读数 + 文案 + 胶囊行）、`test/{agnescode-stats,agnescode,dom-render}.test.mjs`、本账本条目、`docs/ROADMAP.md` 同日段、`README.md` 胶囊段、`lib/` + `client.js`（随 src 同 commit 重建）。
 
+## ADR-017 agnes-2.5-pro 的思考档位阶梯与 3.0-flash 不同：`high` 按模型映射到 `xhigh`
+
+- **日期**：2026-10-18
+- **状态**：现行（细化 ADR-009；不改变其「档位可用、`off` 诚实不提供」两条结论，只按模型修正档位映射）
+- **裁定**：`agnescodeThinkingLevelMap(id)` 改按模型：`agnes-2.5-pro` 返回 `{off:null, minimal:null, low:"low", medium:"medium", high:"xhigh", xhigh:"xhigh", max:null}`；其余 id 保持共享阶梯（`high:"high"`、`xhigh:null`）。**`high` 必须保留在 supported 集合里**——profile 钉 `DEFAULT_REASONING_EFFORT`（"high"）是 provider 级，dsh-llm-pi-ai 的 `resolveReasoningLevel` 对不在模型 supported 集合内的档位直接抛 `UNSUPPORTED_REASONING_EFFORT`（无 clamp，`lib/index.js` 1701-1705），关掉 `high` 会让该模型每次请求本地即败——但 wire 拼写改为平台接受的 `xhigh`（同时是该模型的平台默认）。
+- **理由（真机 400，2026-10-18，`agnes-2.5-pro`，`{bffBase}/v1/chat/completions`）**：用户会话选 `agnes-2.5-pro` + 默认「高」档失败，平台原文 `litellm.BadRequestError: OpenAIException - Unexpected reasoning effort high. Supported types are xhigh (default), medium, and low`——该模型的 BFF 阶梯**没有 `high`**，顶层是 `xhigh`（也是默认）。与 ADR-009 的 3.0-flash 探针（`none`/`low`/`medium`/`high` 全 200）对照：**阶梯按模型不同，全 provider 共享一张映射是错误抽象**。`xhigh` 一并打开：同一段 400 原文证明平台接受它（3.0-flash 的 `xhigh` 仍无证据，保持关闭）。
+- **为什么不是别的修法**：① `high:null` 会让 provider 级 Default "high" 对 dsh-llm-pi-ai 抛 `UNSUPPORTED_REASONING_EFFORT`——本地即败，比上游 400 更糟；② 把 profile 默认档位改成 `xhigh` 是 provider 级改动，会让 `agnes-3.0-flash`（`xhigh` 未探通）的 Default 失效；③ 显示层「高」标签 = `defaultEffort`（provider 级），per-model 改标签需要 pi-ai 支持按模型默认档位，当前档位模型表达不了。故只在 wire 拼写层修正，标签不动——「高」对 2.5-pro 即「平台默认档」，语义诚实。
+- **受影响的文档**：`src/host/agnescode-models.ts`（`agnescodeThinkingLevelMap(id)` per-model + 模块头决策 1）、`test/agnescode.test.mjs`（新增 agnes-2.5-pro 断言块）、`docs/ROADMAP.md` §6.3.1（新增 2026-10-18 探针行）、`CHANGELOG.md`（[Unreleased]）。ADR-009 原文按考古纪律保留不改写。
+- **与既有条目的关系**：细化 ADR-009 的档位映射（该裁定以 3.0-flash 探针为基础，未覆盖 2.5-pro 的阶梯差异）；不改变 `docs/DSH-LLM-DEVELOP.md` §4 的通用裁法（Token Plan 侧 `thinkingLevelMapFor` 未动）。
+
