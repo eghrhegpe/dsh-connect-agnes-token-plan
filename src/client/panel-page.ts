@@ -101,7 +101,11 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // hiding its own switch reads as "this does nothing". Only the API key
   // editor stays closed — it holds a secret field, and it is a prerequisite
   // the three cards above point at rather than the thing being configured.
-  const [openSections, setOpenSections] = useState({ quota: true, catalogue: false, usage: true, account: false, provider: true, draw: true, video: true, llm: false });
+  // The AgnesCode tab's single card is the same case as the feature cards:
+  // it IS the tab's content, so it starts open and toggles like the rest —
+  // a hardcoded `open: true` with a no-op `onToggle` would render a
+  // collapse control that cannot do anything.
+  const [openSections, setOpenSections] = useState({ quota: true, catalogue: false, usage: true, account: false, provider: true, draw: true, video: true, llm: false, agnescode: true });
   // Three fixed perspectives: "quota" (daily reading), "api" (Token Plan
   // wiring), and "agnescode" (desktop-app upstream, ROADMAP §6.3).
   // Inline union literal so `docs.test.mjs` check 9 can derive the tab set
@@ -272,8 +276,12 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     setData((current) => (current === null ? current : { ...current, llm: { ...(current.llm ?? {}), ...patch } as LlmData }));
   }, [load]);
 
-  const toggleSection = useCallback((key: string) => {
-    setOpenSections((current) => ({ ...current, [key]: !current[key as keyof typeof current] }));
+  // Typed to the section keys so a misspelled toggle target is a compile
+  // error instead of a phantom key: with `key: string` and a cast, a typo
+  // reads `undefined` off the map and `!undefined === true` silently flips a
+  // section that does not exist, misreporting the chevron.
+  const toggleSection = useCallback((key: keyof typeof openSections) => {
+    setOpenSections((current) => ({ ...current, [key]: !current[key] }));
   }, []);
 
   // One effect owns the whole polling cycle: an immediate load on mount,
@@ -412,9 +420,9 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   const tabBar = h(
     "div",
     { style: S.tabBar, role: "tablist" },
-    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "quota", style: { ...S.tab, ...(activeTab === "quota" ? S.tabActive : {}) }, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
-    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api")),
-    h("button", { type: "button", role: "tab", "aria-selected": activeTab === "agnescode", style: { ...S.tab, ...(activeTab === "agnescode" ? S.tabActive : {}) }, onClick: () => setActiveTab("agnescode") }, tt("tab.agnescode"))
+    h("button", { type: "button", role: "tab", id: "agnes-tab-quota", "aria-controls": "agnes-panel-quota", "aria-selected": activeTab === "quota", style: { ...S.tab, ...(activeTab === "quota" ? S.tabActive : {}) }, onClick: () => setActiveTab("quota") }, tt("tab.quota")),
+    h("button", { type: "button", role: "tab", id: "agnes-tab-api", "aria-controls": "agnes-panel-api", "aria-selected": activeTab === "api", style: { ...S.tab, ...(activeTab === "api" ? S.tabActive : {}) }, onClick: () => setActiveTab("api") }, tt("tab.api")),
+    h("button", { type: "button", role: "tab", id: "agnes-tab-agnescode", "aria-controls": "agnes-panel-agnescode", "aria-selected": activeTab === "agnescode", style: { ...S.tab, ...(activeTab === "agnescode" ? S.tabActive : {}) }, onClick: () => setActiveTab("agnescode") }, tt("tab.agnescode"))
   );
 
   // What the quota tab shows when no snapshot landed at all — a transport
@@ -451,7 +459,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               }))
           : null,
         activeTab === "quota"
-          ? data === null
+          ? h("div", { role: "tabpanel", id: "agnes-panel-quota", "aria-labelledby": "agnes-tab-quota" }, data === null
             ? quotaPlaceholder
             : h(
               "div",
@@ -555,7 +563,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                     h(AccountForm, { auth, onDone: () => void load(), tt, bare: true, hasSnapshot: true })
                   )
                 : null
-            )
+            ))
           // One SectionCard per concern, parked on their own tab so the
           // quota view stays the panel's first screen. Key, provider+push,
           // draw, and video are four different functions; cramming them into
@@ -570,10 +578,10 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
               // card leads with the link state and the harvest diagnosis.
               ? h(
                   "div",
-                  { style: { marginTop: 22 } },
+                  { style: { marginTop: 22 }, role: "tabpanel", id: "agnes-panel-agnescode", "aria-labelledby": "agnes-tab-agnescode" },
                   h(
                     SectionCard,
-                    { title: tt("agnescode.title"), open: true, onToggle: () => {}, tt },
+                    { title: tt("agnescode.title"), open: openSections.agnescode, onToggle: () => toggleSection("agnescode"), tt },
                     // This tab owns its route and its cadence, so it hands the
                     // pinned bar its own freshness and reload (see `barPlan`).
                     h(AgnescodeTab, { tt, onStatus: publishTabStatus })
@@ -581,7 +589,7 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                 )
               : h(
                 "div",
-                null,
+                { role: "tabpanel", id: "agnes-panel-api", "aria-labelledby": "agnes-tab-api" },
                 h(
                   SectionCard,
                   { title: tt("llm.providerTitle"), open: openSections.provider, onToggle: () => toggleSection("provider"), tt },

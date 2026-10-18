@@ -101,7 +101,15 @@ export function ApiKeyForm({ llm, onDone, tt }: {
           autoComplete: "off",
           placeholder: tt("llm.placeholder"),
           disabled: busy,
-          onChange: (event: { target: { value: string } }) => setApiKey(event.target.value)
+          onChange: (event: { target: { value: string } }) => {
+            setApiKey(event.target.value);
+            // An outcome note ("已保存"/"已忘记") must not outlive the state
+            // it describes: once the field is edited, the note no longer
+            // reflects what is in the input. The next submit overwrites the
+            // previous outcome anyway, so a stale note is only ever a lie.
+            setSaved(false);
+            setForgotten(false);
+          }
         }),
         h(
           "button",

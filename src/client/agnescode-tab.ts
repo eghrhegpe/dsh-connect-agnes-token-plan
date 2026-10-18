@@ -265,13 +265,13 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       // exactly like a signed-out desktop App. Name the status instead.
       if (!isCurrent()) return;
       if (!response.ok) {
-        setError(`HTTP ${response.status}`);
+        setError(format(tt("agnescode.error"), { error: `HTTP ${response.status}` }));
         return;
       }
       const body = (await response.json().catch(() => null)) as AgnescodeState | null;
       if (!isCurrent()) return;
       if (body === null || body.ok === false) {
-        setError(typeof body?.error === "string" && body.error !== "" ? body.error : "no answer");
+        setError(typeof body?.error === "string" && body.error !== "" ? body.error : tt("agnescode.loadErrorDetail"));
         return;
       }
       setState(body);
@@ -279,12 +279,12 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       setUpdatedAt(Date.now());
     } catch {
       // An aborted read is this loop superseding itself, not a failure to
-      // report: without this the tab would paint "unable to reach the Host"
+      // report: without this the tab would paint an unreachable-Host error
       // every time the user refreshes.
       if (!isCurrent()) return;
-      setError("unable to reach the Host");
+      setError(tt("agnescode.hostUnreachable"));
     }
-  }, []);
+  }, [tt]);
 
   // Retire the in-flight GET before a POST's post-write state is applied: that
   // GET's snapshot was taken BEFORE the write, and letting it land afterwards

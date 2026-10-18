@@ -541,7 +541,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           }
           const walk = await agnescodeHarvestInFlight;
           if (walk.ok !== true) {
-            await answer({ ok: false, status: "not_found", harvest: walk });
+            await answer({ ok: false, status: "not_found", error: "no usable session found in the desktop App's session file", harvest: walk });
             return;
           }
         } catch (error) {

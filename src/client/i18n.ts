@@ -300,6 +300,8 @@ export const zh = {
   "agnescode.error": "AgnesCode 操作失败：{error}",
   "agnescode.harvestOk": "已读取本机登录态。",
   "agnescode.harvestFail": "未能在本机找到可用的 AgnesCode 登录态。探测记录：",
+  "agnescode.loadErrorDetail": "平台未返回错误详情",
+  "agnescode.hostUnreachable": "无法连接 Host",
   // One line per probed file, the workbuddy five-tier discipline: each tier
   // wants different advice, so they never share a sentence.
   "agnescode.tier.file_missing": "文件不存在",
@@ -571,6 +573,8 @@ export const en: typeof zh = {
   "agnescode.error": "AgnesCode operation failed: {error}",
   "agnescode.harvestOk": "Local login state read.",
   "agnescode.harvestFail": "No usable AgnesCode login state found on this machine. Probed:",
+  "agnescode.loadErrorDetail": "platform returned no error detail",
+  "agnescode.hostUnreachable": "unable to reach the Host",
   "agnescode.tier.file_missing": "file missing",
   "agnescode.tier.format_drift": "storage format changed: the desktop App writes a session file this plugin cannot read yet — update the plugin, then re-detect",
   "agnescode.tier.unreadable": "unreadable (permissions?)",

@@ -276,6 +276,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.error": "AgnesCode 操作失败：{error}",
 			"agnescode.harvestOk": "已读取本机登录态。",
 			"agnescode.harvestFail": "未能在本机找到可用的 AgnesCode 登录态。探测记录：",
+			"agnescode.loadErrorDetail": "平台未返回错误详情",
+			"agnescode.hostUnreachable": "无法连接 Host",
 			"agnescode.tier.file_missing": "文件不存在",
 			"agnescode.tier.format_drift": "存储格式已变：桌面端在写本插件还不认识的会话文件——升级本插件后再点检测",
 			"agnescode.tier.unreadable": "读不了（权限？）",
@@ -528,6 +530,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.error": "AgnesCode operation failed: {error}",
 			"agnescode.harvestOk": "Local login state read.",
 			"agnescode.harvestFail": "No usable AgnesCode login state found on this machine. Probed:",
+			"agnescode.loadErrorDetail": "platform returned no error detail",
+			"agnescode.hostUnreachable": "unable to reach the Host",
 			"agnescode.tier.file_missing": "file missing",
 			"agnescode.tier.format_drift": "storage format changed: the desktop App writes a session file this plugin cannot read yet — update the plugin, then re-detect",
 			"agnescode.tier.unreadable": "unreadable (permissions?)",
@@ -2841,7 +2845,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			autoComplete: "off",
 			placeholder: tt("llm.placeholder"),
 			disabled: busy,
-			onChange: (event) => setApiKey(event.target.value)
+			onChange: (event) => {
+				setApiKey(event.target.value);
+				setSaved(false);
+				setForgotten(false);
+			}
 		}), h("button", {
 			type: "button",
 			style: {
@@ -3633,13 +3641,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				});
 				if (!isCurrent()) return;
 				if (!response.ok) {
-					setError(`HTTP ${response.status}`);
+					setError(format(tt("agnescode.error"), { error: `HTTP ${response.status}` }));
 					return;
 				}
 				const body = await response.json().catch(() => null);
 				if (!isCurrent()) return;
 				if (body === null || body.ok === false) {
-					setError(typeof body?.error === "string" && body.error !== "" ? body.error : "no answer");
+					setError(typeof body?.error === "string" && body.error !== "" ? body.error : tt("agnescode.loadErrorDetail"));
 					return;
 				}
 				setState(body);
@@ -3647,9 +3655,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				setUpdatedAt(Date.now());
 			} catch {
 				if (!isCurrent()) return;
-				setError("unable to reach the Host");
+				setError(tt("agnescode.hostUnreachable"));
 			}
-		}, []);
+		}, [tt]);
 		const retireInFlight = () => {
 			generation.current += 1;
 			inFlight.current?.abort?.();
@@ -4775,7 +4783,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			provider: true,
 			draw: true,
 			video: true,
-			llm: false
+			llm: false,
+			agnescode: true
 		});
 		const [activeTab, setActiveTab] = useState("quota");
 		const [tabStatus, setTabStatus] = useState(null);
@@ -4930,6 +4939,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, h("button", {
 			type: "button",
 			role: "tab",
+			id: "agnes-tab-quota",
+			"aria-controls": "agnes-panel-quota",
 			"aria-selected": activeTab === "quota",
 			style: {
 				...S.tab,
@@ -4939,6 +4950,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, tt("tab.quota")), h("button", {
 			type: "button",
 			role: "tab",
+			id: "agnes-tab-api",
+			"aria-controls": "agnes-panel-api",
 			"aria-selected": activeTab === "api",
 			style: {
 				...S.tab,
@@ -4948,6 +4961,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, tt("tab.api")), h("button", {
 			type: "button",
 			role: "tab",
+			id: "agnes-tab-agnescode",
+			"aria-controls": "agnes-panel-agnescode",
 			"aria-selected": activeTab === "agnescode",
 			style: {
 				...S.tab,
@@ -4965,7 +4980,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const body = h("div", null, tabBar, activeTab === "quota" && shapeWarnings.length > 0 ? h("div", {
 			style: S.formError,
 			role: "status"
-		}, format(tt("panel.shapeDrift"), { detail: shapeWarnings.map((entry) => `${tt("shape.api")} ${entry.api} ${tt("shape.missing")} ${entry.missing}`).join("; ") })) : null, activeTab === "quota" ? data === null ? quotaPlaceholder : h("div", null, h(SectionCard, {
+		}, format(tt("panel.shapeDrift"), { detail: shapeWarnings.map((entry) => `${tt("shape.api")} ${entry.api} ${tt("shape.missing")} ${entry.missing}`).join("; ") })) : null, activeTab === "quota" ? h("div", {
+			role: "tabpanel",
+			id: "agnes-panel-quota",
+			"aria-labelledby": "agnes-tab-quota"
+		}, data === null ? quotaPlaceholder : h("div", null, h(SectionCard, {
 			title: tt("section.quota"),
 			open: openSections.quota,
 			onToggle: () => toggleSection("quota"),
@@ -5035,15 +5054,24 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			tt,
 			bare: true,
 			hasSnapshot: true
-		})) : null) : activeTab === "agnescode" ? h("div", { style: { marginTop: 22 } }, h(SectionCard, {
+		})) : null)) : activeTab === "agnescode" ? h("div", {
+			style: { marginTop: 22 },
+			role: "tabpanel",
+			id: "agnes-panel-agnescode",
+			"aria-labelledby": "agnes-tab-agnescode"
+		}, h(SectionCard, {
 			title: tt("agnescode.title"),
-			open: true,
-			onToggle: () => {},
+			open: openSections.agnescode,
+			onToggle: () => toggleSection("agnescode"),
 			tt
 		}, h(AgnescodeTab, {
 			tt,
 			onStatus: publishTabStatus
-		}))) : h("div", null, h(SectionCard, {
+		}))) : h("div", {
+			role: "tabpanel",
+			id: "agnes-panel-api",
+			"aria-labelledby": "agnes-tab-api"
+		}, h(SectionCard, {
 			title: tt("llm.providerTitle"),
 			open: openSections.provider,
 			onToggle: () => toggleSection("provider"),
