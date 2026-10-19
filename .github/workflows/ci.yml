@@ -242,6 +242,11 @@ jobs:
           # strictly. Static reads of the runtime this job installed; SKIPs loudly
           # when the machine has no DSH client copy.
           node test/composer-slot-gate.mjs
+          # The `any` budget: the ledger for tsconfig's `noImplicitAny: false`.
+          # No tool, no runtime, no key — it counts the shipped source only, so
+          # unlike the gates above it has no environment it cannot run in and
+          # therefore no SKIP branch. Regenerate with UPDATE_BASELINE=1.
+          node test/any-budget-gate.mjs
 
   dpapi:
     name: DPAPI round-trip (hard gate, Windows only)

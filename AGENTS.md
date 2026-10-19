@@ -45,7 +45,7 @@ node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shap
 node test/switch-store.test.mjs # 四个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」）
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）；新增 docs/ 顶层文件必须进 docs/README.md 索引表，否则 ORPHAN_DOCS 判红
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
-npm test                    # 全量离线测试门禁 + 末尾数道 gate（tsc-gate / build-gate / dup-gate / composer-slot-gate / e2e-gate，各自探到 tsc / tsdown / jscpd / 本机 DSH client 副本 / dsh CLI 才实跑，否则 SKIP；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）
+npm test                    # 全量离线测试门禁 + 末尾数道 gate（tsc-gate / build-gate / dup-gate / composer-slot-gate / e2e-gate，各自探到 tsc / tsdown / jscpd / 本机 DSH client 副本 / dsh CLI 才实跑，否则 SKIP；末道 any-budget-gate 无依赖故总跑；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）
 npm run build               # 改 src/（host 或 client）后必跑：重建 lib/ 与根 client.js（两者是入库产物：重建后必须与 src/ 同一 commit 提交；build-gate 拦构建失败/产物缺失/漂移，CI 新鲜度门禁拦「改了 src 没重建」；别把 /lib/ 加回 .gitignore）
 ```
 
@@ -139,7 +139,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 动刀 `token-store.ts` / provider publisher 这类大文件（先冻结行为基线，再按蓝图搬） | `docs/TOKEN-STORE-SPLIT.md`、`docs/PUBLISH-CORE-SPLIT.md`（ADR-005 准入门槛的两份先例蓝图） |
 | 查「为何不退回通用 image/video 接口、为何自己造工具」的 runtime 取证 | `docs/DSH-UNIFIED-INTERFACE-AUDIT.md`（观察存档，不作执行依据） |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（58 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（59 条现象→根因→修法） |
 | 排查「面板说令牌失效 / 让你重新登录，但重登没用」 | `docs/PITFALLS.md` §46（Host 唯一的 403 是同源闸，不是凭据；客户端曾把它读成 `jwt_expired`） |
 | 排查「进度条数字和控制台对不上 / 超额窗口显示成 100%」 | `docs/PITFALLS.md` §45（进度条用平台自己的 `usage_pct`，不是 `used/limit`；钳制即改写平台口径） |
 | 排查「凭据疑似漏进 agent 对话 / 日志」 | `docs/PITFALLS.md` §44（agent 工具 execute 错误是红线①第四张脱敏表面；同族漏一条就漏凭据） |

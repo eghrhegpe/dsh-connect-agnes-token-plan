@@ -39,6 +39,12 @@ export function listSuites() {
  * relaxing `useProjection` to optional — and that failure looks exactly like a
  * provider with no quota. It reads the peer's own bytes, SKIPs loudly with no
  * runtime on the machine.
+ *
+ * `any-budget-gate` is the ledger for tsconfig's `noImplicitAny: false`
+ * trade-off: the flag keeps untyped Host glue greppable and unblocking, and
+ * NOTHING counted the debt it lets through, so the number only rose. It pins a
+ * per-file ceiling (test/baselines/any-budget.json) rather than banning `any`,
+ * because the glue is meant to stay untyped where typing it costs more.
  * @type {string[]}
  */
-export const GATES = ["tsc-gate.mjs", "build-gate.mjs", "dup-gate.mjs", "composer-slot-gate.mjs", "e2e-gate.mjs"];
+export const GATES = ["tsc-gate.mjs", "build-gate.mjs", "dup-gate.mjs", "composer-slot-gate.mjs", "e2e-gate.mjs", "any-budget-gate.mjs"];

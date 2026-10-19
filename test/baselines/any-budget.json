@@ -1,0 +1,37 @@
+{
+  "$comment": "Per-file ceiling on explicit `any` in the shipped source. Written by `UPDATE_BASELINE=1 node test/any-budget-gate.mjs`; checked on every `npm test`. A file absent here has a budget of zero. Raising a number is a decision — argue it in the commit that changes this file.",
+  "rule": "/(?<!\\.)\\bany\\b/g",
+  "scope": [
+    "src/**/*.ts",
+    "types/*.d.ts"
+  ],
+  "total": 130,
+  "files": {
+    "src/client/agnescode-tab.ts": 5,
+    "src/host/admission-audit.ts": 1,
+    "src/host/agnes-auth.ts": 1,
+    "src/host/agnescode-lifecycle.ts": 3,
+    "src/host/agnescode-llm-adapter.ts": 1,
+    "src/host/agnescode-publish.ts": 5,
+    "src/host/agnescode-store.ts": 1,
+    "src/host/agnescode.ts": 10,
+    "src/host/api-key-store.ts": 1,
+    "src/host/catalog-store.ts": 3,
+    "src/host/doctor.ts": 2,
+    "src/host/index.ts": 2,
+    "src/host/llm-adapter.ts": 3,
+    "src/host/llm-error-fix.ts": 4,
+    "src/host/pi-ai-adapter-core.ts": 12,
+    "src/host/provider-publish.ts": 4,
+    "src/host/publish-core.ts": 7,
+    "src/host/token-store.ts": 3,
+    "src/host/token-store/account.ts": 5,
+    "src/host/token-store/acquire.ts": 3,
+    "src/host/token-store/state.ts": 8,
+    "src/host/token-store/throttle.ts": 2,
+    "src/host/types.ts": 30,
+    "src/host/util.ts": 12,
+    "src/host/video-protocol-25.ts": 1,
+    "src/host/video-protocol.ts": 1
+  }
+}
