@@ -98,6 +98,7 @@ jobs:
           node test/routes.test.mjs
           node test/catalog-refresh.test.mjs
           node test/panel.test.mjs
+          node test/cards.test.mjs
           node test/render.test.mjs
           # The real-DOM mount suite: the SHIPPED client.js + real react +
           # react-dom into jsdom, driven through clicks/typing/submits. Needs
