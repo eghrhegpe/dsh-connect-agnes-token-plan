@@ -1,5 +1,6 @@
 {
   "meta": {
-    "title": "Agnes Token Plan Connect"
+    "title": "Agnes Token Plan Connect",
+    "description": "Use Agnes in DSH — quota at a glance, models, image and video tools one-tap in; image recognition and thinking level auto-filled; AgnesCode credentials reused automatically, tokens re-sign on expiry (needs AGNES_PASSWORD), rate-limit hits back off on their own."
   }
 }

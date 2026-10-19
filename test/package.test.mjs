@@ -345,6 +345,18 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
   } catch { enAnchor = false; }
   check("locale/en.json exists as the dictionary anchor",
     enAnchor, "absent — zh.json would never be read and the card stays English");
+  // The ANCHOR (en.json) must carry BOTH meta fields: it is the English card
+  // surface, so a missing `description` there degrades the English UI to the
+  // bare package.json.description (a different, longer string) with no warning.
+  // Other locales may still fall back, so only the anchor is held to the full
+  // contract — the per-field loop below stays lenient for every locale.
+  const en = JSON.parse(readFileSync(join(root, "locale", "en.json"), "utf8"));
+  const enMeta = en.meta ?? {};
+  for (const field of ["title", "description"]) {
+    check(`locale/en.json (anchor): meta.${field} is a non-empty string`,
+      typeof enMeta[field] === "string" && enMeta[field].trim() !== "",
+      "missing — English card description silently falls back to package.json (drift class: silent English)");
+  }
   // Any locale file's meta fields must be plain non-empty strings (textOf's
   // contract); an object or empty string throws inside the reader's try/catch
   // and degrades to an error diagnostic, silently losing all display text.
