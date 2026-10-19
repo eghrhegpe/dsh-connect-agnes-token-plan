@@ -39,15 +39,21 @@
  * FAILURE, not a skip — an incomplete environment that reads as "nothing to
  * check" is how a gate goes blind.
  *
- * `dsh-client-ui-slots` is DELIBERATELY NOT one of those three. It is the
- * `renderSlot` implementation, and upstream 0.2.1-rc.2 stopped shipping it as a
- * standalone package: its symbols are inlined into
- * `dsh-client-ui-conversation`'s `lib/client.js` (the package's `devDependencies`
- * still name it, which is why `npm ls` used to implicate it, but it is no longer
- * a runtime dependency of anything). It was only ever an EXISTENCE assertion
- * here — `bundleText` never read it, and no A–D check depends on its bytes. So it
- * is OPTIONAL when present-but-unreadable, and the inline evidence is asserted
- * instead via {@link slotsInlined}.
+ * `dsh-client-ui-slots` is DELIBERATELY NOT one of those three, and it is NOT a
+ * packaging change that put it there. Upstream still PUBLISHES it (0.2.1-rc.2 is
+ * on npm, `deprecated` empty), the conversation bundle still `require`s it once
+ * at runtime, and its symbols were never inlined — `renderSlot` appears in that
+ * bundle only as a DESTRUCTURED PROP, and the shell supplies it through its own
+ * `__ModuleLoader__` registry (`dsh-web-frontend/dist/assets/index-*.js` maps
+ * `"@deepseek-ai/dsh-client-ui-slots"` to a module object). What changed is who
+ * PULLS it into an install tree: in 0.2.0-rc.1
+ * `dsh-experimental-client-ui-agent-team` listed it in `peerDependencies`, so
+ * npm 7+ auto-installed it; by 0.2.1-rc.2 that list shrank to `cordis` alone and
+ * NOTHING declared it. The package did not move, its dependents stopped asking.
+ *
+ * It was only ever an EXISTENCE assertion here — `bundleText` never read it, and
+ * no A–D check depends on its bytes — so it stays OPTIONAL, and {@link slotRuntime}
+ * replaces the old inline claim with what the bytes can actually prove.
  *
  * @module test/composer-slot-gate
  */
@@ -70,13 +76,13 @@ const CONTRACT_PKGS = [
 ];
 
 /**
- * The slot runtime, shipped standalone through 0.2.0 and inlined from 0.2.1 on.
+ * The slot runtime `renderSlot` comes from, resolved by the shell's module loader.
  *
- * Kept as a name (not a required package) because its presence is informative:
- * when it IS installed the old packaging is in play; when it is not, the inline
- * symbols must be there instead. See {@link slotsInlined}.
+ * Not a packaging form and not a required package: see the module docblock for
+ * why its absence from an install tree is normal on 0.2.1+. Kept as a name so
+ * {@link slotRuntime} can look for the one byte that proves the wiring.
  */
-const LEGACY_SLOTS_PKG = "dsh-client-ui-slots";
+const SLOT_RUNTIME_PKG = "dsh-client-ui-slots";
 
 /**
  * Candidate DSH runtime `node_modules` roots, deduped, existing ones only.
@@ -184,31 +190,36 @@ function bundleText(pkgDir) {
 }
 
 /**
- * Whether the slot runtime is reachable from the conversation bundle.
+ * Whether the slot runtime is still wired into the conversation bundle.
  *
- * Two packagings satisfy the contract, and the gate accepts both rather than
- * pinning one:
+ * The one fact worth pinning is that the bundle still RECEIVES `renderSlot` from
+ * outside; it does not carry the implementation, so nothing in its own bytes can
+ * prove it works. The shipable evidence is the module SPECIFIER:
+ * `require("@deepseek-ai/dsh-client-ui-slots")` — one occurrence, at the top of
+ * the bundle, resolved by the shell's loader registry.
  *
- *   - **standalone** (`<= 0.2.0`): `dsh-client-ui-slots` is installed as its own
- *     package, so the conversation bundle only has to CALL `renderSlot`.
- *   - **inlined** (`>= 0.2.1-rc.2`): the package is gone and `renderSlot`'s
- *     definition moved into `dsh-client-ui-conversation`'s own bundle, together
- *     with `useProjection`. The `.d.ts` surface still names the seat.
+ * A bare `/\brenderSlot\b/` match was what this gate used to assert, and it is
+ * worthless here: the identifier appears ~39 times in the 0.2.1 bundle and ALL
+ * of them are uses of a destructured prop (`{ …, renderSlot, renderSlotChain, … }
+ * = props`), with `function renderSlot` occurring ZERO times. Grepping the name
+ * therefore "passes" whether or not the implementation is reachable at all.
  *
- * A conversation bundle that neither sits next to the standalone package nor
- * carries `renderSlot` at all is the case this gate exists to catch: the seat
- * would stop rendering and the pill would vanish silently.
- * @param {boolean} standaloneInstalled - whether the legacy package is present.
+ * PROXY §58: `inlined` is not restored because upstream never inlined anything —
+ * that claim was mine, not theirs.
  * @param {{text: string}} conversation - the conversation bundle walk.
  * @returns {{ok: boolean, evidence: string}} the verdict and what proved it.
  */
-function slotsInlined(standaloneInstalled, conversation) {
-  if (standaloneInstalled) return { ok: true, evidence: "standalone dsh-client-ui-slots installed" };
-  const hasRenderSlot = /\brenderSlot\b/.test(conversation.text);
-  const hasProjection = /\buseProjection\b/.test(conversation.text);
+function slotRuntime(conversation) {
+  const specifier = `"@deepseek-ai/${SLOT_RUNTIME_PKG}"`;
+  const requires = conversation.text.includes(`require(${specifier})`);
+  const definesOwn = /\bfunction\s+renderSlot\b|\brenderSlot\s*=/.test(conversation.text);
   return {
-    ok: hasRenderSlot && hasProjection,
-    evidence: `no standalone slots package; inlined renderSlot=${hasRenderSlot} useProjection=${hasProjection}`
+    ok: requires && !definesOwn,
+    evidence: requires
+      ? (definesOwn
+        ? "bundle both requires the slot runtime and defines its own renderSlot — packaging changed, re-read this gate"
+        : "bundle still requires the slot runtime through the shell's module registry")
+      : `no require(${specifier}) — the slot runtime is no longer wired in, the seat would render nothing`
   };
 }
 
@@ -240,12 +251,11 @@ for (const root of found) {
   const session = bundleText(join(scope, "dsh-client-ui-session"));
   const renderer = bundleText(join(scope, "dsh-client-ui-renderer"));
 
-  // E. The slot runtime is reachable, in either packaging (see `slotsInlined`).
-  // Not one of A–D: A–D pin what the seat must DO, this pins that its renderer
-  // still exists somewhere. `dsh-client-ui-slots` alone was never enough — it was
-  // an install-shape proxy that went stale the day upstream inlined it.
-  const slots = slotsInlined(existsSync(join(scope, LEGACY_SLOTS_PKG)), conversation);
-  check(`[E][${root}] the slot runtime is reachable (standalone package or inlined in the conversation bundle)`,
+  // E. The slot runtime is still wired in (see `slotRuntime`). Not one of A–D:
+  // A–D pin what the seat must DO, this pins that its renderer is still handed
+  // to the bundle at all. A package-installed assertion here was the §58 proxy.
+  const slots = slotRuntime(conversation);
+  check(`[E][${root}] the bundle still requires the slot runtime from the shell`,
     slots.ok, slots.evidence);
   /** Each assertion names the copy it read: several scopes produce several rows. */
   const tag = `v${versionOf("dsh-client-ui-conversation")}`;
