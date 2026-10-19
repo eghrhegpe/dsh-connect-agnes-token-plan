@@ -29,3 +29,10 @@
 
 # 生成/第三方文件，不纳入换行归一化
 package-lock.json -text
+
+# 构建产物：随库提交的入库 artifact（ADR-008），由 `npm run build` 重建。
+# 标 linguist-generated 让 GitHub 语言统计不把 minified bundle 算成手写源码，
+# -diff 让 PR diff 默认折叠，避免 17%+ 的体积淹没真实改动。重建必须随 src 同 commit
+# （build-gate 的 lib/ 新鲜度检查会拦「改了 src 没重建」）。
+client.js linguist-generated -diff
+lib/*.js linguist-generated -diff
