@@ -91,18 +91,11 @@ git commit -m "chore: stop tracking DSH internal _asar_extract dump"
 
 **不要看错仓库**：投稿是向 `awesome-dsh-plugin/awesome-dsh-plugin` 提 PR，加且仅加一个文件
 `data/plugins/eghrhegpe__dsh-connect-agnes-token-plan.yml`；不要手工编辑对方仓库生成出来的
-README，也不要把条目文件建在本仓库。一个 PR 最多 3 条。
+README。一个 PR 最多 3 条。
 
-本插件的拟稿（描述只能陈述功能、不带营销词，每句都会被对照代码核对）：
-
-```yaml
-url: https://github.com/eghrhegpe/dsh-connect-agnes-token-plan
-name: eghrhegpe/dsh-connect-agnes-token-plan
-category: usage
-description:
-  en: 'Agnes Token Plan quota panel rendered as a config card on the Harness Plugins page: account-wide quota windows (5-hour requests, weekly requests, daily images, daily video) plus cumulative usage with a daily chart and the public plan catalogue, all read from the Agnes console API, with in-panel sign-in and automatic re-login. Four opt-in switches, off by default, register the Agnes models as an LLM provider, connect the AgnesCode desktop-app login state as a second upstream provider, and expose image- and video-generation tools to the agent.'
-  zh: '在 Harness 的 Plugins 页以插件卡显示 Agnes 控制台的 Token Plan 额度：账号级四类额度窗口（5 小时请求、每周请求、每日图片、每日视频）、账号累计用量与按日柱图、以及公开套餐目录，支持面板内登录与令牌失效后自动重登。另有四个默认关闭的可选开关：把 Agnes 模型注册为 DSH 推理提供方、接入 AgnesCode 桌面端上游，并向 agent 暴露图片与视频生成工具。'
-```
+本仓库只放**拟稿镜像**：[`awesome-dsh-plugin-submission/eghrhegpe__dsh-connect-agnes-token-plan.yml`](../awesome-dsh-plugin-submission/eghrhegpe__dsh-connect-agnes-token-plan.yml)。
+提 PR 时把这份文件原样复制到对方仓库的 `data/plugins/` 下即可——不要在这里再维护第二份 yaml（两处一定会漂移）。
+描述只能陈述功能、不带营销词，每句都会被维护者对照代码核对；逐条溯源写在拟稿的注释里。
 
 含 `: ` 的描述必须加引号，否则 YAML 解析失败；`en` 必填且以句号结尾，`zh` 可选。
 

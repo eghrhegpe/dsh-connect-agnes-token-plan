@@ -1,0 +1,32 @@
+# Submission draft for awesome-dsh-plugin.
+#
+# Copy this file to `data/plugins/eghrhegpe__dsh-connect-agnes-token-plan.yml` in a fork of
+# awesome-dsh-plugin/awesome-dsh-plugin and open a PR that adds only it. Do not edit that
+# repository's READMEs — both are generated from data/plugins/. Do not add an `npm:` field
+# (market CI rejects it); do not add screenshots here (the market reads this repo's root
+# screenshots.json instead).
+#
+# The description is read as a claim and checked against the code line by line, so every noun
+# below is one the source actually has:
+#   "language, image and video models … default-off switches" —
+#     src/host/provider-publish.ts and src/host/llm-adapter.ts publish the provider;
+#     src/host/draw.ts:44 registers agnes_draw_image (DRAW_TOOL_NAME);
+#     src/host/video.ts:65 registers agnes_video_generate (VIDEO_TOOL_NAME); the switches
+#     default to off in src/host/host-config.ts and cordis.patch.yml.
+#   "image recognition and thinking levels filled in automatically" —
+#     src/host/modality.ts decides image input; src/host/llm-models.ts carries the
+#     thinkingLevelMap and the default reasoning level.
+#   "console quota windows … account-wide cumulative usage" — src/host/console-client.ts reads
+#     the console API; src/client/cards.ts renders the windows and the cumulative figures.
+#   "AgnesCode desktop models can be linked too (Windows only)" — src/host/agnescode.ts reads
+#     the desktop App's Chromium store and unwraps it through a DPAPI PowerShell child
+#     (src/host/agnescode.ts:378), which is why the claim carries the Windows qualifier.
+#   "tokens re-signing in on expiry when AGNES_PASSWORD is set" — src/host/agnes-auth.ts;
+#     Agnes issues no refresh token, so renewal is a re-login with the env-var password.
+#   "rate-limit hits backing off on their own" — src/host/llm-retry.ts.
+url: https://github.com/eghrhegpe/dsh-connect-agnes-token-plan
+name: eghrhegpe/dsh-connect-agnes-token-plan
+category: model
+description:
+  en: 'Bring the Agnes language, image and video models into DSH as default-off switches, with image recognition and thinking levels filled in automatically. After signing in, the card shows the console quota windows (5-hour requests, weekly requests, daily images, video) and account-wide cumulative usage; AgnesCode desktop models can be linked too (Windows only), with tokens re-signing in on expiry when AGNES_PASSWORD is set, and rate-limit hits backing off on their own.'
+  zh: '一键接入Agnes 的语言、出图、视频模型到 DSH ，自动填入图片识别与思考强度（默认关）；登陆后，可看控制台额度窗口（5 小时请求、每周请求、每日图片、视频）、账号累计用量；也支持接入AgnesCode 桌面端模型，令牌到期自动重登（需 AGNES_PASSWORD），撞限额自动退避重试。'
