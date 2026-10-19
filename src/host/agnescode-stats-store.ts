@@ -130,6 +130,27 @@ function parseUsageDay(raw: unknown) {
 }
 
 /**
+ * Coerce one harness `TokenUsage` turn into the three floor'd tallies the day
+ * bucket sums. A non-number or non-positive field reads as `0`, so a malformed
+ * turn cannot write garbage into the bucket — the same tolerance
+ * `parseUsageDay` applies when a persisted day is read back. Shared by the file
+ * and memory stores so the two cannot disagree about what counts as a turn.
+ * @param {{inputTokens?: number, outputTokens?: number, cacheReadTokens?: number}} usage
+ * @returns {{input:number,output:number,cacheRead:number}}
+ */
+function usageTalliesOf(
+  usage: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }
+): { input: number; output: number; cacheRead: number } {
+  const read = (value: number | undefined): number =>
+    typeof value === "number" && value > 0 ? Math.floor(value) : 0;
+  return {
+    input: read(usage?.inputTokens),
+    output: read(usage?.outputTokens),
+    cacheRead: read(usage?.cacheReadTokens)
+  };
+}
+
+/**
  * Bring a persisted payload to {@link STATS_VERSION}, or `null` when the shape
  * is foreign (unrecognised version). Pruning is done separately by `prune` and
  * `pruneUsage`, which need the clock.
@@ -321,9 +342,7 @@ export function createFileAgnescodeStatsStore({ dir = agnescodeStatsDir(), now =
      * @returns {Promise<boolean>} whether the record reached the disk.
      */
     async recordUsage(usage: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }, at: Date = new Date(now())) {
-      const input = typeof usage?.inputTokens === "number" && usage.inputTokens > 0 ? Math.floor(usage.inputTokens) : 0;
-      const output = typeof usage?.outputTokens === "number" && usage.outputTokens > 0 ? Math.floor(usage.outputTokens) : 0;
-      const cacheRead = typeof usage?.cacheReadTokens === "number" && usage.cacheReadTokens > 0 ? Math.floor(usage.cacheReadTokens) : 0;
+      const { input, output, cacheRead } = usageTalliesOf(usage);
       if (input === 0 && output === 0 && cacheRead === 0) return true;
       const key = dayKeyOf(at);
       try {
@@ -398,9 +417,7 @@ export function createMemoryAgnescodeStatsStore(now = Date.now) {
       return true;
     },
     async recordUsage(usage: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }, at: Date = new Date(now())) {
-      const input = typeof usage?.inputTokens === "number" && usage.inputTokens > 0 ? Math.floor(usage.inputTokens) : 0;
-      const output = typeof usage?.outputTokens === "number" && usage.outputTokens > 0 ? Math.floor(usage.outputTokens) : 0;
-      const cacheRead = typeof usage?.cacheReadTokens === "number" && usage.cacheReadTokens > 0 ? Math.floor(usage.cacheReadTokens) : 0;
+      const { input, output, cacheRead } = usageTalliesOf(usage);
       if (input === 0 && output === 0 && cacheRead === 0) return true;
       usageByDay = pruneUsage(usageByDay, now);
       const key = dayKeyOf(at);

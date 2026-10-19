@@ -74,6 +74,13 @@ export const AGNESCODE_BASE_HEADERS = Object.freeze({
   "X-User-Language": "zh-Hans"
 });
 
+/** The per-request budget every BFF fetch waits on before giving up. Shared by
+ * the three endpoint builders so the timeout is a property of the BFF (which
+ * serves catalogue, balance and ledger from one process) rather than of the
+ * call site — a hung balance call must fail the same way a hung catalogue call
+ * does, not linger into the poll cadence. */
+export const AGNESCODE_FETCH_TIMEOUT_MS = 30_000;
+
 /**
  * The session-file name pattern, matched case-insensitively against the App's
  * roaming directory. The CN build ships `code-auth-session.cn.v1`; other
@@ -654,9 +661,17 @@ export async function fetchAgnescodeCatalog(credential: any, fetcher?: typeof fe
   try {
     const response = await effective(`${agnescodeApiRoot(bffBase)}/v2/models`, {
       headers: agnescodeHeaders(source),
-      signal: AbortSignal.timeout(30_000)
+      signal: AbortSignal.timeout(AGNESCODE_FETCH_TIMEOUT_MS)
     });
     if (!response.ok) return null;
+    // The catalogue's `data` is an ARRAY, not the object the balance / ledger
+    // envelopes carry, so it does NOT go through `agnescodeEnvelopeData`: that
+    // gate's `typeof data !== "object"` test is written for an object payload.
+    // `Array.isArray(body.data)` is the success test on its own — an error
+    // envelope's `data` is null and fails the same check, so a refusal still
+    // reads as an empty catalogue and returns `null` below. The live probe in
+    // `test/live-agnescode.mjs` checks the envelope code for the balance call
+    // and deliberately skips it for this one, mirroring that contract.
     const body = obj(await response.json().catch(() => ({})));
     const models = Array.isArray(body.data) ? body.data : [];
     const seen = new Set();
@@ -731,7 +746,7 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
   try {
     const response = await effective(`${agnescodeApiRoot(bffBase)}/api/v2/subscription/credits-balance`, {
       headers: agnescodeHeaders(source),
-      signal: AbortSignal.timeout(30_000)
+      signal: AbortSignal.timeout(AGNESCODE_FETCH_TIMEOUT_MS)
     });
     if (!response.ok) return null;
     const data = agnescodeEnvelopeData(await response.json().catch(() => ({})));
@@ -837,7 +852,7 @@ export async function fetchAgnescodeLedger(
         method: "POST",
         headers: { ...agnescodeHeaders(source), "Content-Type": "application/json" },
         body: JSON.stringify({ page, page_size: AGNESCODE_LEDGER_PAGE_SIZE, filter: 0 }),
-        signal: AbortSignal.timeout(30_000)
+        signal: AbortSignal.timeout(AGNESCODE_FETCH_TIMEOUT_MS)
       });
       if (!response.ok) return null;
       const data = agnescodeEnvelopeData(await response.json().catch(() => ({})));
