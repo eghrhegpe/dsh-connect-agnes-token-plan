@@ -118,8 +118,23 @@ const OFFICIAL_DOCS_DIR = "AGNES-API-docs";
  *   写死数字，而那是运气不是护栏——代理下次重写这份计划就能让全量门禁判红。
  *   更要紧的是它记的是**已废弃的技术栈**（SenseNova 时代的 `section.pools`
  *   与「连接商汤控制台」，代码早已按 §1/§2/§5 删除），躺在仓库里会被读成现行方案。
+ * - **`awesome-dsh-plugin-submission/`**：投稿规则目录，装着上游 awesome-dsh-plugin
+ *   `contributing.md` 的**逐字副本**（中英对照），与 `upstream/`、`AGNES-API-docs/`
+ *   同属「外部容器、逐字抓取、只读」一类，其一致性不归本仓管——上游那两处指向它
+ *   自己仓库 `data/screenshots.json` 的相对链接在本仓天然不存在，判红审的是一份
+ *   不该由本仓负责的外部文本。投稿原文要「以上游为准」，改了反而不保真。
+ *   目录里另有一份发给上游的投稿条目 yml（`<owner>__<repo>.yml`），同样不是本仓
+ *   活文档，不进任何一致性检查的扫描面。
  */
-const SKIP_DIRS = new Set(["upstream", ".git", "node_modules", OFFICIAL_DOCS_DIR, "tmp", ".zcode"]);
+const SKIP_DIRS = new Set([
+  "upstream",
+  ".git",
+  "node_modules",
+  OFFICIAL_DOCS_DIR,
+  "tmp",
+  ".zcode",
+  "awesome-dsh-plugin-submission",
+]);
 
 function collectMd(dir) {
   const out = [];
