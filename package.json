@@ -3,7 +3,7 @@
   "displayName": "DSH Connect Agnes Token Plan",
   "icon": "./icon.svg",
   "version": "0.12.2",
-  "description": "Use Agnes in DSH: quota at a glance, models, image and video tools — image recognition and thinking levels auto-filled; AgnesCode credentials are reused automatically, tokens re-sign in on expiry (needs AGNES_PASSWORD), and rate-limit hits back off on their own.",
+  "description": "One-tap connect Agnes language, image and video models into DSH (off by default), with image recognition and thinking level filled in automatically. After signing in to the Agnes console, you can see the quota windows (5-hour requests, weekly requests, daily images, video), account-wide cumulative usage, and a usage pill beside the input box. AgnesCode desktop models can be connected too (Windows only), with tokens re-signing in on expiry (needs AGNES_PASSWORD) and rate-limit hits backing off on their own.",
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",
