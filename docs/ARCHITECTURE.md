@@ -95,9 +95,10 @@ client.js: interpretSnapshot(body) → {data, error}
    - 需配置账号且完全没有 body → 额度 tab 内是 AccountForm
    - config_error / console_error → 纯文本提示（登录解不了的问题：
      前者是配置写错，后者是控制台没应答，下一轮通常自愈）
-   - 顶栏是 shell，不是页面标题：barPlan 决定「更新于」/ 令牌 chip / 刷新
-     按钮属于哪个 tab（AgnesCode 有自己的路由与 60s 节奏，由它自己发布
-     自己的时间戳与 loader；接入 API tab 用的是同一份快照的 llm 块）
+   - 顶栏是 shell，不是页面标题：一行同时装着 tab 条与状态，barPlan 决定
+     「更新于」/ 令牌 chip / 刷新按钮属于哪个 tab（AgnesCode 有自己的路由与
+     60s 节奏，由它自己发布自己的时间戳与 loader；接入 API tab 用的是同一份
+     快照的 llm 块）
    - 登录表单的倒计时**来自 Host 下发的 auth 块**，不是组件本地 state：
      节流是跨进程跨 profile 共享的机器级状态（throttle.json），所以
      servedWaitMs(auth) 是「有没有在等」的唯一判定，AccountForm 用它播种

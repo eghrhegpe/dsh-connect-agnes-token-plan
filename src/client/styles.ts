@@ -18,20 +18,46 @@ export const S = {
   // the host silently truncates everything below the fold.
   page: { flex: "1 1 auto", height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", color: "var(--dsw-alias-label-primary)", fontSize: 14, lineHeight: "22px" },
   headerBar: { flex: "none", background: "var(--dsw-alias-bg-base)", position: "relative", zIndex: 1 },
-  // The pinned bar is a toolbar, not a title block: it holds the visible tab's
-  // own status (freshness / credential chip / stale-data warning) and its
-  // refresh. The page-level title went away with the fake global one — see
-  // `barPlan` in `panel-page.ts`.
-  header: { display: "flex", alignItems: "center", gap: 12, padding: "12px 0 10px" },
+  // The pinned bar is a toolbar, not a title block: its ONE row carries the tab
+  // strip and the visible tab's own status (freshness / credential chip /
+  // stale-data warning) and its refresh. The page-level title went away with
+  // the fake global one — see `barPlan` in `panel-page.ts` — and the status row
+  // went away with the two-row layout: two rows where one does left the tab
+  // row's right half empty and spent the height of a whole extra row.
+  //
+  // `alignItems: stretch` is load-bearing: it makes each tab fill the row's
+  // height so its 2px active underline lands on the divider the ROW owns
+  // (`borderBottom` here) rather than floating above it. It is also why the row
+  // carries no padding of its own: the shell already owes this card a 32px gap
+  // above it, and the tabs' own 8px padding is what gives the row its height.
+  header: { display: "flex", alignItems: "stretch", gap: 12, borderBottom: "1px solid var(--dsw-alias-border-l1)" },
   scroll: { flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" },
-  content: { padding: "6px 0 56px" },
+  // Top-only: the rule under the tabs is the content's ceiling now, so 6px is
+  // all it takes to keep the first card off it. The former trailing 56px was
+  // the PAGE bottom gutter from when this panel was the whole page; the shell's
+  // plugin page already ends with `padding-bottom: 48px`, and the two stacked
+  // into 104px of nothing.
+  content: { padding: "6px 0 0" },
   // Two fixed perspectives — daily quota reading vs. one-off API wiring —
   // so the setup cards stop crowding the numbers the panel exists for.
-  tabBar: { display: "flex", gap: 4, borderBottom: "1px solid var(--dsw-alias-border-l1)", marginBottom: 4 },
-  tab: { appearance: "none", background: "none", border: "none", borderBottom: "2px solid transparent", padding: "8px 12px", fontSize: 13, color: "var(--dsw-alias-label-secondary)", cursor: "pointer" },
+  // The strip itself carries neither a rule nor a bottom margin: the row it
+  // shares with the status cluster owns the one divider and the content's own
+  // top padding is the gap below. `role="tablist"` lives on this element in
+  // `panel-page.ts`, and it holds tabs only — the cluster beside it is a
+  // SIBLING, never a member.
+  tabBar: { display: "flex", gap: 4 },
+  // `display: flex; alignItems: center` because the row stretches its children:
+  // without it the label would ride at the top of a 40px-tall tab.
+  tab: { appearance: "none", background: "none", border: "none", borderBottom: "2px solid transparent", padding: "8px 12px", display: "flex", alignItems: "center", fontSize: 13, color: "var(--dsw-alias-label-secondary)", cursor: "pointer" },
   tabActive: { color: "var(--dsw-alias-label-primary)", fontWeight: 600, borderBottom: "2px solid var(--agnes-brand, #1E40AF)" },
   updated: { color: "var(--dsw-alias-label-secondary)", fontSize: 12 },
   spacer: { flex: 1 },
+  // The row's right end: freshness stamp, credential chip, stale-data warning,
+  // refresh. `alignSelf` cancels the row's `stretch` — the cluster is centered,
+  // not full-height — and `justifyContent: flex-end` keeps it against the right
+  // edge once it wraps, which a long failure message is the one item that can
+  // force.
+  cluster: { display: "inline-flex", alignItems: "center", gap: 12, justifyContent: "flex-end", flexWrap: "wrap", alignSelf: "center" },
   button: BUTTON,
   sectionTitle: { margin: "22px 0 10px", fontSize: 13, fontWeight: 600, color: "var(--dsw-alias-label-secondary)" },
   // The console / product-page link every form and card carries at its foot.

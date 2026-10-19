@@ -959,9 +959,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			},
 			header: {
 				display: "flex",
-				alignItems: "center",
+				alignItems: "stretch",
 				gap: 12,
-				padding: "12px 0 10px"
+				borderBottom: "1px solid var(--dsw-alias-border-l1)"
 			},
 			scroll: {
 				flex: 1,
@@ -969,12 +969,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				overflowY: "auto",
 				overflowX: "hidden"
 			},
-			content: { padding: "6px 0 56px" },
+			content: { padding: "6px 0 0" },
 			tabBar: {
 				display: "flex",
-				gap: 4,
-				borderBottom: "1px solid var(--dsw-alias-border-l1)",
-				marginBottom: 4
+				gap: 4
 			},
 			tab: {
 				appearance: "none",
@@ -982,6 +980,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				border: "none",
 				borderBottom: "2px solid transparent",
 				padding: "8px 12px",
+				display: "flex",
+				alignItems: "center",
 				fontSize: 13,
 				color: "var(--dsw-alias-label-secondary)",
 				cursor: "pointer"
@@ -996,6 +996,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				fontSize: 12
 			},
 			spacer: { flex: 1 },
+			cluster: {
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 12,
+				justifyContent: "flex-end",
+				flexWrap: "wrap",
+				alignSelf: "center"
+			},
 			button: BUTTON,
 			sectionTitle: {
 				margin: "22px 0 10px",
@@ -4977,7 +4985,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			bare: true,
 			hasSnapshot: false
 		}) : h("div", { style: S.empty }, failure === null ? tt("panel.loading") : h("div", null, h("div", { role: "alert" }, guidance ?? format(tt("panel.error"), { error: failure.message }))));
-		const body = h("div", null, tabBar, activeTab === "quota" && shapeWarnings.length > 0 ? h("div", {
+		const body = h("div", null, activeTab === "quota" && shapeWarnings.length > 0 ? h("div", {
 			style: S.formError,
 			role: "status"
 		}, format(tt("panel.shapeDrift"), { detail: shapeWarnings.map((entry) => `${tt("shape.api")} ${entry.api} ${tt("shape.missing")} ${entry.missing}`).join("; ") })) : null, activeTab === "quota" ? h("div", {
@@ -5118,7 +5126,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		return h("div", {
 			style: S.page,
 			"data-dsh-plugin": PANEL_ID
-		}, h("div", { style: S.headerBar }, h("div", { style: S.header }, h("span", { style: S.updated }, stamp), plan.authChip ? authChip : null, h("span", { style: S.spacer }), plan.staleWarning && failure && data ? h("span", {
+		}, h("div", { style: S.headerBar }, h("div", { style: S.header }, tabBar, h("span", { style: S.spacer }), h("span", { style: S.cluster }, h("span", { style: S.updated }, stamp), plan.authChip ? authChip : null, plan.staleWarning && failure && data ? h("span", {
 			style: S.error,
 			role: "status",
 			title: failure.message
@@ -5130,9 +5138,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			} : S.button,
 			disabled: refresh === null,
 			onClick: () => refresh?.()
-		}, refreshing && plan.refresh === "snapshot" ? tt("panel.refreshing") : tt("panel.refresh")), onClose ? h("button", {
+		}, refreshing && plan.refresh === "snapshot" ? tt("panel.refreshing") : tt("panel.refresh"))), onClose ? h("button", {
 			type: "button",
-			style: S.button,
+			style: {
+				...S.button,
+				alignSelf: "center"
+			},
 			onClick: () => onClose()
 		}, tt("panel.back")) : null)), h("div", { style: S.scroll }, h("div", { style: S.content }, body)));
 	}

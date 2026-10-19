@@ -1055,9 +1055,9 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     check("the first frame already carries all three tabs",
       firstFrame.includes("tab.quota") && firstFrame.includes("tab.api") && firstFrame.includes("tab.agnescode"),
       firstFrame.join("\n"));
-    // …and the quota tab's body is a TAB's content, not the page: the loading
-    // line renders inside the tab strip, so switching tabs is possible before
-    // the first answer arrives.
+    // …and the quota tab's body is a TAB's content, not the page: the strip is
+    // already on screen above the loading line, so switching tabs is possible
+    // before the first answer arrives.
     check("the first frame keeps the loading line inside the tab strip",
       firstFrame.indexOf("tab.agnescode") < firstFrame.indexOf("panel.loading"),
       firstFrame.join("\n"));
@@ -1121,6 +1121,43 @@ const bar = (tree) => findElement(tree, (props) => props["aria-valuenow"] !== un
     .find((element) => texts(element.children).includes("panel.refresh"));
   check("the first frame's refresh button is enabled (the snapshot tab has a loader)",
     refreshButton !== undefined, JSON.stringify(findAll(tree, () => true).length));
+}
+
+// === H3b. the tab strip and the status share ONE pinned row ===============
+// The status cluster used to own a row of its own ABOVE the tabs: the tab row's
+// right half sat empty, and the card spent the height of a whole extra row on
+// chrome that the shell's own 32px gap above the card already separates from
+// the card header. The fix is a layout fact, so these checks are structural —
+// same row, that row inside the flex:none bar, one divider drawn by the row. An
+// edit that gives the cluster its own row again fails here instead of looking
+// fine in a screenshot nobody takes.
+{
+  const tree = treeOf(render.PanelPage, { onClose: () => {}, tt, localeSubscribe: undefined });
+  const row = findElement(tree, (props) => props.style === S.header);
+  const scroller = findElement(tree, (props) => props.style === S.scroll);
+  const rowText = row === null ? [] : texts(row.children);
+  check("the tab strip and the bar's status share one row",
+    rowText.includes("tab.quota") && rowText.includes("panel.refresh"), rowText.join("\n"));
+  // The strip must stay in the flex:none bar rather than scroll away with the
+  // body — that is the reason this row is not part of `S.content` at all.
+  check("the strip is not down in the scrolling body",
+    scroller !== null && !texts(scroller.children).includes("tab.quota"),
+    scroller === null ? "no scroll element" : texts(scroller.children).join("\n"));
+  // ONE divider, drawn by the row: the strip keeps its 2px ACTIVE underline but
+  // must draw no rule of its own, or the two stack into a 3px line.
+  check("the row owns the only divider",
+    typeof S.header.borderBottom === "string" && S.tabBar.borderBottom === undefined,
+    JSON.stringify({ row: S.header.borderBottom, strip: S.tabBar.borderBottom }));
+  // `stretch` is what lands the active tab's underline on that divider; a tab
+  // that is not itself a flex box would ride at the top of its stretched height.
+  check("the row stretches its children so the active tab reaches the divider",
+    S.header.alignItems === "stretch" && S.tab.display === "flex" && S.tab.alignItems === "center",
+    JSON.stringify({ row: S.header.alignItems, tab: [S.tab.display, S.tab.alignItems] }));
+  // The card is a SECTION of the shell's plugin page, so it owes no page gutter
+  // of its own: the 56px it used to reserve as the page's bottom padding
+  // stacked onto the shell's `padding-bottom: 48px`.
+  check("the card no longer re-adds the shell's own bottom gutter",
+    S.content.padding === "6px 0 0", String(S.content.padding));
 }
 
 // === I. the decision table: every wire code gets an answer ================

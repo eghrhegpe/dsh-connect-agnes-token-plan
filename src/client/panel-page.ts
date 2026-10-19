@@ -445,11 +445,13 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
             )
       );
 
+  // The body no longer opens with the tab strip: that moved up into the pinned
+  // bar's single row (see the return below), so everything that scrolls is the
+  // visible tab's content.
   const body =
     h(
         "div",
         null,
-        tabBar,
         // The shape-drift banner belongs with the daily reading: it warns
         // about the numbers themselves, not about the wiring below.
         activeTab === "quota" && shapeWarnings.length > 0
@@ -638,35 +640,53 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     "div",
     { style: S.page, "data-dsh-plugin": PANEL_ID },
     // The bar is pinned (flex:none); everything below scrolls inside
-    // `S.scroll` instead of being clipped by the shell's center column. It no
-    // longer carries a title: the Plugins page already renders this bundle's
-    // own name and description above the card, while 「积分面板」 named only
-    // the first of three tabs.
+    // `S.scroll` instead of being clipped by the shell's center column. It does
+    // not carry a title: the Plugins page already renders this bundle's own
+    // name and description above the card, while 「积分面板」 named only the
+    // first of three tabs.
+    //
+    // ONE row, not two: the tab strip and the visible tab's status share it. A
+    // status-only row above the tabs left the right half of this row empty and
+    // cost the height of a whole extra row. Both stay in the flex:none bar
+    // rather than scrolling with the body, so a shell that ever gives this slot
+    // a definite height keeps the switch within reach.
     h(
       "div",
       { style: S.headerBar },
       h(
         "div",
         { style: S.header },
-        h("span", { style: S.updated }, stamp),
-        plan.authChip ? authChip : null,
+        // `role="tablist"` holds ONLY tabs: the freshness cluster, the refresh
+        // and the way back are siblings of the list — a non-tab child inside a
+        // tablist is an accessibility error, not a layout detail.
+        tabBar,
         h("span", { style: S.spacer }),
-        // With the numbers on screen a failure is a stale-data warning, so it
-        // rides in the bar; without data the body already explains it.
-        plan.staleWarning && failure && data
-          ? h("span", { style: S.error, role: "status", title: failure.message }, format(tt("panel.error"), { error: failure.message }))
-          : null,
+        // Not stretched: `S.header` stretches its children so the tabs reach the
+        // divider, and the cluster centers itself instead (see `S.cluster`).
         h(
-          "button",
-          {
-            type: "button",
-            style: refresh === null ? { ...S.button, ...S.primaryBusy } : S.button,
-            disabled: refresh === null,
-            onClick: () => refresh?.()
-          },
-          refreshing && plan.refresh === "snapshot" ? tt("panel.refreshing") : tt("panel.refresh")
+          "span",
+          { style: S.cluster },
+          h("span", { style: S.updated }, stamp),
+          plan.authChip ? authChip : null,
+          // With the numbers on screen a failure is a stale-data warning, so it
+          // rides in the bar; without data the body already explains it.
+          plan.staleWarning && failure && data
+            ? h("span", { style: S.error, role: "status", title: failure.message }, format(tt("panel.error"), { error: failure.message }))
+            : null,
+          h(
+            "button",
+            {
+              type: "button",
+              style: refresh === null ? { ...S.button, ...S.primaryBusy } : S.button,
+              disabled: refresh === null,
+              onClick: () => refresh?.()
+            },
+            refreshing && plan.refresh === "snapshot" ? tt("panel.refreshing") : tt("panel.refresh")
+          )
         ),
-        onClose ? h("button", { type: "button", style: S.button, onClick: () => onClose() }, tt("panel.back")) : null
+        // Outside the cluster on purpose: it is a way out of the panel, not a
+        // reading. `alignSelf` for the same reason the cluster has one.
+        onClose ? h("button", { type: "button", style: { ...S.button, alignSelf: "center" }, onClick: () => onClose() }, tt("panel.back")) : null
       )
     ),
     h(
