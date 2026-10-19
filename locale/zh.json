@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Agnes Token Plan 接入全家桶",
-    "description": "在 DSH 里用上 Agnes——额度用量一目了然，模型、出图、视频一键接入，图片识别与思考强度自动填好；AgnesCode 凭据自动复用，令牌到期自动重登（需 AGNES_PASSWORD），撞限额自动退避重试。"
+    "description": "一键接入Agnes的语言、出图、视频模型到 DSH ，自动填入图片识别与思考强度（默认关）；登陆后，可看控制台额度窗口（5 小时请求、每周请求、每日图片、视频）、账号累计用量；也支持接入AgnesCode 桌面端模型，令牌到期自动重登（需 AGNES_PASSWORD），撞限额自动退避重试。"
   }
 }
