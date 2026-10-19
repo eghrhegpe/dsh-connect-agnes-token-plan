@@ -39,8 +39,9 @@ DSH 插件是一段在 **Host**（桌面版或 `dsh web`）进程内运行的代
     "locale",
     "assets",                           // screenshots.json 指的就是这两张图：清单在包里而图不在包，
                                          // 市场页对所有从 npm 装的人全裂，且没有任何门禁会红
+    "docs",                             // README 里 22 处指向 docs/ 的链接落地目标；安装后可读，市场面不空头承诺
     "cordis.patch.yml", "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "screenshots.json"
-  ],
+  ],                    // 与 package.json 的 files 数组逐项对齐（docs.test.mjs SNAPSHOT 镜像）
   "scripts": {
     "build": "tsdown -c tsdown.config.mjs",        // 重建 lib/index.js + 根 client.js
     "build:client": "tsdown -c tsdown.config.mjs",

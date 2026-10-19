@@ -569,6 +569,31 @@ function usePopoverFocus(
   }, [open, cardRef, triggerRef]);
 }
 
+/** The open/close state and the three refs every pill popover variant needs.
+ * Pulled out of the two variants (ConsoleQuotaPill / AgnescodeBalancePill) so
+ * the six-state local bundle is declared once — the trigger's toggle lives in
+ * the variant, this owns the shell around it. */
+interface PillPopover {
+  popoverId: string;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  close: () => void;
+  rootRef: { current: HTMLElement | null };
+  cardRef: { current: HTMLElement | null };
+  triggerRef: { current: HTMLElement | null };
+}
+function usePillPopover(): PillPopover {
+  const [popoverId] = useState(nextPopoverId);
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  usePopoverClose(open, close, rootRef);
+  usePopoverFocus(open, cardRef, triggerRef);
+  return { popoverId, open, setOpen, close, rootRef, cardRef, triggerRef };
+}
+
 /**
  * The shared shell: the tier dot, the upstream prefix, the reading — and, when
  * the variant passed a toggle, the click affordance around it: a pointer
@@ -676,14 +701,7 @@ function ConsoleQuotaPill({ tt }: { tt: Tt }) {
 
   // The card: the trigger's toggle state lives here, not in the shared shell —
   // each variant carries its own rows, so the open/close decision stays local.
-  const [popoverId] = useState(nextPopoverId);
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  const rootRef = useRef<HTMLElement | null>(null);
-  const cardRef = useRef<HTMLElement | null>(null);
-  const triggerRef = useRef<HTMLElement | null>(null);
-  usePopoverClose(open, close, rootRef);
-  usePopoverFocus(open, cardRef, triggerRef);
+  const { popoverId, open, setOpen, rootRef, cardRef, triggerRef } = usePillPopover();
 
   // The rows the 28px body has no room for, in the order the reader asks
   // them: what is being spent, when it resets, what is wrong (if anything),
@@ -847,14 +865,7 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
   // text), its split, why a figure is missing, and when it was last read. The
   // deep record (grants / rate-limit / ledger) and the nickname are NOT here —
   // see the variant's header for why they were dropped.
-  const [popoverId] = useState(nextPopoverId);
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  const rootRef = useRef<HTMLElement | null>(null);
-  const cardRef = useRef<HTMLElement | null>(null);
-  const triggerRef = useRef<HTMLElement | null>(null);
-  usePopoverClose(open, close, rootRef);
-  usePopoverFocus(open, cardRef, triggerRef);
+  const { popoverId, open, setOpen, rootRef, cardRef, triggerRef } = usePillPopover();
 
   const popoverRows = [
     h("div", { key: "bal-title", style: S.pillPopTitle }, tt("composer.balanceTitle")),

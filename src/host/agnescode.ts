@@ -40,6 +40,26 @@ import { createDecipheriv } from "node:crypto";
 import { readJwtExpiry } from "./agnes-auth.ts";
 import { obj, num, numZeroOk, str } from "./util.ts";
 
+/**
+ * The AgnesCode BFF envelope contract, in one place.
+ *
+ * Every AgnesCode BFF response is `{ code, message, data }` where `code` is the
+ * FROZEN STRING `"000000"` (success — a string, never a number), and `data` is
+ * an object on success. This single gate is the contract `fetchAgnescodeBalance`
+ * and `fetchAgnescodeLedger` both enforce (and the live probe in
+ * `test/live-agnescode.mjs` re-checks against real traffic), so the shape lives
+ * here instead of being pasted at each call site. Returns the unwrapped `data`
+ * object, or `null` when the envelope is not a success — callers then return
+ * their own `null`.
+ * @param {unknown} envelope - the parsed JSON body.
+ * @returns {Record<string, unknown>|null} `obj(envelope.data)` on success, else `null`.
+ */
+export function agnescodeEnvelopeData(envelope: unknown): Record<string, unknown> | null {
+  const env = obj(envelope);
+  if (str(env.code, "") !== "000000" || env.data === null || typeof env.data !== "object") return null;
+  return obj(env.data);
+}
+
 /** The request headers every BFF call carries, with or without a token. The
  * `X-App-Id` / `X-Platform` pair is the catalogue gate (probed: required) and
  * the language header mirrors the desktop client. Declared ONCE here and spread
@@ -714,9 +734,8 @@ export async function fetchAgnescodeBalance(credential: any, fetcher?: typeof fe
       signal: AbortSignal.timeout(30_000)
     });
     if (!response.ok) return null;
-    const envelope = obj(await response.json().catch(() => ({})));
-    if (str(envelope.code, "") !== "000000" || envelope.data === null || typeof envelope.data !== "object") return null;
-    const data = obj(envelope.data);
+    const data = agnescodeEnvelopeData(await response.json().catch(() => ({})));
+    if (data === null) return null;
     const total = numZeroOk(data.total_balance) ?? null;
     if (total === null) return null;
     return {
@@ -821,9 +840,8 @@ export async function fetchAgnescodeLedger(
         signal: AbortSignal.timeout(30_000)
       });
       if (!response.ok) return null;
-      const envelope = obj(await response.json().catch(() => ({})));
-      if (str(envelope.code, "") !== "000000" || envelope.data === null || typeof envelope.data !== "object") return null;
-      const data = obj(envelope.data);
+      const data = agnescodeEnvelopeData(await response.json().catch(() => ({})));
+      if (data === null) return null;
       list = Array.isArray(data.list) ? data.list : null;
       // `total` may legitimately be 0 (an empty ledger), so it is read through
       // `numZeroOk` — a bare `num()` would collapse 0 into "missing" and the

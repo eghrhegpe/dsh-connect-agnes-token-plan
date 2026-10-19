@@ -3148,12 +3148,6 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}
 		const renderLimit = (text) => h("span", { style: S.planLimit }, text);
 		const renderEntry = (entry) => {
-			const limits = entry.limits ?? {};
-			const windowHours = Number(limits.requestsWindowH);
-			const limitItems = [];
-			if (limits.requests5h !== void 0 && limits.requests5h > 0) limitItems.push(renderLimit(`${count(limits.requests5h)}${tt("quota.unit.requests")} / ${windowHours > 0 ? windowHours : 5}h`));
-			if (limits.requestsWeekly !== void 0 && limits.requestsWeekly > 0) limitItems.push(renderLimit(`${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}`));
-			if (limits.imagesDaily !== void 0 && limits.imagesDaily > 0) limitItems.push(renderLimit(`${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}`));
 			return h("div", { style: S.planCycle }, h("span", { style: S.planCycleLabel }, cycleLabel(entry.billingCycle, tt)), entry.priceMinor !== void 0 && entry.priceMinor > 0 ? h("span", { style: S.planPrice }, money(entry.priceMinor, entry.currency)) : null);
 		};
 		return h("div", { style: S.planGrid }, Array.from(tiers.entries()).map(([tierName, entries]) => h("div", {
@@ -4396,6 +4390,25 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			triggerRef
 		]);
 	}
+	function usePillPopover() {
+		const [popoverId] = useState(nextPopoverId);
+		const [open, setOpen] = useState(false);
+		const close = useCallback(() => setOpen(false), []);
+		const rootRef = useRef(null);
+		const cardRef = useRef(null);
+		const triggerRef = useRef(null);
+		usePopoverClose(open, close, rootRef);
+		usePopoverFocus(open, cardRef, triggerRef);
+		return {
+			popoverId,
+			open,
+			setOpen,
+			close,
+			rootRef,
+			cardRef,
+			triggerRef
+		};
+	}
 	/**
 	* The shared shell: the tier dot, the upstream prefix, the reading — and, when
 	* the variant passed a toggle, the click affordance around it: a pointer
@@ -4465,14 +4478,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			stale ? tt("composer.stale") : null
 		].filter(Boolean).join(" · ");
 		const windowText = (label, pct) => `${label} ${percentText(pct)}`;
-		const [popoverId] = useState(nextPopoverId);
-		const [open, setOpen] = useState(false);
-		const close = useCallback(() => setOpen(false), []);
-		const rootRef = useRef(null);
-		const cardRef = useRef(null);
-		const triggerRef = useRef(null);
-		usePopoverClose(open, close, rootRef);
-		usePopoverFocus(open, cardRef, triggerRef);
+		const { popoverId, open, setOpen, rootRef, cardRef, triggerRef } = usePillPopover();
 		const popoverRows = [
 			h("div", {
 				key: "title",
@@ -4608,14 +4614,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			why,
 			stale ? tt("composer.stale") : null
 		].filter(Boolean).join(" · ");
-		const [popoverId] = useState(nextPopoverId);
-		const [open, setOpen] = useState(false);
-		const close = useCallback(() => setOpen(false), []);
-		const rootRef = useRef(null);
-		const cardRef = useRef(null);
-		const triggerRef = useRef(null);
-		usePopoverClose(open, close, rootRef);
-		usePopoverFocus(open, cardRef, triggerRef);
+		const { popoverId, open, setOpen, rootRef, cardRef, triggerRef } = usePillPopover();
 		const popoverRows = [
 			h("div", {
 				key: "bal-title",

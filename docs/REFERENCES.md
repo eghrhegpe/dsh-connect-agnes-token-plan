@@ -23,7 +23,10 @@
 
 - `AgnesAI-Models/`——**官方**网关与模型目录（`AgnesAI-Labs/AgnesAI-Models`），「接入 API」与出图两条线的接口形状出处。
 - `AgnesAI-Labs-skills/`——**官方**模型集成 Skills（`AgnesAI-Labs/skills`：text / image / video / agent）。
-- 其余为社区实现（`agnes-ai-skill`、`agnes-video-generator`、`ComfyUI-Agnes-AI-All`、`dsh-agnes*` 等）与三个**裸目录**（无 `.git`，上游 zip 解包：`agnes-ai-for-dsh`、`deepseek-harness-codearts-master`、`dsh-draw-router`），与插件主线关系弱，保留为历史对照。本机 `upstream/SOURCES.md` 有全量机械清单。
+- 社区实现（与插件主线关系弱，保留为历史对照）：`Agnes`、`Agnes-AI`、`Agnes-Media-Create`、`Agnes-help-skill`、`agnes-ai-generation-skill`、`agnes-ai-skill`、`agnes-media`、`agnes-video-generator`、`ComfyUI-Agnes-AI-All`、`dsh-agnes`、`dsh-agens-gen`、`dsh-agnes-studio`。
+- **裸目录**（无 `.git`，上游 zip 解包）：`agnes-ai-for-dsh`、`dsh-connect-workbuddy-main`（注册表镜像；旧名 `deepseek-harness-codearts-master` 已弃用）、`dsh-draw-router`。
+
+> 本节的承重件逐条登记；社区 / 裸目录为「当前磁盘快照」，**权威全量清单以本机 `upstream/SOURCES.md` 为准**（其首部即用一条 `ls`/`du` 命令派生，可随手再生成，不在此手写维护）。新增参照件以磁盘目录为准，登记到 SOURCES.md 的机械清单即可，不必逐条回抄本节。
 
 ## 3. 纪律
 

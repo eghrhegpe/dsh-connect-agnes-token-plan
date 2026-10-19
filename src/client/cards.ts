@@ -390,18 +390,6 @@ export function CatalogueCard({ plans, tt }: { plans?: PlanData[] | null; tt: Tt
   const renderLimit = (text: string) =>
     h("span", { style: S.planLimit }, text);
   const renderEntry = (entry: PlanData) => {
-    const limits = entry.limits ?? {};
-    const windowHours = Number(limits.requestsWindowH);
-    const limitItems: unknown[] = [];
-    if (limits.requests5h !== undefined && limits.requests5h > 0) {
-      limitItems.push(renderLimit(`${count(limits.requests5h)}${tt("quota.unit.requests")} / ${windowHours > 0 ? windowHours : 5}h`));
-    }
-    if (limits.requestsWeekly !== undefined && limits.requestsWeekly > 0) {
-      limitItems.push(renderLimit(`${count(limits.requestsWeekly)}${tt("quota.unit.requests")} / ${tt("quota.perWeek")}`));
-    }
-    if (limits.imagesDaily !== undefined && limits.imagesDaily > 0) {
-      limitItems.push(renderLimit(`${count(limits.imagesDaily)}${tt("quota.unit.images")} / ${tt("quota.perDay")}`));
-    }
     return h(
       "div",
       { style: S.planCycle },
