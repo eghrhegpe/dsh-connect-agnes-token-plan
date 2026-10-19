@@ -35,9 +35,19 @@
  *
  * FINDING NOTHING = LOUD SKIP, exit 0: a machine with no DSH runtime has nothing
  * to contradict, same family as `store.test.mjs` / `build-gate.mjs`. A copy that
- * IS present but missing one of the four packages is a FAILURE, not a skip — an
- * incomplete environment that reads as "nothing to check" is how a gate goes
- * blind.
+ * IS present but missing one of the three packages whose BYTES are read is a
+ * FAILURE, not a skip — an incomplete environment that reads as "nothing to
+ * check" is how a gate goes blind.
+ *
+ * `dsh-client-ui-slots` is DELIBERATELY NOT one of those three. It is the
+ * `renderSlot` implementation, and upstream 0.2.1-rc.2 stopped shipping it as a
+ * standalone package: its symbols are inlined into
+ * `dsh-client-ui-conversation`'s `lib/client.js` (the package's `devDependencies`
+ * still name it, which is why `npm ls` used to implicate it, but it is no longer
+ * a runtime dependency of anything). It was only ever an EXISTENCE assertion
+ * here — `bundleText` never read it, and no A–D check depends on its bytes. So it
+ * is OPTIONAL when present-but-unreadable, and the inline evidence is asserted
+ * instead via {@link slotsInlined}.
  *
  * @module test/composer-slot-gate
  */
@@ -52,13 +62,21 @@ function check(name, condition, detail = "") {
   results.push({ name, pass: Boolean(condition), detail: String(detail ?? "") });
 }
 
-/** The four packages that carry the composer-seat contract. */
+/** The three packages whose BYTES this gate reads. All three must be present. */
 const CONTRACT_PKGS = [
   "dsh-client-ui-conversation",
   "dsh-client-ui-session",
-  "dsh-client-ui-renderer",
-  "dsh-client-ui-slots"
+  "dsh-client-ui-renderer"
 ];
+
+/**
+ * The slot runtime, shipped standalone through 0.2.0 and inlined from 0.2.1 on.
+ *
+ * Kept as a name (not a required package) because its presence is informative:
+ * when it IS installed the old packaging is in play; when it is not, the inline
+ * symbols must be there instead. See {@link slotsInlined}.
+ */
+const LEGACY_SLOTS_PKG = "dsh-client-ui-slots";
 
 /**
  * Candidate DSH runtime `node_modules` roots, deduped, existing ones only.
@@ -165,6 +183,35 @@ function bundleText(pkgDir) {
   return { text: chunks.join("\n"), files, errors, caps };
 }
 
+/**
+ * Whether the slot runtime is reachable from the conversation bundle.
+ *
+ * Two packagings satisfy the contract, and the gate accepts both rather than
+ * pinning one:
+ *
+ *   - **standalone** (`<= 0.2.0`): `dsh-client-ui-slots` is installed as its own
+ *     package, so the conversation bundle only has to CALL `renderSlot`.
+ *   - **inlined** (`>= 0.2.1-rc.2`): the package is gone and `renderSlot`'s
+ *     definition moved into `dsh-client-ui-conversation`'s own bundle, together
+ *     with `useProjection`. The `.d.ts` surface still names the seat.
+ *
+ * A conversation bundle that neither sits next to the standalone package nor
+ * carries `renderSlot` at all is the case this gate exists to catch: the seat
+ * would stop rendering and the pill would vanish silently.
+ * @param {boolean} standaloneInstalled - whether the legacy package is present.
+ * @param {{text: string}} conversation - the conversation bundle walk.
+ * @returns {{ok: boolean, evidence: string}} the verdict and what proved it.
+ */
+function slotsInlined(standaloneInstalled, conversation) {
+  if (standaloneInstalled) return { ok: true, evidence: "standalone dsh-client-ui-slots installed" };
+  const hasRenderSlot = /\brenderSlot\b/.test(conversation.text);
+  const hasProjection = /\buseProjection\b/.test(conversation.text);
+  return {
+    ok: hasRenderSlot && hasProjection,
+    evidence: `no standalone slots package; inlined renderSlot=${hasRenderSlot} useProjection=${hasProjection}`
+  };
+}
+
 const found = scopes();
 if (found.length === 0) {
   process.stdout.write(
@@ -185,13 +232,21 @@ for (const root of found) {
     }
   };
   const missing = CONTRACT_PKGS.filter((pkg) => !existsSync(join(scope, pkg)));
-  check(`[${root}] carries all four contract packages`, missing.length === 0,
+  check(`[${root}] carries the three contract packages whose bytes are read`, missing.length === 0,
     missing.length ? `missing: ${missing.join(", ")}` : `version ${versionOf("dsh-client-ui-conversation")}`);
   if (missing.length > 0) continue;
 
   const conversation = bundleText(join(scope, "dsh-client-ui-conversation"));
   const session = bundleText(join(scope, "dsh-client-ui-session"));
   const renderer = bundleText(join(scope, "dsh-client-ui-renderer"));
+
+  // E. The slot runtime is reachable, in either packaging (see `slotsInlined`).
+  // Not one of A–D: A–D pin what the seat must DO, this pins that its renderer
+  // still exists somewhere. `dsh-client-ui-slots` alone was never enough — it was
+  // an install-shape proxy that went stale the day upstream inlined it.
+  const slots = slotsInlined(existsSync(join(scope, LEGACY_SLOTS_PKG)), conversation);
+  check(`[E][${root}] the slot runtime is reachable (standalone package or inlined in the conversation bundle)`,
+    slots.ok, slots.evidence);
   /** Each assertion names the copy it read: several scopes produce several rows. */
   const tag = `v${versionOf("dsh-client-ui-conversation")}`;
 
