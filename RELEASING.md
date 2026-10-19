@@ -156,7 +156,7 @@ npm view dsh-connect-agnes-token-plan version --registry=https://registry.npmjs.
 - **已发布版本不可覆盖**：发新版前必须在第 2 步先升 `package.json` 的 `version`，再 `npm publish`；直接对已有版本号发布会报错。
 - `package.json` 的 `files` 字段已限定发布内容，测试与 `node_modules/` 不会进包。
 - 发布前可用 `npm pack --dry-run` 预览 tarball 内容。
-- **（可选，与发版解耦）收录到插件市场**：向 `awesome-dsh-plugin/awesome-dsh-plugin` 提 PR 增加 `data/plugins/eghrhegpe__dsh-connect-agnes-token-plan.yml`（描述只能陈述功能、不带营销词），详情见 `docs/CONTRIBUTING.md` §8。列表会按下载量自动关联本仓库，yml 里无需任何 npm 字段。
+- **（可选，与发版解耦）收录到插件市场**：条目拟稿在 `awesome-dsh-plugin-submission/eghrhegpe__dsh-connect-agnes-token-plan.yml`，提 PR 时原样复制到 `awesome-dsh-plugin/awesome-dsh-plugin` 的 `data/plugins/` 下。规则只认同目录的 `awesome-dsh-plugin-submission/contributing.md`（上游原文副本），别在本文件转述。
 
 ### 6. 创建 GitHub Release（**最容易漏，务必做**）
 

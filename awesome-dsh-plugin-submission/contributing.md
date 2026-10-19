@@ -196,9 +196,9 @@ Paths are relative to that file, so they point at images already in your reposit
 <details>
 <summary>Older entries: <code>data/screenshots.json</code> / 旧条目：<code>data/screenshots.json</code></summary>
 
-Entries added before this convention still have their screenshots in [`data/screenshots.json`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/screenshots.json) here, and those keep working — that file is read whenever a repository declares nothing. It is a fallback with an end date, not a second place to put things: once your repository declares its own `screenshots.json`, your key there is removed as redundant, and the file is deleted when it empties. **Please do not add new keys to it.**
+Entries added before this convention still have their screenshots in [`data/screenshots.json`](data/screenshots.json) here, and those keep working — that file is read whenever a repository declares nothing. It is a fallback with an end date, not a second place to put things: once your repository declares its own `screenshots.json`, your key there is removed as redundant, and the file is deleted when it empties. **Please do not add new keys to it.**
 
-早于这个约定的条目，截图仍然记在本仓库的 [`data/screenshots.json`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/screenshots.json) 里，照常生效——仓库没有声明时就读它。它是一个有终点的回退，不是第二个存放地：一旦你的仓库自己声明了 `screenshots.json`，那边多余的键会被清理掉，等它空了这个文件就会删除。**请不要再往里面加新的键。**
+早于这个约定的条目，截图仍然记在本仓库的 [`data/screenshots.json`](data/screenshots.json) 里，照常生效——仓库没有声明时就读它。它是一个有终点的回退，不是第二个存放地：一旦你的仓库自己声明了 `screenshots.json`，那边多余的键会被清理掉，等它空了这个文件就会删除。**请不要再往里面加新的键。**
 
 </details>
 
