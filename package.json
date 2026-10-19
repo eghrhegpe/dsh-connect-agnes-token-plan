@@ -2,7 +2,7 @@
   "name": "dsh-connect-agnes-token-plan",
   "displayName": "DSH Connect Agnes Token Plan",
   "icon": "./icon.svg",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "description": "Use Agnes in DSH: quota at a glance, models, image and video tools — image recognition and thinking levels auto-filled; AgnesCode credentials are reused automatically, tokens re-sign in on expiry (needs AGNES_PASSWORD), and rate-limit hits back off on their own.",
   "keywords": [
     "dsh-plugin",
