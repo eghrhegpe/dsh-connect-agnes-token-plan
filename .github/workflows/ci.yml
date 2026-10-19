@@ -1,6 +1,6 @@
 name: CI
 
-# Four tiers, on purpose.
+# Five tiers, on purpose.
 #
 #   offline      — the full offline suite list (see package.json's `test` script,
 #                  plus the build-gate tail: a real tsdown build of src/ into
@@ -44,6 +44,20 @@ name: CI
 #                  allowlist is not an install-time knob), this is the fence that
 #                  keeps a "src changed but nobody rebuilt + committed" commit
 #                  from shipping a stale plugin to every git-install user.
+#   dpapi        — the ONE leg the offline suites cannot reach by injection: the
+#                  production DPAPI unwrap, a real PowerShell child process. It is
+#                  Windows-only by nature (the implementation maps every other
+#                  platform to UNSUPPORTED_PLATFORM), so on the ubuntu matrix the
+#                  suite prints SKIP and exits 0 — listed in the roster, asserting
+#                  nothing. This job is the only place those five assertions
+#                  actually execute.
+#                  It installs NOTHING: `src/host/agnescode.ts` imports only
+#                  `node:crypto` and two local modules, so the job is checkout +
+#                  node + one file. That is what makes it affordable — a full
+#                  Windows suite here would pay for `npm install -g
+#                  @deepseek-ai/dsh`, which measured 773 s on windows-latest in
+#                  the sibling qoder repo (run 39277257312) against 41 s on
+#                  ubuntu.
 #
 # The e2e suite runs through the SAME test/e2e-gate.mjs locally (`npm test`) and
 # here, so both share one skip shape and one verdict. A suite that passes only in
@@ -155,6 +169,29 @@ jobs:
           # strictly. Static reads of the runtime this job installed; SKIPs loudly
           # when the machine has no DSH client copy.
           node test/composer-slot-gate.mjs
+
+  dpapi:
+    name: DPAPI round-trip (hard gate, Windows only)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      # Why a job for one file: `agnescode-dpapi.test.mjs` is in the offline
+      # roster above, so the three-way pin in test/package.test.mjs is satisfied
+      # and the job is green — but on ubuntu the suite takes its SKIP branch and
+      # executes zero assertions. The capability it covers is the one this plugin
+      # advertises as Windows-only: unwrapping the AgnesCode desktop session's
+      # os_crypt key through the CurrentUser DPAPI key, i.e. the harvest leg that
+      # regresses silently (a PowerShell quoting slip surfaces only as "no session
+      # on this machine").
+      #
+      # No `npm install`, no host runtime, no cache step: see the `dpapi` tier in
+      # the header. Failing assertions set `process.exitCode = 1`, so this gates
+      # rather than reports.
+      - name: Real DPAPI round-trip (PowerShell Protect → defaultDpapiUnprotect)
+        run: node test/agnescode-dpapi.test.mjs
 
   artifacts:
     name: Committed artifacts in sync with src/ (hard gate)
