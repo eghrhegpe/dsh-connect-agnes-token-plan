@@ -34,6 +34,7 @@ import {
   resolveRegistrationService,
   unregister
 } from "./publish-core.ts";
+import type { PublisherState } from "./publish-core.ts";
 import type { ProviderPublisherDeps } from "./types.ts";
 
 /**
@@ -99,27 +100,33 @@ export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
    * registration that throws AFTER the adapter was registered must still
    * be reachable, or the adapter outlives the plugin (see `registerPair`).
    */
-  const state = {
+  const state: PublisherState & {
     /** The catalog entries the current registration was built from. */
-    entries: [] as unknown[],
+    entries: unknown[];
     /** The curated allow-list at registration time (empty = all models). */
-    enabledIds: [] as string[],
+    enabledIds: string[];
     /** The last quota-exhausted model ids published to the picker. */
-    unavailableIds: [] as string[],
+    unavailableIds: string[];
     /** A cheap signature of the offered set (catalog ids + vision bits + allow-list). */
-    signature: "",
+    signature: string;
     /** A cheap signature of the quota-exhausted set; flips when a pool crosses zero. */
+    quotaSignature: string;
+  } = {
+    entries: [],
+    enabledIds: [],
+    unavailableIds: [],
+    signature: "",
     quotaSignature: "",
     /** Whether an `llm` service answering `registerAdapter` is present. */
     llmAvailable: false,
     /** Whether our provider pair is currently registered without error. */
     registered: false,
     /** The last registration error, surfaced secret-free in the snapshot. */
-    error: null as string | null,
-    releaseAdapter: null as (() => void) | null,
-    releaseDirectory: null as (() => void) | null,
+    error: null,
+    releaseAdapter: null,
+    releaseDirectory: null,
     /** The built adapter the active release functions belong to. */
-    built: null as any
+    built: null,
   };
 
   /**

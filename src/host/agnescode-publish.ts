@@ -47,6 +47,7 @@ import {
   resolveRegistrationService,
   unregister
 } from "./publish-core.ts";
+import type { PublisherState } from "./publish-core.ts";
 import type { AgnescodePublisherDeps } from "./types.ts";
 
 /**
@@ -97,21 +98,24 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
   const effectiveLogger = logger ?? { warn: () => {} };
 
   /** The live AgnesCode registration state. */
-  const state = {
+  const state: PublisherState & {
     /** The roster the current registration was built from. */
-    rows: [] as unknown[],
+    rows: unknown[];
     /** The per-account BFF base the current registration addresses. */
+    bffBase: string;
+  } = {
+    rows: [],
     bffBase: "",
     /** Whether an `llm` service answering `registerAdapter` is present. */
     llmAvailable: false,
     /** Whether the AgnesCode provider pair is registered without error. */
     registered: false,
     /** The last registration error, surfaced secret-free in the snapshot. */
-    error: null as string | null,
-    releaseAdapter: null as (() => void) | null,
-    releaseDirectory: null as (() => void) | null,
+    error: null,
+    releaseAdapter: null,
+    releaseDirectory: null,
     /** The built adapter the active release functions belong to. */
-    built: null as any
+    built: null,
   };
 
   /** The publish queue and the `disposed` gate — shared with the Token Plan
