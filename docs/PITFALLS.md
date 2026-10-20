@@ -5,7 +5,7 @@
 > **范围说明**：本插件 2026-10 从商汤 SenseNova 控制台迁到 **Agnes 控制台**，登录线由 OIDC 授权码 + JWE 密码封包换成**一跳账号密码 POST**（见 [AUTH.md](./AUTH.md)）。于是下面分三类：
 > - 标了「**商汤时代，代码已删除**」的条目（第 1、2、3、5、14 条）描述的是**已经不存在的文件**。保留它们是为了记住这类坑的**形状**——**不要按字面去找这些函数**。
 > - 标了「**商汤时代实测**」的条目（第 20、21 条）是在已退役的推理网关上量的数据；**现行推理契约以 [AGNES-API.md](./AGNES-API.md) §7 为准**。
-> - 其余条目（第 4、6–13、15–19、22–48 条）对**当前代码全部有效**。（第 49–59 条为逐章续编，同样对当前代码有效。）
+> - 其余条目（第 4、6–13、15–19、22–48 条）对**当前代码全部有效**。（第 49–60 条为逐章续编，同样对当前代码有效。）
 
 ---
 
@@ -25,6 +25,7 @@
 | 收敛 / 死件清理 | 38 |
 | 浏览器 / UI | 27、42、46 |
 | 承诺 / 注释 / 护栏 | 43、45、46、**59（取舍写进注释却没写进门禁）** |
+| 仓库卫生 / 工具配置 | 9、10、**60（没有 linter 的仓库，编辑器配置只能写零 diff 的键）** |
 
 ---
 
@@ -630,4 +631,25 @@
   1. **「我们不用 X 工具，Y 是替代品」这句话，只有在 Y 真的覆盖了 X 会抓的那一格时才成立。** 断言「有替代品」之前，先逐格列出 X 会抓什么、Y 抓了哪些；**对不上的那一格就是缺口**，而它往往正是取舍放行的那一格（本例：tsc 因为 `noImplicitAny:false` 永不数 `any`）。
   2. **护栏的口径宁钝勿巧，因为钝的东西骗不了人。** 一条「识别类型位置」的正则会让新文件与新会话以**没被识别**的方式规避记账，而漏记表现为数字下降——**下降看起来像改善**。计数类护栏最危险的失败方向是漏报，不是误报。
   3. **会静默增长的量，必须有一个「不能悄悄涨」的机器判据。** 靠纪律维持的预算，在 AI 协作下必然漂移（本例 +83/20 天）；让它进 `GATES` 这种三方钉住的清单，比写进任何待办都耐久——正如 `ARCHIVE-IMPROVEMENTS §8.2` 那份腐烂的待办所证明的：**待办会过期，门禁不会。**
+
+## 60. 没有 linter 的仓库，编辑器配置是唯一的「保存那一刻」防线——而它只能写零 diff 的键
+
+- **现象**：接 §59 的同一个问题往下问：「没有 ESLint/Prettier，那 `.editorconfig` 是不是该补上、`tsc` 还有没有该开的配置？」——听起来像一次顺手的环境补齐。但如果直接照抄 `upstream/agnescode-cli/.editorconfig`（9 行：`root=true` + `charset` / `insert_final_newline` / `end_of_line` / `indent_style` / `indent_size 2` / `max_line_length 80`），本仓会**当场**得到 30 个文件被追补末尾换行、323 个文件的缩进被重排、长注释被软换行——一次「加配置文件」的动作产出全仓 diff，与 §59 里 any gate 追求的「债必须可见但不能悄悄涨」正好相反。
+- **根因**：**参照件与自己不是同一个形状。** `agnescode-cli` 是 npm 包仓库，它的 `.editorconfig` 描述的是**它的**现状；本仓的换行与缩进习惯（嵌套 +2、双引号、ASI 分号、4 空格基准 + 手工对齐续行）是在**没有**任何工具约束的情况下长出来的，所以任何「完整」的编辑器配置都不可能零 diff。而 `.editorconfig` 与 Prettier 有一处本质不同：**它在保存那一刻就改写文件**，gitattributes 的归一化要等到 `git add` 才发生——两者之间就是「本地看着没事、别人一碰就全量重写」的那段窗口。
+- **修法**（2026-10-20）：新增 `.editorconfig`，**只写实测零 diff 的键**，并把每一条被省略的键和理由写进文件头注释：
+  - `end_of_line = lf`：工作树 20 个文件带 CRLF，而 `.gitattributes` 的 `* text=auto eol=lf` 早已在 add/checkout 侧解决——editorconfig 的价值正是让编辑器**别再把文件写成 CRLF**。
+  - `trim_trailing_whitespace = true`：实测**0 命中**（块注释续行的前导空格不算行尾空白，JSDoc 的 ` * ` 天然豁免）。
+  - `charset = utf-8`：`src/host/modality.ts` 是全仓唯一带 UTF-8 BOM 的跟踪文件（git 侧 `i/lf`，BOM 在工作树），其余 0 命中。
+  - `[lib/**, client.js, upstream/**]` 与二进制节全部 `unset`：`lib/` 与 `client.js` 是**已提交的 tsdown 产物**（`minify:false`，所以里面全是 tab），动它们的字节是「伪装成格式化 Pass 的真实改动」。
+  - **明确省略**：`insert_final_newline`（30 文件缺末尾换行）、`indent_size`（写 4 与 323 文件冲突，写 2 也非零 diff）、`max_line_length`、引号与分号（editorconfig 无此键，且双引号 7,173:4、分号 26,644:19,128 混写本就无单一真值）。
+- **tsc 侧**：真实 tsc 5.9.3 实测后只开两个**零成本**开关，且都进了 `tsc-gate`（`npm test` 真跑 tsc，不是配置摆设）：
+  - `noImplicitOverride`：全仓 `class … extends` 与 `override` 关键字均 0 命中，纯未来护栏。负向实测：往 `src/host/util.ts` 追加一个缺 `override` 的子类成员 → `TS4114`，`node test/tsc-gate.mjs` `EXIT=1`；复原后 0 error。
+  - `noUncheckedSideEffectImports`：无裸副作用 import，同理。负向实测：`import "../tmp/probe/mod.mjs"` 在**无该 flag 时静默放过（0 error）**、有该 flag 时报 `TS2307`。
+  - **拒绝** `noPropertyAccessFromIndexSignature`：实测 **280 errors**（73 行 `Record<string, unknown>` 全要改成方括号），与 `$comment` 的「the backlog is about narrowing casts, not loosening the flag」同向反面。
+  - `noImplicitReturns` / `noFallthroughCasesInSwitch` / `useUnknownInCatchVariables` **不写**：`strict: true` 已隐含（内部 strictFlags 展开双向验证）。
+- **验证**：`npm run typecheck` EXIT=0；`npm test` 34 套件全绿，`tsc-gate` 的「Version 5.9.3 accepts tsconfig.json with no diagnostics」与「tsconfig's include still covers both source halves」均 `pass: true`；两次负向探针后 `src/host/util.ts` 的 `git diff --stat` 为空（复原干净）。`.editorconfig` 用自写解析器验语法：`root=` 在首个 section 之前、11 个键值对全部落在合法键上、3 个 section 均闭合。
+- **教训**：三条可迁移判据：
+  1. **「顺手补个配置文件」的危险在于它按保存时刻改写字节。** 判定标准只有一个问题：**这个键若生效，会让多少个已跟踪文件产生 diff？** 数不出来就不该写；数出来非零，就只写那一半。本例的答案是「20 个 CRLF 归 gitattributes，30 个缺换行的不许修」——所以配置文件本身**必须自带「我省略了什么、为什么」的注释**，否则下一个人会以为漏了。
+  2. **参照件不能照抄，只能对照。** 兄弟仓的配置文件是对**它自己**现状的描述；抄过来等于把它的形状判成自己的规范。正确的用法是逐键问「这一条在我这里是零 diff 吗」。
+  3. **开 tsc 开关之前先量代价，而「0 errors」只是第一半。** 第二半是**它抓得到东西吗**：`noImplicitOverride` 与 `noUncheckedSideEffectImports` 都用负向探针实测过「缺 override 报 TS4114」「副作用 import 从不报到报 TS2307」，再确认门禁退出码为 1。一个既没代价也抓不到东西的开关不是护栏，是装饰——而装饰会让下一次「我们已经有严格模式了」说得更像真的。
 

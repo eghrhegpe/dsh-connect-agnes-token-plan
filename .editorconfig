@@ -1,0 +1,80 @@
+root = true
+
+# Editor-facing whitespace policy ONLY — deliberately not a formatter.
+#
+# Why this file exists at all, and why it is so short: this repo has no
+# ESLint, no Prettier, no Biome (tsconfig.json's $comment records that as a
+# deliberate trade-off), so the only thing standing between "one new file
+# saved with the wrong settings" and a whole-file diff is git's normalization
+# — which happens at ADD time, not at SAVE time. An editor that writes CRLF
+# or a BOM today produces a file that looks fine locally and rewrites itself
+# the moment anyone else touches it. That is the entire scope of this file.
+#
+# Every key below was chosen by MEASURING the repo first (2026-10-20, 381
+# files under src/ types/ test/ docs/ plus the root files). The rule applied:
+# a key may only be set if setting it would change ZERO bytes today. Keys
+# that would rewrite working files are omitted ON PURPOSE, not by oversight —
+#
+#   insert_final_newline  OMITTED — 30 tracked files lack a trailing newline
+#                            (src/client/const.ts, http.ts, roster-shared.ts,
+#                            switch.ts, src/host/agnescode-llm-adapter.ts,
+#                            agnescode-models-store.ts, …). Turning it on
+#                            would silently append to all 30 the next time an
+#                            editor saves them, which is exactly the
+#                            "whole-file diff" this file is meant to prevent.
+#   indent_size           OMITTED — the repo nests by TWO spaces (9,323 lines
+#                            at depth 2, 4,662 at 4 …) but the committed
+#                            top level is four-space based in 323 files, and
+#                            many continuation lines are aligned by hand. No
+#                            single number is true, so no number is written.
+#   indent_style = space  Not stated either: tab is forbidden by the key we
+#                            DO set (charset + trim below do not cover it),
+#                            and the ONE tab in hand-written source
+#                            (src/client/model-picker.ts:167) is a typo, not
+#                            a style. The tabs in lib/ and client.js are
+#                            tsdown/rolldown build output (minify:false) and
+#                            must NOT be touched — rebuild them with
+#                            `npm run build` instead of editing.
+#   max_line_length       OMITTED — doc comments routinely run long, and
+#                            soft-wrapping them would rewrite prose.
+#   quote style / semicolons OMITTED — .editorconfig has no key for either;
+#                            this repo uses double quotes (7,173 vs 4 single)
+#                            and ASI-style semicolons, which no editorconfig
+#                            can express anyway.
+#
+# Consequence worth stating plainly: this file fixes the two things git
+# normalization does NOT fix at save time (line endings and BOM), and nothing
+# else. It is not a formatter and must not grow into one — the moment it
+# starts reindenting, it becomes the "whole-file diff" machine.
+
+[*]
+charset = utf-8
+# 20 tracked files currently carry CRLF in the working tree while .gitattributes
+# (* text=auto eol=lf) already normalizes on add/checkout. Setting this makes the
+# editor write LF at save time, so the file is never CRLF in the first place and
+# the normalization step has nothing to repair.
+end_of_line = lf
+# Measured 0 hits: no tracked text file has trailing whitespace outside block
+# comments, and block-comment continuation lines are exempt by construction
+# (their leading space is not trailing). Safe to enforce.
+trim_trailing_whitespace = true
+# src/host/modality.ts is the single tracked file with a UTF-8 BOM (git stores
+# it as i/lf; the BOM is in the working tree). It is invisible in most editors
+# and produces a one-character diff when removed, so stop new ones appearing.
+# Not `false` for the others — only `true` is a meaningful instruction here.
+
+# Build artifacts and vendored references are NOT ours to normalize. lib/ and
+# client.js are committed tsdown output (see tsconfig.json's $comment) and
+# upstream/ is third-party source kept for reference; rewriting their bytes
+# would be a real change dressed up as a formatting pass.
+[lib/**, client.js, upstream/**]
+charset = unset
+end_of_line = unset
+trim_trailing_whitespace = unset
+
+# Binary assets must never be touched by an editor that honors .editorconfig.
+[*.{png,jpg,jpeg,gif,ico,svg,webp,ttf,ttc,woff,woff2,zip,pdf}]
+charset = unset
+end_of_line = unset
+trim_trailing_whitespace = unset
+insert_final_newline = unset
