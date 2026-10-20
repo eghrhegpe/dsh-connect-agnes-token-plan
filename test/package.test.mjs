@@ -408,10 +408,26 @@ check("no hand-written .js source sits at the package root", stray.length === 0,
 
   if (existsSync(draftPath)) {
     const draft = readFileSync(draftPath, "utf8");
-    /** A single-quoted scalar, the only shape the upstream parser accepts. */
-    const scalar = (key) => draft.match(new RegExp(`^\\s{2}${key}:\\s*'(.*)'\\s*$`, "m"))?.[1];
+    // Scanned line by line rather than by regex on purpose: inside a template
+    // literal `\s` is silently eaten as an escape, so the pattern that reaches
+    // the engine is `^url:s*(S+)s*$` — a "gate" that can only ever pass. The
+    // draft has a dozen fields; finding them is cheaper than escaping them.
+    //
+    // A single-quoted scalar escapes a quote by DOUBLING it (`model''s` is
+    // `model's`), so unescape before comparing — otherwise every apostrophe in
+    // the copy reads as drift.
+    const lines = draft.split("\n").map((line) => line.trim());
+    const scalar = (key) => {
+      const prefix = `${key}: '`;
+      const line = lines.find((candidate) => candidate.startsWith(prefix) && candidate.endsWith("'"));
+      return line === undefined ? undefined : line.slice(prefix.length, -1).replaceAll("''", "'");
+    };
     /** A bare top-level scalar (`url`, `name`, `category`). */
-    const field = (key) => draft.match(new RegExp(`^${key}:\\s*(\\S+)\\s*$`, "m"))?.[1];
+    const field = (key) => {
+      const prefix = `${key}: `;
+      const line = lines.find((candidate) => candidate.startsWith(prefix));
+      return line === undefined ? undefined : line.slice(prefix.length).trim();
+    };
     const zh = JSON.parse(readFileSync(join(root, "locale", "zh.json"), "utf8")).meta.description;
 
     check("the submission draft carries both descriptions",
