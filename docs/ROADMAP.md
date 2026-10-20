@@ -389,7 +389,7 @@ lockfile）并实跑 `test/build-gate.mjs`，构建失败与产物缺失在 CI �
 | `GET /v1/models` | `200`（带 `X-App-Id: 1` + `X-Platform: 1`） | 模型表与 `~/.agnes/config/config.yaml` 内置 `agnes` provider 一致（glm-5.2 / kimi-k3 / agnes-2.5 / 3.0 …） |
 | `GET /api/v2/subscription/credits-balance` | `200`，`total_balance: 1200`（time_sensitive） | **独立积分池**；语义是订阅池（`level` / `subscription_credits` / 时效 vs 永久），与 Token Plan 的 usage-overview 完全不同，不能套同一渲染。1200 是本机账号当时状态，非平台常量 |
 | `GET /api/v1/user/profile` | `200` | `auth_provider: wechat`、`app_id: agnes`、`current_subscription: null` |
-| token 生命周期 | JWT，`exp−iat ≈ 28 天` | 到期只能引导重登；**刷新端点未证实**——桌面 App 的 `auth-token-refresh-reservation` 仅做失效检测、无续期实现。即**续期没有自动路径**（令牌不会被本插件续期），但**重采集是自动的**：距 `exp` 不足 5 分钟时，下一次推理请求自己重读会话文件（单飞 + 失败退避 60 s），用户只需让桌面 App 重新登录一次，不必点「检测本机登录态」（按钮仍在，用于主动触发与查看分诊结果）。这是上游形态决定的**已知限制**，不是本插件特性缺口，也不要在文档里把它写成「点一下就永久好」的顺滑能力 |
+| token 生命周期 | JWT，`exp−iat ≈ 28 天` | 到期只能引导重登；**刷新端点未证实**——桌面 App 的 `auth-token-refresh-reservation` 仅做失效检测、无续期实现。即**续期没有自动路径**（令牌不会被本插件续期），但**重采集是自动的**：距 `exp` 不足 5 分钟（`isExpired` 的 `leadMs` 默认值）时，下一次推理请求自己重读会话文件（单飞 + 失败退避 60 s = `AGNESCODE_REHARVEST_BACKOFF_MS`），用户只需让桌面 App 重新登录一次，不必点「检测本机登录态」（按钮仍在，用于主动触发与查看分诊结果）。这是上游形态决定的**已知限制**，不是本插件特性缺口，也不要在文档里把它写成「点一下就永久好」的顺滑能力 |
 
 **凭据来源（本机登录态采集，已验证解密链）**：Windows 桌面变体存
 `%APPDATA%\AgnesCode\code-auth-session.cn.v1`，Chromium os_crypt 形态（`v10` 前缀 +

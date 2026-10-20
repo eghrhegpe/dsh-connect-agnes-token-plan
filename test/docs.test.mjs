@@ -12,10 +12,12 @@
 //                    与 client 槽位注册一致、SCREENSHOTS 声明的图真实存在于磁盘。这三条
 //                    与前两组有本质区别：前两组验的是「文档格式对不对」，它们验的是
 //                    「文档有没有说实话」——形式全绿而语义已漂，是本仓库踩过两次的坑（见 PITFALLS §25）。
-//   镜像表与实际一致：DOC_CONFIG_TABLE SETUP.md 的配置表 ↔ 代码读取的键集、DOC_SUITE_TABLE
+//   镜像表与实际一致：DOC_CONFIG_TABLE SETUP.md 的配置表 ↔ 代码读取的键集**与默认值**、DOC_SUITE_TABLE
 //                    TESTING.md 的套件表 ↔ test/ 下的套件。与上一组同族，也是「文档说没说实话」：
 //                    这两张表都是手维护的镜像，此前没有任何门禁——少一行是「读者不知道有这个键 /
 //                    这个行为有人守」，多一行是「读者去找一个空」，而两张当时恰好都是对的。
+//                    配置表还多一层：键名对了而**默认值**抄错，操作员按表算出的请求体就是错的，
+//                    而纯键名检查一个字都不会说——所以值也按代码默认值核（同一条检查内）。
 //   考古纪律：ARCHAEOLOGY 现行文档不许盖「修订（日期）」式内联补丁——决策沿革只登记
 //                    在 docs/ADR.md 账本（规则本体见该文件「使用规则」）
 //   peer 边界：PEER_BOUNDARY 静态 `@deepseek-ai/*` import 只许 llm adapter 层——
@@ -32,7 +34,12 @@ import { join, dirname, extname, resolve, relative, sep, basename } from "node:p
 import { fileURLToPath, pathToFileURL } from "node:url";
 // The config contract, imported rather than re-derived: a test that rebuilt the
 // key set itself would be the second copy these two checks exist to prevent.
-import { CONFIG_READ_KEYS } from "../src/host/host-config.ts";
+// `CONFIG_DEFAULTS` comes along for the value half of `DOC_CONFIG_TABLE`, and
+// `AUTH_DEFAULTS` for the three rows whose table cell spells a RESOLVED platform
+// default after `→` — a different number from the `0` / `""` sentinel the row
+// itself defaults to, so it needs its own source. Both are pure modules.
+import { CONFIG_READ_KEYS, CONFIG_DEFAULTS } from "../src/host/host-config.ts";
+import { AUTH_DEFAULTS } from "../src/host/agnes-auth.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fails = [];
@@ -1229,32 +1236,54 @@ const CHECK_NAMES = new Set(CHECK_IDS.keys());
 }
 
 /**
- * Read the first-column cells of the markdown table whose header's first cell is `first`.
+ * Read the rows of the markdown table whose header's first cell is `first`,
+ * each row as its full cell list with backticks stripped — or `null` when no
+ * such table exists.
  *
- * Shared by the two mirror-table checks below (16 / 17) rather than written twice:
- * they differ only in which file, which header and what the cells mean.
+ * Shared by the two mirror-table checks below (16 / 17) rather than written
+ * twice: they differ only in which file, which header and what the cells mean.
+ *
+ * Whole rows, not just the first cell: `DOC_CONFIG_TABLE` also pins the `默认`
+ * column against the code, so the reader has to hand back every cell.
+ *
  * @param {string} file - repo-relative path, e.g. "docs/SETUP.md".
  * @param {string} first - the header's first cell, exactly (`字段` / `文件`).
- * @returns {string[]|null} the cells with backticks stripped, or `null` when no such table.
+ * @returns {string[][]|null}
  */
-const tableFirstColumn = (file, first) => {
+const tableRows = (file, first) => {
   const lines = readFileSync(join(ROOT, file), "utf8").split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].startsWith("|")) continue;
     if ((lines[i].split("|")[1] ?? "").trim() !== first) continue;
-    const cells = [];
+    const rows = [];
     let j = i + 2;
     while (j < lines.length && lines[j].startsWith("|")) {
-      cells.push((lines[j].split("|")[1] ?? "").trim().replace(/`/g, ""));
+      const cells = lines[j].split("|");
+      // `| a | b |` splits to ["", " a ", " b ", ""] — the two empties are the
+      // pipes themselves. Drop them only when empty, so a row that is missing
+      // its trailing pipe still yields every cell it has.
+      if (cells.length && cells[0].trim() === "") cells.shift();
+      if (cells.length && cells[cells.length - 1].trim() === "") cells.pop();
+      rows.push(cells.map((c) => c.trim().replace(/`/g, "")));
       j++;
     }
-    return cells;
+    return rows;
   }
   return null;
 };
 
-// 16) SETUP.md 的配置表 ↔ 代码真正读取的键集
-// 这张 24 行表是**操作员契约的手写镜像**，而它此前没有任何门禁：代码加了键、表里
+/**
+ * The first cell of every row of that table — `tableRows` with the rest dropped.
+ *
+ * @param {string} file - repo-relative path.
+ * @param {string} first - the header's first cell, exactly (`字段` / `文件`).
+ * @returns {string[]|null}
+ */
+const tableFirstColumn = (file, first) =>
+  tableRows(file, first)?.map((row) => row[0] ?? "") ?? null;
+
+// 16) SETUP.md 的配置表 ↔ 代码真正读取的键集**与默认值**
+// 这张 25 行表是**操作员契约的手写镜像**，而它此前没有任何门禁：代码加了键、表里
 // 没加，操作员永远不知道那个键存在——更糟的是「未知键告警」（`unknownConfigKeys`）
 // 会反过来把一个**真实存在的键**当拼写错误点名。两端现在都从同一个源读。
 //
@@ -1262,11 +1291,22 @@ const tableFirstColumn = (file, first) => {
 // 的键集**正当不同**——`allowedHosts` 是操作员的拼写（代码里的 `admittedHosts` 只是
 // 默认值持有者），三个 auth 覆盖在**顶层**（红线 3），两个输出字段不该出现在输入表里。
 // 正确基准是 `CONFIG_READ_KEYS`（代码侧唯一的事实源），差集必须恰好是下面四个。
+//
+// 键名对齐只是这张表的一半。另一半是**「默认」列的值**，它同样是手抄的：`videoWidth`
+// 从 1152 改成 1280 而表里还写 1152，操作员照着表算出来的请求体就是错的，而纯键名
+// 检查一个字都不会说（`DOC_CONFIG_TABLE` 此前只守左列，见本仓 2026-10 的复盘）。
+// 所以值也按代码默认值核。表格里的写法是两种形状：
+//   <代码默认>                   —— 直接抄 `CONFIG_DEFAULTS`
+//   <代码默认> → <解析后默认>     —— 只给三个 auth 覆盖：代码侧那个 `0` / `""` 是
+//                                 「交给平台」的哨兵值，箭头右边才是真正生效的数，
+//                                 它的真源是 `AUTH_DEFAULTS`（与哨兵值**不是**同一个数，
+//                                 所以需要第二个 import 而不是复用 `CONFIG_DEFAULTS`）。
 {
-  const rows = tableFirstColumn("docs/SETUP.md", "字段");
+  const rows = tableRows("docs/SETUP.md", "字段");
   if (rows === null) {
     bad("docs/SETUP.md 找不到「| 字段 | 默认 | 说明 |」配置表——本检查没有受检面（表被改名/删除时它必须以红出现，而不是以空通过）");
   } else {
+    const keys = rows.map((row) => row[0] ?? "");
     // 每个豁免都要写理由：不写就变成「表里少一行也算对」，那正是本检查要防的形状。
     const OMITTED = new Map([
       ["auth", "嵌套 `auth:` 块是必须**不用**的形状（红线 3），写进操作员表等于教人犯错"],
@@ -1274,9 +1314,9 @@ const tableFirstColumn = (file, first) => {
       ["imageModelIds", "输出字段：vision 第二步写回本行的结果，不是操作员输入"],
       ["visionModels", "输出字段：同上"]
     ]);
-    const undocumented = [...CONFIG_READ_KEYS].filter((key) => !rows.includes(key) && !OMITTED.has(key));
-    const invented = rows.filter((key) => !CONFIG_READ_KEYS.has(key));
-    const stale = [...OMITTED.keys()].filter((key) => rows.includes(key));
+    const undocumented = [...CONFIG_READ_KEYS].filter((key) => !keys.includes(key) && !OMITTED.has(key));
+    const invented = keys.filter((key) => !CONFIG_READ_KEYS.has(key));
+    const stale = [...OMITTED.keys()].filter((key) => keys.includes(key));
     if (undocumented.length) {
       bad(`docs/SETUP.md 配置表漏了代码会读取的键：${undocumented.join(", ")}——加配置却不写进操作员表，等于该键只对读源码的人存在`);
     }
@@ -1286,8 +1326,86 @@ const tableFirstColumn = (file, first) => {
     if (stale.length) {
       bad(`docs/SETUP.md 配置表补上了本应豁免的键：${stale.join(", ")}——表里有了它，就该从上面的 OMITTED 里删掉对应理由`);
     }
-    if (undocumented.length + invented.length + stale.length === 0) {
-      note(`SETUP 配置表 ${rows.length} 行与 CONFIG_READ_KEYS ${CONFIG_READ_KEYS.size} 个键对齐（豁免 ${OMITTED.size} 个，理由各自写在检查体内）`);
+
+    // —— 「默认」列的值 ——
+    // 表里唯一会写「→ 解析后默认」的三行，以及那个数在 `AUTH_DEFAULTS` 里的名字。
+    // `loginTimeoutMs` 是唯一改过名的：操作员字段是新拼写，`AUTH_DEFAULTS` 还叫退役的
+    // `requestTimeoutMs`，两者是同一个数（这也是 `requestTimeoutMs` 被豁免的原因）。
+    const RESOLVED = new Map([
+      ["loginPath", "loginPath"],
+      ["loginTimeoutMs", "requestTimeoutMs"],
+      ["fallbackExpiresInSeconds", "fallbackExpiresInSeconds"]
+    ]);
+    // 这三个也正是挂在 `CONFIG_DEFAULTS.auth` 下的三个（红线 3：patch 行里是顶层键、
+    // 默认值对象里是嵌套的），所以从上面**派生**而不是再抄一份键名——本检查存在的
+    // 理由就是「同一件事别维护两份」。若哪天多出一个不在 `auth` 下的箭头行，这里
+    // 会把它一并算进来，`codeDefault` 随即取到 `undefined` 并由 `noSource` 报红，
+    // 失败方向是安全的那一侧。
+    const AUTH_OVERRIDES = new Set(RESOLVED.keys());
+    /**
+     * The code-side default for a table row, or `undefined` when this check has
+     * no source for it (which is itself reported below, never skipped).
+     */
+    const codeDefault = (key) => {
+      // `allowedHosts` 自己的默认是**空**：`CONFIG_DEFAULTS.admittedHosts` 是解析器
+      // 起步的那 4 项基线、操作员的值只往上追加，拿它比对会报一个不存在的漂移。
+      if (key === "allowedHosts") return [];
+      if (AUTH_OVERRIDES.has(key)) return CONFIG_DEFAULTS.auth[key];
+      return CONFIG_DEFAULTS[key];
+    };
+    /**
+     * How a default is spelled in the table: strings bare (`""` when empty, which
+     * is how the table writes the two empty-string model ids), everything else as
+     * JSON — which renders numbers the way the table does (`15_000` → `15000`,
+     * the numeric separator being a code-side nicety the reader must not see).
+     */
+    const asWritten = (value) =>
+      typeof value === "string" ? (value === "" ? '""' : value) : JSON.stringify(value);
+    const wrongValue = [];
+    const wrongTail = [];
+    const noSource = [];
+    const arrowed = [];
+    for (const row of rows) {
+      const key = row[0] ?? "";
+      const cell = row[1] ?? "";
+      // `"" → /api/user/login` 切成 ["\"\"", "/api/user/login"]。
+      const [head, ...tailParts] = cell.split("→").map((part) => part.trim());
+      const expected = codeDefault(key);
+      if (expected === undefined) {
+        noSource.push(key);
+      } else if (head !== asWritten(expected)) {
+        wrongValue.push(`${key}: 表里写 ${head}，代码默认是 ${asWritten(expected)}`);
+      }
+      if (tailParts.length > 0) {
+        arrowed.push(key);
+        const name = RESOLVED.get(key);
+        const written = tailParts.join(" → ");
+        if (name === undefined) {
+          wrongTail.push(`${key}: 表里写了「→ ${written}」，但本检查不知道这个键的解析后默认值从哪来——要么加进 RESOLVED 并写清理由，要么把箭头去掉（哨兵值本身就是代码默认值，加箭头等于承诺一个没人守的数）`);
+        } else if (written !== asWritten(AUTH_DEFAULTS[name])) {
+          wrongTail.push(`${key}: 表里写「→ ${written}」，而 AUTH_DEFAULTS.${name} 是 ${asWritten(AUTH_DEFAULTS[name])}`);
+        }
+      }
+    }
+    // 反方向：该有箭头的三行必须都有。哨兵值 `0` / `""` 单独看是**合法**的（它确实
+    // 是代码默认值），所以漏掉箭头不会被上面的值检查抓到——漏了它，操作员就只看到
+    // 「0」而不知道平台真实生效的是 15 秒，这正是这张表存在的意义。
+    const missingArrow = [...RESOLVED.keys()].filter((key) => !arrowed.includes(key));
+    if (noSource.length) {
+      bad(`docs/SETUP.md 配置表这几行的默认值本检查找不到代码侧真源：${noSource.join(", ")}——受检面不明就等于没有门禁，要么把该键接进 CONFIG_DEFAULTS/AUTH_DEFAULTS，要么写进 OMITTED 并说明`);
+    }
+    if (wrongValue.length) {
+      bad(`docs/SETUP.md 配置表「默认」列与代码默认值不符：${wrongValue.join(" | ")}——操作员照着表算出来的请求体就是错的，而键名是对的，所以纯键名检查不会响`);
+    }
+    if (wrongTail.length) {
+      bad(`docs/SETUP.md 配置表「→ 解析后默认」与 AUTH_DEFAULTS 不符：${wrongTail.join(" | ")}`);
+    }
+    if (missingArrow.length) {
+      bad(`docs/SETUP.md 配置表这几行只写了哨兵默认值、没写解析后真正生效的数：${missingArrow.join(", ")}——三个 auth 覆盖的哨兵值（0 / 空串）本身合法，所以只有这一条能发现它`);
+    }
+    if (undocumented.length + invented.length + stale.length + wrongValue.length +
+        wrongTail.length + missingArrow.length + noSource.length === 0) {
+      note(`SETUP 配置表 ${rows.length} 行与 CONFIG_READ_KEYS ${CONFIG_READ_KEYS.size} 个键对齐（豁免 ${OMITTED.size} 个），默认值全部对上代码（${rows.length - RESOLVED.size} 行直抄 CONFIG_DEFAULTS，${RESOLVED.size} 行另核 AUTH_DEFAULTS）`);
     }
     guard("DOC_CONFIG_TABLE", rows.length, 20);
   }
