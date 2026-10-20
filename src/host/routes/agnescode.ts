@@ -38,6 +38,7 @@ import {
 } from "../agnescode.ts";
 import { filterAgnescodeRows, agnescodeRoster } from "../agnescode-models.ts";
 import { createFileAgnescodeStatsStore } from "../agnescode-stats-store.ts";
+import { startAgnescodeLogin } from "../agnescode-login.ts";
 import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBody } from "./http.ts";
 import type { CacheMap, HostCtx, HostWiring, InflightMap } from "../types.ts";
 
@@ -557,7 +558,40 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         return;
       }
 
-      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"saveModels\" }" }, { "cache-control": "no-store" });
+      // ── login: scan-to-login device flow (ROADMAP §6.3) ──
+      // Opens a browser to the AgnesCode login page; the login page POSTs a
+      // one-time authorization code to a local HTTP server, which is exchanged
+      // for the same access_token the desktop App would have stored.
+      if (action === "login") {
+        if (agnescodeStore === null || agnescodeStore === undefined) {
+          await answer({ ok: false, error: "the agnescode credential store is unavailable" });
+          return;
+        }
+        try {
+          const result = await startAgnescodeLogin({
+            domain: body.value.domain === "intl" ? "intl" : "cn"
+          });
+          await agnescodeStore.save({
+            accessToken: result.accessToken,
+            bffBase: result.bffBase,
+            ...(result.userId !== "" ? { userId: result.userId } : {}),
+            ...(result.nickname !== "" ? { nickname: result.nickname } : {}),
+            ...(result.expiresAtMs !== null ? { expiresAtMs: result.expiresAtMs } : {})
+          });
+          if (agnescodePublisher !== null && agnescodePublisher !== undefined && agnescodePublisher.isDisposed() === false) {
+            if (resolveSwitchEnabled(await readPanelValue(() => agnescodeSwitch?.enabled())).enabled) {
+              await publishFromStore();
+            }
+          }
+          await answer({ ok: true, status: "logged_in" });
+          return;
+        } catch (error) {
+          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
+          return;
+        }
+      }
+
+      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"saveModels\"|\"login\" }" }, { "cache-control": "no-store" });
     }
   });
 }

@@ -26,6 +26,7 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [TOKEN-STORE-SPLIT.md](./TOKEN-STORE-SPLIT.md) | `token-store.ts` 拆分蓝图（登录/续期/节流/迁移四块 + 显式 state 容器）：状态归属表、迁移块退役条件、6 步落地计划（每步门禁=行为基线零漂移）、红线核对表 | 动刀 token-store 之前先读这份 |
 | [PUBLISH-CORE-SPLIT.md](./PUBLISH-CORE-SPLIT.md) | 两个 provider publisher 的共享控制面（`publish-core.ts`）拆分蓝图：共享「机制」/ 不共享「判定与状态形状」的划线、原语清单、收敛同时修掉的两处 `state.built` 残留、逐步落地与红线核对表 | 动刀 `provider-publish.ts` / `agnescode-publish.ts` 之前先读这份 |
 | [AGNESCODE-SPLIT.md](./AGNESCODE-SPLIT.md) | `agnescode.ts`（近千行）拆分蓝图：加密/采集轴（DPAPI 九档分诊）↔ BFF 三端点轴（catalog/balance/ledger）两条正交变更轴；先申报不直接拆，引用 ADR-005 | 动刀 `agnescode.ts` 之前先读这份（含红线：采集侧写权限为零） |
+| [AGNESCODE-SCAN-LOGIN.md](./AGNESCODE-SCAN-LOGIN.md) | **扫码登录（设备流）可行性**：换 token 端点 `POST {BFF}/api/v1/code/auth/exchange-code`（实测 `010006` 证实为真端点）、登录页 localhost 回调白名单、完整设备流设计、跨平台收益与风险、撞墙史（标准 OAuth 路径全 401/404） | 评估「不靠桌面 App 拿 token」、覆盖 macOS/Linux、拍板要不要做扫码登录 |
 | [ADR.md](./ADR.md) | **决策账本**：一条裁定一个条目（日期 / 状态现行或已被取代 / 取代链）——边界、定位、流程的每次改判只在这里记账，现行正文只保留现状表述 | 拍新裁定、改既有边界、回溯「为什么现在是这个样子」 |
 | [ARCHIVE-BOUNDARY-DECISIONS.md](./ARCHIVE-BOUNDARY-DECISIONS.md) | **已失效裁定存档**（两类来源）：① 小浣熊边界裁定（ADR-002）的原文（该线已于 2026-10-01 移出本插件，见 ADR-003）；② A1–A4：2026-09 研究档案里已失效 / 已过期 / 已落地的判断（「默认推理通道」撤销论断、`index.js` 接线方案、落地顺序表与总判断、姊妹插件对比结论） | 查历史边界决策与「当初错在哪」、不复用为现行依据 |
 | [DSH-UNIFIED-INTERFACE-AUDIT.md](./DSH-UNIFIED-INTERFACE-AUDIT.md) | **观察存档**：DSH runtime 出图/出视频统一接口审计（事实链 + 结论：当前无第一方大统一 image/video 注册面，故 §5.4 接法 B 是当下唯一可行落地点，接法 A 因依赖外部社区包而否决） | 查「为何不退回通用接口 / 为何自己造工具」的 runtime 取证、不复用为执行依据 |
