@@ -199,6 +199,15 @@ jobs:
           node test/config.test.mjs
           node test/package.test.mjs
           node test/docs.test.mjs
+          # The market-entry gate: the submission copy under
+          # awesome-dsh-plugin-submission/ is read with the SAME js-yaml the
+          # marketplace parses it with, then checked against a mirror of the
+          # market's entry rules (unknown key, url shape, name vs url, category
+          # out of the 22 allowed, missing description.en, a locale the site
+          # does not render). Those are rejections at review time — invisible
+          # here until they are. js-yaml is a devDependency (installed above),
+          # so this really runs in this job instead of taking a SKIP path.
+          node test/market-entry.test.mjs
           node test/wiring.test.mjs
           node test/contract.test.mjs
           node test/retry.test.mjs
