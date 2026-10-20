@@ -29,7 +29,7 @@ import { createServer, type Server } from "node:http";
 import { Buffer } from "node:buffer";
 import { decodeAgnescodeJwtExpMs, trustAgnescodeBffBase } from "./agnescode.ts";
 import { writeLoginTrace } from "./trace.ts";
-import { obj, str } from "./util.ts";
+import { obj, str, verbatim } from "./util.ts";
 
 /** Per-domain login endpoints and BFF bases. */
 const DOMAINS = {
@@ -316,8 +316,10 @@ export async function exchangeCodeForToken(
     throw new Error(message !== "" ? `code exchange failed: ${message}` : `code exchange failed (${codeStr})`);
   }
   const data = obj(body.data ?? {});
-  const token = str(data.access_token, "");
-  if (token === "") {
+  // Verbatim: this token goes straight into a credential store, so it must be
+  // the bytes the BFF signed, not a trimmed copy. The blank guard trims itself.
+  const token = verbatim(data.access_token, "");
+  if (token.trim() === "") {
     trace.hop({ step: "exchange-no-token", status: response.status, code: codeStr });
     throw new Error("the code exchange returned no access_token");
   }

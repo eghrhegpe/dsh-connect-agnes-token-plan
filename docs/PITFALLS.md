@@ -5,7 +5,7 @@
 > **范围说明**：本插件 2026-10 从商汤 SenseNova 控制台迁到 **Agnes 控制台**，登录线由 OIDC 授权码 + JWE 密码封包换成**一跳账号密码 POST**（见 [AUTH.md](./AUTH.md)）。于是下面分三类：
 > - 标了「**商汤时代，代码已删除**」的条目（第 1、2、3、5、14 条）描述的是**已经不存在的文件**。保留它们是为了记住这类坑的**形状**——**不要按字面去找这些函数**。
 > - 标了「**商汤时代实测**」的条目（第 20、21 条）是在已退役的推理网关上量的数据；**现行推理契约以 [AGNES-API.md](./AGNES-API.md) §7 为准**。
-> - 其余条目（第 4、6–13、15–19、22–48 条）对**当前代码全部有效**。（第 49–60 条为逐章续编，同样对当前代码有效。）
+> - 其余条目（第 4、6–13、15–19、22–48 条）对**当前代码全部有效**。（第 49–61 条为逐章续编，同样对当前代码有效。）
 
 ---
 
@@ -13,7 +13,7 @@
 
 | 主题 | 条目 |
 |---|---|
-| 登录 / 凭据 / 认证重登 | 1、2、3、4、5、6、7、14、15、29、**44（脱敏漏一条就漏凭据）** |
+| 登录 / 凭据 / 认证重登 | 1、2、3、4、5、6、7、14、15、29、**44（脱敏漏一条就漏凭据）**、**61（凭据被静默 trim 成 401）** |
 | 同源 / 请求安全 | 13、35、**46（403 不是令牌失效，是同源闸）** |
 | 构建 / 装载 / profile | 8、22、23、33 |
 | peer 依赖 | 16 |
@@ -151,7 +151,7 @@
 - **根因**：每次登录都写 trace 便于「浏览器能登、面板不能」的对照排查，写不好就泄密；另一头更隐蔽——provider / 桌面端上游 注册失败时，HTTP 错误对象的 `message` 往往**内嵌了它构造时的请求头**（axios / fetch 的错误都这样），而平台 4xx 正文也可能把 `sk-` / `cpk-` Key 原样回显。这些字符串会顺着 `providerState.error` 与 `ctx.logger.warn` 出去。
 - **修法**（两层，别只做一层）：
   - **登录 trace 靠「不写值」，不靠事后脱敏**：hop 记录只放形状事实（`step` / `status` / `code` / `retryAfterMs` / `tokenLength` / `tokenIsJwt` / `expiresIn`）、平台原话（截 200 字，本身不含凭据）与**掩码后的账号名**（`maskUsername`）；token 只记长度、不记值。落盘权限 `0o600`，仅留最近 20 个。**新增输出点时别改成「先写后脱敏」——这一层没有 sanitize 兜底，纪律就是「值不进 trace」。**
-  - **错误文本靠 `redactSecrets()`**（`src/host/util.ts`）：provider / 桌面端上游 / 路由 / **agent 工具 execute 错误**（`describeDrawFailure` / `describeVideoFailure` 把平台 body 片段拼进 agent 可见消息，同属第四张脱敏表面）四处的 error message 在进快照、日志或对话前必须过它，覆盖六类形态——`Authorization:` 头、`Bearer` / `Basic`、裸 `sk-…`、裸 `cpk-…`（Token Plan 主力 Key 形态，2026-10-03 补齐前是规则缝隙）、带引号的 `{"password":"…"}` 键值对、以及 `password=…` 形式。`test/provider.test.mjs` §14 钉住这套替换（含 cpk- 正反样例）。
+  - **错误文本靠 `redactSecrets()`**（`src/host/util.ts`）：provider / 桌面端上游 / 路由 / **agent 工具 execute 错误**（`describeDrawFailure` / `describeVideoFailure` 把平台 body 片段拼进 agent 可见消息，同属第四张脱敏表面）四处的 error message 在进快照、日志或对话前必须过它。规则集是**八条**（2026-10-20 补齐后）：① `Authorization:` 值（scheme 词保留、值整体替换——旧版只跳过 `Bearer`，`Basic <base64>` 会剩下 base64）；② `Bearer` / `Basic`；③ 裸 `sk-…` / `cpk-…`（Token Plan 主力 Key 形态，2026-10-03 补齐前是规则缝隙）；④ 裸 JWT 值形状；⑤ 带引号凭据键值对（键名集 `password|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|code[_-]?verifier|token|secret`）；⑥ 同键集 `key=value`；⑦ `Cookie` / `Set-Cookie` 整条值；⑧ 对象字面量里**未加引号**的凭据字段（`{ accessToken: hunter2xyz }`，null/数字/布尔值故意保留为诊断线索）。键名集是 `util.ts` 里的**单个** `SECRET_KEY` 常量：三个规则共用它，因为「漏了一个键名」这种洞没有任何测试会自己变红。`test/provider.test.mjs` §14 钉住全部替换与必须存活的散文/诊断样本（含 cpk- 正反样例、Basic base64、Cookie、未加引号对象值）。
 
 ---
 
@@ -642,14 +642,29 @@
   - `charset = utf-8`：`src/host/modality.ts` 是全仓唯一带 UTF-8 BOM 的跟踪文件（git 侧 `i/lf`，BOM 在工作树），其余 0 命中。
   - `[lib/**, client.js, upstream/**]` 与二进制节全部 `unset`：`lib/` 与 `client.js` 是**已提交的 tsdown 产物**（`minify:false`，所以里面全是 tab），动它们的字节是「伪装成格式化 Pass 的真实改动」。
   - **明确省略**：`insert_final_newline`（30 文件缺末尾换行）、`indent_size`（写 4 与 323 文件冲突，写 2 也非零 diff）、`max_line_length`、引号与分号（editorconfig 无此键，且双引号 7,173:4、分号 26,644:19,128 混写本就无单一真值）。
-- **tsc 侧**：真实 tsc 5.9.3 实测后只开两个**零成本**开关，且都进了 `tsc-gate`（`npm test` 真跑 tsc，不是配置摆设）：
+- **tsc 侧**：真实 tsc 5.9.3 实测后开四个**零成本**开关，且都进了 `tsc-gate`（`npm test` 真跑 tsc，不是配置摆设）：
   - `noImplicitOverride`：全仓 `class … extends` 与 `override` 关键字均 0 命中，纯未来护栏。负向实测：往 `src/host/util.ts` 追加一个缺 `override` 的子类成员 → `TS4114`，`node test/tsc-gate.mjs` `EXIT=1`；复原后 0 error。
   - `noUncheckedSideEffectImports`：无裸副作用 import，同理。负向实测：`import "../tmp/probe/mod.mjs"` 在**无该 flag 时静默放过（0 error）**、有该 flag 时报 `TS2307`。
   - **拒绝** `noPropertyAccessFromIndexSignature`：实测 **280 errors**（73 行 `Record<string, unknown>` 全要改成方括号），与 `$comment` 的「the backlog is about narrowing casts, not loosening the flag」同向反面。
-  - `noImplicitReturns` / `noFallthroughCasesInSwitch` / `useUnknownInCatchVariables` **不写**：`strict: true` 已隐含（内部 strictFlags 展开双向验证）。
+  - `noImplicitReturns` / `noFallthroughCasesInSwitch`：**开**（2026-10-20 补）。本条初版写的是「`strict: true` 已隐含（内部 strictFlags 展开双向验证）」——**那句是错的**：`tsc --showConfig -p tsconfig.json` 把 `strict` 展开成 9 个 flag（alwaysStrict / noImplicitThis / strictFunctionTypes / strictBindCallApply / strictPropertyInitialization / strictBuiltinIteratorReturn / strictNullChecks / useUnknownInCatchVariables / noImplicitAny），**这两个都不在其中**。实测代价 `tsc -p tsconfig.json --noFallthroughCasesInSwitch --noImplicitReturns --noEmit` → EXIT=0（0 诊断），纯未来护栏；抓得到东西：负向探针里 `switch` 少一条 `break` 报 `TS7029`、`number | undefined` 的函数有一条路径不返回值报 `TS7030`（注意 `TS2366`「缺结束 return」是 `strictNullChecks` 抓的，不是 `noImplicitReturns` 的活——两个开关的覆盖面不同，别混记）。
+  - `useUnknownInCatchVariables` **不写**：这条是 `strict` 真的带的（在上面那 9 个 flag 里），所以不重复开。
 - **验证**：`npm run typecheck` EXIT=0；`npm test` 34 套件全绿，`tsc-gate` 的「Version 5.9.3 accepts tsconfig.json with no diagnostics」与「tsconfig's include still covers both source halves」均 `pass: true`；两次负向探针后 `src/host/util.ts` 的 `git diff --stat` 为空（复原干净）。`.editorconfig` 用自写解析器验语法：`root=` 在首个 section 之前、11 个键值对全部落在合法键上、3 个 section 均闭合。
-- **教训**：三条可迁移判据：
+  - **2026-10-20 补两个开关后的复验**：`tsc-gate` 从 2 条断言扩到 7 条，新增的 5 条把「strict 隐含」这件事从**散文断言**变成**机器判据**——(a) 一份只开 `strict: true` 的临时 tsconfig 编译探针文件，**必须 0 诊断**（证明 strict 真的不抓 TS7029/TS7030）；(b) 同一份探针加上这两个开关，**必须**报出 `TS7029` 与 `TS7030`；(c) `tsc --showConfig -p tsconfig.json` 的有效配置里两个 flag 必须是 `true`（防止有人删了 tsconfig 的开关而散文与门禁还在声称它开着）。探针文件自带 `types: []` 的独立 tsconfig，**不能** `extends` 仓库 tsconfig——那会因 `"types": ["node"]` 在仓库外解析不到而报 TS2688（与被测行为无关的失败）。
+- **教训**：四条可迁移判据：
   1. **「顺手补个配置文件」的危险在于它按保存时刻改写字节。** 判定标准只有一个问题：**这个键若生效，会让多少个已跟踪文件产生 diff？** 数不出来就不该写；数出来非零，就只写那一半。本例的答案是「20 个 CRLF 归 gitattributes，30 个缺换行的不许修」——所以配置文件本身**必须自带「我省略了什么、为什么」的注释**，否则下一个人会以为漏了。
   2. **参照件不能照抄，只能对照。** 兄弟仓的配置文件是对**它自己**现状的描述；抄过来等于把它的形状判成自己的规范。正确的用法是逐键问「这一条在我这里是零 diff 吗」。
   3. **开 tsc 开关之前先量代价，而「0 errors」只是第一半。** 第二半是**它抓得到东西吗**：`noImplicitOverride` 与 `noUncheckedSideEffectImports` 都用负向探针实测过「缺 override 报 TS4114」「副作用 import 从不报到报 TS2307」，再确认门禁退出码为 1。一个既没代价也抓不到东西的开关不是护栏，是装饰——而装饰会让下一次「我们已经有严格模式了」说得更像真的。
+  4. **「我们已经有严格模式了」是本条最贵的一句散文——它把一个「待验证的断言」当成了既成事实。** 本条初版断言「`strict: true` 已隐含 `noImplicitReturns` / `noFallthroughCasesInSwitch`」，并注明「内部 strictFlags 展开双向验证」——**那次双向验证做错了**（`strict` 展开的 9 个 flag 里没有这两个），于是两个零成本护栏被一句错误断言挡在门外，而且因为断言写得像已验证的事实，后来没人再查。可迁移判据：**任何被用来「关掉一个东西」的断言，都要有自己的机器判据**——不是因为它可能是错的（它确实错了），而是因为**它的错误形态是静默的**：一句写在文档里的「X 已覆盖」不会让任何测试变红，它只会让该开的开关永远不开。**所以「不写某个开关」的理由，和「写某个开关」的理由一样需要门禁钉住**——只不过方向相反：前者的门禁要证明「X 真的不覆盖」。
 
+
+## 61. 凭据被 `str()` 静默 trim：失败形态是「无迹可查的 401」
+
+- **现象**：平台签发的 access token 一路用 `str()` 取（`agnes-auth.ts` 的 `access_token`、`agnescode-login.ts` 的 code exchange、`agnescode.ts` 的会话解析与 `Authorization` 头、`agnescode-store.ts` 的解析/序列化/保存守卫、`token-store/grant.ts` 的 grant 解析、`routes/agnescode.ts` 的账号指纹），而 `str()` 的实现是 `value.trim() !== "" ? value.trim() : fallback`——**会 trim，纯空白还会折成 fallback**。上游 JSON 值只要带一点填充，插件发出的就是一个被静默改过的 token：请求 401，而 401 在本插件里本来就是「令牌过期 → 重登」的正常分支，于是它不报警、不进 trace，`tokenLength` 又只是形状事实（长度对不上也没人看）。
+- **根因**：`str()` 是**展示/解析层**的正规化函数，被当成**凭据搬运**的通用取值器。凭据的第一性质是**字节保真**——它不进用户视野，所以任何改写都不可见，`verbatim()` 的 docstring 那句「trimming it is a change the user cannot see」说的就是这件事。本仓其实早有 `verbatim()`，也早用对了（用户输入的密码/API key：`api-key-store.ts`、`token-store.ts`、`token-store/account.ts`），**平台签发的那一半被漏在 `str()` 上**——同一条链的两个端点各用一套口径。
+- **第二个洞（更隐蔽，也是真正该先修的）**：**比较键不同口径**。`invalidate()` 把被拒 token 放进 `rejected` 集合，`isFresh()` 拿缓存的 `token.accessToken` 去查表；只要一处 trim 一处不 trim，键就永远对不上——被拒 token 会被**无限重放**（每次调用都拿同一枚死 token 打一次 401），而表现是「重登后立刻又 401」，最容易被归因成平台或网络。
+- **修法**（2026-10-20）：全链改 `verbatim()` 读、空判改 `.trim() === ""`（八处：`agnes-auth.ts`、`agnescode-login.ts`、`agnescode.ts` 三处、`agnescode-store.ts` 三处、`token-store/grant.ts`、`routes/agnescode.ts` 指纹）；`token-store.ts` 的 `invalidate()` 改成「**非字符串或空白才回落缓存的 token，真值一律不 trim**」，与 `grant.ts` 的 verbatim 键对齐。`agnes-auth.ts` 的 trace 里 `tokenLength` 改用 `accessToken.trim().length`：形状事实记的是凭据长度，不该记填充。**空判必须跟着口径一起改**——换成 `verbatim` 之后 `=== ""` 不再等价于「没有」，纯空白（`"   "`）会被当作合法 token 发出去。
+- **验证**：`test/agnes-auth.test.mjs` §6b（带填充的 token 原样返回、`tokenLength` 是凭据长度、纯空白仍是 `LOGIN_FAILED` 契约破坏）、`test/agnescode.test.mjs`（会话解析与凭据 round-trip 保留填充、纯空白按「没有 token」拒绝）、`test/store-baseline.test.mjs` 冻结基线零漂移（基线里的 token 值本就不含空白，所以口径改动不触碰它）；`npm run typecheck` EXIT=0。
+- **教训**：三条可迁移判据：
+  1. **取值器不是语义中立的。** `str()` / `trim()` 对展示层是对的、对凭据是错的。判据只有一个问题：**这个值会不会离开本进程继续旅行**（进 Bearer 头、进凭据服务、进磁盘、再被读回来比较）？会，就必须字节保真，并且用一个**名字上就写着这件事**的取值器（`verbatim`），不要靠 review 记得「这里不能 trim」。
+  2. **换口径必须同时换空判。** 静默改写（trim）与静默伪值（纯空白被当成 token）是同一个改动的两半；只做前半，换来的漏洞比原 bug 更难查——它在日志里长得像一个**合法**的失败。
+  3. **凭据的每一处比较键都要同口径。** rejected 集合、compare-and-set、缓存键、账号指纹——只要有一处走了正规化，被拒 token 的「记住」就会失效，而它的表现是「重登后又 401」，**看起来像平台问题**。这类不一致不会让任何单点测试变红，只能靠「全链一次改完 + 每处都留一条断言」。

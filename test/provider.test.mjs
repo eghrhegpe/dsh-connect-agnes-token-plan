@@ -1130,6 +1130,48 @@ const BASE_URL = "https://api.agnes-ai.cn/v1";
     check("an ordinary dotted identifier passes through",
       redactSecrets("module @deepseek-ai/dsh-llm is missing")
         === "module @deepseek-ai/dsh-llm is missing");
+    // A Basic pair. The old header rule skipped only `Bearer`, so
+    // `Authorization: Basic <base64>` came out as `authorization:
+    // [REDACTED] <base64>` — the credential itself survived. The scheme word
+    // is kept (it names WHICH credential leaked) and the value is replaced.
+    check("a Basic Authorization value is redacted whole, base64 included",
+      redactSecrets("Authorization: Basic dXNlcjpwYXNzd29yZA==") === "Authorization: Basic [REDACTED]"
+        && !redactSecrets("Authorization: Basic dXNlcjpwYXNzd29yZA==").includes("dXNlcjpwYXNz"),
+      redactSecrets("Authorization: Basic dXNlcjpwYXNzd29yZA=="));
+    // Cookie headers carry a session id under key names no `token` rule knows
+    // (`session`), so the whole value is swallowed rather than key-matched.
+    check("a Set-Cookie value is redacted whole",
+      redactSecrets("Set-Cookie: session=abc123def456; Path=/") === "Set-Cookie: [REDACTED]",
+      redactSecrets("Set-Cookie: session=abc123def456; Path=/"));
+    check("a Cookie value is redacted whole",
+      redactSecrets("Cookie: token=abc123def456") === "Cookie: [REDACTED]",
+      redactSecrets("Cookie: token=abc123def456"));
+    // An object logged as-is: the field name is known but the value is
+    // unquoted, which none of the quoted-pair rules reach.
+    check("an unquoted credential field inside an object literal is redacted",
+      redactSecrets("{ accessToken: hunter2xyz }") === "{ accessToken: [REDACTED] }"
+        && redactSecrets("{ password: hunter2xyz }") === "{ password: [REDACTED] }"
+        && redactSecrets("{ access_token: abcdef123456 }") === "{ access_token: [REDACTED] }",
+      redactSecrets("{ accessToken: hunter2xyz }"));
+    // Key names beyond the original five: OAuth bodies spell these too.
+    check("client_secret and code_verifier are known key names",
+      redactSecrets('{"client_secret":"abcdef123456"}') === '{"client_secret":"[REDACTED]"}'
+        && redactSecrets("code_verifier=abcdef123456") === "code_verifier=[REDACTED]",
+      redactSecrets('{"client_secret":"abcdef123456"}'));
+    // The widened rules must not eat prose or diagnostics: a bare `key: word`
+    // outside an object literal, and numeric/absent values, still read as they
+    // were written.
+    check("prose and diagnostic values survive the widened rules",
+      redactSecrets("the token: expired") === "the token: expired"
+        && redactSecrets("{ expiresIn: 3600 }") === "{ expiresIn: 3600 }"
+        && redactSecrets("{ retryAfter: 30 }") === "{ retryAfter: 30 }"
+        && redactSecrets("token: null") === "token: null",
+      JSON.stringify([
+        redactSecrets("the token: expired"),
+        redactSecrets("{ expiresIn: 3600 }"),
+        redactSecrets("{ retryAfter: 30 }"),
+        redactSecrets("token: null")
+      ]));
   } catch (error) {
     fail("redactSecrets strips credentials", error);
   }

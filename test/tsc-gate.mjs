@@ -30,9 +30,10 @@
  * only covers a bare clone.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -177,6 +178,111 @@ check(`${version} accepts tsconfig.json with no diagnostics`,
       JSON.stringify(globs));
   } else {
     check("tsconfig.json declares an include list", false, JSON.stringify(include));
+  }
+}
+
+// The two guards §60 switched on, checked the way §60's own lesson says to
+// check a switch: not "the tree still compiles" (0 errors was never the
+// point) but "does the switch catch the shape it is supposed to catch, and is
+// it doing work `strict` was not already doing?".
+//
+// The premise this replaces is the one that was WRONG in §60: "strict: true
+// already implies noImplicitReturns / noFallthroughCasesInSwitch". It does
+// not. `tsc --showConfig` expands `strict` to nine flags (alwaysStrict,
+// noImplicitThis, strictFunctionTypes, strictBindCallApply,
+// strictPropertyInitialization, strictBuiltinIteratorReturn, strictNullChecks,
+// useUnknownInCatchVariables, noImplicitAny) and neither of these two is
+// among them. So the proof has to be behavioural, not a claim in prose:
+//
+//   * a probe file that `strict` alone accepts WITHOUT complaint (a fallthrough
+//     switch, and a function whose `| undefined` return type has a path that
+//     returns nothing) — if `strict` really implied the two guards, this probe
+//     would already be red;
+//   * the SAME probe under the two guards, which must then report TS7029
+//     (fallthrough) and TS7030 (not all code paths return a value).
+//
+// The probe lives in a temp dir with its own self-contained tsconfig, because
+// a probe that EXTENDS the repo tsconfig cannot resolve `"types": ["node"]`
+// from outside the repo (TS2688) and would fail for an unrelated reason.
+{
+  const probeDir = mkdtempSync(join(tmpdir(), "dsh-tsc-probe-"));
+  try {
+    const probeSource = [
+      "export function pick(value: number): number {",
+      "  switch (value) {",
+      "    case 1:",
+      "      value = 2;",
+      "    case 2:",
+      "      return value;",
+      "    default:",
+      "      return 0;",
+      "  }",
+      "}",
+      "",
+      "export function maybe(value: number): number | undefined {",
+      "  if (value > 0) return 1;",
+      "}",
+      "",
+    ].join("\n");
+    const probeConfig = (extra) => JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        noEmit: true,
+        target: "ES2023",
+        module: "nodenext",
+        moduleResolution: "nodenext",
+        types: [],
+        skipLibCheck: true,
+        ...extra,
+      },
+      files: ["probe.ts"],
+    });
+    writeFileSync(join(probeDir, "probe.ts"), probeSource);
+    writeFileSync(join(probeDir, "strict-only.json"), probeConfig({}));
+    writeFileSync(join(probeDir, "guarded.json"), probeConfig({
+      noFallthroughCasesInSwitch: true,
+      noImplicitReturns: true,
+    }));
+
+    const strictOnly = run(["-p", join(probeDir, "strict-only.json")]);
+    const strictOutput = `${String(strictOnly.stdout ?? "")}${String(strictOnly.stderr ?? "")}`.trim();
+    check("strict alone does not imply noFallthroughCasesInSwitch / noImplicitReturns",
+      strictOnly.error === undefined && strictOnly.status === 0 &&
+        !strictOutput.includes("TS7029") && !strictOutput.includes("TS7030"),
+      strictOutput.slice(-2000) || String(strictOnly.error ?? ""));
+
+    const guarded = run(["-p", join(probeDir, "guarded.json")]);
+    const guardedOutput = `${String(guarded.stdout ?? "")}${String(guarded.stderr ?? "")}`.trim();
+    check("noFallthroughCasesInSwitch catches a fallthrough case (TS7029)",
+      guardedOutput.includes("TS7029"), guardedOutput.slice(-2000));
+    check("noImplicitReturns catches a path that returns nothing (TS7030)",
+      guardedOutput.includes("TS7030"), guardedOutput.slice(-2000));
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
+}
+
+// A guard on the guard: the flags must be ON in the EFFECTIVE config, not
+// merely mentioned in tsconfig's $comment. `--showConfig` resolves the real
+// compiler options, so this fails if someone deletes a flag from tsconfig
+// while the prose (and this gate) still claims it is there.
+{
+  const shown = run(["--showConfig", "-p", "tsconfig.json"]);
+  const text = String(shown.stdout ?? "");
+  /** @type {Record<string, unknown> | null} */
+  let options = null;
+  try {
+    options = JSON.parse(text)?.compilerOptions ?? null;
+  } catch (error) {
+    check("tsc --showConfig emits parsable JSON", false, String(error));
+  }
+  if (options !== null) {
+    check("the effective config keeps noFallthroughCasesInSwitch on",
+      options.noFallthroughCasesInSwitch === true, JSON.stringify(options.noFallthroughCasesInSwitch));
+    check("the effective config keeps noImplicitReturns on",
+      options.noImplicitReturns === true, JSON.stringify(options.noImplicitReturns));
+  } else {
+    check("tsc --showConfig reports the effective compiler options", false, text.slice(-2000));
   }
 }
 

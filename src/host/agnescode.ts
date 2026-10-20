@@ -38,7 +38,7 @@
 
 import { createDecipheriv } from "node:crypto";
 import { readJwtExpiry } from "./agnes-auth.ts";
-import { obj, num, numZeroOk, str } from "./util.ts";
+import { obj, num, numZeroOk, str, verbatim } from "./util.ts";
 
 /**
  * The AgnesCode BFF envelope contract, in one place.
@@ -221,8 +221,10 @@ export function trustAgnescodeBffBase(value: unknown) {
  */
 export function parseAgnescodeSession(raw: unknown) {
   const source = obj(raw);
-  const accessToken = str(source.accessToken, "");
-  if (accessToken === "") return null;
+  // Verbatim: this value is signed by the desktop app and is forwarded as-is;
+  // trimming it would silently alter a credential. The blank check trims.
+  const accessToken = verbatim(source.accessToken, "");
+  if (accessToken.trim() === "") return null;
   const bffBase = trustAgnescodeBffBase(source.bffPublicBaseUrl);
   // A missing/foreign base blocks the session rather than degrading to a
   // default: the base is per-account data, and a guess would aim the token
@@ -284,7 +286,7 @@ export function decodeAgnescodeJwtExpMs(token: string) {
 export function agnescodeHeaders(credential: any) {
   return {
     ...AGNESCODE_BASE_HEADERS,
-    Authorization: `Bearer ${str(obj(credential).accessToken, "")}`
+    Authorization: `Bearer ${verbatim(obj(credential).accessToken, "")}`
   };
 }
 
@@ -610,7 +612,7 @@ export async function harvestAgnescodeLocalSession(
       if (session === null) {
         attempts.push({
           file: filePath,
-          tier: str(obj(parsed).accessToken, "") === ""
+          tier: verbatim(obj(parsed).accessToken, "").trim() === ""
             ? AGNESCODE_HARVEST_TIER.NO_TOKEN
             : AGNESCODE_HARVEST_TIER.UNTRUSTED_BASE,
           detail: "the decrypted session lacks a usable token or a pinned Agnes base"

@@ -26,7 +26,7 @@ import { createHash } from "node:crypto";
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
-import { obj, redactSecrets, str } from "../util.ts";
+import { obj, redactSecrets, str, verbatim } from "../util.ts";
 import {
   fetchAgnescodeCatalog,
   fetchAgnescodeBalance,
@@ -107,7 +107,7 @@ function accountFingerprint(token: string) {
  */
 function agnescodeReadKey(kind: string, credential: unknown) {
   const source = obj(credential);
-  return `${AGNESCODE_CACHE_PREFIX}${kind}:${str(source.bffBase, "")}:${accountFingerprint(str(source.accessToken, ""))}`;
+  return `${AGNESCODE_CACHE_PREFIX}${kind}:${str(source.bffBase, "")}:${accountFingerprint(verbatim(source.accessToken, ""))}`;
 }
 
 /**

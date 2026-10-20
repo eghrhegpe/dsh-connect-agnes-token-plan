@@ -201,8 +201,16 @@ export function createTokenStore(options) {
      *   cached one.
      */
     invalidate(token) {
-      const refused = str(token, state.cached?.accessToken ?? "");
-      if (refused !== "") {
+      // The key must be the token EXACTLY as the grant parser reads it back
+      // (`verbatim` in token-store/grant.ts): `isFresh` looks the cached token
+      // up in this set, so a trimmed key never matches a padded token and the
+      // refusal is silently forgotten — the rejected token is then replayed
+      // once per call. A non-string or blank argument still falls back to the
+      // cached token, which is how the bare `invalidate()` call reads.
+      const refused = typeof token === "string" && token.trim() !== ""
+        ? token
+        : (state.cached?.accessToken ?? "");
+      if (refused.trim() !== "") {
         rejected.add(refused);
         // Bounded: only the most recent refusals can still be in play, since a
         // token that was superseded is never handed out again.

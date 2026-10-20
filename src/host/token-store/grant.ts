@@ -13,7 +13,7 @@
  */
 
 import { readJwtExpiry } from "../agnes-auth.ts";
-import { str, obj, num, numOrNull } from "../util.ts";
+import { str, obj, num, numOrNull, verbatim } from "../util.ts";
 
 /** Bumped if the stored payload shape ever changes incompatibly. */
 const GRANT_VERSION = 1;
@@ -31,8 +31,12 @@ export function parseGrant(record) {
   if (record === undefined || record === null || obj(record).kind !== "grant") return undefined;
   const payload = obj(obj(record).payload);
   if (num(payload.version) !== GRANT_VERSION) return undefined;
-  const accessToken = str(payload.accessToken, "");
-  if (accessToken === "") return undefined;
+  // Verbatim: this is the value the console signed. It is read back out of the
+  // store and replayed as a Bearer header, and it is also the key the rejected
+  // set and the compare-and-set below match on — trim it here and those keys
+  // stop agreeing with the value that actually travels.
+  const accessToken = verbatim(payload.accessToken, "");
+  if (accessToken.trim() === "") return undefined;
   return {
     accessToken,
     refreshToken: str(payload.refreshToken, ""),

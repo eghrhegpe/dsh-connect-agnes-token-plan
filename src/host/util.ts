@@ -67,6 +67,20 @@ export function str(value: unknown, fallback?: any): any {
 }
 
 /**
+ * Key names that carry a credential, shared by rules 4, 5 and 7 below.
+ *
+ * It is one constant on purpose. A name missing from this list is a hole
+ * nothing else can see: the value sails through as ordinary prose, and every
+ * test that does not spell out that exact name stays green. Three hand-copied
+ * lists would drift the moment one of them is extended.
+ *
+ * `access[_-]?token` covers `access_token`, `access-token` and — because these
+ * rules run case-insensitively — `accessToken`. `secret` and `client_secret`
+ * are listed separately: OAuth-shaped bodies spell them both ways.
+ */
+const SECRET_KEY = "password|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|code[_-]?verifier|token|secret";
+
+/**
  * Redact credential-shaped strings from any text that may reach a log, an
  * error message, or a panel-facing response.
  *
@@ -84,11 +98,16 @@ export function redactSecrets(text: string) {
   const raw = typeof text === "string" ? text : "";
   return (
     raw
-      // 1) Header values FIRST, so a whole `"authorization":"sk-..."` value is
-      //    consumed in one pass instead of leaving the token behind. The
-      //    `(?!Bearer\s)` skip keeps this from eating the word "Bearer" that
-      //    rule 2 leaves tagged.
-      .replace(/(["']?[Aa]uthorization["']?\s*[:=]\s*["']?)(?!Bearer\s)[^"',;\s]+/g, "$1[REDACTED]")
+      // 1) An `authorization` value. The scheme word is kept — it says WHICH
+      //    credential leaked and it is not itself the secret — while the value
+      //    behind it is replaced whole. The scheme has to be optional and
+      //    consumed HERE: the previous version merely skipped `Bearer`, so a
+      //    `Basic dXNlcjpwYXNz…` pair lost only the word `Basic`
+      //    (`authorization: [REDACTED] dXNlcjpwYXNz…`) and the base64 stood.
+      .replace(
+        /(["']?[Aa]uthorization["']?\s*[:=]\s*["']?)(?:(Bearer|Basic)\s+)?[^"',;\s]+/g,
+        (_matched: string, head: string, scheme: string | undefined) => `${head}${scheme === undefined ? "" : `${scheme} `}[REDACTED]`
+      )
       // 2) Bearer / Basic tokens.
       .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [REDACTED]")
       // 3) Bare Agnes inference keys, e.g. sk-a1b2c3... (free tier) or
@@ -106,10 +125,28 @@ export function redactSecrets(text: string) {
       //     value whose name it has not met yet, so the VALUE shape is
       //     matched here too.
       .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g, "[REDACTED]")
-      // 4) Known secret JSON pairs, quoted: {"api_key":"..."}.
-      .replace(/(["']?(?:password|access_token|refresh_token|api[_-]?key|token)["']?\s*:\s*["'])[^"']+(?=["'])/gi, "$1[REDACTED]")
+      // 4) Known secret pairs, quoted: {"api_key":"..."}. The quoted key is
+      //    optional because the same pair also arrives as `accessToken: '…'`
+      //    when a value has been through `util.inspect`.
+      .replace(new RegExp(`(["']?(?:${SECRET_KEY})["']?\\s*:\\s*["'])[^"']+(?=["'])`, "gi"), "$1[REDACTED]")
       // 5) Known secret key=value pairs.
-      .replace(/\b(password|access_token|refresh_token|api[_-]?key|token)\s*=\s*[^&;\s]+/gi, "$1=[REDACTED]")
+      .replace(new RegExp(`\\b(${SECRET_KEY})\\s*=\\s*[^&;\\s]+`, "gi"), "$1=[REDACTED]")
+      // 6) Cookie / Set-Cookie: the whole value, not only the key it happens to
+      //    name. `Cookie: token=…` carries a session id under a key name that a
+      //    `token` rule would have matched anyway — but
+      //    `Set-Cookie: session=…; Path=/` names nothing this list knows, and
+      //    it is a credential all the same.
+      .replace(/\b(Set-Cookie|Cookie)(\s*[:=]\s*)(["']?)[^"'\n]*\3/gi, "$1$2$3[REDACTED]$3")
+      // 7) A credential-named field inside an object literal with an UNQUOTED
+      //    value — `{ accessToken: hunter2xyz }`, which is how a logged-in
+      //    object reaches a message when it is stringified loosely. Anchored to
+      //    `{`/`,` so prose stays untouched (`the token: expired` never
+      //    matches), and null/true/false/undefined/numbers survive because they
+      //    are diagnostic facts rather than secrets.
+      .replace(
+        new RegExp(`([{,]\\s*)(${SECRET_KEY})(["']?\\s*:\\s*)(?!null\\b|true\\b|false\\b|undefined\\b|-?\\d)(?!["'])[^"',;\\s]{4,}`, "gi"),
+        "$1$2$3[REDACTED]"
+      )
   );
 }
 

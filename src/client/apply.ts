@@ -82,6 +82,15 @@ export function apply(ctx: ClientCtx): void {
       ) as () => void
     );
   } catch (error) {
+    // No `redactSecrets` here, on purpose. What this catches is the slot
+    // system's registration failure — built from this plugin's own registration
+    // data, with no upstream HTTP body anywhere on the path — so there is no
+    // credential in it to strip. The client half also cannot reach the Host's
+    // redaction helper (the two-halves boundary in `docs/ARCHITECTURE.md`, and
+    // `test/dup-gate.mjs` would flag a copied rule set), so the alternative is
+    // a second list that drifts from the first — the failure mode that let a
+    // `Basic` value stand in the Host's rules until 2026-10-20. Sister plugins
+    // warn the same way.
     console.warn(`[${NS}] config card registration failed:`, error);
   }
 
@@ -112,6 +121,8 @@ export function apply(ctx: ClientCtx): void {
       ) as () => void
     );
   } catch (error) {
+    // Same reasoning as the card's catch above: a registration failure, not an
+    // upstream body.
     console.warn(`[${NS}] composer pill registration failed:`, error);
   }
 

@@ -158,6 +158,14 @@ const GOOD_SESSION = {
       parseAgnescodeSession({ ...GOOD_SESSION, accessToken: "t", bffPublicBaseUrl: "https://evil.example.com/v1" }) === null);
     check("a session with no base parses as null (a guessed base aims the token wrong)",
       parseAgnescodeSession({ accessToken: "t" }) === null);
+    // The token is held verbatim: padding the desktop app wrote survives the
+    // parse, and a whitespace-only value is still "no token" rather than a
+    // padded Bearer header (the blank test trims on its own).
+    const padded = ` ${GOOD_SESSION.accessToken} `;
+    check("a padded session token parses verbatim, padding included",
+      parseAgnescodeSession({ ...GOOD_SESSION, accessToken: padded })?.accessToken === padded);
+    check("a whitespace-only session token is still 'no token'",
+      parseAgnescodeSession({ ...GOOD_SESSION, accessToken: "   " }) === null);
 
     check("the JWT exp decodes to milliseconds",
       Math.abs(decodeAgnescodeJwtExpMs(makeJwt(24)) - (Date.now() + 24 * 3600 * 1000)) < 5000);
@@ -643,6 +651,19 @@ const GOOD_SESSION = {
       round?.accessToken === credential.accessToken && round?.bffBase === credential.bffBase
       && typeof round?.expiresAtMs === "number",
       JSON.stringify(round === null ? null : { ...round, accessToken: "<len>" }));
+
+    // Verbatim persistence: a padded token must come back with its padding (a
+    // trim between two halves that never see each other is a silent credential
+    // rewrite), while a whitespace-only token is refused exactly like an empty
+    // one.
+    await store.save({ ...credential, accessToken: " abc.def.ghi " });
+    const paddedRound = parseAgnescodeCredential(saved[saved.length - 1].value);
+    check("a padded token persists and reads back verbatim",
+      paddedRound?.accessToken === " abc.def.ghi ",
+      JSON.stringify(paddedRound?.accessToken));
+    threw = "";
+    try { await store.save({ bffBase: credential.bffBase, accessToken: "   " }); } catch (why) { threw = why.message; }
+    check("a whitespace-only token is refused like a missing one", threw.includes("token"), threw);
 
     const resolved = await store.resolve();
     check("the service answer wins the precedence", resolved.source === "credentials" && resolved.credential !== null);

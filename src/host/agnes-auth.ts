@@ -33,7 +33,7 @@
  */
 
 import { CODE } from "./codes.ts";
-import { str, obj, num, pluginError, redactSecrets } from "./util.ts";
+import { str, obj, num, verbatim, pluginError, redactSecrets } from "./util.ts";
 
 /**
  * Shipped defaults for the login flow.
@@ -354,8 +354,12 @@ export async function loginWith(
     throw error;
   }
 
-  const accessToken = str(obj(obj(body).data).access_token, "");
-  if (accessToken === "") {
+  // `verbatim`, not `str`: this is a credential straight from the platform, and
+  // trimming it would be a change the user cannot see (util.ts `verbatim`). The
+  // blank check therefore trims on its own — a whitespace-only value is still
+  // "no token", and it must not be sent as if it were one.
+  const accessToken = verbatim(obj(obj(body).data).access_token, "");
+  if (accessToken.trim() === "") {
     // A 200 with no token is a contract break, not a refusal: say so plainly
     // instead of letting an empty Bearer header reach the console.
     trace.hop({ step: "login-contract-break", status: response.status });
@@ -376,8 +380,9 @@ export async function loginWith(
   trace.hop({
     step: "login-ok",
     status: response.status,
-    // Shape facts only. The token itself never enters the trace.
-    tokenLength: accessToken.length,
+    // Shape facts only. The token itself never enters the trace. The length is
+    // the credential's, not the padding's: `accessToken` is held verbatim.
+    tokenLength: accessToken.trim().length,
     tokenIsJwt: jwtExpiry !== null,
     expiresIn
   });

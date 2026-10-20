@@ -22,7 +22,7 @@
  * @module dsh-connect-agnes-token-plan/agnescode-store
  */
 
-import { obj, str } from "./util.ts";
+import { obj, str, verbatim } from "./util.ts";
 import { decodeAgnescodeJwtExpMs, trustAgnescodeBffBase } from "./agnescode.ts";
 
 /** The reference name the credential is stored under. */
@@ -44,9 +44,12 @@ export function parseAgnescodeCredential(value: unknown) {
     return null;
   }
   const source = obj(parsed);
-  const accessToken = str(source.access_token, "");
+  // Verbatim end to end: the token was captured from the desktop app's own
+  // session file and is replayed to the upstream unchanged, so a trim here
+  // would alter a credential between two places that never see each other.
+  const accessToken = verbatim(source.access_token, "");
   const bffBase = trustAgnescodeBffBase(source.bff_public_base_url);
-  if (accessToken === "" || bffBase === null) return null;
+  if (accessToken.trim() === "" || bffBase === null) return null;
   const expiresAtMs = decodeAgnescodeJwtExpMs(accessToken)
     ?? (typeof source.expires_at_ms === "number" ? source.expires_at_ms : undefined);
   return {
@@ -67,7 +70,7 @@ export function serializeAgnescodeCredential(credential: Record<string, unknown>
   const source = obj(credential);
   return JSON.stringify({
     version: 1,
-    access_token: str(source.accessToken, ""),
+    access_token: verbatim(source.accessToken, ""),
     bff_public_base_url: str(source.bffBase, ""),
     ...(str(source.userId, "") !== "" ? { user_id: source.userId } : {}),
     ...(str(source.nickname, "") !== "" ? { nickname: source.nickname } : {}),
@@ -109,9 +112,9 @@ export function createAgnescodeStore({ credentials = null }: { credentials?: (()
      * @param {object} credential - `{ accessToken, bffBase, userId?, nickname?, expiresAtMs? }`.
      */
     async save(credential: Record<string, unknown>) {
-      const accessToken = str(credential?.accessToken, "");
+      const accessToken = verbatim(credential?.accessToken, "");
       const bffBase = trustAgnescodeBffBase(credential?.bffBase);
-      if (accessToken === "") throw new Error("an AgnesCode access token is required");
+      if (accessToken.trim() === "") throw new Error("an AgnesCode access token is required");
       if (bffBase === null) throw new Error("an AgnesCode BFF base is required");
       await storeNow({ ...credential, bffBase });
     },

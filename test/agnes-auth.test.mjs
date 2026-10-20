@@ -236,6 +236,38 @@ function jwtWithExp(expSeconds) {
   } catch (error) { fail("6: refusal codes", error); restore(); }
 }
 
+// --- 6b. the token is held verbatim, blank is still blank -----------------
+// A platform-issued token is a credential, so `str()` (which trims) must not be
+// what carries it: padding would be a silent rewrite of the value that travels
+// as a Bearer header and is compared against the rejected set. The blank check
+// trims by itself, so "   " is still "no token".
+{
+  try {
+    const exp = Math.floor(Date.now() / 1000) + 7200;
+    const padded = ` ${jwtWithExp(exp)} `;
+    const traces = [];
+    stubFetch({ status: 200, body: JSON.stringify({ code: 200, data: { access_token: padded } }) });
+    const out = await loginWith(CFG, ACCOUNT, { onTrace: (trace, error) => traces.push({ trace, error }) });
+    restore();
+    check("a padded access token is returned verbatim, padding included",
+      out.accessToken === padded, JSON.stringify(out.accessToken));
+    check("the trace's tokenLength is the credential's, not the padding's",
+      traces[0]?.trace?.at?.(-1)?.tokenLength === padded.trim().length,
+      String(traces[0]?.trace?.at?.(-1)?.tokenLength));
+
+    stubFetch({ status: 200, body: JSON.stringify({ code: 200, data: { access_token: "   " } }) });
+    let blankErr = null;
+    try {
+      await loginWith(CFG, ACCOUNT, {});
+    } catch (error) {
+      blankErr = error;
+    }
+    restore();
+    check("a whitespace-only access_token is a contract break, not a padded Bearer",
+      blankErr?.code === CODE.LOGIN_FAILED, String(blankErr?.code));
+  } catch (error) { fail("6b: verbatim token", error); restore(); }
+}
+
 // --- 7. missing credentials, and the failure trace ------------------------
 {
   try {
