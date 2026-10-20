@@ -241,7 +241,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.notLogged": "未关联——请先在 AgnesCode 桌面端登录（微信扫码），再点「检测本机登录态」。",
 			"agnescode.harvestWindowsOnly": "本机登录态采集目前仅支持 Windows（macOS / Linux 未实现）。",
 			"agnescode.login": "扫码登录",
-			"agnescode.loggingIn": "正在等待扫码…（浏览器已打开）",
+			"agnescode.cancelLogin": "取消等待",
+			"agnescode.loginCancelled": "已取消等待。若已在 App 中完成扫码，登录仍会在后台完成并生效。",
 			"agnescode.loginOk": "扫码登录成功。",
 			"agnescode.loginFail": "扫码登录失败：{error}",
 			"agnescode.loginHint": "无需桌面 App——浏览器打开登录页，用 AgnesCode App 扫码即可（macOS / Linux 可用）。",
@@ -500,7 +501,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
 			"agnescode.harvestWindowsOnly": "Local login-state detection currently supports Windows only (macOS / Linux not implemented).",
 			"agnescode.login": "Scan-to-sign-in",
-			"agnescode.loggingIn": "Waiting for the scan… (browser opened)",
+			"agnescode.cancelLogin": "Cancel waiting",
+			"agnescode.loginCancelled": "Waiting cancelled. If the scan was completed, the login still finishes in the background.",
 			"agnescode.loginOk": "Scan-to-sign-in succeeded.",
 			"agnescode.loginFail": "Scan-to-sign-in failed: {error}",
 			"agnescode.loginHint": "No desktop App needed — the browser opens the login page for the AgnesCode App to scan (works on macOS / Linux).",
@@ -651,7 +653,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 //#endregion
 //#region src/client/http.ts
 /** One POST with the panel's fixed request shape; the parsed body or null. */
-	async function postRaw(path, payload) {
+	async function postRaw(path, payload, signal) {
 		const response = await fetch(path, {
 			method: "POST",
 			headers: {
@@ -659,7 +661,8 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				accept: "application/json"
 			},
 			cache: "no-store",
-			body: JSON.stringify(payload)
+			body: JSON.stringify(payload),
+			...signal !== void 0 ? { signal } : {}
 		});
 		const body = await response.json().catch(() => null);
 		return {
@@ -668,12 +671,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		};
 	}
 	/** POST and return the parsed body, or null when the response is not JSON. */
-	function postJson(path, payload) {
-		return postRaw(path, payload).then(({ body }) => body);
+	function postJson(path, payload, signal) {
+		return postRaw(path, payload, signal).then(({ body }) => body);
 	}
 	/** POST and demand `ok:true`; refuse by throwing the Host's own wording. */
-	async function postJsonOrThrow(path, payload) {
-		const { status, body } = await postRaw(path, payload);
+	async function postJsonOrThrow(path, payload, signal) {
+		const { status, body } = await postRaw(path, payload, signal);
 		if (body === null || body.ok !== true) throw new Error(typeof body?.error === "string" ? body.error : `HTTP ${status}`);
 		return body;
 	}
@@ -3639,6 +3642,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const alive = useRef(true);
 		const generation = useRef(0);
 		const inFlight = useRef(null);
+		const loginAbort = useRef(null);
 		const load = useCallback(async () => {
 			generation.current += 1;
 			const mine = generation.current;
@@ -3762,10 +3766,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}
 		}, []);
 		const login = useCallback(async () => {
+			const controller = new AbortController();
+			loginAbort.current = controller;
 			setLoginBusy(true);
 			setNote(null);
 			try {
-				const body = await postJson(AGNESCODE_PATH, { action: "login" });
+				const body = await postJson(AGNESCODE_PATH, { action: "login" }, controller.signal);
 				if (alive.current) {
 					retireInFlight();
 					if (body !== null) setState(body);
@@ -3773,11 +3779,19 @@ var dsh_connect_agnes_token_plan_client = (function() {
 					else setNote(format(tt("agnescode.loginFail"), { error: typeof body?.error === "string" && body.error !== "" ? body.error : tt("agnescode.loadErrorDetail") }));
 				}
 			} catch (why) {
-				if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
+				if (alive.current) {
+					if (loginAbort.current === controller && controller.signal.aborted) setNote(tt("agnescode.loginCancelled"));
+					else setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
+				}
 			} finally {
+				if (loginAbort.current === controller) loginAbort.current = null;
 				if (alive.current) setLoginBusy(false);
 			}
 		}, [tt]);
+		const cancelLogin = useCallback(() => {
+			loginAbort.current?.abort();
+			if (alive.current) setLoginBusy(false);
+		}, []);
 		const loginDisabled = harvestBusy || loginBusy;
 		const enabled = state?.enabled === true;
 		const view = agnescodeView(state, error);
@@ -3812,9 +3826,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")), h("button", {
 			type: "button",
 			style: S.button,
-			onClick: () => void login(),
-			disabled: loginDisabled
-		}, loginBusy ? tt("agnescode.loggingIn") : tt("agnescode.login"))), state?.bffBase !== void 0 && state?.bffBase !== "" || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("div", null, h("div", { style: {
+			onClick: () => void (loginBusy ? cancelLogin() : login()),
+			disabled: !loginBusy && loginDisabled
+		}, loginBusy ? tt("agnescode.cancelLogin") : tt("agnescode.login"))), state?.bffBase !== void 0 && state?.bffBase !== "" || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("div", null, h("div", { style: {
 			...S.quotaFoot,
 			marginTop: 8,
 			color: "var(--dsw-alias-label-secondary)"
@@ -3846,9 +3860,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")), h("button", {
 			type: "button",
 			style: S.button,
-			onClick: () => void login(),
-			disabled: loginDisabled
-		}, loginBusy ? tt("agnescode.loggingIn") : tt("agnescode.login"))), h("div", { style: {
+			onClick: () => void (loginBusy ? cancelLogin() : login()),
+			disabled: !loginBusy && loginDisabled
+		}, loginBusy ? tt("agnescode.cancelLogin") : tt("agnescode.login"))), h("div", { style: {
 			...S.muted,
 			fontSize: 12,
 			marginTop: 6

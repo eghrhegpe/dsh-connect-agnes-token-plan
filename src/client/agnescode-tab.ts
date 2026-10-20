@@ -250,6 +250,13 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   // abort cancels the superseded one instead of leaving it on the wire.
   const generation = useRef(0);
   const inFlight = useRef<{ abort?: () => void } | null>(null);
+  // The AbortController behind the login button's "cancel" escape: a scan can
+  // run the full callback timeout, and a user who started it by accident must
+  // not be locked into it for minutes (the only other way out was reloading
+  // the whole panel). Aborting stops the CLIENT's wait; the Host's device flow
+  // keeps running and still persists a credential if the scan completes —
+  // cancelling the wait is not cancelling the login.
+  const loginAbort = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     generation.current += 1;
@@ -435,10 +442,12 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   // `ok:false` WITH the Host's error text (domain / exchange / callback
   // timeout), and the throw face would reduce it to a bare HTTP status.
   const login = useCallback(async () => {
+    const controller = new AbortController();
+    loginAbort.current = controller;
     setLoginBusy(true);
     setNote(null);
     try {
-      const body = await postJson(AGNESCODE_PATH, { action: "login" });
+      const body = await postJson(AGNESCODE_PATH, { action: "login" }, controller.signal);
       if (alive.current) {
         retireInFlight();
         if (body !== null) setState(body as unknown as AgnescodeState);
@@ -451,11 +460,25 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
         }
       }
     } catch (why) {
-      if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
+      if (alive.current) {
+        // A user-initiated abort is a deliberate stop, not a failure — say so
+        // instead of showing the fetch's AbortError as an error.
+        if (loginAbort.current === controller && controller.signal.aborted) {
+          setNote(tt("agnescode.loginCancelled"));
+        } else {
+          setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
+        }
+      }
     } finally {
+      if (loginAbort.current === controller) loginAbort.current = null;
       if (alive.current) setLoginBusy(false);
     }
   }, [tt]);
+
+  const cancelLogin = useCallback(() => {
+    loginAbort.current?.abort();
+    if (alive.current) setLoginBusy(false);
+  }, []);
 
   const loginDisabled = harvestBusy || loginBusy;
 
@@ -520,8 +543,14 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                   h("span", { style: S.spacer }),
                   h("button", { type: "button", style: S.button, onClick: () => void harvest(), disabled: loginDisabled },
                     harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")),
-                  h("button", { type: "button", style: S.button, onClick: () => void login(), disabled: loginDisabled },
-                    loginBusy ? tt("agnescode.loggingIn") : tt("agnescode.login"))
+                  h("button", {
+                    type: "button",
+                    style: S.button,
+                    onClick: () => void (loginBusy ? cancelLogin() : login()),
+                    // The cancel escape stays clickable while a login runs —
+                    // only the OTHER button (harvest) is disabled by the login.
+                    disabled: !loginBusy && loginDisabled
+                  }, loginBusy ? tt("agnescode.cancelLogin") : tt("agnescode.login"))
                   // NO logout button. The old one did two things the other
                   // controls already do: `harvest` overwrites the stored JWT
                   // from the desktop App (so a stale credential is refreshed,
@@ -604,9 +633,9 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                   h("button", {
                     type: "button",
                     style: S.button,
-                    onClick: () => void login(),
-                    disabled: loginDisabled
-                  }, loginBusy ? tt("agnescode.loggingIn") : tt("agnescode.login"))
+                    onClick: () => void (loginBusy ? cancelLogin() : login()),
+                    disabled: !loginBusy && loginDisabled
+                  }, loginBusy ? tt("agnescode.cancelLogin") : tt("agnescode.login"))
                 ),
                 // The Windows-only boundary, stated BEFORE the click: the
                 // harvest's own tier rows say it too (`unsupported_platform`),

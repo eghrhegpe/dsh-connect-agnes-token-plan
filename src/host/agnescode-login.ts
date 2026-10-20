@@ -77,6 +77,31 @@ export type AgnescodeLoginOptions = {
   domain?: DomainKey;
   onTrace?: (trace: object[], error: unknown) => void;
   logger?: { warn?: (message: string, ...rest: unknown[]) => void };
+  /**
+   * Test seams: injected pipeline steps. Present only so the offline login
+   * suite can drive the FULL orchestrator without spawning a browser or
+   * touching the network — the unit-level tests cover the steps in
+   * isolation, this injects them for the assembly. Production callers never
+   * pass it.
+   */
+  steps?: {
+    listen?: () => Promise<Server>;
+    openExternal?: (url: string) => Promise<string | null>;
+    waitForCallback?: (
+      server: Server,
+      state: string,
+      origin: string,
+      trace: { hop(entry: object): void }
+    ) => Promise<string>;
+    exchangeCodeForToken?: (
+      code: string,
+      redirectUri: string,
+      state: string,
+      bffBase: string,
+      origin: string,
+      trace: { hop(entry: object): void }
+    ) => Promise<string>;
+  };
 };
 
 /**
@@ -97,6 +122,11 @@ export type AgnescodeLoginOptions = {
 export async function startAgnescodeLogin(options: AgnescodeLoginOptions = {}): Promise<AgnescodeLoginResult> {
   const domain = options.domain ?? "cn";
   const cfg = DOMAINS[domain];
+  const steps = options.steps ?? {};
+  const listen = steps.listen ?? listenOnRandomPort;
+  const openExternalStep = steps.openExternal ?? openExternal;
+  const waitForCallbackStep = steps.waitForCallback ?? waitForCallback;
+  const exchangeStep = steps.exchangeCodeForToken ?? exchangeCodeForToken;
   const hops: object[] = [];
   const trace = {
     hop(entry: object) { hops.push(entry); },
@@ -110,19 +140,19 @@ export async function startAgnescodeLogin(options: AgnescodeLoginOptions = {}): 
 
   let server: Server | null = null;
   try {
-    server = await listenOnRandomPort();
+    server = await listen();
     const addr = server.address();
     if (addr === null || typeof addr === "string") throw new Error("the login server could not bind a port");
     const redirectUri = `http://127.0.0.1:${addr.port}${CB_PATH}`;
     const loginUrl = `${cfg.loginUrl}?client=${CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
 
     trace.hop({ step: "open-external", domain });
-    const spawnErr = await openExternal(loginUrl);
+    const spawnErr = await openExternalStep(loginUrl);
     if (spawnErr !== null) throw new Error(spawnErr);
 
     trace.hop({ step: "wait-callback", timeoutMs: CB_TIMEOUT_MS });
     const code = await withTimeout(
-      waitForCallback(server, state, cfg.origin, trace),
+      waitForCallbackStep(server, state, cfg.origin, trace),
       CB_TIMEOUT_MS,
       "the login page did not POST back within the timeout"
     );
@@ -132,7 +162,7 @@ export async function startAgnescodeLogin(options: AgnescodeLoginOptions = {}): 
 
     trace.hop({ step: "exchange-code", bffBase });
     const token = await withTimeout(
-      exchangeCodeForToken(code, redirectUri, state, bffBase, cfg.origin, trace),
+      exchangeStep(code, redirectUri, state, bffBase, cfg.origin, trace),
       EXCHANGE_TIMEOUT_MS,
       "the code exchange timed out"
     );
@@ -278,7 +308,12 @@ export async function exchangeCodeForToken(
   const codeStr = str(body.code, "");
   if (response.status !== 200 || (codeStr !== "000000" && codeStr !== "0")) {
     trace.hop({ step: "exchange-failed", status: response.status, code: codeStr });
-    throw new Error(`code exchange failed (${codeStr})`);
+    // The BFF answers a human-readable `message` ("Authorization code is
+    // invalid") next to the numeric `code` — the reader deserves that wording,
+    // not a bare machine code. Kept out of the trace: the message is the BFF's
+    // own text and may echo user input.
+    const message = str(body.message, "");
+    throw new Error(message !== "" ? `code exchange failed: ${message}` : `code exchange failed (${codeStr})`);
   }
   const data = obj(body.data ?? {});
   const token = str(data.access_token, "");

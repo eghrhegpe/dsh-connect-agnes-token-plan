@@ -19,19 +19,27 @@
  * - `openExternal`: a bogus `command` (the test seam) proves the ENOENT path
  *   fails fast instead of waiting out the callback timeout.
  * - `withTimeout`: both arms.
- *
- * `startAgnescodeLogin` itself is NOT exercised here: it spawns the system
- * browser, which the offline suite must not do (and whose open is covered by
- * the `openExternal` seam above).
+ * - `startAgnescodeLogin`: the FULL orchestrator, driven with injected steps
+ *   (`options.steps`) so no browser is spawned and no network is touched. The
+ *   seam is production-invisible — only the suite passes it — and covers the
+ *   assembly the unit-level checks cannot: listen → open → wait → exchange →
+ *   finish, the happy path, the spawn-error path, and the callback-timeout path
+ *   (each verifying the sanitized trace reaches `onTrace`). The real
+ *   `writeLoginTrace` still writes to disk, so this section points `DSH_HOME`
+ *   at a throwaway directory.
  */
 import {
   waitForCallback,
   exchangeCodeForToken,
   openExternal,
-  withTimeout
+  withTimeout,
+  startAgnescodeLogin
 } from "../src/host/agnescode-login.ts";
 import { installNetworkGuard } from "./peer-roots.mjs";
 import { createServer, request as httpRequest } from "node:http";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
@@ -252,8 +260,8 @@ async function withCallbackServer(fn, { state = "the-state", origin = "https://a
     const restore = stubFetch(async () => ({ status: 200, json: async () => ({ code: "010006", message: "Authorization code is invalid" }) }));
     try {
       const text = await rejectionText(exchangeCodeForToken("c", "u", "s", "https://api-agnes-code.agnes-ai.cn", "https://app.agnes-ai.cn", { hop() {} }));
-      check("a business-level failure (010006) throws with the code",
-        text === "code exchange failed (010006)", String(text));
+      check("a business-level failure throws the BFF's human-readable message",
+        text === "code exchange failed: Authorization code is invalid", String(text));
     } finally {
       restore();
     }
@@ -315,6 +323,76 @@ async function withCallbackServer(fn, { state = "the-state", origin = "https://a
     check("a fast promise passes through untouched", value === 42, String(value));
   } catch (error) {
     fail("withTimeout", error);
+  }
+}
+
+// --- 5. startAgnescodeLogin: the full orchestrator, all steps injected ---------
+{
+  section("startAgnescodeLogin (orchestrator, injected steps)");
+  // `finish` writes a real trace through `writeLoginTrace`; point DSH_HOME at a
+  // throwaway dir so the suite never touches the host's logs. Restored after.
+  const priorHome = process.env.DSH_HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), "agnescode-login-"));
+  process.env.DSH_HOME = fakeHome;
+  try {
+    const stubServer = { address: () => ({ port: 43210 }), close() {} };
+    const steps = (overrides = {}) => ({
+      listen: async () => stubServer,
+      openExternal: async () => null,
+      waitForCallback: async () => "the-code",
+      exchangeCodeForToken: async () => "the-token",
+      ...overrides
+    });
+
+    const okTrace = [];
+    const okResult = await startAgnescodeLogin({
+      steps: steps(),
+      onTrace: (hops, error) => { okTrace.push({ hops, error }); }
+    });
+    check("the happy path returns the exchanged token", okResult.accessToken === "the-token", String(okResult.accessToken));
+    check("the happy path returns a trusted BFF base", okResult.bffBase.startsWith("https://"), String(okResult.bffBase));
+    check("the happy path finishes with a login-ok hop", okTrace.length === 1 && okTrace[0].error === undefined &&
+      okTrace[0].hops.some((hop) => hop.step === "login-ok"), JSON.stringify(okTrace));
+
+    const spawnErrTrace = [];
+    let spawnErrText = null;
+    try {
+      await startAgnescodeLogin({
+        steps: steps({ openExternal: async () => "failed to open browser: ENOENT" }),
+        onTrace: (hops, error) => { spawnErrTrace.push({ hops, error }); }
+      });
+    } catch (error) {
+      spawnErrText = String(error?.message ?? error);
+    }
+    check("a failed openExternal aborts the flow (no callback wait)",
+      spawnErrText !== null && spawnErrText.startsWith("failed to open browser"), String(spawnErrText));
+    check("the spawn-error path still reports a trace with an error",
+      spawnErrTrace.length === 1 && spawnErrTrace[0].error !== undefined &&
+        spawnErrTrace[0].hops.some((hop) => hop.step === "open-external"), JSON.stringify(spawnErrTrace));
+
+    const timeoutTrace = [];
+    let timeoutText = null;
+    try {
+      // A rejecting callback (e.g. a bad CSRF state) fails the flow immediately;
+      // a never-settling page would need the full 3-minute callback timeout, which
+      // this offline suite must not wait out — rejection exercises the same
+      // finish-with-error assembly path.
+      await startAgnescodeLogin({
+        steps: steps({ waitForCallback: async () => { throw new Error("bad state"); } }),
+        onTrace: (hops, error) => { timeoutTrace.push({ hops, error }); }
+      });
+    } catch (error) {
+      timeoutText = String(error?.message ?? error);
+    }
+    check("a rejecting callback page fails the flow with its reason",
+      timeoutText === "bad state", String(timeoutText));
+    check("the callback-failure path still reports a trace with an error",
+      timeoutTrace.length === 1 && timeoutTrace[0].error !== undefined, JSON.stringify(timeoutTrace));
+  } catch (error) {
+    fail("startAgnescodeLogin (orchestrator)", error);
+  } finally {
+    process.env.DSH_HOME = priorHome;
+    await rm(fakeHome, { recursive: true, force: true });
   }
 }
 

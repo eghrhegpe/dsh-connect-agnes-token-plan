@@ -561,7 +561,12 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
 
       // ── login: scan-to-login device flow (ROADMAP §6.3) ──
       // Single-flighted like harvest: a double-click joins the first login
-      // instead of opening two browser windows and leaking a server.
+      // instead of opening two browser windows and leaking a server. The
+      // panel's "cancel waiting" button only aborts its OWN fetch — this
+      // branch never sees it, and the flow runs on: if the scan completed, the
+      // credential is still persisted (cancelling the wait is not cancelling
+      // the login), and a cancelled-then-reclicked login simply joins this
+      // flight, which is the same double-click semantics.
       if (action === "login") {
         if (agnescodeStore === null || agnescodeStore === undefined) {
           await answer({ ok: false, error: "the agnescode credential store is unavailable" });

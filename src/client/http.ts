@@ -35,25 +35,30 @@ export interface ApiBody {
 }
 
 /** One POST with the panel's fixed request shape; the parsed body or null. */
-async function postRaw(path: string, payload: Record<string, unknown>): Promise<{ status: number; body: ApiBody | null }> {
+async function postRaw(
+  path: string,
+  payload: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<{ status: number; body: ApiBody | null }> {
   const response = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     cache: "no-store",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    ...(signal !== undefined ? { signal } : {})
   });
   const body = await response.json().catch(() => null) as ApiBody | null;
   return { status: response.status, body };
 }
 
 /** POST and return the parsed body, or null when the response is not JSON. */
-export function postJson(path: string, payload: Record<string, unknown>): Promise<ApiBody | null> {
-  return postRaw(path, payload).then(({ body }) => body);
+export function postJson(path: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<ApiBody | null> {
+  return postRaw(path, payload, signal).then(({ body }) => body);
 }
 
 /** POST and demand `ok:true`; refuse by throwing the Host's own wording. */
-export async function postJsonOrThrow(path: string, payload: Record<string, unknown>): Promise<ApiBody> {
-  const { status, body } = await postRaw(path, payload);
+export async function postJsonOrThrow(path: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<ApiBody> {
+  const { status, body } = await postRaw(path, payload, signal);
   if (body === null || body.ok !== true) {
     throw new Error(typeof body?.error === "string" ? body.error : `HTTP ${status}`);
   }

@@ -41,6 +41,7 @@ const PROVIDER_PATH = "/api/dsh-connect-agnes-token-plan/provider";
 const MODELS_PATH = "/api/dsh-connect-agnes-token-plan/models";
 const DRAW_PATH = "/api/dsh-connect-agnes-token-plan/draw";
 const VIDEO_PATH = "/api/dsh-connect-agnes-token-plan/video";
+const AGNESCODE_PATH = "/api/dsh-connect-agnes-token-plan/agnescode";
 const RECORD_KEY = credentialKey("dsh-connect-agnes-token-plan", "agnes-console");
 
 // Agnes answers every backend route in one `{code, message, data}` envelope,
@@ -1793,6 +1794,27 @@ async function withNetwork(stub, body) {
     check("T the two routes keep their own defaults rather than one shared one",
       readDefault.statusCode === 200 && writeDefault.statusCode === 400);
   } catch (error) { fail("T: the methodless fallback", error); }
+}
+
+// === the agnescode route: the scan-to-login branch's pre-flight guards =====
+// The full device flow (`login`) spawns a system browser, so the route layer
+// can only exercise the REFUSALS that happen before the flow starts: a
+// non-whitelisted `domain` and an unknown action. The happy path of the flow
+// itself lives in `agnescode-login.test.mjs` (steps injected); this pins the
+// route wiring in front of it — a bad domain must never reach
+// `startAgnescodeLogin`.
+{
+  const call = await mount(null);
+  const badDomain = await call(AGNESCODE_PATH, makePost({ action: "login", domain: "bogus" }));
+  check("a login with a non-whitelisted domain is refused before the flow starts",
+    badDomain.statusCode === 200 && badDomain.payload?.ok === false &&
+      badDomain.payload?.error === "domain must be 'cn' or 'intl'",
+    JSON.stringify(badDomain.payload));
+  const unknown = await call(AGNESCODE_PATH, makePost({ action: "nope" }));
+  check("an unknown agnescode action is a 400 naming the allowed set",
+    unknown.statusCode === 400 && typeof unknown.payload?.error === "string" &&
+      unknown.payload.error.includes("switch") && unknown.payload.error.includes("login"),
+    JSON.stringify(unknown.payload));
 }
 
 // The Host routes are exercised against a stubbed console; nothing here may

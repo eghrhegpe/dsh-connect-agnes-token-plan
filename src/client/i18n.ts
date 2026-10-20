@@ -237,7 +237,8 @@ export const zh = {
   // the harvest's Windows-only caption, so the two buttons read as one decision
   // ("sign in") with two mechanisms.
   "agnescode.login": "扫码登录",
-  "agnescode.loggingIn": "正在等待扫码…（浏览器已打开）",
+  "agnescode.cancelLogin": "取消等待",
+  "agnescode.loginCancelled": "已取消等待。若已在 App 中完成扫码，登录仍会在后台完成并生效。",
   "agnescode.loginOk": "扫码登录成功。",
   "agnescode.loginFail": "扫码登录失败：{error}",
   "agnescode.loginHint": "无需桌面 App——浏览器打开登录页，用 AgnesCode App 扫码即可（macOS / Linux 可用）。",
@@ -538,7 +539,8 @@ export const en: typeof zh = {
   // See the zh keys for why the scan-to-sign-in button is the cross-platform
   // path and why it sits beside the Windows-only harvest caption.
   "agnescode.login": "Scan-to-sign-in",
-  "agnescode.loggingIn": "Waiting for the scan… (browser opened)",
+  "agnescode.cancelLogin": "Cancel waiting",
+  "agnescode.loginCancelled": "Waiting cancelled. If the scan was completed, the login still finishes in the background.",
   "agnescode.loginOk": "Scan-to-sign-in succeeded.",
   "agnescode.loginFail": "Scan-to-sign-in failed: {error}",
   "agnescode.loginHint": "No desktop App needed — the browser opens the login page for the AgnesCode App to scan (works on macOS / Linux).",
