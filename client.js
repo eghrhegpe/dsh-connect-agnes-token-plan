@@ -240,6 +240,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.bffBase": "接口地址 {base}",
 			"agnescode.notLogged": "未关联——请先在 AgnesCode 桌面端登录（微信扫码），再点「检测本机登录态」。",
 			"agnescode.harvestWindowsOnly": "本机登录态采集目前仅支持 Windows（macOS / Linux 未实现）。",
+			"agnescode.login": "扫码登录",
+			"agnescode.loggingIn": "正在等待扫码…（浏览器已打开）",
+			"agnescode.loginOk": "扫码登录成功。",
+			"agnescode.loginFail": "扫码登录失败：{error}",
+			"agnescode.loginHint": "无需桌面 App——浏览器打开登录页，用 AgnesCode App 扫码即可（macOS / Linux 可用）。",
 			"agnescode.downloadCta": "下载 AgnesCode 桌面客户端，领取限时积分 →",
 			"agnescode.balanceLabel": "积分余额",
 			"agnescode.balanceTimeLabel": "时效",
@@ -494,6 +499,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.bffBase": "API base {base}",
 			"agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
 			"agnescode.harvestWindowsOnly": "Local login-state detection currently supports Windows only (macOS / Linux not implemented).",
+			"agnescode.login": "Scan-to-sign-in",
+			"agnescode.loggingIn": "Waiting for the scan… (browser opened)",
+			"agnescode.loginOk": "Scan-to-sign-in succeeded.",
+			"agnescode.loginFail": "Scan-to-sign-in failed: {error}",
+			"agnescode.loginHint": "No desktop App needed — the browser opens the login page for the AgnesCode App to scan (works on macOS / Linux).",
 			"agnescode.downloadCta": "Download the AgnesCode desktop client and claim your limited-time credits →",
 			"agnescode.balanceLabel": "Credit balance",
 			"agnescode.balanceTimeLabel": "Time-limited",
@@ -3624,6 +3634,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const [error, setError] = useState(null);
 		const [updatedAt, setUpdatedAt] = useState(0);
 		const [harvestBusy, setHarvestBusy] = useState(false);
+		const [loginBusy, setLoginBusy] = useState(false);
 		const [note, setNote] = useState(null);
 		const alive = useRef(true);
 		const generation = useRef(0);
@@ -3750,6 +3761,24 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				setState(body);
 			}
 		}, []);
+		const login = useCallback(async () => {
+			setLoginBusy(true);
+			setNote(null);
+			try {
+				const body = await postJson(AGNESCODE_PATH, { action: "login" });
+				if (alive.current) {
+					retireInFlight();
+					if (body !== null) setState(body);
+					if (body?.ok === true) setNote(tt("agnescode.loginOk"));
+					else setNote(format(tt("agnescode.loginFail"), { error: typeof body?.error === "string" && body.error !== "" ? body.error : tt("agnescode.loadErrorDetail") }));
+				}
+			} catch (why) {
+				if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
+			} finally {
+				if (alive.current) setLoginBusy(false);
+			}
+		}, [tt]);
+		const loginDisabled = harvestBusy || loginBusy;
 		const enabled = state?.enabled === true;
 		const view = agnescodeView(state, error);
 		const loggedIn = view.linked;
@@ -3779,8 +3808,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			type: "button",
 			style: S.button,
 			onClick: () => void harvest(),
-			disabled: harvestBusy
-		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))), state?.bffBase !== void 0 && state?.bffBase !== "" || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("div", null, h("div", { style: {
+			disabled: loginDisabled
+		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")), h("button", {
+			type: "button",
+			style: S.button,
+			onClick: () => void login(),
+			disabled: loginDisabled
+		}, loginBusy ? tt("agnescode.loggingIn") : tt("agnescode.login"))), state?.bffBase !== void 0 && state?.bffBase !== "" || typeof state?.expiresAtMs === "number" && state.expiresAtMs > 0 ? h("div", null, h("div", { style: {
 			...S.quotaFoot,
 			marginTop: 8,
 			color: "var(--dsw-alias-label-secondary)"
@@ -3808,14 +3842,23 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			type: "button",
 			style: S.button,
 			onClick: () => void harvest(),
-			disabled: harvestBusy
-		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))), h("div", { style: {
+			disabled: loginDisabled
+		}, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")), h("button", {
+			type: "button",
+			style: S.button,
+			onClick: () => void login(),
+			disabled: loginDisabled
+		}, loginBusy ? tt("agnescode.loggingIn") : tt("agnescode.login"))), h("div", { style: {
 			...S.muted,
 			fontSize: 12,
 			marginTop: 6
-		} }, tt("agnescode.harvestWindowsOnly"))), h(Switch, {
+		} }, tt("agnescode.harvestWindowsOnly")), h("div", { style: {
+			...S.muted,
+			fontSize: 12,
+			marginTop: 2
+		} }, tt("agnescode.loginHint"))), h(Switch, {
 			checked: enabled,
-			disabled: harvestBusy,
+			disabled: loginDisabled,
 			onChange: () => void toggle(!enabled),
 			label: tt("agnescode.switch"),
 			title: tt("agnescode.switchTip"),

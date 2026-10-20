@@ -6,7 +6,9 @@
 （Chromium os_crypt + DPAPI + AES-256-GCM，Windows-only）；扫码登录是获取**同一份
 access_token** 的另一条路径，覆盖 macOS / Linux，且不需桌面 App。
 
-- **状态**：可行性 + 闭环已实测确认（2026-10-20，无凭据探针，真实换出 JWT）。**未接入插件**，也未提交任何真实凭据。
+- **状态**：可行性 + 闭环已实测确认（2026-10-20，无凭据探针，真实换出 JWT）。**已接入插件**
+  （2026-10-20：`src/host/agnescode-login.ts` + 路由 `login` 分支 + 面板「扫码登录」按钮，见 §8）；
+  真实凭据仍未入库、不进日志（红线①）。
 - **探针**：`upstream/probe-login-flow.mjs`（`node probe-login-flow.mjs` 干跑；`--live` 真扫码）。
 - **为什么值得**：见下文「跨平台收益」。**为什么慎做**：见「风险」。
 
@@ -225,18 +227,25 @@ intl 域（`.com`）只有 Google / Apple 登录，无微信扫码，本次验�
 
 ---
 
-## 8. 若决定接入（待办，尚未创建任何文件）
+## 8. 接入落地（2026-10-20，已接入插件）
 
-闭环已实测通过，技术风险已排除。剩余全是工程化工作：
+闭环已实测通过（§6），工程化工作已落地：
 
-接入时新增一个 host 侧的登录模块（建议文件名 `agnescode-login.ts`，**尚未创建**），
-职责是设备流实现：`listenOnRandomPort` + `openExternal` + `withTimeout` + `exchangeCodeForToken`。
-**注意**：localhost 回调是 POST JSON `{ code, state }`（非 GET query），且必须回 CORS 头——
-这两点已写进 `upstream/probe-login-flow.mjs`，可直接搬。
+- **host 登录模块**：`src/host/agnescode-login.ts` 实现设备流——`listenOnRandomPort` +
+  `waitForCallback` + `openExternal` + `exchangeCodeForToken`。localhost 回调是 POST JSON
+  `{ code, state }`（非 GET query），且必须回 CORS 头——实现与 `upstream/probe-login-flow.mjs`
+  一致，并保留 GET 回退。
+- **路由**：`POST /api/<panel>/agnescode { action: "login" }`（`src/host/routes/agnescode.ts`
+  的 login 分支）：domain 白名单（cn / intl）+ 单飞（`agnescodeLoginInFlight`）+ 失败文本过
+  `redactSecrets`（红线①）。
+- **面板**：「AgnesCode」tab 的「扫码登录」按钮（跨平台，无需桌面 App；macOS / Linux 可用），
+  与「检测本机登录态」（Windows-only）并列；登录期间按钮转「等待扫码」态，两按钮互相禁用。
 
-- token 存凭据服务 `kind:"grant"`，注册 `agnescode` provider（复用现有 publisher / store / 凭据隔离）。
+- token 存凭据服务 `kind:"grant"`，复用现有 publisher / store / 凭据隔离。
 - 登录 trace 必须过 `onTrace`（红线⑤）。
 - 节流进 `throttle-store.ts` 迁移缝。
 - 采集侧写权限仍为零——扫码只是换一条「拿 token」的入口，不改变「拿 token 之后」的一切边界。
-- `openExternal` 在 Windows 上不能用 `cmd /c start`（URL 含 `&` 会被 shell 拆成命令分隔符）；
-  用 `rundll32 url.dll,FileProtocolHandler` 直接 CreateProcess 传 argv，不经 shell。
+- `openExternal` 在 Windows 上用 `rundll32 url.dll,FileProtocolHandler` 直接 CreateProcess 传 argv，
+  不经 shell（URL 含 `&` 不会被拆成命令分隔符）。缺少浏览器二进制时，spawn 的**异步** `error`
+  事件（ENOENT）经 Promise race fail-fast（`OPEN_EXTERNAL_GRACE_MS` 兜底），登录不会干等回调超时。
+- 已知限制照旧：令牌仍约 28 天、无 refresh（见 §7）——扫码不解决续期，用户每周期需再扫一次。

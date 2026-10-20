@@ -12,11 +12,13 @@
  * Nothing here touches the Token Plan semantics — the tabs are
  * deliberately independent.
  *
- * There is NO in-panel login: the WeChat scan happens inside the desktop App,
- * so the login-equivalent is「检测本机登录态」(a harvest walk). A failed walk
- * renders one line per probed file with its tier — "no App", "unreadable",
- * "key unavailable", "decryption failed" want different user advice and never
- * share a sentence.
+ * Two in-panel sign-in paths, one decision: the harvest walk「检测本机登录态」
+ * (Windows only — it reads the desktop App's os_crypt session file) and the
+ * scan-to-sign-in button「扫码登录」(cross-platform — the Host opens the
+ * device-flow login URL in the system browser, `docs/AGNESCODE-SCAN-LOGIN.md`,
+ * no desktop App needed). A failed walk renders one line per probed file with
+ * its tier — "no App", "unreadable", "key unavailable", "decryption failed"
+ * want different user advice and never share a sentence.
  *
  * Hook-based like the quota tab. The tab's own frame is unreachable from the
  * render suite (its data is internal state, so it always renders the
@@ -232,6 +234,10 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   // diagnosis rows land in `state.harvest` (also on failure — the walk's
   // answer IS the diagnosis).
   const [harvestBusy, setHarvestBusy] = useState(false);
+  // The in-flight scan-to-sign-in: the button goes to a "waiting" state while
+  // the Host's device-flow login runs (it can take the callback timeout — the
+  // user has to scan in the browser).
+  const [loginBusy, setLoginBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const alive = useRef(true);
   // The same two guards `panel-page` uses, for the same reason — an `alive`
@@ -421,6 +427,38 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     }
   }, []);
 
+  // The scan-to-sign-in POST. The Host's login branch is a single-flight
+  // device flow (opens the browser, waits for the callback, exchanges the
+  // code) that can take the full callback timeout, so the button stays in a
+  // "waiting" state for the duration and the two sign-in buttons disable each
+  // other. `postJson`, NOT `postJsonOrThrow`: a refused login answers
+  // `ok:false` WITH the Host's error text (domain / exchange / callback
+  // timeout), and the throw face would reduce it to a bare HTTP status.
+  const login = useCallback(async () => {
+    setLoginBusy(true);
+    setNote(null);
+    try {
+      const body = await postJson(AGNESCODE_PATH, { action: "login" });
+      if (alive.current) {
+        retireInFlight();
+        if (body !== null) setState(body as unknown as AgnescodeState);
+        if (body?.ok === true) {
+          setNote(tt("agnescode.loginOk"));
+        } else {
+          setNote(format(tt("agnescode.loginFail"), {
+            error: typeof body?.error === "string" && body.error !== "" ? body.error : tt("agnescode.loadErrorDetail")
+          }));
+        }
+      }
+    } catch (why) {
+      if (alive.current) setNote(format(tt("agnescode.error"), { error: why instanceof Error ? why.message : String(why) }));
+    } finally {
+      if (alive.current) setLoginBusy(false);
+    }
+  }, [tt]);
+
+  const loginDisabled = harvestBusy || loginBusy;
+
   const enabled = state?.enabled === true;
   const view = agnescodeView(state, error);
   const loggedIn = view.linked;
@@ -480,8 +518,10 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                   h("div", { style: { fontSize: 13 }, role: "status" },
                     format(tt("agnescode.loggedIn"), { nick: String(state?.nickname ?? "") })),
                   h("span", { style: S.spacer }),
-                  h("button", { type: "button", style: S.button, onClick: () => void harvest(), disabled: harvestBusy },
-                    harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
+                  h("button", { type: "button", style: S.button, onClick: () => void harvest(), disabled: loginDisabled },
+                    harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")),
+                  h("button", { type: "button", style: S.button, onClick: () => void login(), disabled: loginDisabled },
+                    loginBusy ? tt("agnescode.loggingIn") : tt("agnescode.login"))
                   // NO logout button. The old one did two things the other
                   // controls already do: `harvest` overwrites the stored JWT
                   // from the desktop App (so a stale credential is refreshed,
@@ -559,8 +599,14 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                     type: "button",
                     style: S.button,
                     onClick: () => void harvest(),
-                    disabled: harvestBusy
-                  }, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest"))
+                    disabled: loginDisabled
+                  }, harvestBusy ? tt("agnescode.harvesting") : tt("agnescode.harvest")),
+                  h("button", {
+                    type: "button",
+                    style: S.button,
+                    onClick: () => void login(),
+                    disabled: loginDisabled
+                  }, loginBusy ? tt("agnescode.loggingIn") : tt("agnescode.login"))
                 ),
                 // The Windows-only boundary, stated BEFORE the click: the
                 // harvest's own tier rows say it too (`unsupported_platform`),
@@ -568,7 +614,11 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
                 // for nothing to happen. One quiet caption under the action it
                 // constrains — the reader on macOS/Linux needs it up front, the
                 // reader on Windows can skip right past.
-                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 6 } }, tt("agnescode.harvestWindowsOnly"))
+                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 6 } }, tt("agnescode.harvestWindowsOnly")),
+                // The scan-to-sign-in path has NO such platform boundary —
+                // state it as the cross-platform alternative to the caption
+                // above, so a macOS/Linux reader sees both half of the pair.
+                h("div", { style: { ...S.muted, fontSize: 12, marginTop: 2 } }, tt("agnescode.loginHint"))
               ),
           // The switch, a labeled row inside the card rather than a floating
           // line above it. It is deliberately a checkbox (the repo draws no
@@ -579,7 +629,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
           // long consequence so the row reads short.
           h(Switch, {
             checked: enabled,
-            disabled: harvestBusy,
+            disabled: loginDisabled,
             onChange: () => void toggle(!enabled),
             label: tt("agnescode.switch"),
             title: tt("agnescode.switchTip"),

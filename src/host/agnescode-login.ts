@@ -50,7 +50,18 @@ type DomainKey = keyof typeof DOMAINS;
 const CLIENT_ID = "agnes-code";
 const CB_PATH = "/auth/callback";
 const CB_TIMEOUT_MS = 3 * 60 * 1000;
-const EXCHANGE_TIMEOUT_MS = 30 * 60 * 1000;
+// The one-time authorization code the login page issues expires 60 s after
+// issuance (`ttl_seconds: 60`, see docs/AGNESCODE-SCAN-LOGIN.md §1), so an
+// exchange that has not completed well inside that window can never succeed —
+// the code is already dead. A 30 s exchange timeout is therefore both long
+// enough for a healthy BFF round-trip and safely inside the code's TTL; a
+// longer one (this used to be 30 min) only held the route's single-flight
+// login lock hostage on a hung exchange that was guaranteed to fail anyway.
+const EXCHANGE_TIMEOUT_MS = 30 * 1000;
+// How long `openExternal` waits for the spawn/error verdict before assuming
+// the browser opened. The error event for a missing binary fires within
+// milliseconds, so this is only a backstop for exotic platforms.
+const OPEN_EXTERNAL_GRACE_MS = 1500;
 
 /** The credential shape returned to the caller (and stored). */
 export type AgnescodeLoginResult = {
@@ -106,7 +117,7 @@ export async function startAgnescodeLogin(options: AgnescodeLoginOptions = {}): 
     const loginUrl = `${cfg.loginUrl}?client=${CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
 
     trace.hop({ step: "open-external", domain });
-    const spawnErr = openExternal(loginUrl);
+    const spawnErr = await openExternal(loginUrl);
     if (spawnErr !== null) throw new Error(spawnErr);
 
     trace.hop({ step: "wait-callback", timeoutMs: CB_TIMEOUT_MS });
@@ -158,13 +169,17 @@ function listenOnRandomPort(): Promise<Server> {
  * fallback. Validates the CSRF state token and rejects empty codes. Closes
  * the server on success; a settled guard prevents double-settle.
  *
+ * Exported for the offline login test suite (`test/agnescode-login.test.mjs`),
+ * which drives it with a real local `http.Server` — the same shape the route
+ * uses. `startAgnescodeLogin` remains the single production entry.
+ *
  * @param {Server} server - the HTTP server to listen on.
  * @param {string} state - the CSRF state token to validate.
  * @param {string} origin - the login page origin for CORS.
  * @param {{hop(entry: object): void}} trace - the trace hop collector.
  * @returns {Promise<string>} the authorization code.
  */
-function waitForCallback(
+export function waitForCallback(
   server: Server,
   state: string,
   origin: string,
@@ -175,7 +190,15 @@ function waitForCallback(
     const settle = (code: string) => {
       if (settled) return;
       settled = true;
-      server.close(() => resolve(code));
+      // Resolve BEFORE the close completes. The callback server is one-shot —
+      // its code has been received — and `server.close(callback)` only fires
+      // the callback once every kept-alive connection has dropped: a browser
+      // that keeps the socket open would hold the login hostage until the
+      // callback timeout. Close fire-and-forget; `startAgnescodeLogin`'s
+      // `finally` closes again for belt and braces (a second close on an
+      // already-closing server is a no-op).
+      server.close();
+      resolve(code);
     };
     server.on("request", (req, res) => {
       const send = (status: number, body: object) => {
@@ -230,9 +253,13 @@ function waitForCallback(
  * POSTs to {bffBase}/api/v1/code/auth/exchange-code. The origin header must
  * match the login page's origin (the BFF checks it).
  *
+ * Exported for the offline login test suite, which stubs `globalThis.fetch`
+ * (the offline network guard replaces it with a thrower; the suite re-stubs it
+ * per case).
+ *
  * @returns {Promise<string>} the access token (JWT).
  */
-async function exchangeCodeForToken(
+export async function exchangeCodeForToken(
   code: string,
   redirectUri: string,
   state: string,
@@ -266,27 +293,59 @@ async function exchangeCodeForToken(
 /**
  * Open a URL in the system browser.
  *
- * Returns null on success, or an error message if the browser binary is
- * missing (so the caller can fail fast instead of waiting for the timeout).
+ * Returns a promise resolving to null on success, or an error message when the
+ * browser binary is missing — so the caller can fail fast instead of waiting
+ * out the callback timeout.
+ *
+ * WHY A PROMISE: `spawn` reports a missing binary through its ASYNC `error`
+ * event (ENOENT), not a synchronous throw. The old code's try/catch only
+ * caught argument errors, and its `child.on("error", () => {})` swallowed the
+ * ENOENT — so a headless Linux (no xdg-open) waited the full 3 minutes with
+ * nothing to show for it. The race below resolves on whichever fires first:
+ * the `error` event (fail fast), the `spawn` event (the binary started), or a
+ * short grace timer (exotic platform where neither fires — assume it opened,
+ * matching the old default).
+ *
+ * @param {string} url - the URL to open.
+ * @param {string} [command] - the browser command; defaults to the platform's
+ *   opener (rundll32 / open / xdg-open). An explicit command is a test seam.
+ * @returns {Promise<string|null>} null on success, else an error message.
  */
-function openExternal(url: string): string | null {
+export function openExternal(url: string, command?: string): Promise<string | null> {
   const win = process.platform === "win32";
   const mac = process.platform === "darwin";
-  const cmd = win ? "rundll32" : mac ? "open" : "xdg-open";
+  const cmd = command ?? (win ? "rundll32" : mac ? "open" : "xdg-open");
   const args = win ? ["url.dll,FileProtocolHandler", url] : [url];
-  let child: ReturnType<typeof spawn>;
-  try {
-    child = spawn(cmd, args, { stdio: "ignore", detached: true });
-  } catch (err) {
-    return err instanceof Error ? `failed to open browser: ${err.message}` : "failed to open browser";
-  }
-  child.on("error", () => {});
-  child.unref();
-  return null;
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(cmd, args, { stdio: "ignore", detached: true });
+    } catch (err) {
+      resolve(err instanceof Error ? `failed to open browser: ${err.message}` : "failed to open browser");
+      return;
+    }
+    let settled = false;
+    const settle = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const timer = setTimeout(() => settle(null), OPEN_EXTERNAL_GRACE_MS);
+    if (typeof timer.unref === "function") timer.unref();
+    child.once("error", (err) => {
+      clearTimeout(timer);
+      settle(`failed to open browser: ${err.message}`);
+    });
+    child.once("spawn", () => {
+      clearTimeout(timer);
+      settle(null);
+    });
+    child.unref();
+  });
 }
 
-/** Wrap a promise with a timeout. */
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+/** Wrap a promise with a timeout. Exported for the offline login test suite. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
     promise.finally(() => clearTimeout(timer)),

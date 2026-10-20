@@ -230,6 +230,17 @@ export const zh = {
   // the post-click diagnosis rows — a macOS reader clicking the button used to
   // learn the boundary only after nothing happened.
   "agnescode.harvestWindowsOnly": "本机登录态采集目前仅支持 Windows（macOS / Linux 未实现）。",
+  // The scan-to-login button is the CROSS-PLATFORM sign-in path: it opens the
+  // device-flow login URL in the system browser (host-side `startAgnescodeLogin`,
+  // `docs/AGNESCODE-SCAN-LOGIN.md`), no desktop App involved — so macOS / Linux
+  // readers who cannot harvest have a working way in. Stated right here, next to
+  // the harvest's Windows-only caption, so the two buttons read as one decision
+  // ("sign in") with two mechanisms.
+  "agnescode.login": "扫码登录",
+  "agnescode.loggingIn": "正在等待扫码…（浏览器已打开）",
+  "agnescode.loginOk": "扫码登录成功。",
+  "agnescode.loginFail": "扫码登录失败：{error}",
+  "agnescode.loginHint": "无需桌面 App——浏览器打开登录页，用 AgnesCode App 扫码即可（macOS / Linux 可用）。",
   "agnescode.downloadCta": "下载 AgnesCode 桌面客户端，领取限时积分 →",
   // ONE line for the whole pool story (小浣 shape): total, then the
   // platform's own split. The JWT expiry is NOT here — the credential card
@@ -524,6 +535,13 @@ export const en: typeof zh = {
   "agnescode.bffBase": "API base {base}",
   "agnescode.notLogged": "Not linked — sign in inside the AgnesCode desktop App (WeChat scan) first, then run the detection.",
   "agnescode.harvestWindowsOnly": "Local login-state detection currently supports Windows only (macOS / Linux not implemented).",
+  // See the zh keys for why the scan-to-sign-in button is the cross-platform
+  // path and why it sits beside the Windows-only harvest caption.
+  "agnescode.login": "Scan-to-sign-in",
+  "agnescode.loggingIn": "Waiting for the scan… (browser opened)",
+  "agnescode.loginOk": "Scan-to-sign-in succeeded.",
+  "agnescode.loginFail": "Scan-to-sign-in failed: {error}",
+  "agnescode.loginHint": "No desktop App needed — the browser opens the login page for the AgnesCode App to scan (works on macOS / Linux).",
   "agnescode.downloadCta": "Download the AgnesCode desktop client and claim your limited-time credits →",
   "agnescode.balanceLabel": "Credit balance",
   "agnescode.balanceTimeLabel": "Time-limited",
