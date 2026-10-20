@@ -47,6 +47,8 @@
     "doctor:json": "node tools/doctor.mjs --json",
     "lint:dup": "jscpd src --min-tokens 70 --threshold 3 --reporters console",
     "lint:commits": "commitlint --from HEAD~1 --to HEAD",
+    "host-range:update": "node tools/update-host-range.mjs",
+    "host-range:check": "node tools/update-host-range.mjs --check",
     "build": "tsdown -c tsdown.config.mjs",
     "prepack": "npm run build"
   },
