@@ -218,6 +218,12 @@ jobs:
           node test/state-authority.test.mjs
           node test/platform-assumptions.test.mjs
           node test/state-store.test.mjs
+          # The peer RANGE gate: what the 10 `>=0.1.5 <0.3` declarations do to
+          # the real published version list, frozen in test/host-range.golden.json.
+          # Offline (it reads the committed golden, never the registry), so it runs
+          # in this job; `--check` then proves the golden still matches the manifest.
+          node test/host-range.test.mjs
+          node tools/update-host-range.mjs --check
           # The build gate is not a *.test.mjs, so it stays outside the
           # three-way roster pin; it is listed here because CI is exactly
           # where the build must be proven. The artifacts are committed with
