@@ -50,7 +50,7 @@ type DomainKey = keyof typeof DOMAINS;
 const CLIENT_ID = "agnes-code";
 const CB_PATH = "/auth/callback";
 const CB_TIMEOUT_MS = 3 * 60 * 1000;
-const EXCHANGE_TIMEOUT_MS = 30 * 1000;
+const EXCHANGE_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** The credential shape returned to the caller (and stored). */
 export type AgnescodeLoginResult = {
@@ -97,19 +97,21 @@ export async function startAgnescodeLogin(options: AgnescodeLoginOptions = {}): 
   };
   const state = randomUUID();
 
+  let server: Server | null = null;
   try {
-    const server = await listenOnRandomPort();
+    server = await listenOnRandomPort();
     const addr = server.address();
     if (addr === null || typeof addr === "string") throw new Error("the login server could not bind a port");
     const redirectUri = `http://127.0.0.1:${addr.port}${CB_PATH}`;
     const loginUrl = `${cfg.loginUrl}?client=${CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
 
     trace.hop({ step: "open-external", domain });
-    openExternal(loginUrl);
+    const spawnErr = openExternal(loginUrl);
+    if (spawnErr !== null) throw new Error(spawnErr);
 
     trace.hop({ step: "wait-callback", timeoutMs: CB_TIMEOUT_MS });
     const code = await withTimeout(
-      waitForCallback(server, state, trace),
+      waitForCallback(server, state, cfg.origin, trace),
       CB_TIMEOUT_MS,
       "the login page did not POST back within the timeout"
     );
@@ -135,6 +137,8 @@ export async function startAgnescodeLogin(options: AgnescodeLoginOptions = {}): 
   } catch (error) {
     await finish(error);
     throw error;
+  } finally {
+    server?.close();
   }
 }
 
@@ -151,22 +155,33 @@ function listenOnRandomPort(): Promise<Server> {
  * Wait for the login page's callback.
  *
  * Handles OPTIONS (CORS preflight), POST JSON { code, state }, and GET query
- * fallback. Validates the CSRF state token. Closes the server on success.
+ * fallback. Validates the CSRF state token and rejects empty codes. Closes
+ * the server on success; a settled guard prevents double-settle.
  *
+ * @param {Server} server - the HTTP server to listen on.
+ * @param {string} state - the CSRF state token to validate.
+ * @param {string} origin - the login page origin for CORS.
+ * @param {{hop(entry: object): void}} trace - the trace hop collector.
  * @returns {Promise<string>} the authorization code.
  */
 function waitForCallback(
   server: Server,
   state: string,
+  origin: string,
   trace: { hop(entry: object): void }
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const settle = (code: string) => { server.close(() => resolve(code)); };
+    let settled = false;
+    const settle = (code: string) => {
+      if (settled) return;
+      settled = true;
+      server.close(() => resolve(code));
+    };
     server.on("request", (req, res) => {
       const send = (status: number, body: object) => {
         res.statusCode = status;
         res.setHeader("content-type", "application/json");
-        res.setHeader("access-control-allow-origin", "*");
+        res.setHeader("access-control-allow-origin", origin);
         res.setHeader("access-control-allow-credentials", "false");
         res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
         res.setHeader("access-control-allow-headers", "Content-Type");
@@ -190,6 +205,7 @@ function waitForCallback(
             st = u.searchParams.get("state") ?? "";
           }
           if (st !== state) { trace.hop({ step: "bad-state" }); return send(400, { ok: false, error: "bad state" }); }
+          if (code === "") { trace.hop({ step: "empty-code" }); return send(400, { ok: false, error: "missing code" }); }
           trace.hop({ step: "callback-ok", method: "POST" });
           send(200, { ok: true });
           settle(code);
@@ -199,6 +215,7 @@ function waitForCallback(
       const code = u.searchParams.get("code") ?? "";
       const st = u.searchParams.get("state") ?? "";
       if (st !== state) { return send(400, { ok: false, error: "bad state" }); }
+      if (code === "") { return send(400, { ok: false, error: "missing code" }); }
       trace.hop({ step: "callback-ok", method: "GET" });
       send(200, { ok: true });
       settle(code);
@@ -246,13 +263,26 @@ async function exchangeCodeForToken(
   return token;
 }
 
-/** Open a URL in the system browser. */
-function openExternal(url: string) {
+/**
+ * Open a URL in the system browser.
+ *
+ * Returns null on success, or an error message if the browser binary is
+ * missing (so the caller can fail fast instead of waiting for the timeout).
+ */
+function openExternal(url: string): string | null {
   const win = process.platform === "win32";
   const mac = process.platform === "darwin";
   const cmd = win ? "rundll32" : mac ? "open" : "xdg-open";
   const args = win ? ["url.dll,FileProtocolHandler", url] : [url];
-  spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(cmd, args, { stdio: "ignore", detached: true });
+  } catch (err) {
+    return err instanceof Error ? `failed to open browser: ${err.message}` : "failed to open browser";
+  }
+  child.on("error", () => {});
+  child.unref();
+  return null;
 }
 
 /** Wrap a promise with a timeout. */
@@ -268,8 +298,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
-  const payload = parts[1];
-  if (payload === undefined) return null;
+  const payload = parts[1] ?? "";
+  if (payload === "") return null;
   try { return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")); }
   catch { return null; }
 }

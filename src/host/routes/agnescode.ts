@@ -181,6 +181,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
   // branch that reads it (the shipped TDZ bug lived exactly there).
   let lastHarvest: { ok: boolean; attempts: Array<{ file: string | null; tier: string; detail: string }> } | null = null;
   let agnescodeHarvestInFlight: Promise<{ ok: boolean; attempts: Array<{ file: string | null; tier: string; detail: string }> }> | null = null;
+  let agnescodeLoginInFlight: Promise<{ ok: boolean; error?: string }> | null = null;
   // The GET self-heal's cooldown stamp (see the GET branch): one repair
   // publish per window, so a persistently failing publish cannot rebuild the
   // adapter on every panel poll.
@@ -559,36 +560,51 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
       }
 
       // ── login: scan-to-login device flow (ROADMAP §6.3) ──
-      // Opens a browser to the AgnesCode login page; the login page POSTs a
-      // one-time authorization code to a local HTTP server, which is exchanged
-      // for the same access_token the desktop App would have stored.
+      // Single-flighted like harvest: a double-click joins the first login
+      // instead of opening two browser windows and leaking a server.
       if (action === "login") {
         if (agnescodeStore === null || agnescodeStore === undefined) {
           await answer({ ok: false, error: "the agnescode credential store is unavailable" });
           return;
         }
-        try {
-          const result = await startAgnescodeLogin({
-            domain: body.value.domain === "intl" ? "intl" : "cn"
-          });
-          await agnescodeStore.save({
-            accessToken: result.accessToken,
-            bffBase: result.bffBase,
-            ...(result.userId !== "" ? { userId: result.userId } : {}),
-            ...(result.nickname !== "" ? { nickname: result.nickname } : {}),
-            ...(result.expiresAtMs !== null ? { expiresAtMs: result.expiresAtMs } : {})
-          });
-          if (agnescodePublisher !== null && agnescodePublisher !== undefined && agnescodePublisher.isDisposed() === false) {
-            if (resolveSwitchEnabled(await readPanelValue(() => agnescodeSwitch?.enabled())).enabled) {
-              await publishFromStore();
-            }
-          }
-          await answer({ ok: true, status: "logged_in" });
-          return;
-        } catch (error) {
-          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
+        const domain = body.value.domain;
+        if (domain !== undefined && domain !== "cn" && domain !== "intl") {
+          await answer({ ok: false, error: "domain must be 'cn' or 'intl'" });
           return;
         }
+        if (agnescodeLoginInFlight === null) {
+          agnescodeLoginInFlight = (async () => {
+            try {
+              const result = await startAgnescodeLogin({
+                domain: domain === "intl" ? "intl" : "cn"
+              });
+              await agnescodeStore.save({
+                accessToken: result.accessToken,
+                bffBase: result.bffBase,
+                ...(result.userId !== "" ? { userId: result.userId } : {}),
+                ...(result.nickname !== "" ? { nickname: result.nickname } : {}),
+                ...(result.expiresAtMs !== null ? { expiresAtMs: result.expiresAtMs } : {})
+              });
+              if (agnescodePublisher !== null && agnescodePublisher !== undefined && agnescodePublisher.isDisposed() === false) {
+                if (resolveSwitchEnabled(await readPanelValue(() => agnescodeSwitch?.enabled())).enabled) {
+                  await publishFromStore();
+                }
+              }
+              return { ok: true as const };
+            } catch (error) {
+              return { ok: false as const, error: redactSecrets(error instanceof Error ? error.message : String(error)) };
+            }
+          })().finally(() => {
+            agnescodeLoginInFlight = null;
+          });
+        }
+        const result = await agnescodeLoginInFlight;
+        if (result.ok !== true) {
+          await answer({ ok: false, error: result.error });
+          return;
+        }
+        await answer({ ok: true, status: "logged_in" });
+        return;
       }
 
       writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"saveModels\"|\"login\" }" }, { "cache-control": "no-store" });
