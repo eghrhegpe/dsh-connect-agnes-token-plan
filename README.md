@@ -9,7 +9,7 @@
 > 2. **三种「红」是正常的，不是回归**：① `test/wiring.test.mjs` 等 peer 套件报 `cannot resolve the peer dependency` —— 那是 DSH runtime 自带的包不在本仓库，属环境问题，先查 `test/peer-roots.mjs`；② 没装 `dsh` CLI 时 e2e 会 SKIP，属预期；③ 若在 **23:00–00:00** 之间单独跑 `render.test.mjs` 报红，那是历史上的午夜窗口缺陷（已在 0.10.0 修复，见 [docs/PITFALLS.md](docs/PITFALLS.md) §48），当前安装版本已含，无需升级。
 > 3. **见到「奇怪」的写法先别定罪**——本仓多数刻意的取舍都在 [docs/PITFALLS.md](docs/PITFALLS.md) / [docs/ADR.md](docs/ADR.md) 有明文出处。**动手前先 grep 一遍 docs/**。
 >
-> 协作会话的完整纪律见 [AGENTS.md](AGENTS.md)。
+> 协作会话的完整纪律见 [AGENTS.md](https://github.com/eghrhegpe/dsh-connect-agnes-token-plan/blob/master/AGENTS.md)（**不随 npm 包发布**，registry 页面上请从 GitHub 打开）。
 
 - **积分额度**——登录后实时查看积分余额、额度窗口与每模型消耗；设了 `AGNES_PASSWORD` 则令牌到期自动重登，之后无需再管；
 - **接入 API**——把 Agnes 模型注册为 DSH provider，参与对话、出图与出视频；
@@ -120,7 +120,7 @@ npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本�
 - [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑（61 条；数字由 `docs.test.mjs` 的 `PITFALLS_REFS` 与文件内编号钉住）
 - [CHANGELOG.md](CHANGELOG.md) — 版本变化
 
-AI 协作会话请先读 [AGENTS.md](AGENTS.md)。人类贡献者先读 [SETUP.md](docs/SETUP.md) 与 [ARCHITECTURE.md](docs/ARCHITECTURE.md) §2 理解结构与改动代价，改代码前再读 [AGENTS.md](AGENTS.md) 的红线与 [TESTING.md](docs/TESTING.md) 的 `npm test` 门禁。
+AI 协作会话请先读 [AGENTS.md](https://github.com/eghrhegpe/dsh-connect-agnes-token-plan/blob/master/AGENTS.md)（在仓库里，**不在 npm 包里**）。人类贡献者先读 [SETUP.md](docs/SETUP.md) 与 [ARCHITECTURE.md](docs/ARCHITECTURE.md) §2 理解结构与改动代价，改代码前再读 `AGENTS.md` 的红线与 [TESTING.md](docs/TESTING.md) 的 `npm test` 门禁。
 
 ## 诚实声明
 
