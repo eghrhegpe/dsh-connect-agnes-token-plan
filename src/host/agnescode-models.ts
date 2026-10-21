@@ -145,7 +145,7 @@ export function agnescodeRoster(catalog: unknown, maxTokensOverrides?: Record<st
   // `contextWindow` is OPTIONAL on the annotation: a roster row comes from a
   // catalogue entry whose window field can be absent, so the honest shape is
   // "may not state a window" — the `?? 0` below resolves that absence.
-  const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow?: number; maxOutputLength: number }> = [];
+  const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; displayLabel?: string; contextWindow?: number; maxOutputLength: number }> = [];
   for (const row of rows) {
     const id = str(row?.id, "");
     if (id === "") continue;
@@ -154,6 +154,14 @@ export function agnescodeRoster(catalog: unknown, maxTokensOverrides?: Record<st
     // and the `max_tokens` the request carries cannot disagree. `0` is the
     // roster's existing "nothing stated" encoding (the panel draws no segment).
     const maxOutputLength = agnescodeMaxTokensFor(id, row?.maxOutputLength, maxTokensOverrides);
+    // The platform's promotional tag ("限时七折" on glm-5.2). The catalogue
+    // carries it as `displayLabel` and the panel draws its chip from it, so
+    // the roster MUST carry it too: dropping it here made the badge a dead
+    // feature — the chip never lit up, and the CHANGELOG entry that
+    // announced it described a button that could not be pressed. EMPTY must
+    // mean "no badge" (the platform states an empty string on every other
+    // row), so an empty label stays ABSENT rather than becoming a blank chip.
+    const displayLabel = str(row?.displayLabel, "");
     out.push({
       id,
       name: str(row?.name, id),
@@ -166,6 +174,7 @@ export function agnescodeRoster(catalog: unknown, maxTokensOverrides?: Record<st
       // stay absent rather than become an explicit `undefined`, or
       // `exactOptionalPropertyTypes` rejects the row.
       ...(multiplier === undefined ? {} : { multiplier }),
+      ...(displayLabel === "" ? {} : { displayLabel }),
       // `0` is this roster's established "the source states no window" code
       // (see `maxOutputLength` below), not a measured value — the descriptor
       // re-resolves the absence to its own 512k guard and the panel renders

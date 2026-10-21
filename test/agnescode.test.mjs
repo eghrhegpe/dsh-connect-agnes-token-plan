@@ -737,6 +737,22 @@ const GOOD_SESSION = {
     check("a live row without a multiplier stays multiplier-less (no invented rate)",
       agnescodeRoster(live)[0].multiplier === undefined);
 
+    // The promotional tag has to survive the ROSTER rebuild, not only the
+    // catalogue read: the catalogue carries `displayLabel`, the roster used to
+    // drop it, and the panel draws its chip from the ROSTER — so the badge was
+    // a dead feature (the chip never lit up) while the catalogue-level check
+    // above stayed green. The chip is what the CHANGELOG announced.
+    const promoRoster = agnescodeRoster([
+      { id: "promoted", name: "P", displayLabel: "限时七折" },
+      { id: "plain", name: "Q", displayLabel: "" }
+    ]);
+    check("the roster carries the promotional tag through",
+      promoRoster[0].displayLabel === "限时七折", JSON.stringify(promoRoster[0]));
+    check("an empty promotional tag stays absent in the roster (no blank chip)",
+      promoRoster[1] !== undefined && !("displayLabel" in promoRoster[1]), JSON.stringify(promoRoster[1]));
+    check("the fallback roster keeps its promotional tag too",
+      rows.some((r) => r.displayLabel === "限时七折"), JSON.stringify(rows.map((r) => r.displayLabel)));
+
     const descriptor = agnescodeToDescriptor(rows[0], { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" });
     check("the descriptor's baseUrl is the PER-ACCOUNT base, not a constant",
       descriptor.baseUrl === "https://api-agnes-code.agnes-ai.cn/v1");
