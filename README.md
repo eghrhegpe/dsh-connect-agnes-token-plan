@@ -111,12 +111,13 @@ npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本�
 
 - [docs/README.md](docs/README.md) — 全量文档索引（每篇按「内容 / 何时查」路由；本表只列主文档）
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 架构与数据流
-- [docs/SETUP.md](docs/SETUP.md) — 配置字段、改动后重启、常见信号
+- [docs/SETUP.md](docs/SETUP.md) — 配置字段、改动后重启
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — 排障入口（按面板界面原文查）
 - [docs/AUTH.md](docs/AUTH.md) — 登录 / 重登 / 节流设计
 - [docs/API.md](docs/API.md) — 路由与控制台端点
 - [docs/AGNES-API.md](docs/AGNES-API.md) — Agnes 接口全集（控制台额度侧 + 推理侧）
 - [docs/TESTING.md](docs/TESTING.md) — 测试体系
-- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑（61 条）
+- [docs/PITFALLS.md](docs/PITFALLS.md) — 真实踩坑（61 条；数字由 `docs.test.mjs` 的 `PITFALLS_REFS` 与文件内编号钉住）
 - [CHANGELOG.md](CHANGELOG.md) — 版本变化
 
 AI 协作会话请先读 [AGENTS.md](AGENTS.md)。人类贡献者先读 [SETUP.md](docs/SETUP.md) 与 [ARCHITECTURE.md](docs/ARCHITECTURE.md) §2 理解结构与改动代价，改代码前再读 [AGENTS.md](AGENTS.md) 的红线与 [TESTING.md](docs/TESTING.md) 的 `npm test` 门禁。

@@ -115,6 +115,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 
 | 何时 | 查 |
 |---|---|
+| **它坏了 / 只有一句界面原文或报错、没有模块名** | `docs/TROUBLESHOOTING.md`（按面板**界面原文 + 文案键**索引，含「看着像坏了其实是设计」清单；先查这份再说） |
 | 排查登录失败 / 改一跳登录、失败分类、重登、节流 | `docs/AUTH.md` → `docs/AGNES-API.md` §1–§2 |
 | 动桌面端上游（AgnesCode / `agnescode`） | `docs/ROADMAP.md` §6.3（契约探针 + 隔离裁定）→ `src/host/agnescode*.ts` |
 | 给用户看的文案（README / `cordis.patch.yml`）改了 | `test/docs.test.mjs` 检查 `README_TABS`/`SELF_DESCRIPTION`（tab 全覆盖 + 槽位一致），两者都进 npm 包 |

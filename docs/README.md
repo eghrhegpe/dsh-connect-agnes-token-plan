@@ -4,7 +4,7 @@
 
 AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑、红线、文档地图都在那里，本目录提供细节。
 
-阅读顺序建议：先 [ARCHITECTURE.md](./ARCHITECTURE.md) 建立整体认知，再按需查 [SETUP.md](./SETUP.md) / [AUTH.md](./AUTH.md) / [API.md](./API.md)；改动代码前读 [TESTING.md](./TESTING.md) 与 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+阅读顺序建议：先 [ARCHITECTURE.md](./ARCHITECTURE.md) 建立整体认知，再按需查 [SETUP.md](./SETUP.md) / [AUTH.md](./AUTH.md) / [API.md](./API.md)；**它坏了、只有一句报错**则直接进 [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)；改动代码前读 [TESTING.md](./TESTING.md) 与 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 | 文档 | 内容 | 何时查 |
 |---|---|---|
@@ -12,13 +12,14 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [ROADMAP.md](./ROADMAP.md) | 战略执行路线图（2026-09-29 起）：P0 解耦与契约回归（§2，`index.js` 控制面拆模块 + 推理契约自动化回归）、429 全局自愈、§5「多 Key 池」纠偏、文档精炼、明确不做的边界 | 定吸收顺序 / 优先级、拍板侵入性、防范围漂移 |
 | [DSH-PLUGIN.md](./DSH-PLUGIN.md) | DSH 插件机制总览（bundle 结构、Loader 条目、cordis.patch.yml、安装重启、peer 依赖、与兄弟插件关系） | 理解「这是一个 DSH 插件」、对照 dsh-connect-qoder 范本 |
 | [DSH-LLM-DEVELOP.md](./DSH-LLM-DEVELOP.md) | **LLM / provider 接入开发指南**：三个 peer 分工、注册三件套、adapter 组装、descriptor 契约（含 maxTokens 兜底坑）、live-contract 探针纪律、排查速查 | 把某平台接成 DSH provider、排查模型路由故障、定钉值策略 |
-| [SETUP.md](./SETUP.md) | 安装、配置字段表、改动后必须重启 Host、首次使用、常见信号处置 | 装环境、改配置、排「跑的是旧代码」、查面板报错信号 |
+| [SETUP.md](./SETUP.md) | 安装、配置字段表、改动后必须重启 Host、首次使用；排障已迁出（见下一行） | 装环境、改配置、排「跑的是旧代码」 |
+| [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) | **排障入口，按界面原文索引**：面板上那句话属于哪一层、第一动作是什么、细节在哪份文档的哪一节；含「看着像坏了其实是设计」清单；不发明症状码（理由在 §4） | 只知道一句报错或界面文案、不知道是哪个模块；接手别人「它坏了」的问题 |
 | [AUTH.md](./AUTH.md) | 一跳账号密码登录、无 refresh token（重登即续期）、密码明文过 TLS 与不落盘纪律、登录 trace、防锁号节流 | 改登录/重登、排查登录失败 |
 | [API.md](./API.md) | 本地路由（`snapshot` / `account` / `api-key` / `provider` / `models` / `draw` / `video` / `agnescode` 共 8 组）、控制台端点、配置端点清单 | 对接路由、看返回结构、调端点 |
 | [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md) | 提供方注册开关：从「配置字段 + 重启」到「面板开关 + 立即生效」的设计决策与同类插件调研 | 改 provider 注册、理解开关语义 |
 | [TESTING.md](./TESTING.md) | 离线测试体系、`panel-decision.js` 机制、已知缺口 | 跑测试、理解测试为什么这样写 |
 | [AGNES-API.md](./AGNES-API.md) | **现行接口事实源**：控制台额度侧（端点表、响应信封、四窗口额度模型、套餐目录与 uuid 匹配）＋推理侧（provider `agnes-token-plan`、key `AGNES_TOKEN_PLAN_API_KEY`、思考档位 safe-set、live-contract 护栏） | 改额度/推理接口、排「打到错网关」、对 live-contract 基线 |
-| [PITFALLS.md](./PITFALLS.md) | 61 条真实踩坑（现象→根因→修法） | 改代码前避坑、理解防御性代码的来由 |
+| [PITFALLS.md](./PITFALLS.md) | 真实踩坑（现象→根因→修法）；**条数以文件内 `## N.` 编号为准，别在此写死** | 改代码前避坑、理解防御性代码的来由 |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | 提交约定、红线（凭据/`upstream/` 不进库）、仓库整洁 | 准备提交、清理历史误跟踪 |
 | [REFERENCES.md](./REFERENCES.md) | **参照件索引与纪律**：`upstream/` 容器里谁是谁（来源 / 版本 / 许可 / 承重在哪）——AgnesCode 线六件参照件与本机桌面端快照、只吸收事实不复制代码的红线 | 查「这条事实当初从哪来」、新增参照件、防再次「纯探测不落盘」 |
 | [CHANGELOG.md](../CHANGELOG.md) | 公开行为变化的版本记录（非 git log 替代） | 看「这个版本改了什么」 |
