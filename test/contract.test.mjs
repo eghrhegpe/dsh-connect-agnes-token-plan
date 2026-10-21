@@ -482,6 +482,55 @@ function clientFields(text, name) {
 }
 
 /**
+ * Fields of ONE NESTED block inside a client wire interface — the `balance`
+ * of `AgnescodeStateData`, say. The nested block is written inline, so the
+ * top-level `clientFields` reader stops at its first level.
+ * @param {string} text - `wire.ts` source.
+ * @param {string} name - the interface name.
+ * @param {string} field - the nested field name.
+ * @returns {Set<string>} the nested field names, empty if either is absent.
+ */
+function clientNestedFields(text, name, field) {
+  const lines = text.split(/\r?\n/);
+  const at = lines.findIndex((l) => l === `export interface ${name} {`);
+  const keys = new Set();
+  if (at < 0) return keys;
+  let inside = false;
+  for (let i = at + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!inside) {
+      if (new RegExp(`^ {2}${field}\\??: \\{`).test(line)) inside = true;
+      continue;
+    }
+    // The nested block ends where the interface's own indent comes back.
+    if (/^ {2}\}/.test(line)) break;
+    const m = line.match(/^ {4}(\w+)\??:/);
+    if (m) keys.add(m[1]);
+  }
+  return keys;
+}
+
+/**
+ * Fields of a TYPE literal — `Array<{ id: string; name: string; … }>`. The
+ * producer's own declaration of the row it builds, read where the row is
+ * built: a producer that computes a field and never declares it is exactly
+ * the break this fence exists to catch.
+ * @param {string} text - the source.
+ * @param {RegExp} pattern - captures the type literal's body.
+ * @returns {Set<string>} the field names, empty if the pattern misses.
+ */
+function typeLiteralFields(text, pattern) {
+  const m = text.match(pattern);
+  const keys = new Set();
+  if (!m) return keys;
+  for (const part of m[1].split(";")) {
+    const f = part.match(/^\s*(\w+)\??:/);
+    if (f) keys.add(f[1]);
+  }
+  return keys;
+}
+
+/**
  * Object-literal keys inside one literal, matched by BRACE DEPTH rather than
  * indentation: the nested blocks sit at odd indents and their conditional
  * spreads open IIFEs.
@@ -671,6 +720,100 @@ function literalScan(text, opener, after) {
     check("every key the /agnescode GET serves is declared in the client",
       missing.length === 0, `AgnescodeStateData is missing: ${missing.join(", ") || "(none)"}`);
   }
+}
+
+// --- 11d. the /agnescode wire contract, one level DOWN --------------------
+//
+// §11b compares the TOP-LEVEL key set of the `/agnescode` GET body. Almost
+// everything the panel reads is one level below it — the credit balance, the
+// per-model roster, the two observation rolls — and a rename there (say
+// `displayLabel` → `promoLabel`) sails through §11b and, because every client
+// field is optional, renders as a silently empty chip: the CHANGELOG once
+// announced a promotional badge that no row could ever light up.
+//
+// So the same comparison runs over the NESTED shapes, each against the
+// producer that actually builds it:
+//   - `balance`   — the credits-balance reader in `host/agnescode.ts`
+//   - `models[]`  — the roster builder in `host/agnescode-models.ts`
+//   - `usage`     — the usage roll in `host/agnescode-stats-store.ts`
+//   - `rateLimit` — the rate-limit roll in the same file
+//
+// The direction that breaks the panel is "the client declares a field the Host
+// never sends" → that must be EMPTY. The other direction (the Host publishes
+// more than the panel reads) is not a defect — it is a published fact — but it
+// is LISTED, so a new one has to be declared instead of appearing unnoticed.
+{
+  const readSource = (rel) => readFileSync(join(ROOT, rel), "utf8");
+  const wireSrc = readSource(join("src", "client", "wire.ts"));
+  const stateSrc = readSource(join("src", "host", "agnescode.ts"));
+  const modelsSrc = readSource(join("src", "host", "agnescode-models.ts"));
+  const statsSrc = readSource(join("src", "host", "agnescode-stats-store.ts"));
+
+  // The Host publishes the account's membership level with the balance. The
+  // panel has no row for it, so the client type does not declare it — a
+  // PUBLISHED FACT, not a drift. It is listed so a NEW extra has to be
+  // declared here instead of appearing unnoticed.
+  const KNOWN_BALANCE_EXTRAS = ["level"];
+
+  /**
+   * One nested shape's fence: the Host's published keys against the client's
+   * declared ones, in both directions.
+   * @param {string} label - the shape's name, for the assertion texts.
+   * @param {Set<string>} host - the keys the Host publishes.
+   * @param {Set<string>} client - the keys the client declares.
+   * @param {string[]} anchors - keys that must be on BOTH sides, so a scan
+   *   that found the wrong block fails with a loud text instead of comparing
+   *   two empty sets.
+   * @param {string[]} extras - published-but-undeclared keys, listed.
+   */
+  const fence = (label, host, client, anchors, extras) => {
+    check(`both halves' ${label} shape is live (the anchors are on each side)`,
+      anchors.length > 0 && anchors.every((k) => host.has(k) && client.has(k)),
+      JSON.stringify({ host: [...host], client: [...client] }));
+    const missing = [...client].filter((k) => !host.has(k));
+    check(`every ${label} field the client declares is published by the Host`,
+      missing.length === 0, `the Host does not publish: ${missing.join(", ") || "(none)"}`);
+    const published = [...host].filter((k) => !client.has(k));
+    check(`the ${label} fields the Host publishes beyond the client's declaration are the listed ones`,
+      published.length === extras.length && published.every((k) => extras.includes(k)),
+      `published extras: ${published.join(", ") || "(none)"}; listed: ${extras.join(", ") || "(none)"}`);
+  };
+
+  // balance — the credits-balance reader's own literal.
+  const balanceScan = literalScan(stateSrc, /^ {4}return \{$/, /const total = numZeroOk\(data\.total_balance\)/);
+  check("no template literal inside the scanned balance block (the depth scan cannot cross one)",
+    balanceScan.template.length === 0, `backtick lines: ${balanceScan.template.join(", ") || "(none)"}`);
+  fence("balance", balanceScan.keys, clientNestedFields(wireSrc, "AgnescodeStateData", "balance"),
+    ["totalBalance", "timeSensitiveBalance", "permanentBalance", "subscriptionCredits",
+      "dailyFreeCredits", "dailyEffectQuota", "effectQuotaBalance"],
+    KNOWN_BALANCE_EXTRAS);
+
+  // models[] — the roster builder's own declared row type.
+  const rosterType = typeLiteralFields(modelsSrc, /const out: Array<\{([^}]*)\}> = \[\];/);
+  fence("roster row", rosterType, clientFields(wireSrc, "AgnescodeModelData"),
+    ["id", "name", "vision", "memberOnly", "multiplier", "displayLabel",
+      "contextWindow", "maxOutputLength"],
+    []);
+
+  // usage — the usage roll's own literal.
+  const usageScan = literalScan(statsSrc, /^ {2}return \{$/, /function readUsage\(/);
+  check("no template literal inside the scanned usage roll (the depth scan cannot cross one)",
+    usageScan.template.length === 0, `backtick lines: ${usageScan.template.join(", ") || "(none)"}`);
+  fence("usage", usageScan.keys, clientNestedFields(wireSrc, "AgnescodeStateData", "usage"),
+    ["todayRequests", "todayInput", "todayOutput", "todayCacheRead", "todayTotal",
+      "last30dRequests", "last30dTotal", "lastAt"],
+    []);
+
+  // rateLimit — the roll is returned as one inline literal, so its three keys
+  // are pinned by the spelling itself: a rename breaks the pattern and the
+  // fence goes red instead of comparing an empty set.
+  const rateLimitShape = statsSrc.match(/return \{ today, last30d, lastAt: [^,]+, usage: readUsage\(/);
+  const rateLimit = new Set(["today", "last30d", "lastAt"]);
+  check("the rate-limit roll is still spelled out as today/last30d/lastAt",
+    rateLimitShape !== null, "the read() literal no longer carries the three roll keys inline");
+  fence("rateLimit", rateLimit, clientNestedFields(wireSrc, "AgnescodeStateData", "rateLimit"),
+    ["today", "last30d", "lastAt"],
+    []);
 }
 
 // --- 11c. the client's pinned wire constants are the Host's declarations ----
