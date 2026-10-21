@@ -308,8 +308,14 @@ export function createTokenStore(options) {
         // store: the panel uses this to say "a dead refresh token re-signs in
         // automatically (or needs a manual re-login)". Absent or blank means
         // not armed, and the next dead refresh will surface the account form.
-        autoRecoverArmed: str(env[PASSWORD_REF], "") !== "",
-        hasRefreshToken: str(stored?.refreshToken, "") !== "",
+        //
+        // Both readers below are `verbatim(...).trim()` rather than `str(...)`:
+        // the blankness test trims its own COPY, so the credential itself is
+        // never rewritten on its way through (util.ts `verbatim`). `str()`
+        // here would make the two values indistinguishable from ones the store
+        // had permission to normalize — and the next reader copies the shape.
+        autoRecoverArmed: verbatim(env[PASSWORD_REF], "").trim() !== "",
+        hasRefreshToken: verbatim(stored?.refreshToken, "").trim() !== "",
         expiresAt: stored?.expiresAt ?? null,
         // Why the panel should ask for an account: nothing works yet.
         needsAccount: stored === undefined && account === undefined,

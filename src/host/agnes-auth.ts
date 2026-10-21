@@ -62,7 +62,10 @@ export const AUTH_DEFAULTS = Object.freeze({
 
 /** RFC 7519 `exp`, in epoch MILLIS, or `null` when the token carries none. */
 export function readJwtExpiry(token: string) {
-  const parts = str(token, "").split(".");
+  // Verbatim, not `str`: this IS the credential, and splitting it on "." is the
+  // only thing that happens to it. `str()` would trim the value before the
+  // split — a change the user cannot see, on the one value they cannot re-derive.
+  const parts = verbatim(token, "").split(".");
   if (parts.length !== 3) return null;
   try {
     const claims = JSON.parse(Buffer.from(parts[1]!, "base64url").toString("utf8"));

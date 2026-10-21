@@ -77,8 +77,14 @@ export function str(value: unknown, fallback?: any): any {
  * `access[_-]?token` covers `access_token`, `access-token` and — because these
  * rules run case-insensitively — `accessToken`. `secret` and `client_secret`
  * are listed separately: OAuth-shaped bodies spell them both ways.
+ *
+ * EXPORTED, and not only for the redaction rules: `test/credential-guard.test.mjs`
+ * derives its field-name vocabulary from this same string, so a name added here
+ * widens the fence that keeps that name out of `str()` as well. One list, two
+ * readers — the third copy this comment warned about is now a `git grep` away
+ * rather than a silent divergence.
  */
-const SECRET_KEY = "password|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|code[_-]?verifier|token|secret";
+export const SECRET_KEY = "password|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|client[_-]?secret|code[_-]?verifier|token|secret";
 
 /**
  * Redact credential-shaped strings from any text that may reach a log, an

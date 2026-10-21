@@ -13,7 +13,7 @@
  */
 
 import { readJwtExpiry } from "../agnes-auth.ts";
-import { str, obj, num, numOrNull, verbatim } from "../util.ts";
+import { obj, num, numOrNull, verbatim } from "../util.ts";
 
 /** Bumped if the stored payload shape ever changes incompatibly. */
 const GRANT_VERSION = 1;
@@ -39,7 +39,10 @@ export function parseGrant(record) {
   if (accessToken.trim() === "") return undefined;
   return {
     accessToken,
-    refreshToken: str(payload.refreshToken, ""),
+    // Same rule as the access token above: the refresh token is replayed
+    // verbatim to the refresh endpoint, so the store must not hand back a
+    // trimmed copy of it.
+    refreshToken: verbatim(payload.refreshToken, ""),
     // Prefer the claim we can read off the token itself; fall back to what the
     // token endpoint reported when the claim is unreadable.
     expiresAt: numOrNull(payload.expiresAt) ?? readJwtExpiry(accessToken)

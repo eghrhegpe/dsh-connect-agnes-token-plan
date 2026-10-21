@@ -180,6 +180,7 @@ jobs:
         run: |
           set -e
           node test/agnes-auth.test.mjs
+          node test/credential-guard.test.mjs
           node test/store.test.mjs
           node test/store-baseline.test.mjs
           node test/routes.test.mjs
