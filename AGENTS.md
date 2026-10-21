@@ -21,23 +21,20 @@ Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/u
 
 **定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计裁定见 docs/ADR.md，2026-09 的研究原稿已归档为 docs/ARCHIVE-IMPROVEMENTS-2026-09.md（不作现行依据）。
 
-在web端、desktop搜索同类插件：`~/.dsh/profiles`
+在 web 端、desktop 搜索同类插件：见 `~/.dsh/profiles`（同类插件清单随生态变化，不在此硬编码；当前含 commandcode / qoder / trae / workbuddy 等）。
 
-```
-@mars-sea/dsh-commandcode-provider
-非官方 Command Code 提供方：实时模型目录、多账号轮换、用量面板与套餐配额面板。
+## 探索顺序（按任务挑一条路，别从头读到尾）
 
-@eghrhegpe/dsh-connect-qoder
-将本机已登录的 Qoder（国内版 Qoder CN / 国际版 Qoder）模型接入 DeepSeek Harness —— bring locally signed-in Qoder models into DeepSeek Harness with zero configuration.
+本文件是**纪律文件不是教程**：钉死红线、验证、导航，不教一步步做。按任务照下表走，每行「先读 → 再读 → 动手前确认」三段式。
 
-
-dsh-connect-trae
-把本机登录的 Trae 模型接入 DeepSeek Harness：国内版与国际版双供应商并行，提供用量/积分概览与每日签到领取。
-
-
-dsh-connect-workbuddy
-把本机登录的 WorkBuddy 模型接入 DeepSeek Harness，并提供只读的积分概览与模型管理。
-```
+| 你的任务 | 第一站（先读） | 第二站（再读） | 动手前确认 |
+|---|---|---|---|
+| **它坏了 / 只有现象** | `docs/PITFALLS.md` 按症状码（§42 进程分界 / §45 进度条 / §46 令牌失效 / §47 市场图） | 对应 `src/host/*` | 先按症状定位，别按模块名猜 |
+| 改登录 / 节流 / 续期 / 失败分类 | 本文件红线 1/2/5 → `docs/AUTH.md` → `docs/AGNES-API.md` | `src/host/agnes-auth.ts` | `node test/agnes-auth.test.mjs` |
+| 改面板 / 对话框用量胶囊 | 本文件三条事实 1 → `src/client/composer-usage-pill.ts` | `test/dom-render.test.mjs` | **改 `src/` 必先 `npm run build`**，否则 render 套件 eval 旧 `client.js` |
+| 动 token-store / publisher 大文件 | `docs/TOKEN-STORE-SPLIT.md`、`docs/PUBLISH-CORE-SPLIT.md` | `src/host/token-store/*` | 先冻结基线 `test/store-baseline.test.mjs`，再按蓝图搬 |
+| 改文案 / README / `cordis.patch.yml` | `test/docs.test.mjs`（tab 全覆盖 + 槽位一致） | — | 不进 `src/`、不 build、不跑全量 |
+| 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md` | `src/host/index.ts` 的 `apply`（唯一装配点） | `npm test` 里 wiring 门禁 |
 
 ## 验证（按域裁剪，禁止无脑全量）
 
@@ -144,7 +141,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 动刀 `token-store.ts` / provider publisher 这类大文件（先冻结行为基线，再按蓝图搬） | `docs/TOKEN-STORE-SPLIT.md`、`docs/PUBLISH-CORE-SPLIT.md`（ADR-005 准入门槛的两份先例蓝图） |
 | 查「为何不退回通用 image/video 接口、为何自己造工具」的 runtime 取证 | `docs/DSH-UNIFIED-INTERFACE-AUDIT.md`（观察存档，不作执行依据） |
 | 改测试前 | `docs/TESTING.md` |
-| 改任何代码前扫一眼 | `docs/PITFALLS.md`（61 条现象→根因→修法） |
+| 改任何代码前扫一眼 | `docs/PITFALLS.md`（现象→根因→修法，条数见文件头，别写死） |
 | 排查「面板说令牌失效 / 让你重新登录，但重登没用」 | `docs/PITFALLS.md` §46（Host 唯一的 403 是同源闸，不是凭据；客户端曾把它读成 `jwt_expired`） |
 | 排查「进度条数字和控制台对不上 / 超额窗口显示成 100%」 | `docs/PITFALLS.md` §45（进度条用平台自己的 `usage_pct`，不是 `used/limit`；钳制即改写平台口径） |
 | 排查「凭据疑似漏进 agent 对话 / 日志」 | `docs/PITFALLS.md` §44（agent 工具 execute 错误是红线①第四张脱敏表面；同族漏一条就漏凭据） |
