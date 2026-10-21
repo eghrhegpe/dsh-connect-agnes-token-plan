@@ -7,7 +7,12 @@
  * 「检测本机登录态」— a harvest-then-save walk whose failure mode is the
  * per-file diagnosis list the tab renders. Every answer is secret-free:
  * tier codes and shape facts only — a token NEVER enters this payload, and
- * error text passes `redactSecrets` before it can.
+ * error text passes the SHARED `redactError` before it can. The shared helper
+ * is the point: this route used to hand-roll its own copy of the redaction
+ * (four inline `redactSecrets(error instanceof Error ? … )` expressions), and a
+ * hand-rolled copy is a rule that stops being updated when the rules change.
+ * The rows' own `detail` fields are not an error message, so they keep the
+ * narrower `redactSecrets`.
  *
  * The last walk's rows and the in-flight walk live at the ROUTE scope, not
  * per request. Two reasons, and the first one is a bug that shipped:
@@ -26,7 +31,7 @@ import { createHash } from "node:crypto";
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled } from "../switch-precedence.ts";
-import { obj, redactSecrets, str, verbatim } from "../util.ts";
+import { obj, redactError, redactSecrets, str, verbatim } from "../util.ts";
 import {
   fetchAgnescodeCatalog,
   fetchAgnescodeBalance,
@@ -270,7 +275,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
             credential = (await agnescodeStore.resolve().catch(() => ({ credential: null }))).credential ?? null;
           }
         } catch (why) {
-          error = redactSecrets(why instanceof Error ? why.message : String(why));
+          error = redactError(why);
         }
         // Both BFF reads share the ONE resolved credential above, and they run
         // IN PARALLEL (2026-10-10; they used to await one after the other).
@@ -466,7 +471,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           await agnescodeSwitch.save(body.value.enabled);
           await publishFromStore();
         } catch (error) {
-          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
+          await answer({ ok: false, error: redactError(error) });
           return;
         }
         await answer();
@@ -489,7 +494,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           await agnescodeModels.save(body.value.enabledModelIds);
           await publishFromStore();
         } catch (error) {
-          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
+          await answer({ ok: false, error: redactError(error) });
           return;
         }
         await answer();
@@ -547,7 +552,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
             return;
           }
         } catch (error) {
-          await answer({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
+          await answer({ ok: false, error: redactError(error) });
           return;
         }
         if (agnescodePublisher !== null && agnescodePublisher !== undefined && agnescodePublisher.isDisposed() === false) {
@@ -597,7 +602,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
               }
               return { ok: true as const };
             } catch (error) {
-              return { ok: false as const, error: redactSecrets(error instanceof Error ? error.message : String(error)) };
+              return { ok: false as const, error: redactError(error) };
             }
           })().finally(() => {
             agnescodeLoginInFlight = null;

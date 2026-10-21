@@ -1683,6 +1683,114 @@ const GOOD_SESSION = {
   }
 }
 
+// --- 10b. a failed write must not echo a credential ----------------------------
+// This route used to hand-roll its own copy of the redaction — four inline
+// `redactSecrets(error instanceof Error ? … )` expressions — while every
+// other route in the family went through the SHARED `redactError`. A
+// hand-rolled copy is a rule that stops being updated when the rules change:
+// the moment `redactError` grew a shape the copy did not have, this route
+// would have gone on leaking. The route now calls the shared helper, and this
+// case pins that it does.
+{
+  section("route surface (a failed write must not echo a credential)");
+  try {
+    const { registerRoutes } = await import("../src/host/routes.ts");
+    const routes = new Map();
+    const ctx = {
+      webServer: {
+        register({ path, handler }) {
+          routes.set(path, handler);
+          return () => routes.delete(path);
+        }
+      }
+    };
+    const unused = new Proxy({}, { get: () => async () => null });
+    registerRoutes(ctx, {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused,
+      apiKeyStore: unused,
+      catalogStore: unused,
+      providerStore: unused,
+      drawStore: unused,
+      videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      agnescodeStore: {
+        async state() {
+          return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "测试用户", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null };
+        },
+        async resolve() {
+          return { credential: { accessToken: "x".repeat(40), bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }, source: "credentials" };
+        },
+        async save() {},
+        async forget() {}
+      },
+      agnescodeSwitch: { async enabled() { return true; }, async save() {} },
+      agnescodeModels: {
+        async listEnabledIds() { return []; },
+        // The failure text is what an upstream store would carry: a write that
+        // failed while holding the key it was handed.
+        async save() { throw new Error("write failed for sk-abcdef0123456789"); }
+      },
+      agnescodePublisher: {
+        state: { registered: true, error: null },
+        isDisposed() { return false; },
+        async publish() {}
+      }
+    });
+    const handler = routes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    const response = {
+      status: 0,
+      body: "",
+      writeHead(status) { this.status = status; },
+      end(payload) { this.body = payload; }
+    };
+    const request = (async function* () { yield Buffer.from(JSON.stringify({ action: "saveModels", enabledModelIds: ["agnes-3.0-flash"] })); })();
+    request.method = "POST";
+    request.headers = { host: "127.0.0.1" };
+    await handler(request, response);
+
+    const body = JSON.parse(response.body);
+    check("the failure is reported (the write did not silently succeed)",
+      body.ok === false, JSON.stringify(body));
+    check("the credential must not reach the answer",
+      typeof body.error === "string" && !body.error.includes("abcdef0123456789"),
+      JSON.stringify(body.error));
+    check("the redaction is visible, so the diagnosis still reads as a redaction",
+      typeof body.error === "string" && body.error.includes("[REDACTED]"),
+      JSON.stringify(body.error));
+
+    // The BEHAVIOUR above was already true — the hand-rolled copy did the same
+    // thing. What the copy broke was the UPDATES: a hand-rolled copy is a rule
+    // that stops being updated when the rules change, so the fence has to be
+    // about the shape of the code, not about the output. Comments are stripped
+    // first: the fix's own prose names these expressions, and a fence
+    // satisfiable by a comment guards nothing.
+    const routeSource = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "..", "src", "host", "routes", "agnescode.ts"),
+      "utf8"
+    ).replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map((line) => {
+      const i = line.indexOf("//");
+      if (i === 0) return "";
+      return i > 0 && line[i - 1] !== ":" ? line.slice(0, i) : line;
+    }).join("\n");
+    check("the route must not hand-roll its own redaction",
+      !/redactSecrets\([^)]*instanceof Error/.test(routeSource),
+      "an inline copy of the redaction is a rule that stops being updated");
+    check("the route goes through the shared helper",
+      /redactError\(/.test(routeSource),
+      "the shared redactError is the one copy of the rule");
+  } catch (error) {
+    fail("route surface (a failed write must not echo a credential)", error);
+  }
+}
+
 // --- 11. the mount seed converges inside a bounded window --------------------
 // The bug this fences: the seed used to run ONCE at mount. The two things it
 // needs — the `credentials` service the credential is read through, and the
