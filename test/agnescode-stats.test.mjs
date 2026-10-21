@@ -215,6 +215,37 @@ async function freshFileStore(now = BASE) {
     JSON.stringify(after));
 }
 
+// --- 14. 并发写：两个观察者写同一个文件，计数不许少 ---------------------
+{
+  const s = await freshFileStore();
+  // 两个观察者同时落笔：每一笔都先读回文件、再折进自己那一段。没有队列时
+  // 五次读全部先落地、五次写随后依次覆盖——最后那次赢，前面四次的增量凭空
+  // 消失，而面板看不出任何异常，计数只是"少了"。
+  await Promise.all([
+    s.recordUsage({ inputTokens: 100, outputTokens: 100 }, at(0)),
+    s.recordUsage({ inputTokens: 100, outputTokens: 100 }, at(0)),
+    s.recordUsage({ inputTokens: 100, outputTokens: 100 }, at(0)),
+    s.recordUsage({ inputTokens: 100, outputTokens: 100 }, at(0)),
+    s.recordUsage({ inputTokens: 100, outputTokens: 100 }, at(0)),
+  ]);
+  const u = (await s.read()).usage;
+  check("five concurrent usage turns all land (no lost update)",
+    u.todayRequests === 5 && u.todayTotal === 1000, JSON.stringify(u));
+
+  // 限流与用量同时写也一样：同一文件的两段都不能丢。
+  const s2 = await freshFileStore();
+  await Promise.all([
+    s2.recordRateLimit(at(0)),
+    s2.recordUsage({ inputTokens: 10, outputTokens: 10 }, at(0)),
+    s2.recordRateLimit(at(0)),
+    s2.recordUsage({ inputTokens: 10, outputTokens: 10 }, at(0)),
+  ]);
+  const snap = (await s2.read());
+  check("a rate-limit hit and a usage turn racing each other both land",
+    snap.today === 2 && snap.usage.todayRequests === 2 && snap.usage.todayTotal === 40,
+    JSON.stringify(snap));
+}
+
 if (tmpDir !== null) await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
 
 console.log(JSON.stringify(results, null, 2));

@@ -300,35 +300,52 @@ export function agnescodeStatsDir() {
 export function createFileAgnescodeStatsStore({ dir = agnescodeStatsDir(), now = Date.now } = {}) {
   const file = join(dir, "agnescode-stats.json");
 
+  // Both observers write the SAME file, and each of them reads it back first
+  // to fold its own section in. Without a queue, two writes interleave: the
+  // slower one wins and the faster one's increment is simply gone — the
+  // counter under-reports, and nothing anywhere says so. The chain is the
+  // same shape `publish-core.ts` uses for the publisher: no lock object, and
+  // a rejected link never poisons the ones behind it (PITFALLS §18).
+  let writeChain: Promise<unknown> = Promise.resolve();
+  const enqueue = <T,>(task: () => Promise<T>): Promise<T> => {
+    const queued = writeChain.then(task, task);
+    writeChain = queued.then(() => undefined, () => undefined);
+    return queued;
+  };
+
   return {
     /**
      * Record one rate-limit hit at `at` (a Date; defaults to `now`). The usage
      * section is read back and re-written verbatim so a hit never clobbers the
      * token tally (and vice versa) — the two observers fire on the same stream
-     * and must not race each other's file write.
+     * and must not race each other's file write. The write is QUEUED, because
+     * reading the file back and folding one section in is only safe when no
+     * other write is between the read and the write.
      * @param {Date} [at] - when the hit happened.
      * @returns {Promise<boolean>} whether the record reached the disk.
      */
     async recordRateLimit(at: Date = new Date(now())) {
       const key = dayKeyOf(at);
-      try {
-        const parsed = parse(await readStateJson(file)) ?? { byDay: {}, lastAt: null, usageByDay: {}, usageLastAt: null };
-        const byDay = prune(parsed.byDay, now);
-        byDay[key] = (byDay[key] ?? 0) + 1;
-        const body = JSON.stringify({
-          version: STATS_VERSION,
-          rateLimit: { byDay, lastAt: at.getTime() },
-          usage: { byDay: pruneUsage(parsed.usageByDay ?? {}, now), lastAt: parsed.usageLastAt ?? null }
-        });
-        const temporary = temporaryOf(dir, "agnescode-stats.json");
-        await ensureStateDir(dir);
-        await writeStateFile(file, body, { temporary });
-        return true;
-      } catch {
-        // A read-only Home must not break the panel: the miss is one hit the
-        // counter will not show, never a failure of the tab itself.
-        return false;
-      }
+      return enqueue(async () => {
+        try {
+          const parsed = parse(await readStateJson(file)) ?? { byDay: {}, lastAt: null, usageByDay: {}, usageLastAt: null };
+          const byDay = prune(parsed.byDay, now);
+          byDay[key] = (byDay[key] ?? 0) + 1;
+          const body = JSON.stringify({
+            version: STATS_VERSION,
+            rateLimit: { byDay, lastAt: at.getTime() },
+            usage: { byDay: pruneUsage(parsed.usageByDay ?? {}, now), lastAt: parsed.usageLastAt ?? null }
+          });
+          const temporary = temporaryOf(dir, "agnescode-stats.json");
+          await ensureStateDir(dir);
+          await writeStateFile(file, body, { temporary });
+          return true;
+        } catch {
+          // A read-only Home must not break the panel: the miss is one hit the
+          // counter will not show, never a failure of the tab itself.
+          return false;
+        }
+      });
     },
 
     /**
@@ -336,7 +353,8 @@ export function createFileAgnescodeStatsStore({ dir = agnescodeStatsDir(), now =
      * `TokenUsage` the pi-ai adapter mapped (input/output/cacheRead; reasoning
      * already folded into output by `mapUsage`). A turn with nothing to add
      * (all-zero) is skipped, so a stream that reports no usage never inflates
-     * the request count. Fire-and-forget like {@link recordRateLimit}.
+     * the request count. Fire-and-forget like {@link recordRateLimit}, and
+     * queued on the same chain for the same reason.
      * @param {{inputTokens?: number, outputTokens?: number, cacheReadTokens?: number}} usage
      * @param {Date} [at] - when the turn finished.
      * @returns {Promise<boolean>} whether the record reached the disk.
@@ -345,27 +363,29 @@ export function createFileAgnescodeStatsStore({ dir = agnescodeStatsDir(), now =
       const { input, output, cacheRead } = usageTalliesOf(usage);
       if (input === 0 && output === 0 && cacheRead === 0) return true;
       const key = dayKeyOf(at);
-      try {
-        const parsed = parse(await readStateJson(file)) ?? { byDay: {}, lastAt: null, usageByDay: {}, usageLastAt: null };
-        const usageByDay = pruneUsage(parsed.usageByDay ?? {}, now);
-        const day = usageByDay[key] ?? emptyUsageDay();
-        day.requests += 1;
-        day.input += input;
-        day.output += output;
-        day.cacheRead += cacheRead;
-        usageByDay[key] = day;
-        const body = JSON.stringify({
-          version: STATS_VERSION,
-          rateLimit: { byDay: prune(parsed.byDay, now), lastAt: parsed.lastAt ?? null },
-          usage: { byDay: usageByDay, lastAt: at.getTime() }
-        });
-        const temporary = temporaryOf(dir, "agnescode-stats.json");
-        await ensureStateDir(dir);
-        await writeStateFile(file, body, { temporary });
-        return true;
-      } catch {
-        return false;
-      }
+      return enqueue(async () => {
+        try {
+          const parsed = parse(await readStateJson(file)) ?? { byDay: {}, lastAt: null, usageByDay: {}, usageLastAt: null };
+          const usageByDay = pruneUsage(parsed.usageByDay ?? {}, now);
+          const day = usageByDay[key] ?? emptyUsageDay();
+          day.requests += 1;
+          day.input += input;
+          day.output += output;
+          day.cacheRead += cacheRead;
+          usageByDay[key] = day;
+          const body = JSON.stringify({
+            version: STATS_VERSION,
+            rateLimit: { byDay: prune(parsed.byDay, now), lastAt: parsed.lastAt ?? null },
+            usage: { byDay: usageByDay, lastAt: at.getTime() }
+          });
+          const temporary = temporaryOf(dir, "agnescode-stats.json");
+          await ensureStateDir(dir);
+          await writeStateFile(file, body, { temporary });
+          return true;
+        } catch {
+          return false;
+        }
+      });
     },
 
     /**
