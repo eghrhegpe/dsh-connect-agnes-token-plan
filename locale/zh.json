@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Agnes Token Plan 接入全家桶",
+    "title": "Agnes 模型接入",
     "description": "一键接入 Agnes 的语言、生图、视频模型到 DSH（默认关），自动填入图片识别与思考强度；登录 Agnes 控制台后（重登需 AGNES_PASSWORD），可看额度窗口（5 小时请求、每周请求、每日图片、视频）、账号累计用量，以及输入框旁的用量胶囊；也支持接入 AgnesCode 桌面端模型（仅 Windows），令牌到期时重新读取桌面端登录态，撞限额自动退避重试。"
   }
 }
