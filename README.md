@@ -1,4 +1,13 @@
-# dsh-connect-agnes-token-plan
+<h1 align="center">dsh-connect-agnes-token-plan</h1>
+
+<p align="center"><b>把 Agnes（爱思）接进 DSH 的 Plugins 页插件卡，并在会话输入框常驻一枚用量胶囊。</b></p>
+
+<p align="center"><a href="#安装">安装</a> · <a href="#它是怎么工作的">工作原理</a> · <a href="CHANGELOG.md">更新日志</a> · <a href="https://github.com/eghrhegpe/dsh-connect-agnes-token-plan/issues">问题反馈</a></p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/dsh-connect-agnes-token-plan"><img src="https://img.shields.io/npm/v/dsh-connect-agnes-token-plan?style=flat-square&label=npm&color=cb3837" alt="npm version"></a> <a href="https://www.npmjs.com/package/dsh-connect-agnes-token-plan"><img src="https://img.shields.io/npm/d18m/dsh-connect-agnes-token-plan?style=flat-square&label=downloads&color=cb3837" alt="npm downloads"></a> <a href="https://github.com/eghrhegpe/dsh-connect-agnes-token-plan/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/eghrhegpe/dsh-connect-agnes-token-plan/ci.yml?branch=main&style=flat-square&label=tests" alt="test status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/eghrhegpe/dsh-connect-agnes-token-plan?style=flat-square" alt="MIT license"></a> <a href="https://github.com/eghrhegpe/dsh-connect-agnes-token-plan/stargazers"><img src="https://img.shields.io/github/stars/eghrhegpe/dsh-connect-agnes-token-plan?style=flat-square" alt="GitHub stars"></a> <a href="https://dshfind.com/plugins/eghrhegpe/dsh-connect-agnes-token-plan"><img src="https://dshfind.com/api/badge/eghrhegpe/dsh-connect-agnes-token-plan" alt="dshfind plugin"></a>
+</p>
 
 把 Agnes 接进 DSH：**Plugins 页**的插件卡（三个 tab），外加**会话输入框右侧的一枚用量胶囊**。**DSH** 即 **DeepSeek Harness**；**Agnes**（爱思）是全模态大模型平台，本插件对接其**控制台 API** 与**推理 API**。
 
@@ -100,12 +109,7 @@
 
 ## 运维诊断：这台机器现在挂没挂 provider？
 
-provider / 出图开关的生效值存在插件私有状态文件里（`$DSH_HOME/state/<name>/`），不在任何配置或路由上——查"到底开没开"用 doctor，它只读状态文件、不碰凭据，Host 没起也能跑：
-
-```powershell
-npm run doctor          # 人读：每个 profile 的 provider / draw / video / agnescode 开关与模型清单
-npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本）
-```
+provider / 出图 / 视频 / AgnesCode 开关的生效值存在插件私有状态文件里（`$DSH_HOME/state/<name>/`），不在任何配置或路由上；`npm run doctor` 只读状态文件、不碰凭据，Host 没起也能跑（人读 / 机器读两个口径见 [docs/SETUP.md](docs/SETUP.md) §6.1）。
 
 ## 文档
 

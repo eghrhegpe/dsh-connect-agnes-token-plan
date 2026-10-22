@@ -120,3 +120,14 @@ AgnesCode tab 读的是**另一个应用**（AgnesCode 桌面端）已经登录�
 信号与处置的整张表已迁到 **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**（按面板上的**界面原文**索引：面板读不出来、登录被拒、模型目录为空、以及「看着像坏了其实是设计」的清单）。
 
 本文件只管装、配、重启；排障从那份进。`shapeWarnings`、`quota.error` 按源降级、「可看图」为空是「读不到」等接口侧含义，那份表指到 [AGNES-API.md](./AGNES-API.md) 与 [ADR.md](./ADR.md)，不在此重复。
+
+### 6.1 查这台机器的开关生效值（doctor）
+
+provider / 出图 / 视频 / AgnesCode 四个开关的生效值存在插件私有状态文件里（`$DSH_HOME/state/<name>/`），不在任何配置或路由上；`npm run doctor` 只读状态文件、不碰凭据，Host 没起也能跑：
+
+```powershell
+npm run doctor          # 人读：每个 profile 的 provider / draw / video / agnescode 开关与模型清单
+npm run doctor:json     # 机器读：JSON（可进你的巡检 / 工单脚本）
+```
+
+doctor 的只读范围与实现见 [PITFALLS.md](./PITFALLS.md) §22 与 [ROADMAP.md](./ROADMAP.md) 的落地坐标。
