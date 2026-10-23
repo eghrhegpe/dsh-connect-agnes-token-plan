@@ -292,6 +292,9 @@ export const S = {
   // Tabular figures: the percentages must not jitter while the pill polls.
   pillReading: { fontVariantNumeric: "tabular-nums" },
   pillStale: { color: "var(--dsw-alias-label-secondary)" },
+  // The new-model marker tag beside the reading: "· 3 new models", a quieter
+  // secondary tone so it does not compete with the balance figures.
+  pillNewTag: { color: "var(--dsw-alias-label-secondary)", flexShrink: 0 },
   // An exhausted window is the ONE case where the text itself is tinted. A
   // healthy 3% pill must stay as quiet as the chrome around it.
   pillErrorText: { color: "var(--dsw-alias-state-error-primary)" },

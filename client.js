@@ -264,6 +264,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.models": "模型（{count}）",
 			"agnescode.fallbackRoster": "未取到实时目录，以下为内置清单，倍率截至 {asOf}。",
 			"agnescode.memberOnly": "会员",
+			"agnescode.visionAssumed": "可看图·未实测",
+			"agnescode.visionAssumedTitle": "网关没声明这个模型能否看图，插件默认放开图片入口（未实测）。真发过去模型说看不到，就把它的 id 记进否决清单。",
+			"agnescd.newModels": "新模型",
+			"agnescd.newModelsRow": "本机新见",
+			"agnescd.newModelsTitle": "本机首次见到的模型：",
+			"agnescd.newModelsSep": "、",
 			"agnescode.rateTitle": "平台公布的积分消耗倍率（0 为免费）",
 			"agnescode.registeredPill": "已注册",
 			"agnescode.rosterHint": "勾选决定哪些模型推送进 DSH 模型列表，改动即时生效。",
@@ -524,6 +530,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.models": "Models ({count})",
 			"agnescode.fallbackRoster": "Live catalogue unavailable — showing the built-in list, rates as of {asOf}.",
 			"agnescode.memberOnly": "member",
+			"agnescode.visionAssumed": "vision (unverified)",
+			"agnescode.visionAssumedTitle": "The gateway did not declare whether this model sees images, so picture input is allowed by default and this is unverified. If the model answers it cannot see the image, add its id to the vision denylist.",
+			"agnescd.newModels": "new",
+			"agnescd.newModelsRow": "New here",
+			"agnescd.newModelsTitle": "First seen on this machine: ",
+			"agnescd.newModelsSep": ", ",
 			"agnescode.rateTitle": "Credit multiplier as published by the platform (0 = free)",
 			"agnescode.registeredPill": "Registered",
 			"agnescode.rosterHint": "Ticking decides which models are pushed into DSH's model list; the change takes effect immediately.",
@@ -1562,6 +1574,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			},
 			pillReading: { fontVariantNumeric: "tabular-nums" },
 			pillStale: { color: "var(--dsw-alias-label-secondary)" },
+			pillNewTag: {
+				color: "var(--dsw-alias-label-secondary)",
+				flexShrink: 0
+			},
 			pillErrorText: { color: "var(--dsw-alias-state-error-primary)" },
 			pillTierOk: { background: "var(--dsw-alias-state-success-primary, #22c55e)" },
 			pillTierWarn: { background: "var(--dsw-alias-state-warn-primary, #f59e0b)" },
@@ -4050,7 +4066,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			}), h("span", { style: S.spacer }), promo === null ? null : h("span", { style: S.modelPromo }, promo), rate === null ? null : h("span", {
 				style: S.modelRate,
 				title: tt("agnescode.rateTitle")
-			}, `×${rate}`), row.memberOnly === true ? h("span", { style: S.modelBadge }, tt("agnescode.memberOnly")) : null), meta === "" ? null : h("div", { style: S.modelMeta }, meta));
+			}, `×${rate}`), row?.vision === true ? h("span", {
+				style: S.modelBadge,
+				title: row?.visionSource === "assumed" ? tt("agnescode.visionAssumedTitle") : void 0
+			}, row?.visionSource === "assumed" ? tt("agnescode.visionAssumed") : tt("llm.rosterVision")) : null, row.memberOnly === true ? h("span", { style: S.modelBadge }, tt("agnescode.memberOnly")) : null), meta === "" ? null : h("div", { style: S.modelMeta }, meta));
 		})));
 	}
 	/**
@@ -4665,10 +4684,17 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const permanent = partOf(state, "permanentBalance");
 		const split = timeLimited === null || permanent === null ? null : `${tt("agnescode.balanceTimeLabel")} ${count(timeLimited)} · ${tt("agnescode.balancePermanentLabel")} ${count(permanent)}`;
 		const usageText = agnescodeUsageText(state?.usage ?? null, tt);
+		const newIds = (Array.isArray(state?.newModelIds) ? state.newModelIds : []).filter((id) => typeof id === "string" && id !== "");
+		const shownNames = newIds.map((id) => {
+			const row = state?.models?.find((model) => model.id === id);
+			return row?.name ?? row?.id ?? id;
+		}).slice(0, 3);
+		const newModelTitle = newIds.length === 0 ? null : `${tt("agnescd.newModelsTitle")}${shownNames.join(tt("agnescd.newModelsSep"))}${newIds.length > shownNames.length ? "…" : ""}`;
 		const title = [
 			tt("composer.balanceTitle"),
 			split,
 			why,
+			newModelTitle,
 			stale ? tt("composer.stale") : null
 		].filter(Boolean).join(" · ");
 		const { popoverId, open, setOpen, rootRef, cardRef, triggerRef } = usePillPopover();
@@ -4693,6 +4719,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				key: "why",
 				style: S.pillPopMuted
 			}, why) : null,
+			newIds.length > 0 ? h("div", {
+				key: "new-models",
+				style: S.pillPopMuted
+			}, `${tt("agnescd.newModelsRow")} ${shownNames.join(tt("agnescd.newModelsSep"))}${newIds.length > shownNames.length ? "…" : ""}`) : null,
 			stale ? h("div", {
 				key: "stale",
 				style: S.pillPopMuted
@@ -4716,7 +4746,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			popoverOpen: open,
 			popoverId,
 			buttonRef: triggerRef,
-			children: h("span", { style: S.pillReading }, pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`)
+			children: [h("span", {
+				key: "reading",
+				style: S.pillReading
+			}, pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`), newIds.length === 0 ? null : h("span", {
+				key: "new-models",
+				style: S.pillNewTag
+			}, ` · ${newIds.length} ${tt("agnescd.newModels")}`)]
 		}), open ? h("div", {
 			ref: cardRef,
 			id: popoverId,

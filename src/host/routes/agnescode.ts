@@ -179,7 +179,7 @@ function readThroughAgnescode(
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
-  const { settings, agnescodeStore, agnescodeSwitch, agnescodePublisher, agnescodeModels, cache, inflight, agnescodeFetch } = wiring;
+  const { settings, agnescodeStore, agnescodeSwitch, agnescodePublisher, agnescodeModels, agnescodeRosterSeen, cache, inflight, agnescodeFetch } = wiring;
 
   // ── The AgnesCode route: the desktop-app upstream provider (ROADMAP §6.3) ──
   // The route-scoped state — declared BEFORE any handler runs, never after a
@@ -342,6 +342,23 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // served as two sibling keys because they answer two different
         // questions ("did I get throttled" vs "how much did my calls spend").
         const { usage, ...rateLimit } = await agnescodeStats.read();
+        // The new-model marker (FEATURE B): computed ONLY on a LIVE roster read. The
+        // fallback table is the built-in roster - our own text; diffing it would
+        // announce our rows as gateway news. note() records what we saw; it returns
+        // just the ids first seen within the 7-day window (seed call: nothing new).
+        //
+        // The diff runs on the WHOLE live roster, not the curated subset: the
+        // marker answers "is this model news from the gateway", a fact that does
+        // not depend on which boxes this user ticked. Diffing the subset would
+        // also make a long-listed model look brand new the day it is enabled.
+        let newModelIds: readonly string[] | undefined;
+        if (liveRoster && agnescodeRosterSeen !== null && agnescodeRosterSeen !== undefined) {
+          const offered = roster
+            .map((r) => r.id)
+            .filter((id): id is string => typeof id === "string" && id !== "");
+          const noted = await agnescodeRosterSeen.note(offered);
+          if (noted.newIds.length > 0) newModelIds = noted.newIds;
+        }
         return {
           ok: true,
           enabled: effectiveEnabled,
@@ -371,6 +388,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           // presenting frozen prices as live ones.
           modelsSource: liveRoster ? "live" : "fallback",
           ...(liveRoster ? {} : { modelsAsOf: AGNESCODE_FALLBACK_ASOF }),
+          ...(newModelIds !== undefined ? { newModelIds } : {}),
           enabledModelIds,
           providerRegistered: publisherState?.registered === true,
           ...(publisherState?.error !== null && publisherState?.error !== undefined ? { providerError: publisherState.error } : {}),

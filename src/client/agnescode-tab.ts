@@ -900,6 +900,16 @@ export function AgnescodeRoster({ models, registered, enabledIds, busy, hint, to
             rate === null
               ? null
               : h("span", { style: S.modelRate, title: tt("agnescode.rateTitle") }, `×${rate}`),
+            row?.vision === true
+              ? h("span", {
+                style: S.modelBadge,
+                // A proven capability reads as the plain chip; the default-on
+                // "assumed" row says it is unverified and names the denylist a
+                // blind result belongs in, so a model that cannot see the image
+                // is never advertised as if it could.
+                title: row?.visionSource === "assumed" ? tt("agnescode.visionAssumedTitle") : undefined
+              }, row?.visionSource === "assumed" ? tt("agnescode.visionAssumed") : tt("llm.rosterVision"))
+              : null,
             row.memberOnly === true ? h("span", { style: S.modelBadge }, tt("agnescode.memberOnly")) : null
           ),
           meta === "" ? null : h("div", { style: S.modelMeta }, meta)

@@ -841,6 +841,46 @@ try {
       && text(noBalance.container).includes("AgnesCode · —"),
     `title=${noBalance.button()?.getAttribute("title")}`);
 
+  // ── the new-model marker ────────────────────────────────────────────────
+  // The gateway publishes no "listed since" field, so "new here" is a diff the
+  // HOST makes against its own first-sighting file and ships as `newModelIds`.
+  // Three frames: a marker with names in the tooltip, an empty list that must
+  // stay silent, and an absent field (older producer / fallback read) which
+  // must render nothing rather than an empty chip or a stray separator.
+  agnescode = {
+    ...agnescode,
+    newModelIds: ["deepseek-v4-flash"],
+    models: [
+      { id: "glm-5.2", name: "GLM-5.2" },
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" }
+    ]
+  };
+  const fresh = await readPill();
+  check("a fresh gateway model adds the new-model segment to the pill body",
+    text(fresh.container).includes(`· 1 ${zh["agnescd.newModels"]}`),
+    `text=${text(fresh.container).slice(0, 160)}`);
+  check("the tooltip names the new models (a lookup in the same roster, never a second source)",
+    fresh.button()?.getAttribute("title")?.includes(zh["agnescd.newModelsTitle"]) === true
+      && fresh.button()?.getAttribute("title")?.includes("DeepSeek V4 Flash") === true,
+    `title=${fresh.button()?.getAttribute("title")}`);
+
+  agnescode = { ...agnescode, newModelIds: [] };
+  const noFresh = await readPill();
+  check("an empty new-model list draws no segment at all",
+    !text(noFresh.container).includes(zh["agnescd.newModels"]),
+    `text=${text(noFresh.container).slice(0, 160)}`);
+  check("an empty new-model list adds nothing to the tooltip",
+    noFresh.button()?.getAttribute("title")?.includes(zh["agnescd.newModelsTitle"]) === false,
+    `title=${noFresh.button()?.getAttribute("title")}`);
+
+  const absent = { ...agnescode };
+  delete absent.newModelIds;
+  agnescode = absent;
+  const noField = await readPill();
+  check("an absent newModelIds field renders exactly like no marker",
+    !text(noField.container).includes(zh["agnescd.newModels"]),
+    `text=${text(noField.container).slice(0, 160)}`);
+
   // The return trip: back to a console model, the pill reads the snapshot again
   // and stops touching the desktop route.
   selection.next = { provider: "agnes-token-plan", model: "agnes-pro" };

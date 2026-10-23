@@ -291,6 +291,16 @@ export const zh = {
   // Gating is account state, not model truth — the badge states the limit
   // instead of the Host silently dropping the model.
   "agnescode.memberOnly": "会员",
+  // A vision verdict the gateway never declared: offered by default, but the
+  // chip says so — see `agnescodeVisionVerdict` in src/host/agnescode-models.ts.
+  "agnescode.visionAssumed": "可看图·未实测",
+  "agnescode.visionAssumedTitle": "网关没声明这个模型能否看图，插件默认放开图片入口（未实测）。真发过去模型说看不到，就把它的 id 记进否决清单。",
+  // The new-model marker: the pill chip, its popover row, and the title listing
+  // the freshly-seen ids (capped at three).
+  "agnescd.newModels": "新模型",
+  "agnescd.newModelsRow": "本机新见",
+  "agnescd.newModelsTitle": "本机首次见到的模型：",
+  "agnescd.newModelsSep": "、",
   // The platform's own per-call credit multiplier. `×0.00` is meaningful
   // (free), so the chip is drawn whenever the field is present — only an
   // ABSENT field means "the platform stated no price".
@@ -575,6 +585,16 @@ export const en: typeof zh = {
   "agnescode.models": "Models ({count})",
   "agnescode.fallbackRoster": "Live catalogue unavailable — showing the built-in list, rates as of {asOf}.",
   "agnescode.memberOnly": "member",
+  // A vision verdict the gateway never declared: offered by default, but the
+  // chip says so — see `agnescodeVisionVerdict` in src/host/agnescode-models.ts.
+  "agnescode.visionAssumed": "vision (unverified)",
+  "agnescode.visionAssumedTitle": "The gateway did not declare whether this model sees images, so picture input is allowed by default and this is unverified. If the model answers it cannot see the image, add its id to the vision denylist.",
+  // The new-model marker: the pill chip, its popover row, and the title listing
+  // the freshly-seen ids (capped at three).
+  "agnescd.newModels": "new",
+  "agnescd.newModelsRow": "New here",
+  "agnescd.newModelsTitle": "First seen on this machine: ",
+  "agnescd.newModelsSep": ", ",
   "agnescode.rateTitle": "Credit multiplier as published by the platform (0 = free)",
   "agnescode.registeredPill": "Registered",
   "agnescode.rosterHint": "Ticking decides which models are pushed into DSH's model list; the change takes effect immediately.",

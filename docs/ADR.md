@@ -206,3 +206,24 @@
 - **受影响的文档**：`src/host/agnescode-models.ts`（`agnescodeThinkingLevelMap(id)` per-model + 模块头决策 1）、`test/agnescode.test.mjs`（新增 agnes-2.5-pro 断言块）、`docs/ROADMAP.md` §6.3.1（新增 2026-10-18 探针行）、`CHANGELOG.md`（[Unreleased]）。ADR-009 原文按考古纪律保留不改写。
 - **与既有条目的关系**：细化 ADR-009 的档位映射（该裁定以 3.0-flash 探针为基础，未覆盖 2.5-pro 的阶梯差异）；不改变 `docs/DSH-LLM-DEVELOP.md` §4 的通用裁法（Token Plan 侧 `thinkingLevelMapFor` 未动）。
 
+## ADR-018 agnescode 识图默认放行：没证据的行也收图，但面板必须说「未实测」
+
+- **日期**：2026-10-22
+- **状态**：现行（实现见 `src/host/agnescode-models.ts` 的 `AGNESCODE_VISION_DENYLIST` / `agnescodeVisionVerdict` / `agnescodeVisionSource`，`agnescodeRoster` 把 `vision` 与 `visionSource` 一起透出；面板 chip 见 `src/client/agnescode-tab.ts`；门禁见 `test/agnescode.test.mjs` 的判定阶梯段与 `test/dom-render.test.mjs` 的 chip 段）
+- **裁定**：判定阶梯四级——**实测否决集 → 行内声明 → `PROBED_VISION` 实测表 → 默认放行（`assumed`）**。前三级给面板一个朴素 chip；`assumed` 必须画成「可看图·未实测」并带 tooltip；否决项画 `vision:false`、无 chip。换言之：**默认值是「给它图片」，唯一能否掉它的是带日期实测的否决条目**。
+- **理由**：网关 `/models` 的每一行都只写 `model_type: "text"`，从不说自己能不能看图（`fetchAgnescodeCatalog` 因此钉死 `vision:false`——那是 wire 事实，不是判决）。旧逻辑把「文档表里没有」读成「不支持」，于是网关每上一次新模型，图片入口就静默消失一次：用户看不到任何提示，只能自己发现并来报。这条失效方向是不可见的（能力缺失不像错报那样会在会话里露头），而错报在当前网关是可观测的：模型收到图片后自述看不见，HTTP 仍是 200。
+- **代价与护栏**：默认放行把失效方向翻成「错报」，但没有翻成「谎报」——`visionSource` 让面板把未实测的行标出来，读者因此知道这是插件的默认，不是平台的声明。否决集是唯一维护面：发现某模型自述看不见，就把它带日期加进 `AGNESCODE_VISION_DENYLIST`。
+- **边界**：只动 agnescode 这条上游；Token Plan 侧 `identifyVisionModel`（按 `/v1/models` 的 `input_modalities` 判定）不受影响，两侧判定函数不合并。`AGNESCODE_FALLBACK_MODELS` 的 `vision` 列是手写快照，不经过本判定函数；`visionSource` 只影响面板显示，不改变 descriptor 的 `input` 数组长度约定（`vision:true` → `["text","image"]`）。
+- **复核条件**：若网关开始在 `/models` 里声明模态（`input_modalities` 或视觉标签），第二级（`declared`）就会接管绝大多数行，`assumed` 退化为稀有位——那时本条仍然成立，只是很少被用到。若哪天实测发现「未实测默认可看图」在本网关的错报代价高到不可接受（例如图片被静默吞掉且模型照常编造），把默认改回 `false` 并把本条的 `assumed` 换成一个显式的 `unknown` chip。
+
+## ADR-019 网关新增模型走胶囊的「· N 新模型」，不弹窗、不留确认态
+
+- **日期**：2026-10-22
+- **状态**：现行（实现见 `src/host/agnescode-roster-seen-store.ts` 的首次见到历史、`src/host/routes/agnescode.ts` 的 `newModelIds` 差分、`src/client/composer-usage-pill.ts` 的 AgnesCode 胶囊段；门禁见 `test/agnescode.test.mjs` 的两个新段与 `test/dom-render.test.mjs` 的胶囊三帧）
+- **裁定**：网关目录里出现本机没见过的 model id 时，**只在胶囊上多一段「· N 新模型」**（tooltip 与 popover 给名字，最多列三个），不弹窗、不阻塞、不留「已读」按钮。判定基准是插件自己写的首次见到文件 `agnescode-roster-seen.json`：**首次写入是播种（整表记为已见、一条都不报）**，之后新增的 id 记为「现在」并保持 7 天，离开目录的 id 从表里删除（重新上架算新）。
+- **理由**：DSH 的 Host 面没有通知/弹窗服务，插件的可见面只有插件卡与胶囊；而胶囊本来就是读者扫余额的地方，把「网关多了个模型」放在余额旁边是同一类信息（都关于「现在能用什么」）。播种是必须的：升级后的第一次运行会把当时整张目录写成历史，否则每个老用户都会被告知全部七个模型都是新的——那是噪音，不是提醒。
+- **为什么不是弹窗 / 已读态**：弹窗需要用户处理，而「多了个模型」不需要处理；已读态需要一个点击，等于把一个纯信息变成一次任务。7 天窗口是提醒的寿命：够长到用户会看见，够短到不会永远挂着。重上架的 id 再报一次，因为那说明这一行背后的东西换过手，值得知道。
+- **边界**：只在 `modelsSource === "live"` 时差分——回退快照表是插件自己的六行文本，拿它差分会在登录/离线那几帧凭空造出「新模型」。差分对象是**整张 live 目录**，不是用户勾选的子集：某个模型是不是网关的新闻，与这台机器勾了哪些框无关；拿子集差分还会让一个上架很久的模型在「被勾上」的那天冒充新模型。`newModelIds` 缺席（旧生产者、离线、首次播种）时胶囊什么都不画，不画空段、不留悬空分隔符。该标记只出现在 agnescode provider 被选中的胶囊上；Token Plan 侧名册没有这个字段。
+- **复核条件**：若网关开始提供「上架时间」字段，差分就应改成读那个字段，本文件降级为离线兜底；若 DSH 之后提供通知服务，这段可以迁过去，胶囊只留计数。
+
+

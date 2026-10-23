@@ -24,6 +24,7 @@ import type { CatalogEffects } from "./catalog-refresh.ts";
 import type { createAgnescodeStore } from "./agnescode-store.ts";
 import type { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
 import type { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
+import type { createFileAgnescodeRosterSeenStore } from "./agnescode-roster-seen-store.ts";
 import type { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 
 /** A failure code this plugin can produce or carry (a `CODE` wire value). */
@@ -411,6 +412,13 @@ export interface HostWiring {
   agnescodeStore: ReturnType<typeof createAgnescodeStore>;
   agnescodeSwitch: ReturnType<typeof createFileAgnescodeStore>;
   agnescodeModels?: ReturnType<typeof createFileAgnescodeModelsStore>;
+  /**
+   * The AgnesCode roster's first-sighting history (`agnescode-roster-seen-store.ts`) —
+   * the `/agnescode` status route's source for `newModelIds`. Absent (a test or a
+   * Host that gave nothing) the field simply stays off: the marker is a suggestion
+   * the pill renders, not a fact the tab needs.
+   */
+  agnescodeRosterSeen?: ReturnType<typeof createFileAgnescodeRosterSeenStore>;
   agnescodePublisher: ReturnType<typeof wireAgnescodePublisher>["publisher"];
   /** The fetch the `/agnescode` route's two BFF reads use (see `HostDeps`). */
   agnescodeFetch?: (...args: any[]) => Promise<any>;

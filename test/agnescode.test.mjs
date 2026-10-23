@@ -56,11 +56,14 @@ import {
   AGNESCODE_DISPLAY_NAME,
   agnescodeRoster,
   agnescodeToDescriptor,
+  agnescodeVisionVerdict,
+  AGNESCODE_VISION_DENYLIST,
   buildAgnescodeDescriptors,
   agnescodeRequestHeaders
 } from "../src/host/agnescode-models.ts";
 import { createAgnescodePublisher } from "../src/host/agnescode-publish.ts";
 import { createFileAgnescodeStore, normalizeAgnescodeEnabled, AGNESCODE_SWITCH_VERSION } from "../src/host/agnescode-switch-store.ts";
+import { createFileAgnescodeRosterSeenStore, createMemoryAgnescodeRosterSeenStore, AGNESCODE_ROSTER_SEEN_MAX_IDS, normalizeRosterSeen } from "../src/host/agnescode-roster-seen-store.ts";
 import { installNetworkGuard } from "./peer-roots.mjs";
 import { surface as clientSurface } from "./client-surface.js";
 import { texts } from "./panel-render.js";
@@ -758,14 +761,27 @@ const GOOD_SESSION = {
       descriptor.baseUrl === "https://api-agnes-code.agnes-ai.cn/v1");
     check("the descriptor pins the same OpenAI-compat family fixes as the Token Plan route",
       descriptor.compat?.maxTokensField === "max_tokens" && descriptor.compat?.supportsDeveloperRole === false);
-    check("a text-only row (non-agnes id, no official-doc vision claim) offers text only",
-      JSON.stringify(agnescodeToDescriptor(rows.find((r) => r.id === "deepseek-v4-flash") ?? rows[0], { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }).input) === '["text"]');
+    check("an UNPROVEN row (non-agnes id, no docs-table entry) is offered image input by default — the 2026-10-22 flip from text-only",
+      JSON.stringify(agnescodeToDescriptor(rows.find((r) => r.id === "deepseek-v4-flash") ?? rows[0], { bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }).input) === '["text","image"]');
     // The Agnes family rows borrow `PROBED_VISION`'s official-doc evidence even
     // though the catalogue itself declares no modality field — same models as
     // the Token Plan gateway, where agnes-3.0-flash accepted the standard
     // OpenAI image_url block live (AGNES-API.md §7.3).
     check("an agnes-family row (agnes-3.0-flash) offers image input from the official-doc table",
       JSON.stringify(descriptor.input) === '["text","image"]', JSON.stringify(descriptor.input));
+
+    // The verdict ladder, in isolation: denylist wins, then the row's own
+    // `vision: true`, then the docs table, then the default-allow "assumed".
+    // The denylist starts empty — nothing about this gateway is known blind —
+    // so an unknown id is OFFERED image input and labelled unverified.
+    check("a row carrying vision: true reads as declared",
+      JSON.stringify(agnescodeVisionVerdict({ id: "x", vision: true })) === JSON.stringify({ vision: true, source: "declared" }));
+    check("an Agnes-family id reads as measured from the docs table",
+      JSON.stringify(agnescodeVisionVerdict({ id: "agnes-3.0-flash", vision: false })) === JSON.stringify({ vision: true, source: "measured" }));
+    check("an unproven id is assumed-capable, not text-only (the default-allow flip)",
+      JSON.stringify(agnescodeVisionVerdict({ id: "deepseek-v4-flash", vision: false })) === JSON.stringify({ vision: true, source: "assumed" }));
+    check("the vision denylist starts empty (add a dated probe entry here when a model proves blind)",
+      AGNESCODE_VISION_DENYLIST.size === 0, String(AGNESCODE_VISION_DENYLIST.size));
     check("reasoning is true (probed live 2026-10-03: the BFF accepts reasoning_effort and returns reasoning_content)",
       descriptor.reasoning === true);
     check("the thinking map opens low/medium/high (the levels probed HTTP 200)",
@@ -2164,6 +2180,131 @@ const GOOD_SESSION = {
     fail("route surface (BFF read de-duplication)", error);
   }
 }
+
+section("roster-seen-store (agnescode-roster-seen-store.ts)");
+  {
+    const day = 24 * 3600 * 1000;
+    // A REAL epoch, not 1e6: the SEED path stamps `now - WINDOW`, and a clock
+    // smaller than the window makes that stamp negative — `normalizeRosterSeen`
+    // (correctly) refuses to keep it, so the id re-announces as new on the very
+    // next call. The raccoon suite pins the same anchor for the same reason.
+    const t0 = 1_760_000_000_000;
+
+    // SEED + GROWTH + WINDOW + DROP + CAP on the memory store (peer-free).
+    const seen = createMemoryAgnescodeRosterSeenStore();
+    const seed = await seen.note(["glm-5.2", "kimi-k3"], t0);
+    check("the seeding write announces nothing new", seed.newIds.length === 0, JSON.stringify(seed.newIds));
+    check("the seeding write established a readable history", await seen.isSet());
+    const growth = await seen.note(["glm-5.2", "kimi-k3", "deepseek-v4-flash"], t0 + 60_000);
+    check("a freshly-listed id is announced, the known ones are not",
+      JSON.stringify(growth.newIds) === JSON.stringify(["deepseek-v4-flash"]), JSON.stringify(growth.newIds));
+    const aged = await seen.note(["glm-5.2", "kimi-k3"], t0 + 8 * day);
+    check("ids older than the 7-day window stop reading as new", aged.newIds.length === 0, JSON.stringify(aged.newIds));
+    const gone = await seen.note(["glm-5.2"], t0 + 9 * day);
+    check("an id that leaves the roster drops out (no announce on the drop itself)",
+      gone.newIds.length === 0, JSON.stringify(gone.newIds));
+    const relisted = await seen.note(["glm-5.2", "kimi-k3"], t0 + 9 * day + 1);
+    check("a re-listed id is announced again (a re-listing is a change the reader may want)",
+      JSON.stringify(relisted.newIds) === JSON.stringify(["kimi-k3"]), JSON.stringify(relisted.newIds));
+    const huge = Array.from({ length: AGNESCODE_ROSTER_SEEN_MAX_IDS + 1 }, (_, i) => "m" + i);
+    const capped = await seen.note(huge, t0 + 2);
+    check("an oversized roster is a shape drift: nothing is written or announced",
+      capped.newIds.length === 0, String(capped.newIds.length));
+
+    // The normaliser: keep only finite positive stamps on non-blank ids.
+    check("normalizeRosterSeen keeps finite positive stamps",
+      (() => { const c = normalizeRosterSeen({ a: 5, b: 7 }); return c.a === 5 && c.b === 7 && Object.keys(c).length === 2; })(),
+      JSON.stringify(normalizeRosterSeen({ a: 5, b: 7 })));
+    check("normalizeRosterSeen drops non-numeric / non-positive / non-finite stamps and blank ids",
+      (() => { const d = normalizeRosterSeen({ ok: 5, notnum: "x", zero: 0, neg: -1, inf: Infinity, "": 5 }); return d.ok === 5 && Object.keys(d).length === 1; })(),
+      JSON.stringify(normalizeRosterSeen({ ok: 5, notnum: "x", zero: 0, neg: -1, inf: Infinity, "": 5 })));
+
+    // The file store's ADR-006 discipline: a foreign-version file reads as no
+    // history and the FIRST write over it is refused, not stomped.
+    const dir = mkdtempSync(join(tmpdir(), "agnescd-seen-"));
+    writeFileSync(join(dir, "agnescd-roster-seen.json"),
+      JSON.stringify({ version: 999, seen: { "glm-5.2": 1 }, updatedAt: "x" }));
+    const fseen = createFileAgnescodeRosterSeenStore({ dir, now: () => 1_000_000 });
+    const refused = await fseen.note(["glm-5.2", "kimi-k3"]);
+    check("a foreign-version file announces nothing (the first write is refused, not stomped)",
+      refused.newIds.length === 0, JSON.stringify(refused.newIds));
+    check("the foreign file is left untouched on a refused write",
+      JSON.parse(readFileSync(join(dir, "agnescd-roster-seen.json"), "utf8")).version === 999);
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+section("route: the /agnescode GET carries newModelIds (live roster + seen store)");
+  {
+    const { registerRoutes } = await import("../src/host/routes.ts");
+    const routes = new Map();
+    const ctx = { webServer: { register({ path, handler }) { routes.set(path, handler); return () => routes.delete(path); } } };
+    const unused = new Proxy({}, { get: () => async () => null });
+    // Seed the store so `glm-5.2` is a KNOWN id; the live roster then adds a
+    // fresh `deepseek-v4-flash`, which the route must surface as new. The seed
+    // stamp must sit a whole window in the past — a tiny clock would make the
+    // SEED stamp non-positive and the id would read as new again.
+    const seen = createMemoryAgnescodeRosterSeenStore();
+    await seen.note(["glm-5.2"], Date.now() - 8 * 24 * 3600 * 1000);
+    const fetcher = async (url) => {
+      const target = String(url);
+      if (target.includes("/api/v2/subscription/credits-balance")) {
+        return new Response(JSON.stringify({ code: "000000", data: { total_balance: 120, time_sensitive_balance: 20, permanent_balance: 100, subscription_credits: 0, daily_free_credits: 0, level: 1 } }), { headers: { "content-type": "application/json" } });
+      }
+      if (target.includes("/api/v1/subscription/credits-transactions")) {
+        return new Response(JSON.stringify({ code: "000000", data: { list: [], pagination: { page: 1, page_size: 100, total: 0 } } }), { headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ data: [
+        { id: "glm-5.2", name: "GLM-5.2", model_type: "text" },
+        { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", model_type: "text" }
+      ] }), { headers: { "content-type": "application/json" } });
+    };
+    registerRoutes(ctx, {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused, apiKeyStore: unused, catalogStore: unused, providerStore: unused,
+      drawStore: unused, videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      agnescodeFetch: fetcher,
+      agnescodeStore: {
+        async state() { return { hasCredential: true, source: "credentials", ephemeral: false, nickname: "u", bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: null }; },
+        async resolve() { return { credential: { accessToken: "y".repeat(40), bffBase: "https://api-agnes-code.agnes-ai.cn/v1" }, source: "credentials" }; },
+        async save() {}, async forget() {}
+      },
+      agnescodeSwitch: { async enabled() { return true; }, async save() {} },
+      agnescodePublisher: null,
+      // A CURATED subset that excludes the freshly-listed model: the marker must
+      // still report it, because "the gateway listed something new" is not a fact
+      // about which boxes this user ticked (ADR-019). Wiring curation here turns
+      // the assertion below into the invariance test.
+      agnescodeModels: { async listEnabledIds() { return ["glm-5.2"]; }, async save() {} },
+      agnescodeRosterSeen: seen
+    });
+    const handler = routes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    check("the agnescode route registers", typeof handler === "function");
+    const response = { status: 0, body: "", writeHead(s) { this.status = s; }, end(p) { this.body = p; } };
+    await handler({ method: "GET", headers: { host: "127.0.0.1" } }, response);
+    const body = JSON.parse(response.body);
+    check("a live roster read surfaces the freshly-listed model as new",
+      body.modelsSource === "live" && JSON.stringify(body.newModelIds) === JSON.stringify(["deepseek-v4-flash"]),
+      JSON.stringify({ modelsSource: body.modelsSource, newModelIds: body.newModelIds }));
+    // The marker is a WINDOW, not a tick: the same id keeps reading new for the
+    // whole seven days, so two catalogue polls 60 s apart cannot make the chip
+    // flicker off in the middle of a session. Only a sighting older than the
+    // window expires (pinned in the store section above).
+    const response2 = { status: 0, body: "", writeHead(s) { this.status = s; }, end(p) { this.body = p; } };
+    await handler({ method: "GET", headers: { host: "127.0.0.1" } }, response2);
+    const body2 = JSON.parse(response2.body);
+    check("a re-read inside the window keeps the marker (it expires by age, not by being seen twice)",
+      JSON.stringify(body2.newModelIds) === JSON.stringify(["deepseek-v4-flash"]), JSON.stringify(body2.newModelIds));
+  }
+
+
 
 // --- report ------------------------------------------------------------------
 releaseNetworkGuard();

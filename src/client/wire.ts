@@ -255,6 +255,16 @@ export interface AgnescodeModelData {
   id?: string;
   name?: string;
   vision?: boolean;
+  /**
+   * How the `vision` flag was decided (the BFF `/models` pins it to `false`, so
+   * the verdict is made by the Host's ladder, not by the wire value). The
+   * panel draws a plain capability chip for `measured` / `declared` and an
+   * "unverified" one for `assumed` (the default when nobody measured), so a
+   * model that actually cannot see the image is never advertised as if it
+   * could. `denied` carries `vision: false` and no chip. Absent = an older
+   * producer (the static fallback roster), treated as declared.
+   */
+  visionSource?: "measured" | "declared" | "assumed" | "denied";
   memberOnly?: boolean;
   /**
    * The platform's per-model credit multiplier ("Credits per call"), read from
@@ -395,6 +405,12 @@ export interface AgnescodeStateData {
   modelsSource?: "live" | "fallback";
   /** Present only with `modelsSource: "fallback"`: when the frozen rates were probed. */
   modelsAsOf?: string;
+  /**
+   * Ids the BFF just listed that THIS MACHINE has not seen within the 7-day
+   * window (the composer pill's "N new models" marker). Absent when nothing is
+   * new, on a fallback read, or with no login - the pill then draws no chip.
+   */
+  newModelIds?: readonly string[];
   enabledModelIds?: string[];
   providerRegistered?: boolean;
   providerError?: string;

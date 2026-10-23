@@ -850,10 +850,27 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
   // line) until there is a recorded turn. The rate-limit record — the always-0
   // clutter — is NOT here; it stays in the tab.
   const usageText = agnescodeUsageText(state?.usage ?? null, tt);
+  // The new-model marker: ids the gateway just listed that this machine has not
+  // seen within the 7-day window. Names, not ids: `state.models` is the same
+  // roster the tab renders, so the display name the user sees in the picker is
+  // a lookup, not a second source. Capped at three — past that the marker is
+  // about a BULK change and the count is the useful part; the list belongs in
+  // the popover. Absent on a fallback read, a missing login, or nothing new.
+  const newIds = (Array.isArray(state?.newModelIds) ? state.newModelIds : [])
+    .filter((id): id is string => typeof id === "string" && id !== "");
+  const newNames = newIds.map((id) => {
+    const row = state?.models?.find((model) => model.id === id);
+    return row?.name ?? row?.id ?? id;
+  });
+  const shownNames = newNames.slice(0, 3);
+  const newModelTitle = newIds.length === 0
+    ? null
+    : `${tt("agnescd.newModelsTitle")}${shownNames.join(tt("agnescd.newModelsSep"))}${newIds.length > shownNames.length ? "…" : ""}`;
   const title = [
     tt("composer.balanceTitle"),
     split,
     why,
+    newModelTitle,
     stale ? tt("composer.stale") : null
   ]
     .filter(Boolean)
@@ -874,6 +891,10 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
     split !== null ? h("div", { key: "split", style: S.pillPopMuted }, split) : null,
     usageText !== null ? h("div", { key: "usage", style: S.pillPopMuted }, usageText) : null,
     why !== null ? h("div", { key: "why", style: S.pillPopMuted }, why) : null,
+    newIds.length > 0
+      ? h("div", { key: "new-models", style: S.pillPopMuted },
+          `${tt("agnescd.newModelsRow")} ${shownNames.join(tt("agnescd.newModelsSep"))}${newIds.length > shownNames.length ? "…" : ""}`)
+      : null,
     stale ? h("div", { key: "stale", style: S.pillPopMuted }, tt("composer.stale")) : null,
     reading.updatedAt > 0
       ? h("div", { key: "last", style: S.pillPopMuted },
@@ -894,11 +915,19 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
       popoverOpen: open,
       popoverId,
       buttonRef: triggerRef,
-      children: h(
-        "span",
-        { style: S.pillReading },
-        pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`
-      )
+      children: [
+        h(
+          "span",
+          { key: "reading", style: S.pillReading },
+          pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`
+        ),
+        // A muted third segment beside the reading: how many models are new on
+        // this machine within the 7-day window. Subordinate ink so it never
+        // competes with the balance figure; the popover carries WHICH ones.
+        newIds.length === 0
+          ? null
+          : h("span", { key: "new-models", style: S.pillNewTag }, ` · ${newIds.length} ${tt("agnescd.newModels")}`)
+      ]
     }),
     open
       ? h("div",

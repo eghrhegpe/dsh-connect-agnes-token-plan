@@ -107,28 +107,70 @@ export function agnescodeRequestHeaders() {
 }
 
 /**
- * Whether an AgnesCode roster row accepts image input.
+ * Models confirmed on this gateway to CANNOT read an image, in a LIVE probe
+ * with the same picture + question the allow side was measured with (a live
+ * re-probe runs against this set, so the day a gateway routing change makes a
+ * denied model able to see, the baseline turns and the entry comes out).
+ * Membership is a dated measurement, never a design call about the model.
  *
- * AgnesCode's own BFF `/models` rows declare no modality field — only
- * `model_type: "text"` and `supported_endpoint_types` — so the catalogue alone
- * would answer "no vision" for EVERY row (that is why `fetchAgnescodeCatalog`
- * pins `vision: false`). But AgnesCode serves the SAME Agnes model family the
- * Token Plan gateway does (`agnes-3.0-flash` / `agnes-2.5-flash` /
- * `agnes-2.5-pro` all appear in both rosters), whose official docs declare
- * image input — `PROBED_VISION` (llm-models.ts) is that evidence, and the
- * Token Plan side already probed `agnes-3.0-flash` accepting the standard
- * OpenAI `image_url` block live. Non-agnes ids (`deepseek-*` / `glm-*` /
- * `kimi-*`) have no such claim and stay text-only.
+ * STARTS EMPTY: nothing about this gateway is known to be blind. An entry is
+ * added only when a user reports a model that cannot see the image (with a
+ * probe that proves it), and it leaves the same way. Until a report lands
+ * here, every untagged row is OFFERED image input by default and labelled
+ * unverified — see the companion verdict below.
+ * @type {ReadonlySet<string>}
+ */
+export const AGNESCODE_VISION_DENYLIST: ReadonlySet<string> = Object.freeze(new Set([
+  // (empty — add a probed-blind id here, with a dated probe note)
+]));
+
+/** How a vision verdict was reached — the panel chips a proven one plainly and
+ * an assumed one as unverified, so a model that actually cannot see the image
+ * is never advertised as if it could. */
+export type AgnescodeVisionSource = "measured" | "declared" | "assumed" | "denied";
+
+/**
+ * Whether an AgnesCode roster row accepts image input, together with how the
+ * verdict was reached.
  *
- * Resolution order: the row's own `vision` (if the catalogue ever declares
- * one) wins, then `PROBED_VISION` for the Agnes family, then false.
+ * The BFF's own `/models` rows declare no modality field (only `model_type:
+ * "text"`), so `fetchAgnescodeCatalog` pins `vision: false` — a raw fact about
+ * what the wire said, NOT a verdict. The verdict is made here. The ladder is
+ * asymmetric on purpose: a false "it can see" (an image sent to a model that
+ * ignores it, HTTP 200, no error anywhere upstream) is worse than a hidden
+ * capability, so the DEFAULT is to offer the entry but SAY it is unverified,
+ * and only a dated live probe may deny it:
+ *
+ * 1. `AGNESCODE_VISION_DENYLIST` wins: a row confirmed blind in a live probe is
+ *    not offered image input; `source: "denied"` tells the panel to draw no chip.
+ * 2. A row carrying `vision: true` (a future BFF that starts declaring its own
+ *    modality) is `declared`.
+ * 3. The `PROBED_VISION` official-docs table (llm-models.ts) — the Agnes family
+ *    the platform already proved — is `measured`.
+ * 4. Otherwise: `assumed` (true). A model the docs table never mentioned is
+ *    still offered image input — it does not vanish from the image picker —
+ *    and the panel marks it unverified. Reading "absent from `PROBED_VISION`"
+ *    as "text-only" is what made every newly-listed gateway model silently
+ *    lose the attachment entry.
  * @param {object} row - one AgnesCode roster row (must carry `id`).
+ * @returns {object} the verdict and how it was reached.
+ */
+export function agnescodeVisionVerdict(row: Record<string, unknown>): { vision: boolean; source: AgnescodeVisionSource } {
+  const id = str(row?.id, "");
+  if (id !== "" && AGNESCODE_VISION_DENYLIST.has(id)) return { vision: false, source: "denied" };
+  if (row?.vision === true) return { vision: true, source: "declared" };
+  if (id !== "" && (PROBED_VISION as Record<string, boolean>)[id] === true) return { vision: true, source: "measured" };
+  return { vision: true, source: "assumed" };
+}
+
+/**
+ * The boolean-only view of {@link agnescodeVisionVerdict}, kept for call sites
+ * and tests that want the capability bit without the provenance.
+ * @param {object} row - one AgnesCode roster row.
  * @returns {boolean} whether the row accepts image input.
  */
-export function agnescodeVisionOf(row: Record<string, unknown>) {
-  if (row?.vision === true) return true;
-  const id = str(row?.id, "");
-  return (PROBED_VISION as Record<string, boolean>)[id] === true;
+export function agnescodeVisionOf(row: Record<string, unknown>): boolean {
+  return agnescodeVisionVerdict(row).vision;
 }
 
 /**
@@ -145,7 +187,7 @@ export function agnescodeRoster(catalog: unknown, maxTokensOverrides?: Record<st
   // `contextWindow` is OPTIONAL on the annotation: a roster row comes from a
   // catalogue entry whose window field can be absent, so the honest shape is
   // "may not state a window" — the `?? 0` below resolves that absence.
-  const out: Array<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; displayLabel?: string; contextWindow?: number; maxOutputLength: number }> = [];
+  const out: Array<{ id: string; name: string; vision: boolean; visionSource: AgnescodeVisionSource; memberOnly: boolean; multiplier?: number; displayLabel?: string; contextWindow?: number; maxOutputLength: number }> = [];
   for (const row of rows) {
     const id = str(row?.id, "");
     if (id === "") continue;
@@ -162,12 +204,15 @@ export function agnescodeRoster(catalog: unknown, maxTokensOverrides?: Record<st
     // mean "no badge" (the platform states an empty string on every other
     // row), so an empty label stays ABSENT rather than becoming a blank chip.
     const displayLabel = str(row?.displayLabel, "");
+    const verdict = agnescodeVisionVerdict(row);
     out.push({
       id,
       name: str(row?.name, id),
-      // See `agnescodeVisionOf`: the catalogue declares no modality field, so
-      // the Agnes family rows borrow `PROBED_VISION`'s official-doc evidence.
-      vision: agnescodeVisionOf(row),
+      // See `agnescodeVisionVerdict`: the catalogue pins `vision: false` (the
+      // BFF declares no modality), so the verdict — and its provenance — is
+      // made here, not by the wire value.
+      vision: verdict.vision,
+      visionSource: verdict.source,
       memberOnly: row?.memberOnly === true,
       // `0` is a PUBLISHED PRICE ("free"), not a missing reading — read it
       // ONCE (the codebase's read-once discipline) and let an absent field

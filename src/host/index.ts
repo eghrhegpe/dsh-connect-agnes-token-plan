@@ -40,6 +40,7 @@ import { createApiKeyStore } from "./api-key-store.ts";
 import { createAgnescodeStore } from "./agnescode-store.ts";
 import { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
 import { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
+import { createFileAgnescodeRosterSeenStore } from "./agnescode-roster-seen-store.ts";
 import { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 import { createProviderPublisher } from "./provider-publish.ts";
 import { createCatalogEffects } from "./catalog-refresh.ts";
@@ -270,6 +271,11 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   // "no curation" — the roster rides whole, so an untouched install keeps the
   // old behaviour; only a ticked list filters.
   const agnescodeModels = createFileAgnescodeModelsStore({ profile });
+  // The AgnesCode roster's first-sighting history: when each model id was first
+  // seen on this machine, so the composer pill can flag a freshly-listed model.
+  // It is a machine-level fact (like the stats store, not a per-profile
+  // preference), so it takes no profile key.
+  const agnescodeRosterSeen = createFileAgnescodeRosterSeenStore();
   // The AgnesCode publisher's re-harvest seam (single-flight + backoff +
   // cross-base rebuild) and mount seed now live in `agnescode-lifecycle.ts`
   // — extracted from this mount seam so it stays a thin router.
@@ -363,6 +369,7 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     agnescodeStore,
     agnescodeSwitch,
     agnescodeModels,
+    agnescodeRosterSeen,
     agnescodePublisher,
     // The BFF fetch the agnescode route's cache + single-flight wraps. Absent
     // (the real Loader) it falls back to the Host's own `fetch` at the call
