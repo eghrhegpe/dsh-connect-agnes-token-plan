@@ -17,6 +17,7 @@ AI 协作会话从根目录 [AGENTS.md](../AGENTS.md) 进入：验证怎么跑�
 | [AUTH.md](./AUTH.md) | 一跳账号密码登录、无 refresh token（重登即续期）、密码明文过 TLS 与不落盘纪律、登录 trace、防锁号节流 | 改登录/重登、排查登录失败 |
 | [API.md](./API.md) | 本地路由（`snapshot` / `account` / `api-key` / `provider` / `models` / `draw` / `video` / `agnescode` 共 8 组）、控制台端点、配置端点清单 | 对接路由、看返回结构、调端点 |
 | [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md) | 提供方注册开关：从「配置字段 + 重启」到「面板开关 + 立即生效」的设计决策与同类插件调研 | 改 provider 注册、理解开关语义 |
+| [TOOL-HOT-RELOAD.md](./TOOL-HOT-RELOAD.md) | 出图 / 视频 agent 工具热挂载机制（0.13.x）：disposer 保留、每工具协调器、开关写入触发 `sync()`、teardown 顺序、宿主不给卸载句柄的粘性边界 | 改工具挂载 / 开关语义、排「翻了开关工具没变」 |
 | [TESTING.md](./TESTING.md) | 离线测试体系、`panel-decision.js` 机制、已知缺口 | 跑测试、理解测试为什么这样写 |
 | [AGNES-API.md](./AGNES-API.md) | **现行接口事实源**：控制台额度侧（端点表、响应信封、四窗口额度模型、套餐目录与 uuid 匹配）＋推理侧（provider `agnes-token-plan`、key `AGNES_TOKEN_PLAN_API_KEY`、思考档位 safe-set、live-contract 护栏） | 改额度/推理接口、排「打到错网关」、对 live-contract 基线 |
 | [PITFALLS.md](./PITFALLS.md) | 真实踩坑（现象→根因→修法）；**条数以文件内 `## N.` 编号为准，别在此写死** | 改代码前避坑、理解防御性代码的来由 |

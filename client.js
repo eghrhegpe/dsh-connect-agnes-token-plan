@@ -2558,8 +2558,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	/**
 	* The shared body of an agent-tool card (`DrawSwitch`, `VideoSwitch`).
 	*
-	* Both tools are mounted by the SAME Host ladder (`mountAgentTool` in
-	* `lifecycle.ts`) and both routes are served by the SAME handler shape
+	* Both tools are mounted by the SAME Host ladder (`createToolMount` in
+	* `lifecycle.ts`, each a live handle the switch route re-syncs on every
+	* successful write) and both routes are served by the SAME handler shape
 	* (`registerToolSwitchRoute` in `routes.ts`), so their cards differ only in
 	* which route they post to, which `llm.*` fields they read, and which
 	* dictionary prefix labels them. Writing the card once is what keeps the two

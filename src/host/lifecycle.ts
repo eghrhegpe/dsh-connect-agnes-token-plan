@@ -8,11 +8,13 @@
  *   - the mount seed (`seedPublisherFromCatalog`): offer models before the
  *     first poll, fire-and-forget;
  *   - the two generation tools (opt-in `drawEnabled` / `videoEnabled`,
- *     doubly degraded through the shared {@link mountAgentTool} ladder);
+ *     doubly degraded through the shared {@link createToolMount} ladder —
+ *     each handle is stored on the wiring bag, so the switch route re-syncs it
+ *     live and teardown disposes it);
  *   - vision step two: the settings-row writer filled for the snapshot route.
  *
  * and {@link teardown} for the unmount order that PITFALLS §18 pins
- * (`dispose → release → off×5` — it must NOT be simplified).
+ * (`stop → dispose → release → tools → off` — it must NOT be simplified).
  *
  * Peer-free discipline: no Host peer is imported here. The only lazy peer
  * loads (the adapter / tools modules) are injected from `apply` via `deps`.
@@ -24,8 +26,8 @@ import { defineVideoTool } from "./video.ts";
 import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.ts";
 import { name } from "./host-config.ts";
 import { retryBounded, redactError } from "./util.ts";
-import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
-import type { HostCtx, HostWiring, ToolSide, ToolWiring, SwitchStore, Settings } from "./types.ts";
+import { readPanelValue, resolveSwitchEnabled, resolveSwitchValue } from "./switch-precedence.ts";
+import type { HostCtx, HostWiring, ToolSide, ToolWiring, SwitchStore, Settings, ToolMount } from "./types.ts";
 
 /** How many times a mount-time optional-service read is retried. */
 const SERVICE_RETRY_ATTEMPTS = 3;
@@ -35,12 +37,14 @@ const SERVICE_RETRY_DELAY_MS = 300;
 /**
  * Read an optional Host service with a bounded retry.
  *
- * A service may register AFTER this plugin mounts, and a mount-time read is
- * the only window for a capability the Host cannot later remove: the tools
- * registry has no unregister call. A one-shot read therefore misses a service
- * that arrives a moment late for the WHOLE session, silently — the draw tool
- * would be absent with the switch visibly on, and no line on any panel naming
- * the reason. The AgnesCode mount seed uses the same retry for its publish.
+ * A service may register AFTER this plugin mounts: a one-shot read misses a
+ * service that arrives a moment late, silently — the draw tool would be
+ * absent with the switch visibly on, and no line on any panel naming the
+ * reason. A late service is catchable LATER too, not only here: the tool
+ * coordinator caches the service once found, but a `sync()` that has not
+ * found one yet re-probes on every run (so a switch flip picks up a tools
+ * service that registered late). The AgnesCode mount seed uses the same
+ * retry for its publish.
  *
  * This retries the READ ONLY. Whatever it returns is used exactly once by the
  * caller: retrying a call that mutates (a tool registration) would register the
@@ -87,8 +91,12 @@ export async function resolveServiceWithRetry(
   return found;
 }
 
+/** The host tools service, narrowed to the one member this coordinator drives. */
+type ToolsService = { register(definition: unknown): (() => void) | undefined };
+
 /**
- * Mount one opt-in agent tool, through the shared degradation ladder.
+ * The live mount handle for ONE opt-in agent tool, through the shared
+ * degradation ladder.
  *
  * `registerDrawTool` and `registerVideoTool` differ only in which switch, which
  * model preference, which fetch and which factory they name — everything else
@@ -98,21 +106,29 @@ export async function resolveServiceWithRetry(
  * degrade differently: a tool that vanished on a Host where the other survived
  * would be a bug with no visible cause.
  *
- * Every rung returns silently rather than throwing. A Host without a tools
- * service, or a peer that fails to load, must leave the panel and the provider
- * untouched — the tool is simply absent.
+ * The returned {@link ToolMount} is what makes the tool HOT: the panel switch
+ * route re-runs `sync()` after it writes the state file, and `sync()` mounts
+ * or unmounts the tool in place using the disposer the host's
+ * `tools.register` returns. Every rung still returns silently rather than
+ * throwing: a Host without a tools service, or a peer that fails to load,
+ * leaves the panel and the provider untouched — the tool is simply absent.
+ *
+ * State is per-handle (a closure), shared by the mount-time seed, every switch
+ * POST and teardown, so the two callers cannot drift into registering the same
+ * tool twice: all reconciliations are serialized behind one promise chain,
+ * each re-reading the CURRENT effective value before it acts.
  * @param {object} options - wiring.
- * @param {object} options.ctx - the host root context.
- * @param {object} options.wiring - see {@link startSideEffects}.
- * @param {object} options.side - the test seams from `apply`'s `deps`.
- * @param {object} [options.store] - the panel switch store (`draw-store` / `video-store`).
- * @param {string} options.enabledKey - the settings key holding the config default.
- * @param {string} options.modelKey - the settings key holding the configured model id.
+ * @param {HostCtx} options.ctx - the host root context.
+ * @param {HostWiring} options.wiring - see {@link startSideEffects}.
+ * @param {ToolSide} options.side - the test seams from `apply`'s `deps`.
+ * @param {SwitchStore|null|undefined} [options.store] - the panel switch store.
+ * @param {"drawEnabled"|"videoEnabled"} options.enabledKey - the config-default switch key.
+ * @param {"drawModelId"|"videoModelId"} options.modelKey - the config-default model key.
  * @param {Function} options.fetchImpl - the request fetch (stubbed in tests).
  * @param {Function} options.factory - `defineDrawTool` / `defineVideoTool`.
- * @returns {Promise<void>}
+ * @returns {ToolMount} the live handle; call `sync()` to reconcile.
  */
-async function mountAgentTool({
+export function createToolMount({
   ctx,
   wiring,
   side,
@@ -126,79 +142,169 @@ async function mountAgentTool({
   wiring: HostWiring;
   side: ToolSide;
   store?: SwitchStore | null;
-  enabledKey: keyof Settings;
-  modelKey: keyof Settings;
+  enabledKey: "drawEnabled" | "videoEnabled";
+  modelKey: "drawModelId" | "videoModelId";
   fetchImpl: ToolWiring["fetchImpl"];
   factory: (options: ToolWiring) => unknown;
-}) {
+}): ToolMount {
   const { settings, configError, providerState, catalogStore, resolveApiKey, publisher } = wiring;
-  if (configError !== null) return;
-  // Same precedence as every other switch in this plugin, from the same
-  // single source (`switch-precedence`): panel-saved beats the patch default.
-  const { enabled: toolEnabled } = resolveSwitchEnabled(
-    await readPanelValue(async () => (await store?.enabled()) ?? null),
-    settings[enabledKey] as boolean
-  );
-  if (toolEnabled !== true) return;
-  // Same precedence as the switch: a panel-saved model preference beats the
-  // patch's value (empty string = auto-pick from the catalog).
-  const panelModelId = await readPanelValue(async () => (await store?.modelId()) ?? null);
-  const effectiveSettings = panelModelId !== null ? { ...settings, [modelKey]: panelModelId } : settings;
-  // The tools service is optional and may register a moment AFTER this plugin
-  // mounts; retry the read, never the registration — a tool cannot be
-  // unregistered, so registering it twice would be a worse failure than
-  // missing it.
-  const tools = await resolveServiceWithRetry(ctx, "tools", { isDisposed: () => publisher.isDisposed() });
-  if (tools === null || typeof (tools as { register?: unknown }).register !== "function") return;
-  let defineTool;
-  try {
-    const mod = await Promise.resolve(side.loadToolsModule?.());
-    defineTool = mod?.defineTool ?? mod?.default?.defineTool ?? null;
-  } catch {
-    // No tools peer on this Host: the tool stays absent, nothing logs.
-    return;
+
+  // Per-handle live state. `registered` says the host actually holds a copy of
+  // the tool; `disposer` is how we take it back (null when the host offered no
+  // unregister path, in which case the tool is sticky for this process — the
+  // old mount-once behavior, still correct, just not removable).
+  let tools: ToolsService | null = null;
+  let registered = false;
+  let disposer: (() => void) | null = null;
+  let regModel: string | null = null;
+  let closed = false;
+  let chain: Promise<void> = Promise.resolve();
+
+  const safeCall = (fn: (() => void) | null): void => {
+    if (fn === null) return;
+    try {
+      fn();
+    } catch {
+      // A disposer that throws (a Host already tearing down) still counts as
+      // "called": the handle is cleared above, so we never retry it forever.
+    }
+  };
+
+  async function syncImpl(): Promise<void> {
+    if (closed) return;
+    if (configError !== null) return;
+    // Same precedence as every other switch in this plugin, from the same
+    // single source (`switch-precedence`): panel-saved beats the patch default.
+    const panelEnabled = await readPanelValue(async () => (await store?.enabled()) ?? null);
+    const panelModel = await readPanelValue(async () => (await store?.modelId()) ?? null);
+    const { enabled } = resolveSwitchEnabled(panelEnabled, settings[enabledKey]);
+    const { value: targetModel } = resolveSwitchValue(panelModel, settings[modelKey]);
+
+    // Off: take the tool back when we can.
+    if (enabled !== true) {
+      if (registered) {
+        const d = disposer;
+        registered = false;
+        disposer = null;
+        regModel = null;
+        safeCall(d);
+      }
+      return;
+    }
+
+    // On: already mounted with the target model, nothing to do (idempotent).
+    if (registered && regModel === targetModel) return;
+    // Sticky (mounted with no disposer): the host gave us no way to remove or
+    // swap the tool, so it is frozen at its first registration for this
+    // process. Do NOT re-register — that would be a second copy.
+    if (registered && disposer === null) return;
+
+    // Otherwise: unmount the current one (we hold a disposer), then mount the
+    // target. A model change on a mounted tool re-registers so the new pick is
+    // live rather than waiting for the next Host start.
+    if (registered && disposer !== null) {
+      const d = disposer;
+      registered = false;
+      disposer = null;
+      regModel = null;
+      safeCall(d);
+    }
+
+    // The tools service is optional and may register a moment AFTER this
+    // plugin mounts: retry the READ (never the registration). Because the
+    // service is only cached once found, a later sync re-probes for free, so
+    // a switch flip picks up a service that arrived late.
+    const service = (tools ?? (await resolveServiceWithRetry(ctx, "tools", { isDisposed: () => publisher.isDisposed() }))) as ToolsService | null;
+    if (service === null || typeof service.register !== "function") return;
+    tools = service;
+
+    let defineTool;
+    try {
+      const mod = await Promise.resolve(side.loadToolsModule?.());
+      defineTool = mod?.defineTool ?? mod?.default?.defineTool ?? null;
+    } catch {
+      // No tools peer on this Host: the tool stays absent, nothing logs.
+      return;
+    }
+    if (typeof defineTool !== "function") return;
+
+    // Same precedence as the switch: a panel-saved model preference beats the
+    // patch's value (empty string = auto-pick from the catalog).
+    const effectiveSettings = targetModel !== settings[modelKey]
+      ? ({ ...settings, [modelKey]: targetModel } as Settings)
+      : settings;
+    const definition = factory({
+      defineTool,
+      resolveApiKey,
+      // The discovery set is the catalog, NOT the LLM offer: the picker's
+      // allow-list is a filter on what the picker OFFERS, and silently
+      // binding the agent's generation tools to that curation would drop a
+      // model from the tool's world the moment a user trimmed the picker.
+      // The full persisted catalog is read at call time (after mount an
+      // empty read is a no-op — `catalog-store.list()` is cached in memory),
+      // so a catalog refresh lands without re-registering.
+      getEntries: async () => {
+        const live = Array.isArray(providerState.entries) && providerState.entries.length > 0
+          ? providerState.entries
+          : await catalogStore.list().catch(() => []);
+        return Array.isArray(live) ? live : [];
+      },
+      settings: effectiveSettings,
+      fetchImpl,
+      isDisposed: () => publisher.isDisposed()
+    });
+
+    let newDisposer: (() => void) | undefined;
+    try {
+      newDisposer = service.register(definition);
+    } catch {
+      // A refusing registry degrades identically: tool absent, panel fine.
+      return;
+    }
+    registered = true;
+    regModel = targetModel;
+    disposer = typeof newDisposer === "function" ? newDisposer : null;
   }
-  if (typeof defineTool !== "function") return;
-  try {
-    (tools as { register: (entry: unknown) => unknown }).register(
-      factory({
-        defineTool,
-        resolveApiKey,
-        // The discovery set is the catalog, NOT the LLM offer: the picker's
-        // allow-list is a filter on what the picker OFFERS, and silently
-        // binding the agent's generation tools to that curation would drop a
-        // model from the tool's world the moment a user trimmed the picker.
-        // The full persisted catalog is read at call time (after mount an
-        // empty read is a no-op — `catalog-store.list()` is cached in memory),
-        // so a catalog refresh lands without re-registering.
-        getEntries: async () => {
-          const live = Array.isArray(providerState.entries) && providerState.entries.length > 0
-            ? providerState.entries
-            : await catalogStore.list().catch(() => []);
-          return Array.isArray(live) ? live : [];
-        },
-        settings: effectiveSettings,
-        fetchImpl,
-        isDisposed: () => publisher.isDisposed()
-      })
-    );
-  } catch {
-    // A refusing registry degrades identically: tool absent, panel fine.
-  }
+
+  return {
+    sync: () => {
+      // Serialize every reconciliation (the mount seed, a switch POST, a model
+      // POST, a forget) behind ONE chain so two concurrent triggers cannot
+      // register the tool twice. Each queued run re-reads the CURRENT value,
+      // so a sync queued behind a stale one still converges to the latest state.
+      const run = chain.then(() => syncImpl());
+      chain = run.then(
+        () => undefined,
+        () => undefined
+      );
+      return run;
+    },
+    dispose: () => {
+      closed = true;
+      const d = disposer;
+      registered = false;
+      disposer = null;
+      regModel = null;
+      safeCall(d);
+    },
+    isMounted: () => registered
+  };
 }
 
 /**
- * Register the `agnes_draw_image` agent tool (ARCHITECTURE.md §5.4, route B).
- * Opt-in (`drawEnabled`, default off) and doubly degraded. Named as a separate
- * export so a test can inject its own `ctx`/`wiring`; `startSideEffects` calls
- * it when enabled.
+ * Create the live mount handle for the `agnes_draw_image` agent tool
+ * (ARCHITECTURE.md §5.4, route B). Opt-in (`drawEnabled`, default off) and
+ * doubly degraded. The handle is stored on the wiring bag (`wiring.drawToolMount`)
+ * so the switch route can re-sync it live and teardown can dispose it; the
+ * initial `sync()` seeds the mount-time behavior (register now when the
+ * effective value is on).
  * @param ctx - the host root context (reads `ctx.get("tools")` / `ctx.tools`).
  * @param {object} wiring - see {@link startSideEffects}.
  * @param {object} side - test seams from `apply`'s `deps`.
- * @returns {Promise<void>}
+ * @returns {ToolMount} the live handle, also stored at `wiring.drawToolMount`.
  */
-export async function registerDrawTool(ctx: HostCtx, wiring: HostWiring, side: ToolSide) {
-  await mountAgentTool({
+export function registerDrawTool(ctx: HostCtx, wiring: HostWiring, side: ToolSide): ToolMount {
+  const mount = createToolMount({
     ctx,
     wiring,
     side,
@@ -208,22 +314,26 @@ export async function registerDrawTool(ctx: HostCtx, wiring: HostWiring, side: T
     fetchImpl: side.drawFetch,
     factory: defineDrawTool
   });
+  wiring.drawToolMount = mount;
+  void mount.sync();
+  return mount;
 }
 
 /**
- * Register the `agnes_video_generate` agent tool (`video.ts`).
+ * Create the live mount handle for the `agnes_video_generate` agent tool
+ * (`video.ts`).
  *
  * A SEPARATE opt-in from the draw tool (`videoEnabled`), sharing only the
- * mounting ladder — see {@link mountAgentTool}. The protocol is the reason the
+ * mounting ladder — see {@link createToolMount}. The protocol is the reason the
  * two are not one module: video is an asynchronous task, so this tool creates a
  * task and then polls it for minutes rather than issuing one request.
  * @param ctx - the host root context.
  * @param {object} wiring - see {@link startSideEffects}.
  * @param {object} side - test seams from `apply`'s `deps`.
- * @returns {Promise<void>}
+ * @returns {ToolMount} the live handle, also stored at `wiring.videoToolMount`.
  */
-export async function registerVideoTool(ctx: HostCtx, wiring: HostWiring, side: ToolSide) {
-  await mountAgentTool({
+export function registerVideoTool(ctx: HostCtx, wiring: HostWiring, side: ToolSide): ToolMount {
+  const mount = createToolMount({
     ctx,
     wiring,
     side,
@@ -233,6 +343,9 @@ export async function registerVideoTool(ctx: HostCtx, wiring: HostWiring, side: 
     fetchImpl: side.videoFetch,
     factory: defineVideoTool
   });
+  wiring.videoToolMount = mount;
+  void mount.sync();
+  return mount;
 }
 
 /**
@@ -266,15 +379,17 @@ export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSid
   );
 
   // Draw absorption: opt-in, doubly degraded (no tools service / no peer).
-  // The effective value is panel-saved > config default (draw-store), read at
-  // mount time — the actual tool mount/unmount only happens on the next Host
-  // start, since the tools registry has no unregister call.
-  void registerDrawTool(ctx, wiring, side);
+  // The effective value is panel-saved > config default (draw-store). The mount
+  // handle is stored on the wiring bag (`wiring.drawToolMount`) so the switch
+  // route can re-sync the tool LIVE after a write; the first `sync()` seeds the
+  // mount-time behavior. `tools.register` returns a disposer, so a later
+  // switch flip unmounts in place — no Host restart required.
+  registerDrawTool(ctx, wiring, side);
 
   // Video absorption: a SEPARATE opt-in through the same ladder. Independent
   // of the draw switch on purpose — one switch would force both modalities on
-  // together.
-  void registerVideoTool(ctx, wiring, side);
+  // together. Same live-mount story via `wiring.videoToolMount`.
+  registerVideoTool(ctx, wiring, side);
 
   // ------------------------------------------------------------------
   // Vision step two (ARCHITECTURE.md §5.1): publish which of this key's
@@ -354,7 +469,9 @@ export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSid
  *      must not register into a Host that is letting this plugin go;
  *   2. `release` — stop offering the provider first, so a request cannot be
  *      routed to an adapter whose Host services are already half gone;
- *   3. the route `off()` callbacks, each guarded (the web server may already
+ *   3. the live agent tools (draw / video) are unmounted, so an in-flight
+ *      switch handler cannot re-sync a tool into a Host that is going away;
+ *   4. the route `off()` callbacks, each guarded (the web server may already
  *      be gone during shutdown).
  *
  * This order is a concurrency fix and must NOT be simplified.
@@ -385,6 +502,12 @@ export function teardown(wiring: HostWiring, offs: Array<() => void>, stopTick?:
   // Stop offering the provider first, so a request cannot be routed to an
   // adapter whose Host services are already half gone.
   releaseProvider();
+  // Withdraw the live agent tools BEFORE the routes go: a switch POST still in
+  // flight would otherwise re-sync a tool into a Host that is letting this
+  // plugin go. `dispose()` also closes the handle, so any queued `sync()`
+  // becomes a no-op rather than a late registration.
+  wiring.drawToolMount?.dispose();
+  wiring.videoToolMount?.dispose();
   for (const off of offs) {
     try {
       off();

@@ -77,9 +77,9 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 | `snapshot-aggregate.ts` | 快照 `llm.drawEnabled` / `llm.drawSource` 回显生效值与来源 |
 | `panel-page.ts` | 独立 SectionCard 承载「出图工具」卡片，含 `DrawSwitch` 控件（`ProviderForm` 已移到 `provider-controls.ts`，见其脚注） |
 
-与 provider 开关的一个**语义差异**需要说明：provider 开关改的是「当前请求立刻重新发布注册对」，改完立即生效；draw 开关改的是「挂载时是否注册 agent 工具」，**当前 Host 进程里已经注册的工具不会因为改开关而消失或出现**——要真正生效需要在**下一个 Host (re)mount**（即重启 `dsh web` 或重新安装插件）时，`lifecycle.ts` 的 `startSideEffects` 重新读生效值。面板开关本身是「立即生效、无需重启」的**状态读写**；工具的实际挂载/卸载要等到下次 Host 启动。面板文案里「立即生效」指的是**开关值**本身，不是 agent 工具的实时性。
+与 provider 开关在 0.4.2 时期存在一个**语义差异**（该差异现已解除，见 §9）：provider 开关改的是「当前请求立刻重新发布注册对」，改完立即生效；而当时 draw 开关改的是「挂载时是否注册 agent 工具」，`mountAgentTool` 丢弃了宿主返回的卸载句柄，**已注册的工具不会随开关在进程内消失或出现**——要真正生效需等**下一个 Host (re)mount**（重启 `dsh web` 或重装插件）时 `startSideEffects` 重新读生效值。面板文案里「立即生效」当时仅指**开关值**本身的读写。0.13.x 起补齐了热挂载/卸载协调层，draw 与 video 开关也随之**无需重启即时生效**（机制与边界见 §9）。
 
-**已知边界**：两个 Host 进程共享同一状态目录时，后写者胜（与 provider / throttle / catalog 文件语义一致）。`POST /draw` 只改开关值，不直接操作 tools registry——这是有意的：tools registry 没有 `unregister` 语义（见 `lifecycle.ts` 注释），强行卸载要等 Host 生命周期自然结束。
+**已知边界**：两个 Host 进程共享同一状态目录时，后写者胜（与 provider / throttle / catalog 文件语义一致）。`POST /draw` 在 0.4.x 时期只改开关值、不直接操作 tools registry——因为当时宿主未提供可捕获的卸载句柄，工具卸载要等 Host 生命周期自然结束。这一限制**已在 0.13.x 解除**：`POST /draw`（与 `/video`）现会触发即时再同步（`createToolMount.sync()`），机制与「宿主不给卸载路径则工具粘性挂载」的边界见 §9。
 
 ## 8. 0.4.3 增量：视频工具开关（videoEnabled）
 
@@ -101,9 +101,23 @@ trae/workbuddy 的 volatile 路线（把 `registerProvider` 标成 Config schema
 
 ---
 
-> **结构沿革注记**：本节两张改动表是 0.4.x 各增量落地时的定格记录，表中「新增」文件此后又经历过收敛与拆分。查现行结构以 [ARCHITECTURE.md](./ARCHITECTURE.md) §2 为准；与上表直接相关的三处：
+## 9. 0.13.x 增量：出图 / 视频工具的「真热开关」（disposer 保留的即时挂载/卸载）
+
+§7 里那句「工具的实际挂载/卸载要等到下次 Host 启动」在 0.4.x 时期是对的——当时 `mountAgentTool` 把宿主 `tools.register()` 返回的卸载句柄直接丢弃，所以 agent 工具只能「挂载一次」。现在改掉了：
+
+1. **宿主本就支持卸载**。`tools.register(definition)` 返回一个 `() => void` 的 disposer（同族插件 workbuddy 的 image/video 工具已长期以「常驻注册 + 保留句柄 + 开关切换时 live 卸载/换模型」的形态跑在生产），`types.ts` 把 `HostCtx.tools.register` 的类型从 `unknown` 收紧成 `(() => void) | undefined`。不给卸载路径的宿主返回 `undefined`，工具退化为粘性「挂载一次」——这是宿主能力边界，不是缺陷。
+2. **每工具一个「热挂载协调器」** `createToolMount`（`lifecycle.ts`，替代旧的一次性 `mountAgentTool`）。它持有闭包状态（缓存的宿主 `tools` 服务引用、`registered` / `disposer` / `regModel`）并把**所有**协调串在**同一条 promise 链**上，使「开关 POST / 模型 POST / forget / 挂载种子」的并发触发不会重复注册同一工具：链上每跑一次都**重读当前生效值**再收敛，所以排队的旧协调照样落到最新态。收敛规则：关 → 有 disposer 就卸载（没有则保持粘性，不动）；开且与已注册模型一致 → 幂等不动；开但模型变了 → 有 disposer 先卸旧再注新（模型偏好也即时生效）。
+3. **句柄落在接线袋**（`wiring.drawToolMount` / `wiring.videoToolMount`），开关路由（`routes/tool-switch.ts` 的 `registerToolSwitchRoute`，draw 与 video 共用）在**每次成功的写入后**（`enabled` / `forget` / 模型偏好）调用协调器 `sync()`。协调是 fire-and-forget、不阻塞 HTTP 响应；GET 只读路径**绝不**协调——读不应改写宿主注册表。
+4. **teardown 顺序**（PITFALLS §18）在路由 `off()` 之前释放两个工具协调器：`stop → dispose → release → tools → off`，让在途的开关 POST 无法再往一个正在离场的宿主里同步工具。
+
+**已知边界**：宿主不提供卸载路径时（`register` 返回 `undefined`），工具对本进程粘性——开关/模型改动能被协调器读到，但没有句柄可卸，注册保持首次值；此时行为与 0.4.x 完全一致。面板开关的状态读写永远即时生效，工具注册跟不跟上取决于宿主能力。
+
+---
+
+> **结构沿革注记**：本节两张改动表是 0.4.x 各增量落地时的定格记录，表中「新增」文件此后又经历过收敛与拆分。查现行结构以 [ARCHITECTURE.md](./ARCHITECTURE.md) §2 为准；与上表直接相关的四处：
 >
 > - **video 逻辑层已拆分**：表中的单文件 `video.ts` 现在只保留 `agnes_video_generate` 工具定义与兼容 barrel；建任务/轮询状态机在 `video-client.ts`，V2.0 与 2.5 两套请求体分别在 `video-protocol.ts` / `video-protocol-25.ts`，目录花名册在 `video-models.ts`。
 > - **两个开关 store 不再逐字镜像**：重复体已收敛到 `switch-store.ts`（provider / draw / video / AgnesCode 共用一层），`draw-store.ts` 与 `video-store.ts` 只剩各自的文件名、形状版本、model wire key 与报错措辞。事故与收敛过程见 [PITFALLS.md](./PITFALLS.md) §34。
 > - **draw / video 共用的路由处理器**现在落在 `routes/tool-switch.ts`，由 `routes.ts` 门面统一注册。
+> - **§7/§8 表格里指名的共享私有函数 `mountAgentTool` 已于 0.13.x 换成 `createToolMount`**（热挂载协调器，§9）：工具从「挂载一次、卸载等 Host 重启」变成「开关/模型写入后即时挂载、卸载、换模型」。表格里 `lifecycle.ts` 一行的 `registerDrawTool` / `registerVideoTool` 名字不变，现在它们返回并保留热句柄而不是 fire-and-forget 地丢弃。
 

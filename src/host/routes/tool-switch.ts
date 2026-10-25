@@ -17,7 +17,7 @@ import { isAdmittedWithAudit } from "../admission-audit.ts";
 import { readPanelValue, resolveSwitchEnabled, resolveSwitchValue } from "../switch-precedence.ts";
 import { redactError } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBodyOr400 } from "./http.ts";
-import type { HostCtx, HostWiring, SwitchStore } from "../types.ts";
+import type { HostCtx, HostWiring, SwitchStore, ToolMount } from "../types.ts";
 
 /** One tool switch's route wiring: the two tools differ only in these. */
 interface ToolSwitchRouteOptions {
@@ -31,6 +31,7 @@ interface ToolSwitchRouteOptions {
   modelSourceKey: string;
   configModelId: string;
   allowedHosts: Set<string>;
+  mount?: ToolMount | null;
 }
 
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
@@ -65,11 +66,14 @@ export const VIDEO_PATH = `/api/${name}/video`;
  * @param {string} options.modelSourceKey - the response key carrying its source.
  * @param {string} options.configModelId - the config default for the model id.
  * @param {Set<string>} options.allowedHosts - the trust fence.
+ * @param {ToolMount} [options.mount] - the live tool mount handle; each
+ *   successful POST write converges it (hot reload). Absent = the route only
+ *   persists state, the mount is reconciled elsewhere (mount seed / teardown).
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerToolSwitchRoute(
   ctx: HostCtx,
-  { path, label, store, enabledKey, enabledSourceKey, configEnabled, modelKey, modelSourceKey, configModelId, allowedHosts }: ToolSwitchRouteOptions
+  { path, label, store, enabledKey, enabledSourceKey, configEnabled, modelKey, modelSourceKey, configModelId, allowedHosts, mount }: ToolSwitchRouteOptions
 ) {
   return ctx.webServer.register({
     kind: "exact",
@@ -109,6 +113,16 @@ export function registerToolSwitchRoute(
           { "cache-control": "no-store" }
         );
       };
+      // A successful POST write converges the live tool mount (hot reload):
+      // re-read the CURRENT effective value and mount / unmount / swap so the
+      // agent's tool set tracks the switch with no Host restart. The GET
+      // read-only path must never do this — a read must not mutate the host's
+      // tool registry. `sync()` serializes on its own promise chain, so
+      // back-to-back flips converge to the latest value; it self-swallows, so
+      // a mount that cannot converge simply stays put (panel stays correct).
+      const commit = () => {
+        if (mount !== null && mount !== undefined) void mount.sync().catch(() => {});
+      };
       if (method === "GET") {
         await answer();
         return;
@@ -130,6 +144,7 @@ export function registerToolSwitchRoute(
           await answer({ ok: false, error: redactError(error) });
           return;
         }
+        commit();
         await answer();
         return;
       }
@@ -149,6 +164,7 @@ export function registerToolSwitchRoute(
           await answer({ ok: false, error: redactError(error) });
           return;
         }
+        commit();
         await answer();
         return;
       }
@@ -166,13 +182,15 @@ export function registerToolSwitchRoute(
         await answer({ ok: false, error: redactError(error) });
         return;
       }
+      commit();
       await answer();
     }
   });
 }
 
 /**
- * Register the draw switch route. Wiring subset: `settings`, `drawStore`.
+ * Register the draw switch route. Wiring subset: `settings`, `drawStore`,
+ * `drawToolMount` (the live handle the successful writes converge).
  * @param ctx - the host root context.
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
@@ -189,12 +207,14 @@ export function registerDrawRoute(ctx: HostCtx, wiring: HostWiring) {
     modelKey: "drawModelId",
     modelSourceKey: "drawModelSource",
     configModelId: settings.drawModelId,
-    allowedHosts: settings.allowedHosts
+    allowedHosts: settings.allowedHosts,
+    mount: wiring.drawToolMount ?? null
   });
 }
 
 /**
- * Register the video switch route. Wiring subset: `settings`, `videoStore`.
+ * Register the video switch route. Wiring subset: `settings`, `videoStore`,
+ * `videoToolMount` (the live handle the successful writes converge).
  * @param ctx - the host root context.
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
@@ -211,6 +231,7 @@ export function registerVideoRoute(ctx: HostCtx, wiring: HostWiring) {
     modelKey: "videoModelId",
     modelSourceKey: "videoModelSource",
     configModelId: settings.videoModelId,
-    allowedHosts: settings.allowedHosts
+    allowedHosts: settings.allowedHosts,
+    mount: wiring.videoToolMount ?? null
   });
 }

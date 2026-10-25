@@ -76,7 +76,7 @@
 - **没有「登出」按钮**：能停的是 provider 开关，不是令牌。「删除已存 JWT」是隐私动作，被刻意移出日常操作；真正吊销只能在桌面 App 里登出 / 改密码。见 [SETUP.md](./SETUP.md) §3。
 - **「可看图」清单为空**：Agnes 目录条目**不带** `input_modalities`（实测只有 `id`/`object`/`created`/`owned_by`/`supported_endpoint_types` 五个字段），`identifyVisionModel` 只能读目录 → 恒 false。这是**「读不到」而不是「没有」**——官方文档（`AGNES-API-docs/`）明说 `agnes-3.0-flash` / `agnes-2.5-pro` / `agnes-2.5-flash` 支持「文本 + 图像 URL 输入」，所以空清单不能当作「真没有可看图模型」的证据。见 [AGNES-API.md](./AGNES-API.md) §7.1。
 - **「可看图」整行消失**：不是被裁掉，是没有 API Key → 目录没拉 → 视觉清单无从生成。见 §1.3 第一行。
-- **改了设置不重启也生效，但工具挂载要等下次启动**：开关与勾选走热生效；agent 工具没有 unregister 语义，挂载 / 缺席只发生在 Host 启动时。见 [PROVIDER-HOT-RELOAD.md](./PROVIDER-HOT-RELOAD.md)。
+- **翻了开关出图 / 视频工具却没变**：开关值读写永远即时；工具挂载跟不跟得上取决于宿主能力——宿主不给卸载句柄时工具对本进程**粘性**（保持首次注册值，0.13.x 起的行为边界），机制与失败形状见 [TOOL-HOT-RELOAD.md](./TOOL-HOT-RELOAD.md) §4。
 - **拼错的配置键只记日志、不报错**：老 patch 里的历史键不该把面板打成配置错误。见 [SETUP.md](./SETUP.md) §3。
 - **429 与额度耗尽不是一件事**：402 是额度不足，429 多为速率上限（订阅用尽也可能回 429）。见 [AGNES-API.md](./AGNES-API.md)。
 

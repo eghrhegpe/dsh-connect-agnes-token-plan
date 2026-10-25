@@ -115,7 +115,7 @@
     // quotaBlockedModelIds 是交给选择器剔除的 id 集。Agnes 下**恒为空**——
     // 平台不按模型分配额，账号级用尽由面板明说，而不是静默摘模型。
     "quotaBlockedModelIds": [],
-    // 出图工具开关生效值与来源（0.4.2）；工具实际挂载在下一个 Host 启动时发生
+    // 出图工具开关生效值与来源（0.4.2）；工具实际挂载随之即时收敛（0.13.x 起，见 TOOL-HOT-RELOAD.md）
     "drawEnabled": false, "drawSource": "config",
     // 一次出图调用实际会寻址的模型 id：用与工具本身相同的 pickDrawModel
     // 优先级（调用参数 > 配置的 drawModelId > 目录首个出图模型）从同一份
@@ -224,9 +224,9 @@
 
 ### `POST /api/dsh-connect-agnes-token-plan/draw`
 
-`{ "enabled": true|false }` —— 把出图开关写入插件私有状态文件（`$DSH_HOME/state/<profile>/<plugin>/draw.json`，按 profile 分段、见 [PITFALLS.md](./PITFALLS.md) §23），与 `/provider` 走的是同一套「存私有状态」机制，但**不触发任何即时发布**——agent 工具的实际注册/缺席发生在下一个 Host 启动（或重新安装）时，由 `lifecycle.js` 的 `startSideEffects` 重读生效值。优先级：面板保存的值 > `cordis.patch.yml` 的 `drawEnabled`。非布尔 `enabled` 返回 400；跨域返回 403。
+`{ "enabled": true|false }` —— 把出图开关写入插件私有状态文件（`$DSH_HOME/state/<profile>/<plugin>/draw.json`，按 profile 分段、见 [PITFALLS.md](./PITFALLS.md) §23），与 `/provider` 走的是同一套「存私有状态」机制，但**不发布 provider**——写成功后立即收敛**工具挂载**：协调器 `sync()` 就地注册 / 撤下 / 换模型（0.13.x 起，机制见 [TOOL-HOT-RELOAD.md](./TOOL-HOT-RELOAD.md)；宿主不给卸载句柄时工具粘性，保持首次注册值）。优先级：面板保存的值 > `cordis.patch.yml` 的 `drawEnabled`。非布尔 `enabled` 返回 400；跨域返回 403。
 
-`{ "drawModelId": "agnes-image-2.5-flash" }`（或 `null` = 自动选择）—— 把出图模型偏好写入同一个 `draw.json`。生效时机与开关相同：`startSideEffects` 在下一次挂载时用它覆盖 `cordis.patch.yml` 的 `drawModelId`（优先级：面板 > 配置；面板清除后回落配置，配置也为空则自动取目录第一个出图模型）。非空字符串之外的非 null 值返回 400；跨域返回 403。`{ "forget": true }` 同时清除开关与模型偏好的面板保存值。
+`{ "drawModelId": "agnes-image-2.5-flash" }`（或 `null` = 自动选择）—— 把出图模型偏好写入同一个 `draw.json`。生效时机与开关相同：写成功后协调器就地收敛（已挂载则先撤旧再注新，见 [TOOL-HOT-RELOAD.md](./TOOL-HOT-RELOAD.md)）；优先级：面板 > 配置，面板清除后回落 `cordis.patch.yml` 的 `drawModelId`，配置也为空则自动取目录第一个出图模型。非空字符串之外的非 null 值返回 400；跨域返回 403。`{ "forget": true }` 同时清除开关与模型偏好的面板保存值。
 
 ### `GET /api/dsh-connect-agnes-token-plan/video`
 

@@ -95,7 +95,14 @@ export interface HostDeps {
  */
 export interface HostCtx {
   get(service: string): any;
-  tools?: { register(definition: unknown): unknown } | null;
+  /**
+   * The host tools service. `register` returns a DISPOSER (`() => void`) that
+   * unregisters the tool — the same contract the sibling workbuddy plugin types
+   * as `register(definition): () => void`. A host that returns `undefined`
+   * (no unregister path) degrades to the old mount-once behavior: we keep the
+   * disposer we got and simply cannot unmount, but the tool still mounts.
+   */
+  tools?: { register(definition: unknown): (() => void) | undefined } | null;
   effect(callback: () => () => void, label?: string): void;
   /**
    * The Cordis event emitter `apply` and the publisher seams call
@@ -349,7 +356,7 @@ export interface SwitchStore {
 export type FetchFn = (url: string, options?: RequestInit) => Promise<any>;
 
 /**
- * The bag `mountAgentTool` hands `defineDrawTool` / `defineVideoTool`.
+ * The bag `createToolMount` hands `defineDrawTool` / `defineVideoTool`.
  *
  * Pure wiring: every side effect (key resolution, the live catalog, the fetch,
  * disposal) is injected rather than read from module state. Loose on the peer
@@ -374,6 +381,26 @@ export interface ToolSide {
   loadToolsModule?: () => any;
   drawFetch: FetchFn;
   videoFetch: FetchFn;
+}
+
+/**
+ * The live mount handle for ONE agent tool (the draw or video tool).
+ *
+ * A tool now mounts and unmounts WITHOUT a Host restart: the panel switch route
+ * re-runs {@link ToolMount.sync} after it writes the state file, and the host
+ * `tools.register` returns a disposer that the mount keeps so a later
+ * `sync()` can unmount. `sync` is idempotent and serialized — calling it in any
+ * order (mount-time seed, a switch POST, a model POST, a forget) converges to
+ * the same live state, and a host without a tools service simply leaves the
+ * tool unmounted rather than crashing.
+ */
+export interface ToolMount {
+  /** Reconcile the live tool with the current effective switch value. Safe to call repeatedly. */
+  sync(): Promise<void>;
+  /** Unmount a live tool and close the handle for good (teardown); later `sync()` is a no-op. */
+  dispose(): void;
+  /** Whether the tool is currently registered with the host. */
+  isMounted(): boolean;
 }
 
 /**
@@ -422,4 +449,14 @@ export interface HostWiring {
   agnescodePublisher: ReturnType<typeof wireAgnescodePublisher>["publisher"];
   /** The fetch the `/agnescode` route's two BFF reads use (see `HostDeps`). */
   agnescodeFetch?: (...args: any[]) => Promise<any>;
+  /**
+   * The live mount handle for the `agnes_draw_image` tool, filled by
+   * `startSideEffects` (`lifecycle.ts`) after the wiring is built. The switch
+   * route reads it to re-sync the tool after a write; teardown disposes it.
+   * Absent only before `startSideEffects` runs (a route request cannot arrive
+   * that early), so consumers treat it as optional.
+   */
+  drawToolMount?: ToolMount | null;
+  /** The live mount handle for the `agnes_video_generate` tool (same as `drawToolMount`). */
+  videoToolMount?: ToolMount | null;
 }

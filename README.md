@@ -46,7 +46,7 @@
 - **语言模型**：显示当前 Key 实际能调哪些模型，其中哪些能看图（按平台 `input_modalities` 判定，不靠名字猜）。
 - **出图工具**：Host 给 agent 注册 `agnes_draw_image` ，出图模型按 catalog 的 `output_modalities` 结构化判定。
 - **视频工具**：Host 给 agent 注册 `agnes_video_generate`，按选中模型分派 V2.0 / 2.5 两套互斥参数。
-- 开关与勾选都在面板热生效，无需重启。但工具的实际挂载 / 缺席发生在**下一次 Host 启动**（agent tools 没有 unregister 语义）。细节见 [docs/SETUP.md](docs/SETUP.md) §3、[docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md) 与 [docs/AGNES-API.md](docs/AGNES-API.md) §7.5。
+- 开关、勾选与工具挂载都热生效，无需重启：翻一次开关，出图 / 视频工具就地注册或撤下（0.13.x 起；宿主不给卸载句柄时工具对本进程粘性，见 [docs/TOOL-HOT-RELOAD.md](docs/TOOL-HOT-RELOAD.md)）。细节见 [docs/SETUP.md](docs/SETUP.md) §3、[docs/PROVIDER-HOT-RELOAD.md](docs/PROVIDER-HOT-RELOAD.md) 与 [docs/AGNES-API.md](docs/AGNES-API.md) §7.5。
 
 ![「接入 API」tab](assets/panel-API-provider.png)
 
