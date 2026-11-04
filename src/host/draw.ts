@@ -315,13 +315,15 @@ export function defineDrawTool({
     name: DRAW_TOOL_NAME,
     description:
       "Generate an image with the Agnes Token Plan key. " +
-      "Omit `model` to let the catalog's default image model be used; pass `model` only when you need a particular one — the available image model ids are reported in the result after the first successful call.",
+      "Omit `model` to let the catalog's default image model be used; pass `model` only when you need a particular one — the available image model ids are reported in the result after the first successful call. " +
+      "`image` takes an ARRAY of reference images (public http(s) URLs or data: URIs) for img2img — multiple references are supported and all reach the platform; order matters (the first is the primary composition reference). " +
+      "Keep the prompt short and prioritized (state what must be preserved FIRST, then what to change), and crop each reference to only the content that must be copied: unrelated elements in a reference (a character's hair, a prop, a background) tend to leak into the result and overwrite the same attribute on the target.",
     parameters: {
-      prompt: { type: "string", required: true, description: "Image generation prompt" },
+      prompt: { type: "string", required: true, description: "Image generation prompt. Keep it concise and prioritized: state what must be preserved first (layout, pose, style), then what to change. Long multi-requirement prompts are only partially followed — the model tends to regenerate instead of preserving." },
       model: { type: "string", description: "Agnes image model id; defaults to the first discovered one" },
       size: { type: "string", description: "Image size: '2K' (2048x2048) or '4K' (4096x4096) tier constant, or exact WIDTHxHEIGHT (32-multiple, 512-4096, max 3:1 ratio), e.g. 2720x1536 — live-verified on the Agnes endpoint (probe ⑤)" },
       ratio: { type: "string", description: "Aspect ratio: 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2 (default 1:1); forwarded as extra_body.ratio" },
-      image: { type: "array", items: { type: "string" }, description: "Reference image URL(s) / Data URIs for img2img; forwarded as extra_body.image" },
+      image: { type: "array", items: { type: "string" }, description: "Reference image URL(s) / Data URIs for img2img — an ARRAY: pass multiple references and ALL are forwarded as extra_body.image (order matters, the first is the primary composition reference). Crop each reference to only the content to copy: unrelated elements in a reference (hair, props, background) tend to bleed into the result and override the same attribute on the target." },
       return_base64: { type: "boolean", description: "Request Base64 output instead of a URL (text2img only); forwarded as extra_body.return_base64. The bytes come back in the result's `url` field as a data: URI, which means they enter the conversation context — a 2K PNG is several MB of text. Leave it off unless you specifically need the bytes inline." },
       // The sentence states the platform's limit in words; `buildDrawBody`
       // hard-codes `n: 1` rather than reading it from here. That used to be
