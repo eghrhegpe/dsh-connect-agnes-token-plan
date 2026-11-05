@@ -4,11 +4,14 @@
  * The plugin's two agent tools are built through the peer's `defineTool`
  * (`@deepseek-ai/dsh-tools`). A peer import is a **file-location** resolution:
  * Node walks the plugin directory's own ancestors for a matching
- * `node_modules`, and installs under `~/.dsh/plugins` never contain the Host
+ * `node_modules`, and installs under `~/.dsh/plugins` do not contain the Host
  * runtime (the CLI runtime lives under a global npm prefix; the desktop
- * runtime lives inside the app bundle). On those hosts the peer load throws
- * `ERR_MODULE_NOT_FOUND` every single time — the tools were silently absent
- * forever, even with the switch visibly on (docs/TOOL-HOT-RELOAD.md §2.2).
+ * runtime lives inside the app bundle). A bare-Node load from such a file
+ * throws `ERR_MODULE_NOT_FOUND` (probed); inside a Host process the peer CAN
+ * resolve — the link Host's English `invalid arguments` rejections prove its
+ * wrapper ran (docs/TOOL-HOT-RELOAD.md §2.2, PITFALLS §63). Either way the
+ * tool must never stay silent: when the peer is absent this module mounts
+ * instead of the tools vanishing with the switch visibly on.
  *
  * Sibling plugin workbuddy solves it by hand-writing plain `ToolDefinition`
  * objects (src/image-tool.ts): the Host's `tools.register` only needs

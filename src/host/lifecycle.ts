@@ -114,11 +114,12 @@ type ToolsService = { register(definition: unknown): (() => void) | undefined };
  * a Host without a tools service — or a registry that refuses the
  * definition — leaves the panel and the provider untouched, the tool simply
  * absent. The tools PEER is no longer one of those rungs: when
- * `@deepseek-ai/dsh-tools` cannot load (file-location resolution; installs
- * under `~/.dsh/plugins` never contain the Host runtime), the ladder falls
- * back to {@link rawDefineTool} — a hand-written `ToolDefinition` with the
- * same shape the peer would have produced (the workbuddy precedent) — and
- * logs one warning so the degrade is visible, not silent.
+ * `@deepseek-ai/dsh-tools` cannot load (file-location resolution fails for a
+ * bare Node under `~/.dsh/plugins`; inside a Host process it may still
+ * resolve — see PITFALLS §63), the ladder falls back to {@link rawDefineTool}
+ * — a hand-written `ToolDefinition` with the same shape the peer would have
+ * produced (the workbuddy precedent) — and logs one warning so the degrade is
+ * visible, not silent.
  *
  * State is per-handle (a closure), shared by the mount-time seed, every switch
  * POST and teardown, so the two callers cannot drift into registering the same
@@ -227,12 +228,12 @@ export function createToolMount({
     if (service === null || typeof service.register !== "function") return;
     tools = service;
 
-    // The tools peer is a FILE-LOCATION import: Node walks this install's
-    // own ancestors for @deepseek-ai/dsh-tools, and plugin trees never
-    // contain the Host runtime (CLI: global npm prefix; desktop: inside the
-    // app bundle). When it fails the tool does NOT stay absent anymore —
-    // fall back to the raw definition (same contract workbuddy hand-writes)
-    // and make the degrade visible once per handle.
+    // The tools peer is a FILE-LOCATION import: a bare Node under
+    // ~/.dsh/plugins never finds it (the Host runtime lives elsewhere),
+    // though inside a Host process it can resolve (PITFALLS §63). When it
+    // fails the tool does NOT stay absent anymore — fall back to the raw
+    // definition (same contract workbuddy hand-writes) and make the degrade
+    // visible once per handle.
     let defineTool: ((options: ToolDefinitionOptions) => RawToolDefinition | unknown) | null = null;
     let peerFailure: string | null = null;
     try {

@@ -37,7 +37,7 @@
 - **开但模型变了** → 有 disposer 先撤旧再注新（模型偏好也即时生效）；无 disposer 保持首次注册值。
 - 挂载路径：读 tools 服务 → 懒加载 tools peer（`defineTool`）；**peer 装载失败不再中止挂载**——落 `rawDefineTool`（`src/host/tool-raw-definition.ts`，手写 `ToolDefinition`，与 peer 产出同形，workbuddy 先例）并记一行 warn → 工厂构造工具定义（目录**调用时**读取：活目录缺席回落 `catalogStore.list()`，目录刷新落地不需要重注册）→ `tools.register(definition)`（catch：拒绝的注册表降级为工具缺席）→ 捕获 disposer。
 
-**降级纪律（0.13.x 修订）**：tools 服务缺席 / 注册表拒绝——这两档仍是**静默**降级：面板与 provider 照常，工具只是缺席，没有任何一行日志把失败打成配置错误。peer 装载失败不再是静默缺席的一档：`@deepseek-ai/dsh-tools` 是**文件位置解析**的 import，装在 `~/.dsh/plugins` 下的插件永远够不到宿主运行时（CLI runtime 在全局 npm 前缀、桌面 runtime 在 app 包内），于是这类 Host 上 `ERR_MODULE_NOT_FOUND` 每次都抛、旧代码每次都静默 `return`——开关 visibly 开着、工具永远缺席、一行日志都没有。现在这一档落 raw 兜底**照常挂载**，并记一行 warn 点名降级（每个 handle 只记一次，模型换挂不刷屏）：降级可见、但绝不致命，面板与 provider 仍零影响。
+**降级纪律**：tools 服务缺席 / 注册表拒绝——这两档仍是**静默**降级：面板与 provider 照常，工具只是缺席，没有任何一行日志把失败打成配置错误。peer 装载失败不再是静默缺席的一档。peer 是**文件位置解析**的 import，两档都真实：**裸 Node** 从 `~/.dsh/plugins` 下的插件文件逐层上溯，祖先 `node_modules` 里没有 `@deepseek-ai/dsh-tools`（CLI runtime 在全局 npm 前缀、桌面 runtime 在 app 包内），`ERR_MODULE_NOT_FOUND` 实打实地抛；**但在宿主进程内 peer 可以装载成功**——link 版 Host 实测数字型 `size` 回来的是 peer `defineTool` 包装器独有的英文 `invalid arguments`（整个 runtime 里这句只有一个产地；判别取证见 [PITFALLS.md](./PITFALLS.md) §63），宿主进程内具体怎么解析到的未取证，不作机制结论。peer 在座的 Host 走 peer（它的预校验挡掉廉价的类型错：请求不发出、不耗额度、不触发冷却）；peer 缺席的 Host 落 raw 兜底**照常挂载**，并记一行 warn 点名降级（每个 handle 只记一次，模型换挂不刷屏）：降级可见、但绝不致命，面板与 provider 仍零影响。语义闸（表外尺寸 / 矛盾组合 / 互斥 / 未知键）两层都过——peer 对这些**不设防**，中文「出图参数错误」永远出自我们自己的 `validateDrawArgs`。
 
 ### 2.3 句柄与触发点
 
@@ -57,6 +57,7 @@
 - **宿主不给卸载句柄**（`register` 返回 `undefined`）：工具对本进程**粘性**——开关 / 模型改动能被协调器读到，但没有句柄可撤，注册保持首次值；行为与 0.4.x 完全一致。面板开关的状态读写永远即时生效。
 - **两个 Host 进程共享同一状态目录**：后写者胜（与 provider / throttle / catalog 状态文件语义一致）。
 - **协调失败自静默**：tools 服务缺席、注册表拒绝——面板与 provider 零影响，工具缺席即可；没有任何一行日志为它点名。（peer 装载失败已从这一档移出：它落 raw 兜底照常挂载 + 记一行 warn，见 §2.2。）
+- **peer 在座与否随宿主形态而变**：同一条 import 在裸 Node 必炸、在宿主进程内可能成——**别拿一种环境的探针给另一种环境定罪**（[PITFALLS.md](./PITFALLS.md) §63）。现场判别哪层在干活看拒绝文案的语言：英文 `invalid arguments` = peer 包装器跑过；中文「出图参数错误（请求未发出…）」= 本插件的语义闸（peer 在座时它照跑，raw 兜底时它是唯一的闸）。
 
 ## 5. 测试锚点
 
