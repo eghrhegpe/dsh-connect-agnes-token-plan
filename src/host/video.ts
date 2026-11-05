@@ -107,7 +107,7 @@ export function defineVideoTool({
       VIDEO25_SECONDS_MIN + "–" + VIDEO25_SECONDS_MAX + "), `size` (" + VIDEO25_SIZES.join("/") + ", flash is 720P only) and `aspect_ratio` " +
       "(21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16). The two families do not mix at the platform — sending V2.0 " +
       "frame fields straight to a 2.5 model is a 400, so the tool translates `num_frames` / `frame_rate` to the " +
-      "nearest whole second when `seconds` is omitted, and `width` / `height` steer the aspect ratio. " +
+      "nearest whole second (clamped to 4–12) when `seconds` is omitted, and `width` / `height` steer the aspect ratio. " +
       "The reverse mix is refused, not dropped: 2.5-only fields (`seconds` / `size` / `aspect_ratio` / " +
       "`mode` / `keyframes`) sent to a V2.0 model throw — set `model` to a 2.5 id. " +
       "Image-to-video: `image` (one URL); keyframe animation on 2.5: `keyframes` (≥2 URLs, or a single `image` " +
@@ -115,7 +115,7 @@ export function defineVideoTool({
     parameters: {
       prompt: { type: "string", required: true, description: "Video content description" },
       model: { type: "string", description: "Agnes video model id; defaults to the first V2.0 model, or the first 2.5 model when the catalog holds no V2.0 one" },
-      image: { type: "string", description: "Optional public HTTPS image URL for image-to-video (2.5: used as the keyframe first frame); never combined with keyframes" },
+      image: { type: "string", description: "Optional public http(s) image URL for image-to-video (2.5: used as the keyframe first frame); never combined with keyframes" },
       keyframes: { type: "array", items: { type: "string" }, description: "2.5 only: keyframe image URLs, ≥2; exactly 2 becomes a first/last-frame keyframe animation, 3+ a reference set (2.5-flash: ≤5); never combined with image" },
       width: { type: "number", description: `V2.0: video width in pixels, default ${VIDEO_DEFAULT_WIDTH}; on 2.5 models it only feeds the aspect-ratio nearest-match` },
       height: { type: "number", description: `V2.0: video height in pixels, default ${VIDEO_DEFAULT_HEIGHT}; on 2.5 models it only feeds the aspect-ratio nearest-match` },
@@ -124,7 +124,7 @@ export function defineVideoTool({
       seconds: { type: "number", description: `2.5 only: duration in whole seconds, ${VIDEO25_SECONDS_MIN}-${VIDEO25_SECONDS_MAX}; omitted = derived from num_frames/frame_rate or the documented default ${VIDEO25_DEFAULT_SECONDS}` },
       size: { type: "string", description: `2.5 only: resolution tier ${VIDEO25_SIZES.join(" / ")}; 2.5-flash accepts ${VIDEO25_FLASH_ONLY_SIZE} only; omitted = ${VIDEO25_DEFAULT_SIZE}` },
       aspect_ratio: { type: "string", description: `2.5 only: aspect ratio ${VIDEO25_ASPECT_TABLE.map((row) => row.ratio).join(" / ")}; omitted = nearest match of width/height` },
-      mode: { type: "string", description: `2.5 only: generation mode ${VIDEO25_MODES.join(" / ")}; omitted = derived from image/keyframes (none → text, one → keyframe, 2 → keyframe first/last, 3+ → reference)` },
+      mode: { type: "string", description: `2.5 only: generation mode ${VIDEO25_MODES.join(" / ")}; omitted = derived from image/keyframes (none → text, single image → keyframe, 2 keyframes → first/last keyframe, 3+ → reference; exactly ONE keyframes entry is accepted but degrades silently to text mode — a lone first frame goes in image)` },
       seed: { type: "number", description: "Integer seed for reproducible output; omit for a random one" },
       negative_prompt: { type: "string", description: "V2.0 only: content to avoid (the 2.5 system has no equivalent and it is not forwarded)" }
     },
