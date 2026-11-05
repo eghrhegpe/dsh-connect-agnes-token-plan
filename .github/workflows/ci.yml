@@ -221,6 +221,7 @@ jobs:
           node test/switch-store.test.mjs
           node test/switch-precedence.test.mjs
           node test/admission-audit.test.mjs
+          node test/tool-mount.test.mjs
           node test/agnescode.test.mjs
           node test/agnescode-dpapi.test.mjs
           node test/agnescode-stats.test.mjs

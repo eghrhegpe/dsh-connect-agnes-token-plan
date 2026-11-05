@@ -35,9 +35,9 @@
 - **关** → 有 disposer 就撤下（清状态后 `safeCall(disposer)`）；没有则保持粘性，不动。
 - **开且与已注册模型一致** → 幂等，不动。
 - **开但模型变了** → 有 disposer 先撤旧再注新（模型偏好也即时生效）；无 disposer 保持首次注册值。
-- 挂载路径：读 tools 服务 → 懒加载 tools peer（`defineTool`）→ 工厂构造工具定义（目录**调用时**读取：活目录缺席回落 `catalogStore.list()`，目录刷新落地不需要重注册）→ `tools.register(definition)`（catch：拒绝的注册表降级为工具缺席）→ 捕获 disposer。
+- 挂载路径：读 tools 服务 → 懒加载 tools peer（`defineTool`）；**peer 装载失败不再中止挂载**——落 `rawDefineTool`（`src/host/tool-raw-definition.ts`，手写 `ToolDefinition`，与 peer 产出同形，workbuddy 先例）并记一行 warn → 工厂构造工具定义（目录**调用时**读取：活目录缺席回落 `catalogStore.list()`，目录刷新落地不需要重注册）→ `tools.register(definition)`（catch：拒绝的注册表降级为工具缺席）→ 捕获 disposer。
 
-**双降级纪律不变**：无 tools 服务 / peer 装载失败 / 注册表拒绝——每一档都是**静默**降级：面板与 provider 照常，工具只是缺席，没有任何一行日志把失败打成配置错误。
+**降级纪律（0.13.x 修订）**：tools 服务缺席 / 注册表拒绝——这两档仍是**静默**降级：面板与 provider 照常，工具只是缺席，没有任何一行日志把失败打成配置错误。peer 装载失败不再是静默缺席的一档：`@deepseek-ai/dsh-tools` 是**文件位置解析**的 import，装在 `~/.dsh/plugins` 下的插件永远够不到宿主运行时（CLI runtime 在全局 npm 前缀、桌面 runtime 在 app 包内），于是这类 Host 上 `ERR_MODULE_NOT_FOUND` 每次都抛、旧代码每次都静默 `return`——开关 visibly 开着、工具永远缺席、一行日志都没有。现在这一档落 raw 兜底**照常挂载**，并记一行 warn 点名降级（每个 handle 只记一次，模型换挂不刷屏）：降级可见、但绝不致命，面板与 provider 仍零影响。
 
 ### 2.3 句柄与触发点
 
@@ -54,12 +54,12 @@
 
 - **宿主不给卸载句柄**（`register` 返回 `undefined`）：工具对本进程**粘性**——开关 / 模型改动能被协调器读到，但没有句柄可撤，注册保持首次值；行为与 0.4.x 完全一致。面板开关的状态读写永远即时生效。
 - **两个 Host 进程共享同一状态目录**：后写者胜（与 provider / throttle / catalog 状态文件语义一致）。
-- **协调失败自静默**：tools 服务缺席、peer 装载失败、注册表拒绝——面板与 provider 零影响，工具缺席即可；没有任何一行日志为它点名。
+- **协调失败自静默**：tools 服务缺席、注册表拒绝——面板与 provider 零影响，工具缺席即可；没有任何一行日志为它点名。（peer 装载失败已从这一档移出：它落 raw 兜底照常挂载 + 记一行 warn，见 §2.2。）
 
 ## 5. 测试锚点
 
 - `test/routes.test.mjs`：开关路由的无 tools 服务降级路径（假宿主 ctx 无 `tools` 服务）与键名隔离（组 S 交叉投递 / 各自回读，[API.md](./API.md) §1 `/draw` / `/video` 段引注）。
-- **已知缺口**：disposer 路径（挂载 / 撤下 / 换模型）尚无离线套件——需要向挂载缝注入一个返回 disposer 的假 `tools` 服务；补套件前先冻结现状。
+- `test/tool-mount.test.mjs`：挂载阶梯本身的离线套件——向挂载缝注入返回 disposer / 返回 `undefined`（粘性）/ 抛错的假 `tools` 服务，钉 peer 三档缺失（抛错、模块无 `defineTool`、seam 缺席）都落 raw 兜底照常挂载且只 warn 一次、peer 在则走 peer 不 warn、raw 产物的 JSON Schema 形状、off 翻转经 disposer 卸载、粘住不重复注册、registry 拒绝不炸、configError 首道闸，以及转换器单元（`type:"json"` / 未知 type / 外来键 / 根 required 空则缺席 / 非法 timeoutMs 省略不抛）。
 - 工具纯逻辑（失败分诊 / 冷却 / hints）由 `test/draw.test.mjs` 等覆盖，与挂载无关。
 
 ---

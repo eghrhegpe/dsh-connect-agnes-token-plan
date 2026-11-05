@@ -27,6 +27,7 @@ import { seedPublisherFromCatalog, catalogSignature } from "./provider-publish.t
 import { name } from "./host-config.ts";
 import { retryBounded, redactError } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled, resolveSwitchValue } from "./switch-precedence.ts";
+import { rawDefineTool, type RawToolDefinition, type ToolDefinitionOptions } from "./tool-raw-definition.ts";
 import type { HostCtx, HostWiring, ToolSide, ToolWiring, SwitchStore, Settings, ToolMount } from "./types.ts";
 
 /** How many times a mount-time optional-service read is retried. */
@@ -109,9 +110,15 @@ type ToolsService = { register(definition: unknown): (() => void) | undefined };
  * The returned {@link ToolMount} is what makes the tool HOT: the panel switch
  * route re-runs `sync()` after it writes the state file, and `sync()` mounts
  * or unmounts the tool in place using the disposer the host's
- * `tools.register` returns. Every rung still returns silently rather than
- * throwing: a Host without a tools service, or a peer that fails to load,
- * leaves the panel and the provider untouched — the tool is simply absent.
+ * `tools.register` returns. Every rung still returns rather than throwing:
+ * a Host without a tools service — or a registry that refuses the
+ * definition — leaves the panel and the provider untouched, the tool simply
+ * absent. The tools PEER is no longer one of those rungs: when
+ * `@deepseek-ai/dsh-tools` cannot load (file-location resolution; installs
+ * under `~/.dsh/plugins` never contain the Host runtime), the ladder falls
+ * back to {@link rawDefineTool} — a hand-written `ToolDefinition` with the
+ * same shape the peer would have produced (the workbuddy precedent) — and
+ * logs one warning so the degrade is visible, not silent.
  *
  * State is per-handle (a closure), shared by the mount-time seed, every switch
  * POST and teardown, so the two callers cannot drift into registering the same
@@ -159,6 +166,8 @@ export function createToolMount({
   let regModel: string | null = null;
   let closed = false;
   let chain: Promise<void> = Promise.resolve();
+  // One degrade warning per handle (a model swap re-mounts; do not spam).
+  let rawWarned = false;
 
   const safeCall = (fn: (() => void) | null): void => {
     if (fn === null) return;
@@ -218,15 +227,32 @@ export function createToolMount({
     if (service === null || typeof service.register !== "function") return;
     tools = service;
 
-    let defineTool;
+    // The tools peer is a FILE-LOCATION import: Node walks this install's
+    // own ancestors for @deepseek-ai/dsh-tools, and plugin trees never
+    // contain the Host runtime (CLI: global npm prefix; desktop: inside the
+    // app bundle). When it fails the tool does NOT stay absent anymore —
+    // fall back to the raw definition (same contract workbuddy hand-writes)
+    // and make the degrade visible once per handle.
+    let defineTool: ((options: ToolDefinitionOptions) => RawToolDefinition | unknown) | null = null;
+    let peerFailure: string | null = null;
     try {
       const mod = await Promise.resolve(side.loadToolsModule?.());
-      defineTool = mod?.defineTool ?? mod?.default?.defineTool ?? null;
-    } catch {
-      // No tools peer on this Host: the tool stays absent, nothing logs.
-      return;
+      const candidate: ((options: ToolDefinitionOptions) => RawToolDefinition | unknown) | null =
+        mod?.defineTool ?? mod?.default?.defineTool ?? null;
+      defineTool = typeof candidate === "function" ? candidate : null;
+      if (defineTool === null) peerFailure = "the tools module exports no defineTool";
+    } catch (error) {
+      // ERR_MODULE_NOT_FOUND (or any peer-load failure): raw fallback below.
+      defineTool = null;
+      peerFailure = redactError(error);
     }
-    if (typeof defineTool !== "function") return;
+    if (defineTool === null) {
+      defineTool = rawDefineTool;
+      if (!rawWarned) {
+        rawWarned = true;
+        wiring.logger?.warn?.(`${name}: ${enabledKey}: tools peer unavailable on this Host (${peerFailure}) — mounted the built-in raw tool definition instead`);
+      }
+    }
 
     // Same precedence as the switch: a panel-saved model preference beats the
     // patch's value (empty string = auto-pick from the catalog).

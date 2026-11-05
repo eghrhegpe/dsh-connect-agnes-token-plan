@@ -117,6 +117,320 @@ export function pickDrawModel(entries, requested, preferred) {
 }
 
 /**
+ * The size tiers the image endpoint documents (official Agnes Image 2.5/2.1
+ * Flash request tables).
+ */
+export const DRAW_SIZE_TIERS: readonly string[] = Object.freeze(["1K", "2K", "3K", "4K"]);
+
+/** The aspect ratios the image endpoint documents (official request table). */
+export const DRAW_ASPECT_RATIOS: readonly string[] = Object.freeze(["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"]);
+
+/**
+ * ratio → the four tier cells, verbatim from the official 输出尺寸参考 table
+ * (docs/AGNES-API-docs/Agnes Image 2.5 Flash.md §尺寸与宽高比; 2.1 Flash carries
+ * the same table). This is the ONLY set of exact WIDTHxHEIGHT values the tool
+ * accepts: any other exact size is "compatible syntax" the platform silently
+ * STANDARDIZES (the docs' own example: 1920x1080 → 16:9 1K = 1312x736), and a
+ * silent rewrite is exactly the shape where the plugin promised an exact pixel
+ * size it never honored. So the table ships as data and the gate reads it —
+ * reject locally, never let the platform quietly decide the output.
+ */
+export const DRAW_OUTPUT_SIZES: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  "1:1": Object.freeze(["1024x1024", "2048x2048", "3072x3072", "4096x4096"]),
+  "3:4": Object.freeze(["864x1152", "1728x2304", "2592x3456", "3456x4608"]),
+  "4:3": Object.freeze(["1152x864", "2304x1728", "3456x2592", "4608x3456"]),
+  "16:9": Object.freeze(["1312x736", "2624x1472", "3936x2208", "5248x2944"]),
+  "9:16": Object.freeze(["736x1312", "1472x2624", "2208x3936", "2944x5248"]),
+  "2:3": Object.freeze(["832x1248", "1664x2496", "2496x3744", "3328x4992"]),
+  "3:2": Object.freeze(["1248x832", "2496x1664", "3744x2496", "4992x3328"]),
+  "21:9": Object.freeze(["1568x672", "3136x1344", "4704x2016", "6272x2688"])
+});
+
+/**
+ * The tool-call fields the draw endpoint understands. The host projects
+ * `parameters` as-is and validates nothing at runtime — an unknown key
+ * (`count: 2`, a leftover `aspect_ratio`) would otherwise sail past the schema
+ * and be silently ignored, letting the agent believe it had taken effect.
+ */
+const DRAW_ALLOWED_ARGS: readonly string[] = Object.freeze(["prompt", "model", "size", "ratio", "image", "return_base64", "n"]);
+
+/** Prefix every pre-send rejection with the two facts the agent must know. */
+function drawArgsError(message: string): Error {
+  return new Error(`出图参数错误（请求未发出：不消耗额度，也不会触发冷却）：${message}`);
+}
+
+function typeNameOf(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+/**
+ * Total indexed read for the closed frozen tables below. Under
+ * `noUncheckedIndexedAccess` every `a[i]` is `T | undefined`; these tables are
+ * compile-time literals with fixed shapes, so an out-of-range read is
+ * unreachable — throw rather than sprinkle `!`, so a future table edit that
+ * breaks an invariant fails loudly at the call instead of silently typing as
+ * undefined downstream.
+ */
+function at<T>(items: readonly T[], index: number): T {
+  const value = items[index];
+  if (value === undefined) throw new Error(`internal: index ${index} out of table range`);
+  return value;
+}
+
+/** Total record read for DRAW_OUTPUT_SIZES (keys come from the frozen table itself). */
+function rowOf(ratio: string): readonly string[] {
+  const row = DRAW_OUTPUT_SIZES[ratio];
+  if (row === undefined) throw new Error(`internal: no output row for ratio ${ratio}`);
+  return row;
+}
+
+/** Split a "WxH" / "W:H" literal into two numbers, total under strict mode. */
+function splitPair(text: string, sep: string): [number, number] {
+  const parts = text.split(sep);
+  const a = Number(parts[0]);
+  const b = Number(parts[1]);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error(`internal: malformed pair ${text}`);
+  return [a, b];
+}
+
+/** Exact-dimension spelling: digits, ONE x/X/× separator, no spaces, no "*", no units. */
+const DRAW_EXACT_DIMS = /^(\d+)[xX×](\d+)$/;
+
+/**
+ * Reverse-look an exact WIDTHxHEIGHT through the official table.
+ * @param {string} dims - e.g. "2624x1472" (already trimmed).
+ * @returns {{tier: string, ratio: string}|null} the cell's tier+ratio, or null.
+ */
+export function drawSizeToTierRatio(dims: string): { tier: string; ratio: string } | null {
+  const m = DRAW_EXACT_DIMS.exec(dims);
+  if (!m) return null;
+  const w = Number(m[1]);
+  const h = Number(m[2]);
+  for (const [ratio, cells] of Object.entries(DRAW_OUTPUT_SIZES)) {
+    for (let i = 0; i < cells.length; i += 1) {
+      const [cw, ch] = splitPair(at(cells, i), "x");
+      if (cw === w && ch === h) return { tier: at(DRAW_SIZE_TIERS, i), ratio };
+    }
+  }
+  return null;
+}
+
+/**
+ * The nearest native tier+ratio suggestion for a rejected exact size.
+ *
+ * Ratio = the whitelisted aspect closest to w/h; tier = the smallest cell of
+ * that ratio whose long edge covers the requested long edge (the docs' own
+ * recipe: ask the native cell, crop/scale downstream). 1920x1080 → 16:9 2K =
+ * 2624x1472; 360x720 → 9:16 1K = 736x1312. The TOOL does this arithmetic so
+ * the suggestion is guaranteed valid — a hand-rounded agent guess often names
+ * a size that fails the very next gate.
+ * @param {number} width - requested width (positive finite).
+ * @param {number} height - requested height (positive finite).
+ * @returns {{size: string, ratio: string, output: string}}
+ */
+export function suggestDrawSize(width: number, height: number): { size: string; ratio: string; output: string } {
+  const target = width / height;
+  let bestRatio = at(DRAW_ASPECT_RATIOS, 0);
+  let bestErr = Infinity;
+  for (const r of DRAW_ASPECT_RATIOS) {
+    const [rw, rh] = splitPair(r, ":");
+    const err = Math.abs(rw / rh - target);
+    if (err < bestErr) { bestErr = err; bestRatio = r; }
+  }
+  const cells = rowOf(bestRatio);
+  const maxEdge = Math.max(width, height);
+  let idx = cells.length - 1;
+  for (let i = 0; i < cells.length; i += 1) {
+    const [cw, ch] = splitPair(at(cells, i), "x");
+    if (Math.max(cw, ch) >= maxEdge) { idx = i; break; }
+  }
+  return { size: at(DRAW_SIZE_TIERS, idx), ratio: bestRatio, output: at(cells, idx) };
+}
+
+/**
+ * The output cell one ACCEPTED (post-gate) size resolves to, for the success
+ * hint. An exact cell echoes itself; a tier resolves through the ratio (default
+ * 1:1 — the documented default). "" when nothing can be said.
+ * @param {string} size - the validated size.
+ * @param {string} [ratio] - the validated ratio, if any.
+ * @returns {string} e.g. "2624x1472".
+ */
+export function expectedDrawOutputSize(size: string, ratio?: string): string {
+  if (drawSizeToTierRatio(size)) return size;
+  const ti = DRAW_SIZE_TIERS.indexOf(size.toUpperCase());
+  if (ti < 0) return "";
+  const key = ratio && DRAW_ASPECT_RATIOS.includes(ratio) ? ratio : "1:1";
+  return DRAW_OUTPUT_SIZES[key]?.[ti] ?? "";
+}
+
+/** The normalized, wire-ready argument set `validateDrawArgs` produces. */
+export interface ValidatedDrawArgs {
+  prompt: string;
+  model?: string;
+  size?: string;
+  ratio?: string;
+  image?: string[];
+  returnBase64: boolean;
+}
+
+/**
+ * The pre-send gate for one `agnes_draw_image` call: validate and normalize
+ * EVERY argument, or throw a message that names every accepted form.
+ *
+ * Discipline ported from the sibling workbuddy plugin (strict input, plugin
+ * owns the math, reject loudly): the plugin cannot force the model to spell
+ * things right, but every WRONG spelling it accepts becomes the plugin's lie —
+ * a silently-ignored `ratio`, a standardized size presented as "exact", an
+ * array-valued `model` quietly falling back to the default while spending
+ * quota. So:
+ * - unknown keys are refused (the schema is advisory; the host validates nothing);
+ * - wrong types are refused, never coerced (`str()` fallbacks hide them);
+ * - `size` is tier constant or an exact cell of the official table — the only
+ *   spellings whose output the plugin can PREDICT;
+ * - `image` must be a non-empty array of http(s)/data strings (a bare string or
+ *   `[]` says "wrap it" / "omit it", not a silent t2i fallback);
+ * - `return_base64` + `image` refuse each other (the docs scope return_base64
+ *   to text2img; sending both would silently drop one);
+ * - `n` must be exactly 1 (the platform 400s anything else — refuse locally for free).
+ * Omission is not a wrong spelling: absent/`null`/`""` mean "not given"
+ * (size stays optional here — omitting it is documented default behavior,
+ * unlike workbuddy where the upstream hard-requires it).
+ * Runs BEFORE cooldown.blocked() and before resolveToolInputs, so a rejected
+ * call costs no key read, no catalogue read, no quota, no cooldown window.
+ * @param {Record<string, unknown>} params - the raw tool-call arguments.
+ * @returns {ValidatedDrawArgs} normalized values safe to forward.
+ * @throws {Error} on the first violation, prefixed with the no-cost facts.
+ */
+export function validateDrawArgs(params: Record<string, unknown>): ValidatedDrawArgs {
+  const source = params ?? {};
+  const unknownKeys = Object.keys(source).filter((key) => !DRAW_ALLOWED_ARGS.includes(key));
+  if (unknownKeys.length > 0) {
+    throw drawArgsError(`不认识参数 ${unknownKeys.map((k) => `\`${k}\``).join(" / ")}；本工具只接受 ${DRAW_ALLOWED_ARGS.map((k) => `\`${k}\``).join(" / ")}，schema 的 additionalProperties 不设防，未知键会被平台静默忽略——你以为生效的比例其实从未发出`);
+  }
+
+  // prompt: the one message that keeps its old wording (video tool spells it
+  // the same; tests and traces grep on it).
+  const rawPrompt = source.prompt;
+  if (rawPrompt !== undefined && rawPrompt !== null && typeof rawPrompt !== "string") {
+    throw drawArgsError(`prompt 必须是字符串，收到 ${typeNameOf(rawPrompt)}`);
+  }
+  const prompt = typeof rawPrompt === "string" ? rawPrompt.trim() : "";
+  if (prompt === "") throw new Error("prompt is required");
+
+  const out: ValidatedDrawArgs = { prompt, returnBase64: false };
+
+  const model = source.model;
+  if (model !== undefined && model !== null && typeof model !== "string") {
+    throw drawArgsError(`model 必须是字符串，收到 ${typeNameOf(model)}；不要传 ["id"] 这样的数组——它会静默落回目录默认模型并照常消耗额度`);
+  }
+  const wantedModel = typeof model === "string" ? model.trim() : "";
+  if (wantedModel !== "") out.model = wantedModel;
+
+  // --- size: tier constant or exact table cell, nothing else ------------------
+  let sizeKind: "tier" | "exact" | null = null;
+  const size = source.size;
+  if (size !== undefined && size !== null && typeof size !== "string") {
+    throw drawArgsError(`size 必须是字符串，收到 ${typeNameOf(size)}`);
+  }
+  const dims = typeof size === "string" ? size.trim() : "";
+  if (dims !== "") {
+    const tierIdx = DRAW_SIZE_TIERS.indexOf(dims.toUpperCase());
+    if (tierIdx >= 0) {
+      sizeKind = "tier";
+      out.size = at(DRAW_SIZE_TIERS, tierIdx);
+    } else {
+      const exact = drawSizeToTierRatio(dims);
+      if (exact) {
+        sizeKind = "exact";
+        // Canonical spelling: DRAW_EXACT_DIMS already proved the shape, so
+        // "2624X1472 " / "2624x1472" all leave as the table's own "2624x1472".
+        const dm = DRAW_EXACT_DIMS.exec(dims)!;
+        out.size = `${Number(dm[1])}x${Number(dm[2])}`;
+      } else {
+        // The full-cases sentence, then the arithmetic the plugin owes the
+        // caller: for anything WxH-shaped, name the nearest native cell.
+        let hint = "";
+        const m = DRAW_EXACT_DIMS.exec(dims);
+        if (m) {
+          const sug = suggestDrawSize(Number(m[1]), Number(m[2]));
+          hint = `。\`${dims}\` 不是表内原生尺寸，平台会把它静默标准化（官方示例：1920x1080 → 16:9 1K = 1312x736），结果不可预期。按你的宽高比，最接近的原生组合是 size:"${sug.size}" + ratio:"${sug.ratio}"（输出 ${sug.output}），下游再裁剪；请改用该组合，或直接写表内精确尺寸`;
+        } else {
+          hint = `。"${dims}" 的写法本身不合法（精确尺寸须是 "宽x高"：数字 + 一个 x/X/× + 数字，无空格、无 "*"、无单位）`;
+        }
+        throw drawArgsError(`size "${dims}" 不被接受；合法写法只有两种——档位常量 ${DRAW_SIZE_TIERS.join(" / ")}（配合 ratio）或官方档位表内的精确尺寸（如 1024x1024、2624x1472、736x1312）${hint}`);
+      }
+    }
+  }
+
+  // --- ratio: whitelist only; pairs with a tier, contradicts an exact cell ----
+  const ratio = source.ratio;
+  if (ratio !== undefined && ratio !== null && typeof ratio !== "string") {
+    throw drawArgsError(`ratio 必须是字符串，收到 ${typeNameOf(ratio)}`);
+  }
+  const ar = typeof ratio === "string" ? ratio.trim() : "";
+  if (ar !== "") {
+    if (!DRAW_ASPECT_RATIOS.includes(ar)) {
+      throw drawArgsError(`ratio "${ar}" 不在支持列表：只有 ${DRAW_ASPECT_RATIOS.join(" / ")}（默认 1:1）`);
+    }
+    if (sizeKind === "exact") {
+      const cell = drawSizeToTierRatio(dims)!;
+      if (cell.ratio !== ar) {
+        throw drawArgsError(`size "${dims}" 与 ratio "${ar}" 矛盾：精确尺寸已自带宽高比（该尺寸是 ${cell.ratio} 的 ${cell.tier} 格）。二选一：去掉 ratio，或改传 size:"${cell.tier}" + ratio:"${ar}"`);
+      }
+      // Same intent stated twice — the exact cell carries it; do not send a
+      // redundant ratio the dialect might reinterpret.
+    } else {
+      out.ratio = ar;
+    }
+  }
+
+  // --- image: non-empty ARRAY of fetchable strings ----------------------------
+  const image = source.image;
+  if (image !== undefined && image !== null) {
+    if (!Array.isArray(image)) {
+      throw drawArgsError(`image 必须是字符串数组，收到 ${typeNameOf(image)}；单张参考图也要包一层：["..."]`);
+    }
+    if (image.length === 0) {
+      throw drawArgsError("image 不能是空数组；纯文生图请把 image 字段整个省略，不要传 []");
+    }
+    const list: string[] = [];
+    for (let i = 0; i < image.length; i += 1) {
+      const item = image[i];
+      if (typeof item !== "string" || item.trim() === "") {
+        throw drawArgsError(`image[${i}] 必须是非空字符串，收到 ${typeNameOf(item)}`);
+      }
+      const ref = item.trim();
+      if (!/^(https?:\/\/|data:)/i.test(ref)) {
+        throw drawArgsError(`image[${i}] 必须是公共 http(s) URL 或 data: URI，收到 "${ref.slice(0, 80)}"；平台无法抓取本机路径，先把它变成可访问的 URL`);
+      }
+      list.push(ref);
+    }
+    out.image = list;
+  }
+
+  // --- n: the platform hard-requires 1; refuse anything else locally ----------
+  if (source.n !== undefined && source.n !== null && source.n !== 1) {
+    throw drawArgsError(`n 只能是 1（平台对 n:2 直接 400「n 必须为 1」），收到 ${JSON.stringify(source.n)}；每次调用出一张图`);
+  }
+
+  // --- return_base64: strict boolean, and it cannot coexist with image ---------
+  const rb = source.return_base64;
+  if (rb !== undefined && rb !== null && typeof rb !== "boolean") {
+    throw drawArgsError(`return_base64 必须是布尔值，收到 ${typeNameOf(rb)}；字符串 "true" 不会被当真`);
+  }
+  if (rb === true) {
+    if (out.image) {
+      throw drawArgsError("return_base64 与 image 互斥：官方文档把 return_base64 限定在文生图，图生图的 Base64 输出要走 extra_body.response_format（本工具未接通该通路）；请去掉 return_base64（改收 URL），或去掉 image");
+    }
+    out.returnBase64 = true;
+  }
+
+  return out;
+}
+
+/**
  * Build the `images/generations` request body.
  *
  * Only the fields the endpoint actually consumes travel: `n` is clamped to a
@@ -317,12 +631,13 @@ export function defineDrawTool({
       "Generate an image with the Agnes Token Plan key. " +
       "Omit `model` to let the catalog's default image model be used; pass `model` only when you need a particular one — the available image model ids are reported in the result after the first successful call. " +
       "`image` takes an ARRAY of reference images (public http(s) URLs or data: URIs) for img2img — multiple references are supported and all reach the platform; order matters (the first is the primary composition reference). " +
-      "Keep the prompt short and prioritized (state what must be preserved FIRST, then what to change), and crop each reference to only the content that must be copied: unrelated elements in a reference (a character's hair, a prop, a background) tend to leak into the result and overwrite the same attribute on the target.",
+      "Keep the prompt short and prioritized (state what must be preserved FIRST, then what to change), and crop each reference to only the content that must be copied: unrelated elements in a reference (a character's hair, a prop, a background) tend to leak into the result and overwrite the same attribute on the target. " +
+      "Input is validated strictly and WRONG spellings are refused outright (unknown keys, non-string types, sizes outside the official tier table) with the request never sent — no quota spent, no cooldown tripped; the error message lists every accepted form, follow it exactly instead of guessing again.",
     parameters: {
       prompt: { type: "string", required: true, description: "Image generation prompt. Keep it concise and prioritized: state what must be preserved first (layout, pose, style), then what to change. Long multi-requirement prompts are only partially followed — the model tends to regenerate instead of preserving." },
       model: { type: "string", description: "Agnes image model id; defaults to the first discovered one" },
-      size: { type: "string", description: "Image size: '2K' (2048x2048) or '4K' (4096x4096) tier constant, or exact WIDTHxHEIGHT (32-multiple, 512-4096, max 3:1 ratio), e.g. 2720x1536 — live-verified on the Agnes endpoint (probe ⑤)" },
-      ratio: { type: "string", description: "Aspect ratio: 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2 (default 1:1); forwarded as extra_body.ratio" },
+      size: { type: "string", description: "Image size — ONLY these two spellings: a tier constant '1K' / '2K' / '3K' / '4K' (pair with ratio; e.g. 2K + 16:9 = 2624x1472) or an EXACT cell of the official tier×ratio table (1024x1024, 2048x2048, 3072x3072, 4096x4096; 864x1152…3456x4608; 1152x864…4608x3456; 1312x736, 2624x1472, 3936x2208, 5248x2944; 736x1312, 1472x2624, 2208x3936, 2944x5248; 832x1248…3328x4992; 1248x832…4992x3328; 1568x672…6272x2688). Anything else (360x720, 1920x1080) is rejected BEFORE the request is sent — the platform silently standardizes unsupported exact sizes, and the tool will not let a promise of exact pixels hide that rewrite. Omit for the platform default. The result hint echoes the actual output cell." },
+      ratio: { type: "string", description: "Aspect ratio: 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2, 21:9 (default 1:1); forwarded as extra_body.ratio. Pair with a tier size; contradicts an exact size (which carries its own ratio) and is rejected." },
       image: { type: "array", items: { type: "string" }, description: "Reference image URL(s) / Data URIs for img2img — an ARRAY: pass multiple references and ALL are forwarded as extra_body.image (order matters, the first is the primary composition reference). Crop each reference to only the content to copy: unrelated elements in a reference (hair, props, background) tend to bleed into the result and override the same attribute on the target." },
       return_base64: { type: "boolean", description: "Request Base64 output instead of a URL (text2img only); forwarded as extra_body.return_base64. The bytes come back in the result's `url` field as a data: URI, which means they enter the conversation context — a 2K PNG is several MB of text. Leave it off unless you specifically need the bytes inline." },
       // The sentence states the platform's limit in words; `buildDrawBody`
@@ -360,8 +675,12 @@ export function defineDrawTool({
       // with one argument, so `exec` is optional and everything below
       // tolerates its absence.
       const signal = exec?.signal;
-      const prompt = str(params?.prompt, "").trim();
-      if (prompt === "") throw new Error("prompt is required");
+      // Strict input gate runs BEFORE cooldown.blocked() and before the key +
+      // catalogue reads: a malformed call is the agent's mistake, not the
+      // platform's — refusing it must cost no quota and no 30 s cooldown
+      // window, and the rejection must enumerate the accepted forms (see
+      // validateDrawArgs). Everything below works on the normalized values.
+      const args = validateDrawArgs(params ?? {});
       if (cooldown.blocked()) {
         throw new Error(`draw cooldown: 上一次出图失败，${Math.ceil(cooldown.remainingMs() / 1000)}s 后再试`);
       }
@@ -370,19 +689,23 @@ export function defineDrawTool({
       // read. The cooldown gate above stays draw-only (video has no cooldown).
       const { apiKey, entries } = await resolveToolInputs({ resolveApiKey, getEntries });
       if (signal?.throwIfAborted) signal.throwIfAborted();
-      const model = pickDrawModel(entries, params?.model, settings?.drawModelId);
+      const model = pickDrawModel(entries, args.model, settings?.drawModelId);
       if (model === null || model === undefined) {
         throw new Error(
           "catalog 中没有出图模型（`output_modalities` 字段与 `agnes-image-*` 名称判定均为空）：确认 Key 已配置、面板已至少轮询一次，且套餐含出图模型"
         );
       }
+      // Conditional spreads, not `size: args.size`: under
+      // exactOptionalPropertyTypes an optional property may be ABSENT but never
+      // explicitly `undefined`, and buildDrawBody's `str()` fallbacks treat both
+      // the same anyway — absent is the honest spelling of "not given".
       const body = buildDrawBody({
         model,
-        prompt,
-        size: params?.size,
-        ratio: params?.ratio,
-        image: params?.image,
-        returnBase64: params?.return_base64
+        prompt: args.prompt,
+        returnBase64: args.returnBase64,
+        ...(args.size === undefined ? {} : { size: args.size }),
+        ...(args.ratio === undefined ? {} : { ratio: args.ratio }),
+        ...(args.image === undefined ? {} : { image: args.image })
       });
       let result;
       try {
@@ -402,6 +725,10 @@ export function defineDrawTool({
       }
       const ids = imageGenModelIds(entries);
       const modelList = ids.length > 0 ? `\n可用出图模型: ${ids.join(", ")}` : "";
+      // State the size the request resolves to (exact cell echoes itself; a
+      // tier maps through ratio, default 1:1). Only when the caller gave a
+      // size — the platform's own default is not something we can name.
+      const sizeNote = args.size ? expectedDrawOutputSize(args.size, args.ratio) : "";
       // The base64 branch used to say "render this as a data URI" while the
       // payload stayed in `b64Json` and never reached the result: the agent was
       // told to display bytes it had never been given (and `parseDrawResponse`
@@ -411,7 +738,7 @@ export function defineDrawTool({
       const inline = result.b64Json !== "" ? `data:image/png;base64,${result.b64Json}` : "";
       const source = result.url !== "" ? result.url : inline;
       const hint = result.url !== ""
-        ? `图片已生成!\n模型: ${result.model}\nURL: ${result.url}\n请直接输出 Markdown: ![图](${result.url})${modelList}`
+        ? `图片已生成!\n模型: ${result.model}${sizeNote ? `\n尺寸: ${sizeNote}` : ""}\nURL: ${result.url}\n请直接输出 Markdown: ![图](${result.url})${modelList}`
         : inline !== ""
           ? `图片已生成!\n模型: ${result.model}\n平台按 return_base64 返回了 base64，已放进结果的 url 字段（data URI）。它已经在上下文里，不要再整段贴回对话；要落盘就写入文件，要展示就直接引用该字段。${modelList}`
           : `图片已生成，但平台既没返回 url 也没返回 b64_json——模型: ${result.model}；重试时去掉 return_base64。${modelList}`;
@@ -419,7 +746,7 @@ export function defineDrawTool({
         source: "agnes",
         model: result.model,
         url: source,
-        prompt,
+        prompt: args.prompt,
         hint
       };
     }

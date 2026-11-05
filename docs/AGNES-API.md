@@ -466,7 +466,7 @@ peer 误判的**官方依据**：
 
 | 字段 | wire 位置 | 备注 |
 |---|---|---|
-| `model` / `prompt` / `n` / `size` / `response_format` | 顶层 | `response_format` 顶层写法经 live probe ③ 确证有效，不迁 `extra_body`；`size` 接受精确 `WIDTHxHEIGHT`（32 的倍数）与 `2K` / `4K` 档位常量——两种写法均已 live probe ⑤ 确证生效，工具参数描述已随实测恢复档位表措辞 |
+| `model` / `prompt` / `n` / `size` / `response_format` | 顶层 | `response_format` 顶层写法经 live probe ③ 确证有效，不迁 `extra_body`；`size` 只接受档位常量 `1K` / `2K` / `3K` / `4K` 或官方档位表内的精确 `WIDTHxHEIGHT`，其余写法在 `validateDrawArgs` 就地拒绝（见 §7.5.0）——「32 的倍数、512–4096、最大 3:1」是旧参数描述的误判措辞，官方表本身就有 6272x2688，从未成立 |
 | `ratio` | `extra_body.ratio` | Agnes 方言；live probe ⑤ 确证端点接受 `extra_body.ratio`（16:9 出图成功） |
 | `image` | `extra_body.image` | Agnes 方言；live probe ⑤ 确证端点接受 `extra_body.image`（参考图走 img2img，输出任务段由 `/t2i/` 切到 `/i2i/`，证实参考图真实生效而非被忽略） |
 | `return_base64` | `extra_body.return_base64` | Agnes 方言；live probe ⑤ 确证端点接受 `extra_body.return_base64`（`url` 返回空串、`b64_json` 携带 base64 载荷——即该字段改变了返回形态而非被丢弃）；`response_format` 保持顶层、不迁。**插件侧**把载荷以 `data:image/png;base64,…` 放进工具结果的 `url` 字段（结果没有别的字段能承载它），并提示 agent 不要把它整段贴回对话 |
@@ -477,6 +477,40 @@ peer 误判的**官方依据**：
 > `size: "1024x1024"`（精确 `WIDTHxHEIGHT`）、`size: "2K"`、`size: "4K"`（档位常量，即 2026-10 版工具描述误判「未确认」的那条——SenseNova U1.5 档位表在这端点确实有效）、
 > `extra_body.ratio: "16:9"`、`extra_body.image`（参考图，任务段由 `/t2i/` 切到 `/i2i/`，证明 img2img 真实生效）、`extra_body.return_base64: true`（返回形态切实变化：`url` 空串 + `b64_json` 载荷）——
 > 均为 200 + 成功出图。四个字段在 Agnes 出图端点的接受性全部确证，无需删除或改写法。
+
+#### 7.5.0 出图参数校验闸（`validateDrawArgs`）
+
+兄弟插件 `dsh-connect-workbuddy` 的纪律移植：**模型输错格式，插件就得把话说明白**。
+插件管不住模型怎么写参数，但插件每接受一种错误写法，就是替它撒一次谎——被静默忽略的
+`ratio`、被平台悄悄标准化的 `size`、数组化的 `model` 落回默认模型照常烧额度。所以
+`agnes_draw_image` 的 `execute` 在 **cooldown 闸门前、读 Key 之前**过一遍
+`validateDrawArgs`：拒绝的请求不发网络、不耗额度、**不触发 30 s 冷却**（前缀文案逐字承诺：
+「出图参数错误（请求未发出：不消耗额度，也不会触发冷却）」）。错误信息必须把**全部合法写法**
+说全，agent 不需要猜第二次。
+
+| 参数 | 只接受 | 其余形状 |
+|---|---|---|
+| 未知键 | prompt / model / size / ratio / image / return_base64 / n 之外零容忍 | 抛错并点名：schema 的 `additionalProperties` 不设防，Host 原样投影参数，静默忽略会让 agent 以为比例生效了 |
+| `prompt` | 非空字符串 | 空串维持旧文案 `prompt is required`；非字符串报类型错 |
+| `model` | 字符串（缺省走目录默认） | 数组/数字抛错——旧 `str()` 回落曾让 `["id"]` 静默用默认模型烧额度 |
+| `size` | 档位常量 `1K/2K/3K/4K`（大小写归一）或官方档位表内精确格（`1024x1024`、`2624x1472`、`736x1312`…共 8 比例 × 4 档） | 抛错**并给最近原生组合**：`360x720` → `size:"1K" + ratio:"9:16"`（输出 736x1312）。平台对表外精确尺寸**静默标准化**（官方示例 1920x1080 → 1312x736），本工具不放行任何「承诺精确、实际改写」的请求 |
+| `ratio` | `1:1 / 3:4 / 4:3 / 16:9 / 9:16 / 2:3 / 3:2 / 21:9` | 白名单外抛错并列全八个；与精确 `size` 矛盾时抛错给单行修法（去掉 ratio，或改档位 size）；匹配时折叠不发（精确格自带比例） |
+| `image` | **非空字符串数组**，每项 http(s) URL 或 data: URI | 裸字符串抛错「包一层 `["..."]`」；`[]` 抛错「纯文生图请整个省略 image」；本机路径抛错（平台抓不到）——绝不回落成纯文生图 |
+| `n` | 只能是 `1` | 平台对 `n:2` 直接 400（live probe ①），本地先拒，免费 |
+| `return_base64` | 布尔 | 字符串 `"true"` 抛错；`true` + `image` 互斥抛错（官方把 return_base64 限定文生图，双发必有一项被静默丢弃） |
+
+省略不是错拼写：`undefined` / `null` / 空串都算「未提供」，`size` 在本工具保持可选
+（官方文档把 size 列为文生图必填，但端点实测省略可出图——与 workbuddy 上游 hard-require
+不同，故不学它做必填）。表是官方输出尺寸参考的逐字复刻（`DRAW_OUTPUT_SIZES`，
+数据源 [Agnes Image 2.5 Flash.md](./AGNES-API-docs/Agnes Image 2.5 Flash.md)），
+查找、换算、就近建议全在工具里算——workbuddy 的教训：让模型自己算双约束缩放，它算出来的
+仍是非法值。成功后 hint 逐字回报请求解析到的输出格（`尺寸: 2624x1472`），没给 size 就不
+承诺 size。
+
+> **为什么抛错而不夹取、也不放行**：§7.5.1 的 throw-not-clamp 同一纪律，且这里更硬——
+> 平台自己就是那个「夹取者」（不支持的尺寸静默标准化），本地再放行就等于把改写决定权交给
+> 一次看不见的往返。校验放在 `cooldown.blocked()` 之前：格式错是 agent 的错，不是平台的
+> 错，罚它 30 秒冷却等于把别人的失误记在下一个请求头上。
 
 #### 7.5.1 视频 V2.0 请求体与校验规则
 

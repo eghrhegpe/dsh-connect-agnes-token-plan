@@ -28,6 +28,13 @@ import {
   buildDrawBody,
   parseDrawResponse,
   describeDrawFailure,
+  DRAW_SIZE_TIERS,
+  DRAW_ASPECT_RATIOS,
+  DRAW_OUTPUT_SIZES,
+  drawSizeToTierRatio,
+  suggestDrawSize,
+  expectedDrawOutputSize,
+  validateDrawArgs,
   drawOnce,
   createDrawCooldown,
   defineDrawTool
@@ -450,6 +457,124 @@ async function rejects(fn) {
       /caller stopped/.test(message ?? "") || /AbortError/.test(message ?? ""), message);
     check("a cancellation does not trip the draw cooldown", tripped === false);
   }
+}
+
+// --- 10. validateDrawArgs: the strict pre-send gate --------------------------
+// Every case below is a wrong spelling the model can actually produce. The
+// gate must REFUSE each one before the request leaves (no quota, no cooldown)
+// and the message must enumerate the accepted forms — "the plugin owns the
+// situation" means the agent never has to guess twice.
+{
+  // table lookups
+  const cell = drawSizeToTierRatio("2624x1472");
+  check("an official exact cell reverse-resolves to its tier+ratio",
+    cell?.tier === "2K" && cell?.ratio === "16:9", JSON.stringify(cell));
+  check("the whole official table self-resolves (8 ratios x 4 tiers)",
+    Object.values(DRAW_OUTPUT_SIZES).flat().every((s) => drawSizeToTierRatio(s) !== null));
+  check("a non-cell size resolves to nothing", drawSizeToTierRatio("360x720") === null);
+  check("the suggestion arithmetic is the tool's, not the model's",
+    suggestDrawSize(360, 720).output === "736x1312" && suggestDrawSize(360, 720).ratio === "9:16" &&
+    suggestDrawSize(1920, 1080).size === "2K" && suggestDrawSize(1920, 1080).output === "2624x1472",
+    JSON.stringify([suggestDrawSize(360, 720), suggestDrawSize(1920, 1080)]));
+  check("expectedDrawOutputSize echoes cells and maps tiers",
+    expectedDrawOutputSize("1024x1024") === "1024x1024" &&
+    expectedDrawOutputSize("2K", "16:9") === "2624x1472" &&
+    expectedDrawOutputSize("2K") === "2048x2048");
+
+  // accepted shapes pass through normalized
+  const okTier = validateDrawArgs({ prompt: "a cat", size: "4k", ratio: "21:9" });
+  check("tier constants canonicalize to upper-case and 21:9 is accepted",
+    okTier.size === "4K" && okTier.ratio === "21:9", JSON.stringify(okTier));
+  const okExact = validateDrawArgs({ prompt: "a cat", size: "2624X1472", ratio: "16:9" });
+  check("an exact cell canonicalizes its spelling and the matching ratio is folded away",
+    okExact.size === "2624x1472" && okExact.ratio === undefined, JSON.stringify(okExact));
+  check("absent / null / empty-string all mean 'not given' (size stays optional)",
+    validateDrawArgs({ prompt: "p" }).size === undefined &&
+    validateDrawArgs({ prompt: "p", size: null, model: "", ratio: "  " }).size === undefined &&
+    validateDrawArgs({ prompt: "p", n: 1 }).returnBase64 === false);
+  check("image accepts an array of http(s) and data: strings",
+    validateDrawArgs({ prompt: "p", image: ["https://x/a.png", "data:image/png;base64,AAA"] }).image?.length === 2);
+
+  // every refusal case, with the message content pinned
+  const cases = [
+    ["unknown key is refused and both lists appear",
+      (m) => /count/.test(m) && /additionalProperties/.test(m) && /prompt/.test(m),
+      () => validateDrawArgs({ prompt: "p", count: 2 })],
+    ["n=2 is refused locally (platform 400s it)",
+      (m) => /n 只能是 1/.test(m),
+      () => validateDrawArgs({ prompt: "p", n: 2 })],
+    ["size: number is refused, not coerced",
+      (m) => /size 必须是字符串，收到 number/.test(m),
+      () => validateDrawArgs({ prompt: "p", size: 1024 })],
+    ["model array is refused with the silent-default lesson",
+      (m) => /model 必须是字符串，收到 array/.test(m) && /静默落回目录默认模型/.test(m),
+      () => validateDrawArgs({ prompt: "p", model: ["hy"] })],
+    ["360x720 is refused with the full-cases sentence and the 9:16 1K suggestion",
+      (m) => /不被接受/.test(m) && /档位常量 1K \/ 2K \/ 3K \/ 4K/.test(m) &&
+        /size:"1K" \+ ratio:"9:16"（输出 736x1312）/.test(m) && /静默标准化/.test(m),
+      () => validateDrawArgs({ prompt: "p", size: "360x720" })],
+    ["a non-spelling like 1024*1024 is refused as malformed",
+      (m) => /写法本身不合法/.test(m),
+      () => validateDrawArgs({ prompt: "p", size: "1024*1024" })],
+    ["ratio outside the whitelist lists all eight",
+      (m) => /只有 1:1 \/ 3:4 \/ 4:3 \/ 16:9 \/ 9:16 \/ 2:3 \/ 3:2 \/ 21:9/.test(m),
+      () => validateDrawArgs({ prompt: "p", ratio: "21:10" })],
+    ["exact size + contradicting ratio is refused with the one-line fix",
+      (m) => /矛盾/.test(m) && /size:"1K" \+ ratio:"16:9"/.test(m),
+      () => validateDrawArgs({ prompt: "p", size: "1024x1024", ratio: "16:9" })],
+    ["image as a bare string is refused with the wrap-it fix",
+      (m) => /单张参考图也要包一层/.test(m),
+      () => validateDrawArgs({ prompt: "p", image: "https://x/a.png" })],
+    ["empty image array is refused with the omit-it fix",
+      (m) => /把 image 字段整个省略/.test(m),
+      () => validateDrawArgs({ prompt: "p", image: [] })],
+    ["a local path in image is refused (the platform cannot fetch it)",
+      (m) => /http\(s\) URL 或 data: URI/.test(m),
+      () => validateDrawArgs({ prompt: "p", image: ["C:\\Users\\me\\a.png"] })],
+    ["return_base64 as a string is refused",
+      (m) => /return_base64 必须是布尔值，收到 string/.test(m),
+      () => validateDrawArgs({ prompt: "p", return_base64: "true" })],
+    ["return_base64 + image are mutually exclusive with the reason",
+      (m) => /互斥/.test(m) && /文生图/.test(m),
+      () => validateDrawArgs({ prompt: "p", return_base64: true, image: ["https://x/a.png"] })],
+    ["every refusal carries the no-cost promise",
+      (m) => /请求未发出：不消耗额度，也不会触发冷却/.test(m),
+      () => validateDrawArgs({ prompt: "p", ratio: "4:5" })],
+    ["the empty-prompt message keeps its old exact wording",
+      (m) => m === "prompt is required",
+      () => validateDrawArgs({ prompt: "   " })],
+    ["a non-string prompt is refused as a type error",
+      (m) => /prompt 必须是字符串，收到 object/.test(m),
+      () => validateDrawArgs({ prompt: { text: "hi" } })]
+  ];
+  for (const [name, judge, fn] of cases) {
+    const message = await rejects(fn);
+    check(name, message !== null && judge(message), message ?? "");
+  }
+}
+
+// --- 11. the gate runs before anything costs ---------------------------------
+{
+  const passthrough = (definition) => definition;
+  let keyReads = 0;
+  let fetches = 0;
+  let tripped = false;
+  const tool = defineDrawTool({
+    defineTool: passthrough,
+    resolveApiKey: async () => { keyReads += 1; return "sk-live"; },
+    getEntries: () => [{ id: "Agnes-u1-fast", output_modalities: ["image"] }],
+    settings: { apiBase: "https://api.agnes-ai.cn/v1", drawModelId: "", drawTimeoutMs: 5000 },
+    fetchImpl: async () => { fetches += 1; return { ok: true, json: async () => ({ data: [{ url: "https://img/ok.png" }] }) }; },
+    cooldown: { blocked: () => false, trip: () => { tripped = true; }, remainingMs: () => 0 }
+  });
+  const message = await rejects(() => tool.execute({ prompt: "a cat", size: "360x720" }));
+  check("a rejected call never reaches the cooldown gate, the key, the catalog or the network",
+    /360x720/.test(message ?? "") && keyReads === 0 && fetches === 0 && tripped === false, message ?? "");
+  const ok = await tool.execute({ prompt: "a cat", size: "2K", ratio: "16:9" });
+  check("the success hint states the output cell the size resolves to",
+    /尺寸: 2624x1472/.test(ok.hint), ok.hint);
+  check("... and a no-size call promises no size it cannot name",
+    !/尺寸:/.test((await tool.execute({ prompt: "a cat" })).hint));
 }
 
 console.log(JSON.stringify(results, null, 2));
