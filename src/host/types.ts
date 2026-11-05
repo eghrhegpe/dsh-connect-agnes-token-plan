@@ -453,8 +453,11 @@ export interface HostWiring {
    * The live mount handle for the `agnes_draw_image` tool, filled by
    * `startSideEffects` (`lifecycle.ts`) after the wiring is built. The switch
    * route reads it to re-sync the tool after a write; teardown disposes it.
-   * Absent only before `startSideEffects` runs (a route request cannot arrive
-   * that early), so consumers treat it as optional.
+   * Consumers MUST read it LATE (a getter on this bag, resolved at commit
+   * time), never snapshot it at route-registration time: `apply()` registers
+   * the routes BEFORE `startSideEffects` fills this field, so a snapshot
+   * taken there is `null` forever and the panel switch silently stops
+   * converging the tool (PITFALLS §62, dead-toggle hot reload).
    */
   drawToolMount?: ToolMount | null;
   /** The live mount handle for the `agnes_video_generate` tool (same as `drawToolMount`). */

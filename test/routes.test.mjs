@@ -195,7 +195,7 @@ function makeResponse() {
 async function mount(credentials, config = {}, deps = {}) {
   const host = await import(`../src/host/index.ts?route=${Math.random()}`);
   const handlers = new Map();
-  const services = { credentials, llm: deps.llm };
+  const services = { credentials, llm: deps.llm, tools: deps.tools };
   host.apply({
     get: (s) => services[s],
     emit: deps.emit ?? (() => {}),
@@ -207,7 +207,13 @@ async function mount(credentials, config = {}, deps = {}) {
     webServer: { register(spec) { handlers.set(spec.path, spec.handler); return () => {}; } }
   }, { consoleBase: "https://console.test", cacheSeconds: 5, ...config }, {
     loadAdapterModule: deps.loadAdapterModule,
-    catalogStore: deps.catalogStore
+    catalogStore: deps.catalogStore,
+    // Hot-mount seams (group U): a fake tools service and the tools-peer
+    // loader, so the switch route's late mount resolution is OBSERVABLE
+    // through the production apply() wiring order, not just injected.
+    loadToolsModule: deps.loadToolsModule,
+    drawFetch: deps.drawFetch,
+    videoFetch: deps.videoFetch
   });
   return async (path, request) => {
     const response = makeResponse();
@@ -1794,6 +1800,88 @@ async function withNetwork(stub, body) {
     check("T the two routes keep their own defaults rather than one shared one",
       readDefault.statusCode === 200 && writeDefault.statusCode === 400);
   } catch (error) { fail("T: the methodless fallback", error); }
+}
+
+// === U. hot reload converges the LIVE tool through production wiring order ==
+// The bug this group pins: `apply()` registers the routes BEFORE
+// `startSideEffects()` creates the tool mounts and fills
+// `wiring.drawToolMount` / `wiring.videoToolMount`. The route closure that
+// snapshot-captured `mount: wiring.drawToolMount ?? null` held `null`
+// forever — every POST persisted state and echoed the right value while the
+// live tool never mounted, unmounted, or swapped. The panel looked like a
+// dead switch; only a Host restart changed the agent's tool set. Groups R/S
+// could not see this: they assert the RESPONSE, not the registry, and
+// tool-mount.test.mjs injects its mount directly instead of going through
+// the wiring order. Here the mount is created by the production
+// `startSideEffects` and resolved LATE by the route (getMount), with a fake
+// tools service recording every register/dispose.
+{
+  try {
+    const peer = () => ({ defineTool: (options) => options });
+    const settle = async (predicate) => {
+      for (let i = 0; i < 80 && !predicate(); i++) await new Promise((r) => setTimeout(r, 25));
+    };
+
+    const registers = [];
+    let disposed = 0;
+    const call = await mount(makeCredentials(null), {}, {
+      tools: {
+        register(definition) {
+          registers.push(definition);
+          return () => { disposed += 1; };
+        }
+      },
+      loadToolsModule: peer
+    });
+
+    // The mount-time seed ran with the switch OFF (R5b forgot the panel
+    // value, config default is off): nothing registered yet.
+    await settle(() => false);
+    check("U0 off seed: production mount registered nothing", registers.length === 0, `n=${registers.length}`);
+
+    const on = await call(DRAW_PATH, makePost({ enabled: true }));
+    check("U1 ON POST reports the panel value",
+      on.payload.ok === true && on.payload.drawEnabled === true && on.payload.drawSource === "panel",
+      JSON.stringify(on.payload));
+    await settle(() => registers.length > 0);
+    check("U1b ON POST converged the LIVE tool (late mount resolution — the fix)",
+      registers.length === 1, `n=${registers.length}`);
+    check("U1c the registered tool is the draw tool",
+      registers[0]?.name === "agnes_draw_image", String(registers[0]?.name));
+
+    await call(DRAW_PATH, makePost({ enabled: false }));
+    await settle(() => disposed > 0);
+    check("U2 OFF POST unmounted the live tool via its disposer (no restart)",
+      disposed === 1 && registers.length === 1, `disposed=${disposed} n=${registers.length}`);
+
+    await call(DRAW_PATH, makePost({ enabled: true }));
+    await settle(() => registers.length > 1);
+    check("U3 re-ON registers again", registers.length === 2, `n=${registers.length}`);
+
+    await call(DRAW_PATH, makePost({ drawModelId: "agnes-image-2.5-flash" }));
+    await settle(() => registers.length > 2);
+    check("U4 model POST swaps the registration (dispose old + register new)",
+      registers.length === 3 && disposed === 2, `n=${registers.length} disposed=${disposed}`);
+
+    await call(DRAW_PATH, makePost({ forget: true }));
+    await settle(() => disposed > 2);
+    check("U5 forget returns to the off config default and unmounts",
+      disposed === 3 && registers.length === 3, `disposed=${disposed} n=${registers.length}`);
+
+    // The video route carries its OWN late getter for the same field — the
+    // bug lived twice, so pin both wrappers.
+    const vRegisters = [];
+    const vcall = await mount(makeCredentials(null), {}, {
+      tools: { register(d) { vRegisters.push(d); return () => {}; } },
+      loadToolsModule: peer
+    });
+    await vcall(VIDEO_PATH, makePost({ enabled: true }));
+    await settle(() => vRegisters.length > 0);
+    check("U6 the video route converges its own mount",
+      vRegisters.length === 1 && vRegisters[0]?.name === "agnes_video_generate",
+      `n=${vRegisters.length} name=${vRegisters[0]?.name}`);
+    await vcall(VIDEO_PATH, makePost({ forget: true }));
+  } catch (error) { fail("U: hot reload through the production wiring order", error); }
 }
 
 // === the agnescode route: the scan-to-login branch's pre-flight guards =====

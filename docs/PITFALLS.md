@@ -668,3 +668,10 @@
   1. **取值器不是语义中立的。** `str()` / `trim()` 对展示层是对的、对凭据是错的。判据只有一个问题：**这个值会不会离开本进程继续旅行**（进 Bearer 头、进凭据服务、进磁盘、再被读回来比较）？会，就必须字节保真，并且用一个**名字上就写着这件事**的取值器（`verbatim`），不要靠 review 记得「这里不能 trim」。
   2. **换口径必须同时换空判。** 静默改写（trim）与静默伪值（纯空白被当成 token）是同一个改动的两半；只做前半，换来的漏洞比原 bug 更难查——它在日志里长得像一个**合法**的失败。
   3. **凭据的每一处比较键都要同口径。** rejected 集合、compare-and-set、缓存键、账号指纹——只要有一处走了正规化，被拒 token 的「记住」就会失效，而它的表现是「重登后又 401」，**看起来像平台问题**。这类不一致不会让任何单点测试变红，只能靠「全链一次改完 + 每处都留一条断言」。
+
+## 62. 「面板回显正确、状态也落盘」骗过了所有测试：路由在挂载创建**之前**注册，快照捕获的 mount 句柄永远是 `null`
+
+- **现象**：0.13.x 的热挂载上线后，link 版（CLI `dsh web`）实测翻车——出图开关明明关掉（面板显示「未注册」、`GET /draw` 回 `drawEnabled:false`、状态文件 `enabled:false` 时间戳对得上），**新会话里 `agnes_draw_image` 照样挂着**。反过来从关到开也一样：不重启 Host 就永远不挂。开关像一块死拨码：读写全对，注册表纹丝不动。
+- **根因**：**接线顺序与快照捕获相乘**。`apply()`（`index.ts`）先 `registerRoutes`、后 `startSideEffects`——而 `wiring.drawToolMount` 是 `startSideEffects` 里 `registerDrawTool` 才填进接线袋的。路由工厂当时写的是 `mount: wiring.drawToolMount ?? null`：**注册那一刻读一次、闭包永久拿着 `null`**，`commit()` 的 `if (mount) mount.sync()` 从此恒假。每一次成功 POST 都照常持久化 + 回显，唯独漏掉收敛注册表那一步。三层测试为什么全绿：组 R/S 断言**响应**，不碰注册表；`tool-mount.test.mjs` 把 mount **直接注入**路由选项，绕开了生产顺序；离线假 ctx 根本没有 tools 服务，挂载本来就不发生。「路由请求不可能早到」这个假设写在 `types.ts` 注释里，**没人验证过它**——路由注册与请求处理之间隔着整个 `startSideEffects`，但请求发生在其后，句柄却是在其前捕获的。
+- **修法**（2026-11-06）：路由选项加 `getMount: () => ToolMount | null`，`commit()` 在 POST 落地时才解析（静态 `mount:` 保留给直接调用方）；`registerDrawRoute` / `registerVideoRoute` 都改传 getter（两个工具同一个洞）。回归锚点是组 U（`routes.test.mjs`）：走**完整生产 `apply()`** + 假 tools 服务记录 register/dispose，钉 ON 真注册、OFF 经 disposer 真卸载、模型 POST 换挂、forget 回落卸载、video 路由自带 getter——把 `commit()` 改回快照，组 U 立刻全红（负向实测过）。
+- **教训**：**「跨阶段传句柄」只有两种安全形状——调用时解析（getter/resolver），或把注册挪到句柄存在之后。** 快照捕获一个「以后才有」的字段，编译期不报错、运行期不抛错、单测注入缝照样绿，唯一露馅的方式是走一遍真实装配顺序。本仓的同类先例是 `visionPublish.current`（`index.ts` 里 `visionPublish` 的注释自己就写着「filled by `startSideEffects`; until then it is a no-op」）——**同一个坑的文档就在隔壁，抄形状的人没读注释。**

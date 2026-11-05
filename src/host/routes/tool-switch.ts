@@ -32,6 +32,17 @@ interface ToolSwitchRouteOptions {
   configModelId: string;
   allowedHosts: Set<string>;
   mount?: ToolMount | null;
+  /**
+   * Late resolver for the live tool mount, called at COMMIT time. This is the
+   * shape production wiring must use: `apply()` registers the routes BEFORE
+   * `startSideEffects()` creates the mounts and fills `wiring.drawToolMount`
+   * / `wiring.videoToolMount`. A snapshot taken at registration time —
+   * `mount: wiring.drawToolMount ?? null` — captures `null` forever, the
+   * route persists state but never converges the tool, and the panel's
+   * toggle looks like a dead switch. A getter reads the wiring bag when the
+   * POST lands, after the side-effect start had its chance.
+   */
+  getMount?: () => ToolMount | null;
 }
 
 /** The draw-tool switch route (docs/PROVIDER-HOT-RELOAD.md, same discipline). */
@@ -66,14 +77,19 @@ export const VIDEO_PATH = `/api/${name}/video`;
  * @param {string} options.modelSourceKey - the response key carrying its source.
  * @param {string} options.configModelId - the config default for the model id.
  * @param {Set<string>} options.allowedHosts - the trust fence.
- * @param {ToolMount} [options.mount] - the live tool mount handle; each
- *   successful POST write converges it (hot reload). Absent = the route only
- *   persists state, the mount is reconciled elsewhere (mount seed / teardown).
+ * @param {ToolMount} [options.mount] - the live tool mount handle, captured
+ *   at registration time (tests and early callers only). Production wiring
+ *   must pass `getMount` instead — the handle does not exist yet when the
+ *   route registers. Each successful POST write converges it (hot reload).
+ *   Absent = the route only persists state, the mount is reconciled
+ *   elsewhere (mount seed / teardown).
+ * @param {Function} [options.getMount] - late resolver returning the live
+ *   tool mount handle (or null) AT COMMIT TIME. Wins over `mount`.
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerToolSwitchRoute(
   ctx: HostCtx,
-  { path, label, store, enabledKey, enabledSourceKey, configEnabled, modelKey, modelSourceKey, configModelId, allowedHosts, mount }: ToolSwitchRouteOptions
+  { path, label, store, enabledKey, enabledSourceKey, configEnabled, modelKey, modelSourceKey, configModelId, allowedHosts, mount, getMount }: ToolSwitchRouteOptions
 ) {
   return ctx.webServer.register({
     kind: "exact",
@@ -121,7 +137,8 @@ export function registerToolSwitchRoute(
       // back-to-back flips converge to the latest value; it self-swallows, so
       // a mount that cannot converge simply stays put (panel stays correct).
       const commit = () => {
-        if (mount !== null && mount !== undefined) void mount.sync().catch(() => {});
+        const handle = getMount ? getMount() : mount;
+        if (handle !== null && handle !== undefined) void handle.sync().catch(() => {});
       };
       if (method === "GET") {
         await answer();
@@ -208,7 +225,11 @@ export function registerDrawRoute(ctx: HostCtx, wiring: HostWiring) {
     modelSourceKey: "drawModelSource",
     configModelId: settings.drawModelId,
     allowedHosts: settings.allowedHosts,
-    mount: wiring.drawToolMount ?? null
+    // Late, not a snapshot: startSideEffects fills wiring.drawToolMount
+    // AFTER this route registers (index.ts order), so a registration-time
+    // `mount:` value would be null forever and the switch would only ever
+    // write state. See ToolSwitchRouteOptions.getMount.
+    getMount: () => wiring.drawToolMount ?? null
   });
 }
 
@@ -232,6 +253,7 @@ export function registerVideoRoute(ctx: HostCtx, wiring: HostWiring) {
     modelSourceKey: "videoModelSource",
     configModelId: settings.videoModelId,
     allowedHosts: settings.allowedHosts,
-    mount: wiring.videoToolMount ?? null
+    // Late, not a snapshot — see registerDrawRoute.
+    getMount: () => wiring.videoToolMount ?? null
   });
 }

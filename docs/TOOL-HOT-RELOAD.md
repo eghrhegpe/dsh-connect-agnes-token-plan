@@ -43,6 +43,8 @@
 
 句柄落在接线袋（`wiring.drawToolMount` / `wiring.videoToolMount`，`startSideEffects` 填充）。开关路由（`src/host/routes/tool-switch.ts` 的 `registerToolSwitchRoute`，draw 与 video 共用一份处理器）在**每次成功的 POST 写入后**（`enabled` / `forget` / 模型偏好三处）调用协调器 `sync()`：
 
+- **句柄必须迟到解析（getter），绝不注册期快照**：`apply()` 先注册路由（`index.ts`），后跑 `startSideEffects` 创建挂载并填接线袋——注册那一刻 `wiring.drawToolMount` 还不存在，快照捕获 `null` 的闭环会把每次 POST 的 `sync()` 永久打成 no-op：状态照常持久、回显照常正确、面板看起来是死开关（PITFALLS §62）。所以 `registerDrawRoute` / `registerVideoRoute` 传 `getMount: () => wiring.drawToolMount ?? null`，`commit()` 在 POST 落地时才解析；静态 `mount:` 选项只留给直接调用方（离线注入缝）。
+
 - 协调是 **fire-and-forget**，不阻塞 HTTP 响应；失败自吞（面板状态永远是对的，工具注册跟不跟上取决于宿主能力）。
 - **GET 只读路径绝不协调**——读不应改写宿主注册表。
 
@@ -58,7 +60,7 @@
 
 ## 5. 测试锚点
 
-- `test/routes.test.mjs`：开关路由的无 tools 服务降级路径（假宿主 ctx 无 `tools` 服务）与键名隔离（组 S 交叉投递 / 各自回读，[API.md](./API.md) §1 `/draw` / `/video` 段引注）。
+- `test/routes.test.mjs`：开关路由的无 tools 服务降级路径（假宿主 ctx 无 `tools` 服务）与键名隔离（组 S 交叉投递 / 各自回读，[API.md](./API.md) §1 `/draw` / `/video` 段引注）；组 U 走**生产接线顺序**（`apply()` 全流程 + 假 tools 服务）钉迟到解析：ON POST 真注册、OFF POST 经 disposer 真卸载、再开重注、模型 POST 换挂、forget 回落卸载，draw 与 video 各一份——把 `commit()` 改回注册期快照，组 U 立刻红。
 - `test/tool-mount.test.mjs`：挂载阶梯本身的离线套件——向挂载缝注入返回 disposer / 返回 `undefined`（粘性）/ 抛错的假 `tools` 服务，钉 peer 三档缺失（抛错、模块无 `defineTool`、seam 缺席）都落 raw 兜底照常挂载且只 warn 一次、peer 在则走 peer 不 warn、raw 产物的 JSON Schema 形状、off 翻转经 disposer 卸载、粘住不重复注册、registry 拒绝不炸、configError 首道闸，以及转换器单元（`type:"json"` / 未知 type / 外来键 / 根 required 空则缺席 / 非法 timeoutMs 省略不抛）。
 - 工具纯逻辑（失败分诊 / 冷却 / hints）由 `test/draw.test.mjs` 等覆盖，与挂载无关。
 
