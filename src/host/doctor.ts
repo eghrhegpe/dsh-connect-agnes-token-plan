@@ -32,12 +32,13 @@ import { parseAgnescodePayload, parseAgnescodeDesktopSourcePayload } from "./agn
  * `fetchedAt` (see the note on `parseCatalogPayload` in `catalog-store.ts`).
  */
 import { parseProviderPayload } from "./provider-store.ts";
+import { parseIntlProviderPayload } from "./intl-provider-store.ts";
 import { parseDrawPayload } from "./draw-store.ts";
 import { parseVideoPayload } from "./video-store.ts";
 import { parseCatalogPayload } from "./catalog-store.ts";
 import { parseAgnescodeModelsPayload } from "./agnescode-models-store.ts";
 
-export { parseProviderPayload, parseDrawPayload, parseVideoPayload, parseCatalogPayload };
+export { parseProviderPayload, parseIntlProviderPayload, parseDrawPayload, parseVideoPayload, parseCatalogPayload };
 import { surveyAgnescodeStorage } from "./agnescode.ts";
 import { ADMISSION_AUDIT_FILE, parseAdmissionAudit } from "./admission-audit.ts";
 
@@ -59,6 +60,8 @@ export interface DoctorScope {
   agnescodePanel: boolean | null;
   /** The saved AgnesCode desktop-source switch (ADR-020); `null` = OFF. */
   agnescodeDesktopSourcePanel: boolean | null;
+  /** The saved INTL provider switch (ADR-021); `null` = the patch key rules. */
+  intlProviderPanel: boolean | null;
   /** Stored catalog entries, `[]` when nothing usable is stored. */
   catalogEntries: object[];
   /** The stored model allow-list; `[]` means "no filter". */
@@ -194,6 +197,7 @@ async function readScope(stateDir: string, profile: string | null) {
     videoModelPanel: null,
     agnescodePanel: null,
     agnescodeDesktopSourcePanel: null,
+    intlProviderPanel: null,
     catalogEntries: [],
     catalogEnabledIds: [],
     catalogFetchedAt: 0,
@@ -252,6 +256,14 @@ async function readScope(stateDir: string, profile: string | null) {
     const parsed = parseAgnescodeDesktopSourcePayload(await readStateJson(agnescodeDesktopSourceFile));
     if (parsed !== null) scope.agnescodeDesktopSourcePanel = parsed.enabled;
     else scope.unreadable.push("agnescode-desktop-source.json");
+  }
+  // The INTL provider switch (ADR-021): its own plain {version, enabled}
+  // file, the same family; absent on a CN-only install (the ordinary case).
+  const intlProviderFile = join(stateDir, "intl-provider.json");
+  if (await present(intlProviderFile)) {
+    const parsed = parseIntlProviderPayload(await readStateJson(intlProviderFile));
+    if (parsed !== null) scope.intlProviderPanel = parsed.enabled;
+    else scope.unreadable.push("intl-provider.json");
   }
   const catalogFile = join(stateDir, "catalog.json");
   if (await present(catalogFile)) {
@@ -419,12 +431,16 @@ export function renderReport(report: any) {
     const agnescodeSource = scope.agnescodeDesktopSourcePanel === null || scope.agnescodeDesktopSourcePanel === undefined
       ? "unset (off)"
       : String(scope.agnescodeDesktopSourcePanel);
-    // The INTL row's catalogue count (ADR-021): read through `?? []` like the
-    // agnescode curation above, so a report shape that predates the field
-    // renders as 0 instead of "undefined".
+    // The INTL row's facts (ADR-021): switch + catalogue count, both read
+    // through `?? []` / `=== null` tolerance like the agnescode fields above,
+    // so a report shape that predates them renders as "unset" / 0 instead of
+    // "undefined".
     const catalogIntl = (scope.catalogIntlEntries ?? []).length;
+    const intlProvider = scope.intlProviderPanel === null || scope.intlProviderPanel === undefined
+      ? "unset (patch key rules)"
+      : String(scope.intlProviderPanel);
     lines.push(
-      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} agnescode-source=${agnescodeSource} catalog=${scope.catalogEntries.length} enabled=${enabledPart} agnescode-models=${agnescodeModelsPart} intl-catalog=${catalogIntl}`
+      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} agnescode-source=${agnescodeSource} catalog=${scope.catalogEntries.length} enabled=${enabledPart} agnescode-models=${agnescodeModelsPart} intl-provider=${intlProvider} intl-catalog=${catalogIntl}`
     );
     if (scope.unreadable.length > 0) lines.push(`${label}: unreadable state: ${scope.unreadable.join(", ")}`);
     // Only the failure is worth a line. `true` is the ordinary case and `null`

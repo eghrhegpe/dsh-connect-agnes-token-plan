@@ -566,23 +566,53 @@ export async function buildSnapshotBody({
     publisher: ReturnType<typeof createProviderPublisher>;
     catalogStore: ReturnType<typeof createFileCatalogStore>;
     catalogEffects: CatalogEffects;
+    /**
+     * The INTL row's switch store, for the row's EFFECTIVE value (panel-saved
+     * beats the patch's `registerProviderIntl`). It gates the row's console
+     * batch — off means no batch, and the block reports `quota: null` — and
+     * feeds the `llm.registerProvider` / `registerSource` pair the panel's
+     * switch card renders. Absent (a test wiring): the config default alone.
+     */
+    providerStore?: { enabled: () => Promise<boolean | null> } | undefined;
   };
 }) {
   const providerState = publisher.state;
+  // The INTL row's switch, resolved ONCE here and read from nowhere else in
+  // the body (ADR-021): the panel-saved value beats the patch's
+  // `registerProviderIntl` (dialect A, the same rule the CN row's switch
+  // answers), and the two facts travel together — `registerProvider` and
+  // `registerSource` — into the block's `llm` half, so the panel's switch
+  // card and the block cannot show two different answers. The resolver is a
+  // FUNCTION, not a cached value: it reads the panel store fresh every time,
+  // so a flip that lands between the CN fetch and the INTL assembly still
+  // shows its answer, and the caller's `await` is what makes the read
+  // single-flight for the batch that follows it.
+  const resolveIntlSwitch = async () => resolveSwitchEnabled(
+    await readPanelValue(
+      intlStores === undefined || intlStores.providerStore === undefined
+        ? undefined
+        : () => intlStores.providerStore!.enabled().catch(() => null)
+    ),
+    settings.registerProviderIntl
+  );
   // The INTL row's fetch batch, kicked off BEFORE the CN await so the two
-  // rows' console calls run in parallel (ADR-021): a serial second batch would
-  // stack the INTL row's ~15 s deadlines onto the panel's poll, and the
-  // shared `cache` / `inflight` maps already keep the two from duplicating a
-  // request (every entry keys on its own URL, and the two rows' bases differ).
-  const intlBatch = intlStores === undefined
-    ? null
-    : fetchQuotaSources({
-        settings: { ...settings, consoleBase: settings.consoleBaseIntl, apiBase: settings.apiBaseIntl },
-        cache,
-        inflight,
-        tokenStore: intlStores.tokenStore,
-        apiKeyStore: intlStores.apiKeyStore
-      });
+  // rows' console calls run in parallel (a serial second batch would stack
+  // the INTL row's ~15 s deadlines onto the panel's poll, and the shared
+  // `cache` / `inflight` maps already keep the two from duplicating a
+  // request). Gated on the RESOLVED switch: an off row is inert — no batch,
+  // no key resolution, no console request — exactly the CN row's switch-off
+  // behaviour, and the block then reports `quota: null` instead of a batch
+  // nobody asked for.
+  let intlBatch: Promise<unknown> | null = null;
+  if (intlStores !== undefined && (await resolveIntlSwitch()).enabled) {
+    intlBatch = fetchQuotaSources({
+      settings: { ...settings, consoleBase: settings.consoleBaseIntl, apiBase: settings.apiBaseIntl },
+      cache,
+      inflight,
+      tokenStore: intlStores.tokenStore,
+      apiKeyStore: intlStores.apiKeyStore
+    });
+  }
   const { overview, series, subscription, plans, catalog, catalogError } = await fetchQuotaSources({
     settings,
     cache,
@@ -762,22 +792,30 @@ export async function buildSnapshotBody({
   let intl: Record<string, unknown> | null = null;
   if (intlStores !== undefined) {
     try {
-      // `intlBatch` was started above iff `intlStores` was passed, so a
-      // Promise is the only value this branch can hold; the assertion exists
-      // only because the conditional that established that cannot be carried
-      // across the `const` by the type system.
-      const intlSources = await (intlBatch as ReturnType<typeof fetchQuotaSources>);
-      const intlQuota = buildQuotaBlock(
-        intlSources.overview,
-        intlSources.series,
-        intlSources.subscription,
-        intlSources.plans
-      );
+      // The switch fact this block reports, through the same seam the batch
+      // gate used: a fresh read, so the two cannot disagree.
+      const intlRowSwitch = await resolveIntlSwitch();
+      // `intlBatch` was started above iff the resolved switch is ON, so
+      // `null` (off row, the ordinary case) and a Promise are the only two
+      // values this branch can hold; the assertion exists because that
+      // conditional cannot be carried across the `let` by the type system.
+      const intlSources = intlBatch === null
+        ? null
+        : await (intlBatch as Promise<ReturnType<typeof fetchQuotaSources>>);
+      const intlQuota = intlSources === null
+        ? null
+        : buildQuotaBlock(
+            intlSources.overview,
+            intlSources.series,
+            intlSources.subscription,
+            intlSources.plans
+          );
       // The INTL catalogue's one writer persists + republishes the INTL row
       // exactly like the CN one — and its failure is swallowed HERE rather
       // than rejecting the whole body: a disk write on the second row must
-      // not blank the first.
-      const { offered: intlOffered } = await intlStores.catalogEffects.run(intlSources.catalog, undefined, []).catch(() => ({ offered: undefined }));
+      // not blank the first. (A `null` catalogue is the no-key answer, the
+      // same shape `run` already treats as "no news".)
+      const { offered: intlOffered } = await intlStores.catalogEffects.run(intlSources?.catalog ?? null, undefined, []).catch(() => ({ offered: undefined }));
       const intlEnabledIds = await intlStores.catalogStore.listEnabledIds().catch(() => intlStores.publisher.state.enabledIds);
       const intlSummary = summarizeCatalog(
         intlOffered === undefined ? [] : filterByEnabled(intlOffered, intlEnabledIds)
@@ -788,14 +826,21 @@ export async function buildSnapshotBody({
         consoleBase: settings.consoleBaseIntl,
         // The INTL console's own four-window quota block, shaped exactly like
         // the CN `quota` above — the composer pill's two request windows read
-        // it through the same `windowPercent` / `usageTier` pair.
+        // it through the same `windowPercent` / `usageTier` pair. `null`
+        // answers "the switch is off, no batch ran": a missing number with a
+        // reason, never a zero block.
         quota: intlQuota,
         // Secret-free, like the CN `auth` field: booleans and timings only.
         auth: await intlStores.tokenStore.state().catch(() => null),
         llm: {
           ...intlKeyState,
           providerId: LLM_PROVIDER_ID_INTL,
-          registerProvider: settings.registerProviderIntl,
+          // The row's EFFECTIVE switch value + where it came from, resolved
+          // through the same seam the batch gate used above: the panel's
+          // INTL switch card and this block are the same fact, so they
+          // cannot disagree with each other.
+          registerProvider: intlRowSwitch.enabled,
+          registerSource: intlRowSwitch.source,
           llmAvailable: intlState.llmAvailable,
           providerRegistered: intlState.registered,
           modelCount: intlSummary.modelCount,

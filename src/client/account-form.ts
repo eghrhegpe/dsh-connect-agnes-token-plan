@@ -15,7 +15,7 @@
  * the sign-in POST) is mounted for real by `test/dom-render.test.mjs` —
  * jsdom + real react-dom over the shipped artifact.
  */
-import { ACCOUNT_PATH, AGNES_SIGNUP_URL } from "./const.ts";
+import { AGNES_INTL_LOGIN_URL, ACCOUNT_PATH, AGNES_SIGNUP_URL } from "./const.ts";
 import { format } from "./format.ts";
 import { postJson } from "./http.ts";
 import { h, useCallback, useEffect, useState } from "./runtime.ts";
@@ -24,9 +24,16 @@ import { CLIENT_CODE, COOLDOWN_TEXT, REFUSAL_TEXT, servedWaitUntil } from "./sna
 import { S } from "./styles.ts";
 import type { AuthData } from "./wire.ts";
 
-export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
+export function AccountForm({ auth, onDone, site, tt, bare, hasSnapshot }: {
   auth?: AuthData | null;
   onDone?: () => void;
+  /**
+   * The site this editor addresses (ADR-021): `"intl"` rides every POST to
+   * the INTL row's own store (its own grant record and `*_INTL` references),
+   * points the signup link at the international login entry, and labels the
+   * card with the INTL title. Omitted = the CN site, exactly as before.
+   */
+  site?: "intl";
   tt: Tt;
   bare?: boolean;
   /**
@@ -134,7 +141,9 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
     setFormError(null);
     setFormDetail(null);
     try {
-      const body = await postJson(ACCOUNT_PATH, { username: username.trim(), password });
+      // The site tag (ADR-021) rides the save: one account can never be
+      // planted in the other site's grant record through this form.
+      const body = await postJson(ACCOUNT_PATH, { ...(site === "intl" ? { site: "intl" } : {}), username: username.trim(), password });
       if (body && body.ok === true) {
         // Clear the password from component state the moment it is no
         // longer needed: it lives on in the Host's credentials, not here.
@@ -201,7 +210,7 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
     setFormError(null);
     setFormDetail(null);
     try {
-      const body = await postJson(ACCOUNT_PATH, { forget: true });
+      const body = await postJson(ACCOUNT_PATH, { ...(site === "intl" ? { site: "intl" } : {}), forget: true });
       if (body?.ok !== true) {
         setFormError(body?.error ?? tt("auth.network"));
         return;
@@ -225,18 +234,22 @@ export function AccountForm({ auth, onDone, tt, bare, hasSnapshot }: {
     { style: bare ? {} : { ...S.card, maxWidth: 420 } },
     // `bare` drops the inner card and title: the caller (the account
     // section card) already supplies both.
-    bare ? null : h("div", { style: S.sectionTitle }, tt("auth.title")),
+    bare ? null : h("div", { style: S.sectionTitle }, tt(site === "intl" ? "auth.intlTitle" : "auth.title")),
     // The official entry, visible in BOTH states: no account yet → the
     // sign-up page; account present → quota management / API keys.
     // Shown in both standalone and bare embed forms.
     h("a", {
-      href: AGNES_SIGNUP_URL,
+      // The INTL form points at the international login entry (ADR-021,
+      // probed 2026-11-18); the CN form keeps the console.
+      href: site === "intl" ? AGNES_INTL_LOGIN_URL : AGNES_SIGNUP_URL,
       target: "_blank",
       rel: "noreferrer",
       // The one link skin every form shares — `styles.ts`, so a reskin
       // lands everywhere at once instead of here.
       style: S.externalLink
-    }, tt(auth?.hasAccount ? "auth.portalHint" : "auth.registerHint")),
+    }, tt(site === "intl"
+      ? (auth?.hasAccount ? "auth.intlPortalHint" : "auth.intlRegisterHint")
+      : (auth?.hasAccount ? "auth.portalHint" : "auth.registerHint"))),
     h(
       "form",
       { onSubmit: submit },

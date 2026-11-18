@@ -60,6 +60,12 @@ export const API_KEY_PATH = `/api/${PANEL_ID}/api-key`;
 /** The provider-registration switch route (docs/PROVIDER-HOT-RELOAD.md). */
 export const PROVIDER_PATH = `/api/${PANEL_ID}/provider`;
 
+/**
+ * The INTL provider-registration switch route (ADR-021): the international
+ * row's twin of `PROVIDER_PATH`, its own state file and its own publish.
+ */
+export const PROVIDER_INTL_PATH = `/api/${PANEL_ID}/provider-intl`;
+
 /** The model-roster route: which of this key's models get pushed to DSH. */
 export const MODELS_PATH = `/api/${PANEL_ID}/models`;
 
@@ -86,3 +92,11 @@ export const AGNES_SIGNUP_URL = "https://platform.agnes-ai.cn";
  * new tab only, never a credentialed request target.
  */
 export const AGNESCODE_SITE_URL = "https://agnes-ai.cn/agnescode";
+
+/**
+ * The INTERNATIONAL site's login entry (ADR-021), probed live on 2026-11-18
+ * (`upstream/probe-artifacts/intl-endpoints-20261118.json`: a 200 HTML page).
+ * Same discipline as {@link AGNES_SIGNUP_URL}: the panel's INTL account form
+ * points here, opened in a new tab only, never a credentialed request target.
+ */
+export const AGNES_INTL_LOGIN_URL = "https://app.agnes-ai.com/login";

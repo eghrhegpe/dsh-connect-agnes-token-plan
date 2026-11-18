@@ -138,17 +138,19 @@
     // 面板/配置钉死的视频模型偏好（effectiveVideoModelId 非空时才下发；未钉=自动选择，此键缺席）
     "videoPreferredModel": "agnes-video-v2.0"
   },
-  // 国际站行（ADR-021）：仅当 patch 行 `registerProviderIntl: true` 时 Host 装配
-  // INTL 半边、本块在场；未装配（默认）或该段批量致命失败时整个块缺席——
-  // 缺席即 pre-ADR-021 的逐字节形状。每个 INTL 源走同款软失败纪律，
-  // 整段致命失败降级为「无 intl 块」，绝不动 CN 半边。
+  // 国际站行（ADR-021）：行恒装配的 Host 上本块**装配即在场**；INTL 行
+  // 开关（`intl-provider.json`，面板值胜 patch 键）关着时 `quota` 为 `null`
+  //（批量未跑，缺数带因，不是零值块），`auth` / `llm` 照常报出。每个 INTL
+  // 源走同款软失败纪律，整段致命失败降级为「无 intl 块」，绝不动 CN 半边；
+  // pre-ADR-021 的 Host 整块缺席（逐字节形状）。
   "intl": {
     "consoleBase": "https://platform-backend.agnes-ai.com",
-    "quota": { /* 与顶层 quota 同形：国际站自己的四个窗口 */ },
-    "auth":  { /* 与顶层 auth 同形：国际站控制台的登录态（env 引导 AGNES_USERNAME_INTL / AGNES_PASSWORD_INTL） */ },
+    "quota": { /* 与顶层 quota 同形；行开关关着时为 null */ },
+    "auth":  { /* 与顶层 auth 同形：国际站控制台的登录态（面板 INTL 账号卡或 env 引导 AGNES_USERNAME_INTL / AGNES_PASSWORD_INTL） */ },
     "llm": {
       "hasApiKey": true, "keySource": "credentials", "ephemeral": false,
       "providerId": "agnes-token-plan-intl", "registerProvider": true,
+      "registerSource": "panel",
       "llmAvailable": true, "providerRegistered": true, "modelCount": 7,
       "providerError": null
     }
@@ -161,7 +163,7 @@
 - **控制台读不到时 body 仍然是 `ok:true`**：`quota.consoleConnected:false` 加上 `quota.error.code`（`not_configured` / `auth_error` / `console_error`）。这样 API Key tab 和 AgnesCode tab 仍然可达——它们一个不读控制台、一个连的是桌面 App 上游，被一个缺席模块一起埋掉正是 `ARCHITECTURE.md` §5 禁止的。
 - Host 内部：临近过期时用保存的账号重新登录一次；Agnes 不发 refresh_token，所以「续期」就是重登。
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
-- **`intl` 块（ADR-021）只在 patch 行 `registerProviderIntl: true` 时装配**：它由 INTL 行自己的 token store / key 引用 / publisher / 目录 / 目录写手五槽同时在场时才出现，与 CN 半边并行取数（共享 cache/inflight 按 URL 分家）并独立软失败。缺席 = 「这台机器没有国际站配置」，不是「国际站读失败了」——后者在块内以各源的 `quota.error` 报出。胶囊的第三根门控（`agnes-token-plan-intl` 模型）读的就是 `intl.quota`。
+- **`intl` 块（ADR-021）随 INTL 行装配即在场**（行恒装配：配置错或 pre-ADR-021 Host 才缺席）：它由 INTL 行自己的 token store / key 引用 / publisher / 目录 / 目录写手槽同时在场时出现，与 CN 半边并行取数（共享 cache/inflight 按 URL 分家）并独立软失败。**行开关关着时 `intl.quota` 为 `null`**（批量未跑——关着的一行不发国际请求），块内各源失败仍以 `quota.error` 报出，不是整块缺席。胶囊的第三根门控（`agnes-token-plan-intl` 模型）读的就是 `intl.quota`；面板 INTL 开关卡读的是 `intl.llm.registerProvider` + `registerSource`。
 - **额度与用量是两条独立事实**：`quota.windows` 的平台声明上限 +（`subscription.usage` 给到时的）窗口内 `used`；`quota.totals` 与 `usage` 是平台报出的累计 / 分桶量。窗口内的已用量由平台给，面板直接引用；Host 从不做 `limit - total`——累计值与窗口不同周期，相减会算出没人能负责的数。
 
 #### `auth` 块的两个节流字段（面板必须服从）
@@ -184,7 +186,7 @@
 
 ### `GET /api/dsh-connect-agnes-token-plan/account`
 
-返回账号状态（**不含密码**）：`configured` / `hasAccount` / `autoRecoverArmed` / `ephemeral` 等，另含与 `snapshot` 的 `auth` 块**同形**的 `retryAfterMs` / `needsUserAction` 两个节流字段——语义、单位与读法见上文「`auth` 块的两个节流字段」。`GET` 的状态读取被拒时降级为 `{}`（不是错误页：这个路由唯一的问题是「有没有存账号」，报错等于没回答）。
+返回账号状态（**不含密码**）：`configured` / `hasAccount` / `autoRecoverArmed` / `ephemeral` 等，另含与 `snapshot` 的 `auth` 块**同形**的 `retryAfterMs` / `needsUserAction` 两个节流字段——语义、单位与读法见上文「`auth` 块的两个节流字段」。`GET` 的状态读取被拒时降级为 `{}`（不是错误页：这个路由唯一的问题是「有没有存账号」，报错等于没回答）。Host 装配了 INTL 行（ADR-021）时，body 另带 `intl` 块——**同一组字段**描述国际站的登录态（INTL 行自己的 grant 记录与 `*_INTL` 引用）；未装配的 Host 不返回该键。
 
 ### `POST /api/dsh-connect-agnes-token-plan/account`
 
@@ -192,6 +194,8 @@
 
 - 保存账号：`{ "username": "...", "password": "..." }` —— 触发一跳登录（`POST {consoleBase}/api/user/login`）并落库。
 - 清除账号：`{ "forget": true }` —— 仅删账号引用，保留仍有效的令牌。
+
+**站点参数（ADR-021）**：body 加 `"site": "intl"` 把整条动作指到 INTL 行——登录打 `{consoleBaseIntl}/api/user/login`、grant 落 `agnes-console-intl` 记录、账号引用走 `AGNES_USERNAME_INTL` / `AGNES_PASSWORD_INTL`；缺省是 CN 行。INTL 动作只碰 INTL 行自己的引用与记录，永不清扫 CN 半边；行未装配（配置错或老 Host）时 INTL 动作**拒写**，答 `ok:false` + `code: "intl_inactive"`。
 
 非法 body（非对象、JSON 数组、超 4 KB）返回 400；跨域 POST 返回 403 且不写入任何账号。
 
@@ -203,7 +207,7 @@
 
 ### `GET /api/dsh-connect-agnes-token-plan/api-key`
 
-返回推理 Key 的**去密状态**（无 Key 值本身）：`hasApiKey` / `keySource`（`credentials` 凭据服务引用、`env` 环境变量、`memory` 无凭据服务时的进程内存、或 `null`）/ `ephemeral`。
+返回推理 Key 的**去密状态**（无 Key 值本身）：`hasApiKey` / `keySource`（`credentials` 凭据服务引用、`env` 环境变量、`memory` 无凭据服务时的进程内存、或 `null`）/ `ephemeral`。Host 装配了 INTL 行（ADR-021）时，body 另带 `intl` 块——同一组字段描述 `AGNES_TOKEN_PLAN_INTL_API_KEY` 引用的状态。
 
 ### `POST /api/dsh-connect-agnes-token-plan/api-key`
 
@@ -211,6 +215,8 @@
 
 - 保存 Key：`{ "apiKey": "<sk- 免费版或 cpk- Token Plan 密钥>" }` —— 以 `AGNES_TOKEN_PLAN_API_KEY` 引用写入 DSH 凭据服务（与手写 `llm-pi-ai` 行读取的是同一个引用名）；进程环境变量仍是兜底来源。下次轮询用新 Key 拉取模型目录并（开关开启时）重建已注册的 provider。
 - 清除 Key：`{ "forget": true }` —— 仅删面板保存的引用并清空私有 catalog 缓存；环境变量 `AGNES_TOKEN_PLAN_API_KEY` **不**受影响，已注册 provider 的模型列表被清空。
+
+**站点参数（ADR-021）**：body 加 `"site": "intl"` 把保存 / 清除指到 INTL 行——引用名换 `AGNES_TOKEN_PLAN_INTL_API_KEY`，清缓存与重发布走 INTL 行自己的目录与 publisher（**不**重置 CN 行的注册签名）。INTL 动作只碰 INTL 半边；行未装配时答 `ok:false` + `code: "intl_inactive"`。
 
 响应同样只含去密状态；非法 body 返回 400，跨域 POST 返回 403。任何响应都不会回显 Key 明文。
 
@@ -221,6 +227,10 @@
 ### `POST /api/dsh-connect-agnes-token-plan/provider`
 
 `{ "enabled": true|false }` —— 把开关写入插件私有状态文件并在**同一请求内**重新发布 provider（立即生效，无需重启）。优先级：面板保存的值 > `cordis.patch.yml` 的 `registerProvider`。非布尔 `enabled` 返回 400；跨域返回 403。
+
+### `GET` / `POST` `/api/dsh-connect-agnes-token-plan/provider-intl`
+
+INTL 行注册开关的去密状态与写入（ADR-021，`/provider` 的国际站孪生）：GET 返回 `registerProvider`（**生效值**）、`registerSource`（`panel` / `config` / `off`）、`providerId`（`agnes-token-plan-intl`）、`providerRegistered`（注册失败时附 `providerError`）；POST `{ "enabled": true|false }` 把开关写入**自己的**私有状态文件 `intl-provider.json`（与 CN 的 `provider.json` 互不写入——两站的发布决定各守各的文件）并在同一请求内重发布 INTL 行。优先级：面板保存的值 > `cordis.patch.yml` 的 `registerProviderIntl`（第 6 个开关，`docs/PROVIDER-HOT-RELOAD.md` 同款机制）。非布尔 `enabled` 返回 400；跨域返回 403。
 
 ### `POST /api/dsh-connect-agnes-token-plan/models`
 

@@ -559,6 +559,171 @@ function check(name, condition, detail = "") {
     zhBlock.includes('"composer.planPrefixIntl"') && i18nSrc.includes('"composer.planPrefixIntl": "Intl Token Plan"'));
 }
 
+// --- 10. the refresh gate and the switch-gated batch (the "off is inert" half)
+// Round two of ADR-021: the row is always ASSEMBLED and the switch is what
+// keeps it quiet. Two seams make that true: the catalogue writer's `gate`
+// dep (an off tick does nothing at all) and the snapshot batch, which runs
+// only for a resolved-ON row — an off row's block reports `quota: null`, a
+// missing number with a reason, while its `llm` half still says where the
+// switch came from.
+{
+  const { settings } = resolveSettings({ registerProviderIntl: false });
+  const cache = new Map();
+  const inflight = new Map();
+
+  const fakeLlm = () => ({
+    registerAdapter: () => () => {},
+    registerConfigurableProviders: () => () => {}
+  });
+  const noopKey = async () => "";
+  const cnAuth = { login: async () => { throw new Error("unreachable in this suite"); } };
+  const emptyService = () => ({
+    async readRecord() { return undefined; },
+    async modifyRecord(_k, mutate) { return mutate(undefined); },
+    async deleteRecord() {},
+    async resolve() { return undefined; },
+    async set() {},
+    async unset() {}
+  });
+  const cnTokenStore = createTokenStore({
+    credentials: emptyService(),
+    auth: cnAuth,
+    env: {},
+    credentialKey,
+    throttleStore: createMemoryThrottleStore()
+  });
+  const cnApiKeyStore = createApiKeyStore({ credentials: null, env: {} });
+  const cnCatalogStore = createMemoryCatalogStore();
+  const cnPublisher = createProviderPublisher({
+    settings,
+    panelSwitch: () => Promise.resolve(null),
+    loadAdapterModule: async () => { throw new Error("no adapter build in this suite"); },
+    getLlm: fakeLlm,
+    resolveApiKey: noopKey
+  });
+  const cnCatalogEffects = createCatalogEffects({
+    settings, cache, inflight,
+    apiKeyStore: cnApiKeyStore,
+    catalogStore: cnCatalogStore,
+    publisher: cnPublisher,
+    fetchCatalog: async () => null
+  });
+
+  // The INTL row's own stores, with a CALLING fetch so the gate is measurable.
+  let fetchCalls = 0;
+  const intlTokenStore = createTokenStore({
+    credentials: emptyService(),
+    auth: cnAuth,
+    env: {},
+    credentialKey,
+    throttleStore: createMemoryThrottleStore(),
+    recordId: "agnes-console-intl",
+    throttleId: "agnes-console-intl-throttle",
+    usernameRef: "AGNES_USERNAME_INTL",
+    passwordRef: "AGNES_PASSWORD_INTL"
+  });
+  const intlApiKeyStore = createApiKeyStore({ credentials: null, env: {}, ref: API_KEY_REF_INTL });
+  const intlCatalogStore = createMemoryCatalogStore({ file: "catalog.intl.json" });
+  const intlPublisher = createProviderPublisher({
+    settings: { ...settings, apiBase: settings.apiBaseIntl },
+    panelSwitch: () => Promise.resolve(null),
+    loadAdapterModule: async () => { throw new Error("no adapter build in this suite"); },
+    getLlm: fakeLlm,
+    resolveApiKey: noopKey,
+    provider: { id: LLM_PROVIDER_ID_INTL, name: LLM_DISPLAY_NAME_INTL }
+  });
+  const offGate = createCatalogEffects({
+    settings: { ...settings, apiBase: settings.apiBaseIntl },
+    cache, inflight,
+    apiKeyStore: intlApiKeyStore,
+    catalogStore: intlCatalogStore,
+    publisher: intlPublisher,
+    fetchCatalog: async () => { fetchCalls += 1; return null; },
+    gate: async () => false
+  });
+  // A key the row CAN resolve, so a passing gate must reach the fetch: the
+  // gate question and the key question are different exits of `refresh`.
+  const keyedApiKeyStore = createApiKeyStore({
+    credentials: null,
+    env: {},
+    ref: API_KEY_REF_INTL
+  });
+  // A SAVED key through the store's own seam: without one `resolve()` answers
+  // "" and the no-key exit swallows the fetch even with a passing gate, which
+  // would make this check test the key path, not the gate. Awaited — the
+  // refresh below must not race the save settling.
+  await keyedApiKeyStore.save("sk-intl-gate-check");
+
+  const onGate = createCatalogEffects({
+    settings: { ...settings, apiBase: settings.apiBaseIntl },
+    cache, inflight,
+    apiKeyStore: keyedApiKeyStore,
+    catalogStore: intlCatalogStore,
+    publisher: intlPublisher,
+    fetchCatalog: async () => { fetchCalls += 1; return null; },
+    gate: async () => true
+  });
+
+  await offGate.refresh();
+  check("a gated-off refresh performs no catalogue fetch at all",
+    fetchCalls === 0, `fetchCalls=${fetchCalls}`);
+  await onGate.refresh();
+  check("a gated-on refresh with a resolvable key reaches the fetch",
+    fetchCalls === 1, `fetchCalls=${fetchCalls}`);
+
+  // The snapshot batch: an off row's block reports `quota: null` (no batch
+  // ran) while its `llm` half still carries the switch's source; an on row
+  // runs the batch and degrades its four sources softly, exactly like CN.
+  const batchBase = {
+    settings,
+    cache,
+    inflight,
+    tokenStore: cnTokenStore,
+    apiKeyStore: cnApiKeyStore,
+    publisher: cnPublisher,
+    catalogStore: cnCatalogStore,
+    catalogEffects: cnCatalogEffects,
+    panelSwitch: () => Promise.resolve(null)
+  };
+  const offBody = await buildSnapshotBody({
+    ...batchBase,
+    intl: {
+      tokenStore: intlTokenStore,
+      apiKeyStore: intlApiKeyStore,
+      publisher: intlPublisher,
+      catalogStore: intlCatalogStore,
+      catalogEffects: offGate,
+      providerStore: { enabled: () => Promise.resolve(false) }
+    }
+  });
+  check("an off row's intl block reports quota: null, not a zero block",
+    offBody.intl !== undefined && offBody.intl.quota === null,
+    JSON.stringify(offBody.intl?.quota));
+  check("an off row's llm half says the switch is panel-saved-off",
+    offBody.intl?.llm?.registerProvider === false && offBody.intl?.llm?.registerSource === "panel",
+    JSON.stringify(offBody.intl?.llm));
+  check("an off row's auth block is still the row's own login state",
+    offBody.intl?.auth?.configured === false, JSON.stringify(offBody.intl?.auth));
+
+  const onBody = await buildSnapshotBody({
+    ...batchBase,
+    intl: {
+      tokenStore: intlTokenStore,
+      apiKeyStore: intlApiKeyStore,
+      publisher: intlPublisher,
+      catalogStore: intlCatalogStore,
+      catalogEffects: offGate,
+      providerStore: { enabled: () => Promise.resolve(true) }
+    }
+  });
+  check("an on row runs its batch and degrades it softly",
+    onBody.intl?.quota !== null && onBody.intl?.quota?.consoleConnected === false,
+    JSON.stringify(onBody.intl?.quota));
+  check("an on row's llm half says the switch is panel-saved-on",
+    onBody.intl?.llm?.registerProvider === true && onBody.intl?.llm?.registerSource === "panel",
+    JSON.stringify(onBody.intl?.llm));
+}
+
 releaseNetworkGuard();
 console.log(JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.pass);

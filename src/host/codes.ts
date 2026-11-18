@@ -57,6 +57,13 @@ export const CODE = Object.freeze({
   /** A stored grant carries no refresh token to renew with. */
   NO_REFRESH_TOKEN: "no_refresh_token",
 
+  /**
+   * An INTL-site account action was asked of a row the Host did not assemble
+   * (misconfigured or pre-ADR-021 host, ADR-021). Neither a credential
+   * refusal nor an auth failure: the fix is the operator's, not the clock's.
+   */
+  INTL_INACTIVE: "intl_inactive",
+
   /** The console refused the token twice in a row (indexts). */
   JWT_EXPIRED: "jwt_expired",
   /** No token could be obtained (indexts). */

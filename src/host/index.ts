@@ -43,7 +43,9 @@ import { createFileDrawStore } from "./draw-store.ts";
 import { createFileVideoStore } from "./video-store.ts";
 import { profileSegment } from "./state-store.ts";
 import { createApiKeyStore, API_KEY_REF_INTL } from "./api-key-store.ts";
+import { createFileIntlProviderStore } from "./intl-provider-store.ts";
 import { LLM_PROVIDER_ID_INTL, LLM_DISPLAY_NAME_INTL } from "./llm-models.ts";
+import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import { createAgnescodeStore } from "./agnescode-store.ts";
 import { createFileAgnescodeStore, createFileAgnescodeDesktopSourceStore } from "./agnescode-switch-store.ts";
 import { createAgnescodeDesktopViewReader } from "./agnescode-desktop-view.ts";
@@ -281,8 +283,18 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   // row (a log line), never the panel: the CN row below it is assembled
   // independently, and blanking it would be the one-module-buries-the-rest
   // shape ARCHITECTURE.md §5 forbids.
+  // The INTL row is assembled WHOLE whenever the row itself is sound (a
+  // misconfiguration already set `configError`): the switch — not the
+  // assembly — is what keeps it inert. A panel switch has to be flippable
+  // LIVE, and a live flip can only act on machinery that exists; assembling
+  // behind the switch's value would make the first ON save a no-op until the
+  // next restart, which the panel would read as "the switch does not work".
+  // Inert-when-off is owned by the SEAMS instead: the publisher's gate (the
+  // switch), the refresh's `gate` dep (no fetch while off), and the snapshot
+  // batch (no console reads while off) — an off row costs one read of a
+  // (typically missing) state file and nothing else.
   let intlAuth: ReturnType<typeof createAuth> | null = null;
-  if (configError === null && settings.registerProviderIntl === true) {
+  if (configError === null) {
     try {
       // The CN row's operator overrides (login path / deadlines) travel to
       // the INTL origin as well — they are platform-agnostic facts about the
@@ -292,9 +304,12 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
       ctx.logger?.warn?.(`${name}: the INTL console origin was refused (${redactSecrets(error instanceof Error ? error.message : String(error))}); the INTL row stays absent and the CN row is unaffected`);
     }
   }
-  const intlRowActive = configError === null
-    && settings.registerProviderIntl === true
-    && intlAuth !== null;
+  const intlRowActive = configError === null && intlAuth !== null;
+  // The INTL row's switch store (ADR-021): dialect A, like the CN provider
+  // switch — the panel-saved value beats the patch's `registerProviderIntl`,
+  // and an untouched file answers the patch key. Its own file, so flipping
+  // one site's switch can never write the other site's publish decision.
+  const intlProviderStore = createFileIntlProviderStore({ profile });
   const intlApiKeyStore = intlRowActive
     ? createApiKeyStore({
         credentials: () => ctx.get("credentials") ?? null,
@@ -330,13 +345,13 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
       })
     : undefined;
   // The INTL publisher: the SAME control plane (queue / rollback / directory)
-  // as the CN one, a different row identity, and no panel switch — a
-  // panel-saved "current site" would be the global knob the two-route shape
-  // exists to avoid, so its gate reads the patch key alone.
+  // as the CN one, a different row identity, and the INTL switch as its
+  // gate — dialect A (a panel-saved value beats the patch's
+  // `registerProviderIntl`), exactly like the CN row's switch.
   const intlPublisher = intlRowActive && intlCatalogStore !== undefined
     ? createProviderPublisher({
         settings: { ...settings, registerProvider: settings.registerProviderIntl, apiBase: settings.apiBaseIntl },
-        panelSwitch: () => Promise.resolve(null),
+        panelSwitch: () => intlProviderStore.enabled().catch(() => null),
         loadAdapterModule,
         getLlm: (service: string) => getService(service),
         resolveApiKey: resolveIntlApiKey ?? (async () => ""),
@@ -347,8 +362,10 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     : undefined;
   // The INTL catalogue's one writer: the same single-flight discipline the CN
   // one has (ADR-015), keyed off the INTL row's own key, catalog and
-  // publisher. Its background tick starts only for an active row, so an
-  // off row keeps the Host exactly as quiet as it was before.
+  // publisher, and gated by the row's RESOLVED switch — an off row never
+  // resolves a key and never fetches (the gate is the "off is inert" half
+  // of the ADR; the CN effects pass no gate, because the CN switch has
+  // always decided registration, not freshness).
   // The guard names every store the writer needs: `intlRowActive` alone
   // cannot NARROW the sibling consts (the compiler does not track that they
   // were built under the same condition), and `createCatalogEffects` takes
@@ -362,7 +379,11 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
         catalogStore: intlCatalogStore,
         publisher: intlPublisher,
         logger: ctx.logger,
-        fetchCatalog: deps.intlFetchCatalog ?? fetchModelCatalog
+        fetchCatalog: deps.intlFetchCatalog ?? fetchModelCatalog,
+        gate: async () => resolveSwitchEnabled(
+          await readPanelValue(() => intlProviderStore.enabled().catch(() => null)),
+          settings.registerProviderIntl
+        ).enabled
       })
     : undefined;
 
@@ -480,10 +501,12 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     // object rather than of the number of callers.
     catalogEffects,
     resolveApiKey,
-    // The INTL row (ADR-021): set together or not at all (an off or broken
-    // row leaves every slot `undefined`), so the snapshot route's five-slot
-    // presence test is a single fact. Absent slots keep the pre-ADR-021
-    // wiring byte-compatible for every test that assembles a CN-only bag.
+    // The INTL row (ADR-021): set together or not at all (a broken row leaves
+    // every slot `undefined` — an OFF row does not: the switch, not the
+    // assembly, keeps it inert), so the snapshot route's six-slot presence
+    // test is a single fact. Absent slots keep the pre-ADR-021 wiring
+    // byte-compatible for every test that assembles a CN-only bag.
+    intlProviderStore,
     intlApiKeyStore,
     intlCatalogStore,
     intlTokenStore,
@@ -537,9 +560,11 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   const stopCatalogTick = configError === null
     ? catalogEffects.start(settings.pollSeconds * 1_000)
     : () => {};
-  // The INTL tick starts ONLY for an active INTL row (ADR-021): an off row
-  // keeps the Host exactly as quiet as it was before this line existed —
-  // no cache check, no key resolution, no request.
+  // The INTL tick runs whenever the row was assembled (ADR-021): the
+  // effects' `gate` makes an OFF row's tick a no-op (no key resolution,
+  // no request — the refresh returns at the gate), so starting it unconditionally
+  // costs nothing and keeps a live switch flip immediately effective: the
+  // next tick after an ON save is the row's first real refresh.
   const stopIntlCatalogTick = intlCatalogEffects !== undefined
     ? intlCatalogEffects.start(settings.pollSeconds * 1_000)
     : () => {};

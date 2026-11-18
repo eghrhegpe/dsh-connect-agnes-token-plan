@@ -18,12 +18,28 @@ import { writeLoginTrace } from "../trace.ts";
 import { redactError, redactSecrets, str } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
+import type { createTokenStore } from "../token-store.ts";
 
 /** The account route: the panel configures itself without editing `.env`. */
 export const ACCOUNT_PATH = `/api/${name}/account`;
 
 /**
- * Register the account route. Wiring subset: `settings`, `cache`, `tokenStore`.
+ * Which site's console account the body addresses (ADR-021). The CN store is
+ * the default; `site: "intl"` switches every action in the body to the INTL
+ * row's own store — its own grant record, its own references, its own trace
+ * label — so one panel can carry both of the operator's accounts without the
+ * two sites' credentials ever touching the same record.
+ * @param {unknown} value - the posted body value.
+ * @returns {"cn"|"intl"}
+ */
+function accountSite(value: unknown): "cn" | "intl" {
+  return (value as { site?: unknown })?.site === "intl" ? "intl" : "cn";
+}
+
+/**
+ * Register the account route. Wiring subset: `settings`, `cache`, `tokenStore`,
+ * and the INTL row's `intlTokenStore` (ADR-021, optional: a Host that did not
+ * assemble it answers INTL actions with `intl_inactive` and writes nothing).
  * @param ctx - the host root context (only `ctx.webServer` is used here).
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
@@ -49,7 +65,18 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
         // A state read that rejects degrades to `{}` rather than failing the
         // route: the form's whole question here is "is an account stored", and
         // an error page answers it with nothing at all.
-        writeJson(response, 200, { ok: true, ...(await tokenStore.state().catch(() => null)) }, { "cache-control": "no-store" });
+        //
+        // The INTL half rides alongside under `intl` (ADR-021): the panel's
+        // INTL form reads its own state, and a Host without the INTL row
+        // omits the field entirely.
+        const intlState = wiring.intlTokenStore === undefined
+          ? null
+          : await wiring.intlTokenStore.state().catch(() => null);
+        writeJson(response, 200, {
+          ok: true,
+          ...(await tokenStore.state().catch(() => null)),
+          ...(intlState !== null ? { intl: intlState } : {})
+        }, { "cache-control": "no-store" });
         return;
       }
       if (method !== "POST") {
@@ -58,17 +85,34 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
       }
       const body = await readJsonBodyOr400(request, response);
       if (body === null) return;
+      // The site this action addresses, and the store that answers it. An
+      // INTL action on a Host that did not assemble the INTL row is a
+      // DECLINED action, not a write: the panel tells the reader the row is
+      // inactive instead of planting an account nobody will ever read.
+      const site = accountSite(body.value);
+      const activeStore: ReturnType<typeof createTokenStore> | undefined =
+        site === "intl" ? wiring.intlTokenStore : tokenStore;
+      if (activeStore === undefined) {
+        writeJson(response, 200, {
+          ok: false,
+          code: CODE.INTL_INACTIVE,
+          error: "the INTL row is not active on this host"
+        }, { "cache-control": "no-store" });
+        return;
+      }
       // `forget: true` clears the account without logging in again; the grant
       // survives on its refresh token until it needs the password again.
+      // Each site's forget touches ONLY its own references and record
+      // (ADR-021): clearing the INTL account must never sweep the CN one.
       if (body.value.forget === true) {
         try {
-          await tokenStore.forgetAccount();
+          await activeStore.forgetAccount();
         } catch (error) {
           // The state is spread FIRST: it carries its own `error` field, and
           // spreading it after this one would overwrite the real reason with
           // whatever the store last saw.
           writeJson(response, 200, {
-            ...(await tokenStore.state().catch(() => null)),
+            ...(await activeStore.state().catch(() => null)),
             ok: false,
             error: redactError(error)
           }, { "cache-control": "no-store" });
@@ -76,15 +120,18 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
         }
         // The grant that just cleared answers the very next poll, so the cached
         // console responses from the previous account must not survive it.
-        // (saveAccount does the same on its success path.)
+        // (saveAccount does the same on its success path.) The cache keys its
+        // entries on the URL, so the shared map's one `clear()` serves both
+        // sites without one site's entries surviving for the other.
         cache.clear();
-        writeJson(response, 200, { ...(await tokenStore.state().catch(() => null)), ok: true }, { "cache-control": "no-store" });
+        writeJson(response, 200, { ...(await activeStore.state().catch(() => null)), ok: true }, { "cache-control": "no-store" });
         return;
       }
       try {
-        await tokenStore.saveAccount({ username: body.value.username, password: body.value.password });
-        // The success trace is persisted through `onTrace`; no path is owed
-        // to the panel for a sign-in that worked.
+        await activeStore.saveAccount({ username: String(body.value.username), password: String(body.value.password) });
+        // The success trace is persisted through `onTrace` (the INTL store's
+        // own labelled trace writer, ADR-021); no path is owed to the panel
+        // for a sign-in that worked.
       } catch (error) {
         // A rejected password is the common case, and it is the user's to
         // correct: report the reason and leave the panel usable.
@@ -93,7 +140,7 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
         // instead of returning a `null` nobody inspects (see `trace.ts`).
         const traceFile = await writeLoginTrace(failure?.trace, str(failure?.code, CODE.AUTH_ERROR), { logger });
         writeJson(response, 200, {
-          ...(await tokenStore.state().catch(() => null)),
+          ...(await activeStore.state().catch(() => null)),
           ok: false,
           code: str(failure?.code, CODE.AUTH_ERROR),
           error: redactError(error),
@@ -112,7 +159,7 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
       // The grant that just landed answers the very next poll, so the cached
       // console responses from the previous account must not survive it.
       cache.clear();
-      writeJson(response, 200, { ...(await tokenStore.state().catch(() => null)), ok: true }, { "cache-control": "no-store" });
+      writeJson(response, 200, { ...(await activeStore.state().catch(() => null)), ok: true }, { "cache-control": "no-store" });
     }
   });
 }

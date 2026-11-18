@@ -31,9 +31,10 @@
 
 ### 变更：国际站双 provider 并存（默认关，不动它的人行为零变化）
 
-- **新增（可选）**：同时持有 Agnes 国内与国际账号的机器，现在可以启用第二条并存的 provider——`cordis.patch.yml` 行设 `registerProviderIntl: true`。国际站源站（`consoleBaseIntl` / `apiBaseIntl`）随 2026-11-18 实测值出厂；启用后 `agnes-token-plan-intl`（显示名「Agnes Token Plan (Intl)」）与国内的 `agnes-token-plan` 各自注册、互不干扰：各用各的模型目录、各用各的 Key 引用（`AGNES_TOKEN_PLAN_INTL_API_KEY`）、各用各的控制台登录态——两站账号体系不互通，凭据永不跨站，请求打哪一站由模型所属 provider 静态决定。
+- **新增（可选）**：同时持有 Agnes 国内与国际账号的机器，现在可以启用第二条并存的 provider——「接入 API」tab 的国际站卡片上的开关（面板值；`cordis.patch.yml` 的 `registerProviderIntl` 是它的配置默认）。国际站源站（`consoleBaseIntl` / `apiBaseIntl`）随 2026-11-18 实测值出厂；启用后 `agnes-token-plan-intl`（显示名「Agnes Token Plan (Intl)」）与国内的 `agnes-token-plan` 各自注册、互不干扰：各用各的模型目录、各用各的 Key 引用（`AGNES_TOKEN_PLAN_INTL_API_KEY`）、各用各的控制台登录态——两站账号体系不互通，凭据永不跨站，请求打哪一站由模型所属 provider 静态决定。
+- **新增（面板国际半边）**：「接入 API」tab 多一张「国际站」卡片——国际 provider 开关 + 国际站 Key 输入 + 国际行注册状态；「积分额度」tab 多一张「连接国际站控制台」卡片——国际站账号的登录 / 清除（国际 Key 位与账号表单都只写国际行自己的引用与记录，永不清扫国内半边）。国际控制台登录也可走环境变量引导（`AGNES_USERNAME_INTL` / `AGNES_PASSWORD_INTL`，密码不落盘）。
 - **改（胶囊）**：会话选中 `agnes-token-plan-intl` 模型时，输入框右侧用量胶囊显示国际站的 5 小时 / 本周额度（前缀「国际版 Token Plan」）；国内模型仍显示国内站读数。
-- **说明**：默认关——开关未开时国际半边全静默：不拉国际目录、不打国际登录、不注册第二条 provider，只持国内账号的机器行为与旧版逐字节一致。国际侧控制台登录暂走环境变量引导（`AGNES_USERNAME_INTL` / `AGNES_PASSWORD_INTL`，密码不落盘）；面板上的国际半边（Key 槽位 / 账号表单）为后续版本。内部：裁定与隔离边界见 `docs/ADR.md` ADR-021。
+- **说明**：默认关——开关未开时国际半边全静默：不拉国际目录、不打国际登录、不注册第二条 provider，只持国内账号的机器行为与旧版逐字节一致；关着时面板的国际卡片仍可先存好 Key 与账号，一开闸即生效（无需重启）。内部：裁定与隔离边界见 `docs/ADR.md` ADR-021。
 
 ## [0.13.5] — 2026-11-06
 

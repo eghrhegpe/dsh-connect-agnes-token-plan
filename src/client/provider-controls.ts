@@ -6,7 +6,7 @@
  * cards share one body (`ToolSwitch`) because the Host mounts both tools
  * through one ladder and serves both routes through one handler shape.
  */
-import { DRAW_PATH, PROVIDER_PATH, VIDEO_PATH } from "./const.ts";
+import { DRAW_PATH, PROVIDER_INTL_PATH, PROVIDER_PATH, VIDEO_PATH } from "./const.ts";
 import { count, format } from "./format.ts";
 import { postJsonOrThrow } from "./http.ts";
 import { ModelPicker } from "./model-picker.ts";
@@ -15,7 +15,7 @@ import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
 import { Radio, Switch } from "./switch.ts";
 import { CLIENT_CODE } from "./snapshot.ts";
-import type { LlmData, LlmEchoPatch } from "./wire.ts";
+import type { IntlEchoPatch, LlmData, LlmEchoPatch, SnapshotData } from "./wire.ts";
 import { S } from "./styles.ts";
 
 /**
@@ -192,6 +192,62 @@ export function ProviderSwitch({ llm, onDone, onEcho, tt }: {
       disabled: busy,
       onChange: toggle,
       label: busy ? tt("llm.switchBusy") : tt("llm.switch"),
+      rowStyle: { margin: "0 0 12px" }
+    }),
+    switchError ? h("span", { style: S.formError, role: "alert" }, switchError) : null
+  );
+}
+
+/**
+ * The INTL row's live switch (ADR-021): the CN switch's exact twin, pointed
+ * at `/provider-intl` and reading the snapshot's `intl.llm` block. The echo
+ * lands on `intl.llm` (never on the CN `llm` — the two rows share nothing
+ * mutable, and a flip must not repaint the other row's card), and the label
+ * carries the site's own name so a machine running both rows can tell its
+ * two switches apart at a glance.
+ */
+export function IntlProviderSwitch({ intl, onDone, onEcho, tt }: {
+  intl?: SnapshotData["intl"] | null;
+  onDone?: () => void;
+  /** Merge the POST answer into the current snapshot's `intl.llm` block. */
+  onEcho?: (patch: IntlEchoPatch) => void;
+  tt: Tt;
+}): unknown {
+  const [busy, setBusy] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+  const enabled = intl?.llm?.registerProvider === true;
+  const toggle = useCallback(async () => {
+    setBusy(true);
+    setSwitchError(null);
+    try {
+      const body = await postJsonOrThrow(PROVIDER_INTL_PATH, { enabled: !enabled });
+      // The answer carries the INTL card's post-write state, the same keys
+      // the snapshot's `intl.llm` block reports (ADR-021): an echo lands the
+      // flip on screen without a second round-trip to the snapshot route.
+      if (onEcho) {
+        onEcho({
+          registerProvider: body.registerProvider === true,
+          registerSource: typeof body.registerSource === "string" ? body.registerSource : "",
+          providerRegistered: body.providerRegistered === true,
+          providerError: typeof body.providerError === "string" ? body.providerError : ""
+        });
+      } else {
+        onDone?.();
+      }
+    } catch (error) {
+      setSwitchError(format(tt("llm.intlSwitchError"), { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setBusy(false);
+    }
+  }, [enabled, onDone, onEcho, tt]);
+  return h(
+    "div",
+    null,
+    h(Switch, {
+      checked: enabled,
+      disabled: busy,
+      onChange: toggle,
+      label: busy ? tt("llm.intlSwitchBusy") : tt("llm.intlSwitch"),
       rowStyle: { margin: "0 0 12px" }
     }),
     switchError ? h("span", { style: S.formError, role: "alert" }, switchError) : null
@@ -497,3 +553,10 @@ export function ProviderForm({ llm, onDone, onEcho, tt }: {
     h(ProviderRegStatus, { llm, tt })
   );
 }
+
+// The INTL row's card BODY (`IntlProviderCard`) lives in `panel-page.ts`,
+// one level up: it composes `IntlProviderSwitch` (here) with `ApiKeyForm`
+// (in `api-key-form.ts`, which already imports `ProviderStatus` FROM this
+// file). Composing the card here instead would close an import cycle
+// between the two files, and a cycle at module init is a bundle-shape risk
+// no status line is worth taking.

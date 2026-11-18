@@ -8,7 +8,7 @@
  * `ProviderStatus` (in `provider-controls.ts`, alongside the provider card
  * body `ProviderForm` that this key feeds).
  */
-import { API_KEY_PATH, AGNES_SIGNUP_URL } from "./const.ts";
+import { AGNES_INTL_LOGIN_URL, AGNES_SIGNUP_URL, API_KEY_PATH } from "./const.ts";
 import { postJson } from "./http.ts";
 import { h, useCallback, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
@@ -16,9 +16,25 @@ import type { LlmData } from "./wire.ts";
 import { ProviderStatus } from "./provider-controls.ts";
 import { S } from "./styles.ts";
 
-export function ApiKeyForm({ llm, onDone, tt }: {
+/**
+ * The site this editor addresses (ADR-021): the CN reference by default,
+ * the INTL one when `site` is `"intl"`. The two editors post to ONE route
+ * (`API_KEY_PATH`); the body's `site` field tells the Host which reference —
+ * and which row's cache and publisher — the save or forget belongs to. The
+ * `llm` status prop always carries the SAME site's key facts (the caller
+ * passes `data.llm` for CN and `data.intl.llm` for INTL), so the editor's
+ * secret-free lines never mix two sites' provenance.
+ * @param {object} props - the form's props.
+ * @param {"intl"} [props.site] - address the INTL reference instead of the CN one.
+ * @param {LlmData|null|undefined} [props.llm] - the addressed site's key facts.
+ * @param {Function} [props.onDone] - the full-reload fallback for mounts without an echo hook.
+ * @param {Tt} props.tt - the translation function.
+ * @returns {unknown} the form element.
+ */
+export function ApiKeyForm({ llm, onDone, site, tt }: {
   llm?: LlmData | null;
   onDone?: () => void;
+  site?: "intl";
   tt: Tt;
 }): unknown {
   const [apiKey, setApiKey] = useState("");
@@ -27,8 +43,12 @@ export function ApiKeyForm({ llm, onDone, tt }: {
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [forgotten, setForgotten] = useState(false);
-
   const post = useCallback((payload: Record<string, unknown>) => postJson(API_KEY_PATH, payload), []);
+  // One site tag rides every POST this editor makes, so a save can never
+  // plant a reference in the row it was not shown for. Inline (not a
+  // captured object) because a fresh literal per render would churn the
+  // callbacks' dependency lists.
+  const siteTag = site === "intl" ? { site: "intl" as const } : {};
 
   const submit = useCallback(async (event?: { preventDefault?: () => void }) => {
     event?.preventDefault?.();
@@ -41,7 +61,7 @@ export function ApiKeyForm({ llm, onDone, tt }: {
     setBusy(true);
     setFormError(null);
     try {
-      const body = await post({ apiKey });
+      const body = await post({ ...siteTag, apiKey });
       if (body && body.ok === true) {
         setApiKey("");
         setSaved(true);
@@ -61,7 +81,7 @@ export function ApiKeyForm({ llm, onDone, tt }: {
     setBusy(true);
     setFormError(null);
     try {
-      const body = await post({ forget: true });
+      const body = await post({ ...siteTag, forget: true });
       if (body?.ok !== true) {
         setFormError(body?.error ?? tt("auth.network"));
         return;
@@ -90,7 +110,7 @@ export function ApiKeyForm({ llm, onDone, tt }: {
     h(
       "label",
       { style: S.field },
-      h("span", { style: S.fieldLabel }, tt("llm.keyField")),
+      h("span", { style: S.fieldLabel }, tt(site === "intl" ? "llm.intlKeyField" : "llm.keyField")),
       h(
         "div",
         { style: { display: "flex", gap: 6, alignItems: "center" } },
@@ -145,12 +165,14 @@ export function ApiKeyForm({ llm, onDone, tt }: {
     h(
       "a",
       {
-        href: AGNES_SIGNUP_URL,
+        // The INTL editor points at the INTERNATIONAL site's login entry
+        // (ADR-021, probed 2026-11-18); the CN one keeps its console.
+        href: site === "intl" ? AGNES_INTL_LOGIN_URL : AGNES_SIGNUP_URL,
         target: "_blank",
         rel: "noreferrer",
         style: S.externalLink
       },
-      llm?.hasApiKey === true ? tt("llm.keyConsoleHint") : tt("llm.keyRegisterHint")
+      llm?.hasApiKey === true ? tt(site === "intl" ? "llm.intlKeyConsoleHint" : "llm.keyConsoleHint") : tt(site === "intl" ? "llm.intlKeyRegisterHint" : "llm.keyRegisterHint")
     )
   );
   // The SectionCard wrapping this form is the collapse: one fold, not

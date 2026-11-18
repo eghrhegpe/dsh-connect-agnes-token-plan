@@ -133,7 +133,7 @@ async function readEventually(dir, { tries = 60 } = {}) {
   }
 }
 
-// --- 5. 接线钉：六条写路由必须都接审计版闸 ------------------------------
+// --- 5. 接线钉：七条写路由必须都接审计版闸 ------------------------------
 // 新增写路由时最容易漏的就是这一下——接成 `isAdmitted` 的闸照常放行，只是从此
 // 不留痕，而"没痕迹"会被读成"没发生过"。
 {
@@ -142,9 +142,11 @@ async function readEventually(dir, { tries = 60 } = {}) {
   const files = list(routesDir).filter((f) => f.endsWith(".ts"));
   const auditing = files.filter((f) => /isAdmittedWithAudit/.test(read(join(routesDir, f), "utf8")));
   const plain = files.filter((f) => /(?<!WithAudit)\bisAdmitted\b/.test(read(join(routesDir, f), "utf8")));
-  check("写路由接的是审计版闸（account/api-key/models/provider/tool-switch/agnescode）",
-    auditing.length === 6 &&
-      ["account.ts", "api-key.ts", "models.ts", "provider.ts", "tool-switch.ts", "agnescode.ts"]
+  // provider-intl.ts is the INTL row's switch (ADR-021): a write route in its
+  // own right, so it joins the audit list rather than riding the CN route's.
+  check("写路由接的是审计版闸（account/api-key/models/provider/provider-intl/tool-switch/agnescode）",
+    auditing.length === 7 &&
+      ["account.ts", "api-key.ts", "models.ts", "provider.ts", "provider-intl.ts", "tool-switch.ts", "agnescode.ts"]
         .every((f) => auditing.includes(f)),
     `实到 [${auditing.sort().join(", ")}]`);
   check("只有只读的 snapshot 走不带审计的闸（同站 GET 本就不发 Origin）",

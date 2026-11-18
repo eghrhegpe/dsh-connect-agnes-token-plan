@@ -13,7 +13,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 
 //#endregion
 //#region src/client/const.ts
-	var PANEL_ID, NS, PROVIDER_ID, AGNESCODE_PROVIDER_ID, PROVIDER_ID_INTL, SNAPSHOT_PATH, ACCOUNT_PATH, API_KEY_PATH, PROVIDER_PATH, MODELS_PATH, DRAW_PATH, VIDEO_PATH, AGNESCODE_PATH, AGNES_SIGNUP_URL, AGNESCODE_SITE_URL;
+	var PANEL_ID, NS, PROVIDER_ID, AGNESCODE_PROVIDER_ID, PROVIDER_ID_INTL, SNAPSHOT_PATH, ACCOUNT_PATH, API_KEY_PATH, PROVIDER_PATH, PROVIDER_INTL_PATH, MODELS_PATH, DRAW_PATH, VIDEO_PATH, AGNESCODE_PATH, AGNES_SIGNUP_URL, AGNESCODE_SITE_URL, AGNES_INTL_LOGIN_URL;
 	var init_const = __esmMin((() => {
 		PANEL_ID = "dsh-connect-agnes-token-plan";
 		NS = PANEL_ID;
@@ -24,12 +24,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		ACCOUNT_PATH = `/api/${PANEL_ID}/account`;
 		API_KEY_PATH = `/api/${PANEL_ID}/api-key`;
 		PROVIDER_PATH = `/api/${PANEL_ID}/provider`;
+		PROVIDER_INTL_PATH = `/api/${PANEL_ID}/provider-intl`;
 		MODELS_PATH = `/api/${PANEL_ID}/models`;
 		DRAW_PATH = `/api/${PANEL_ID}/draw`;
 		VIDEO_PATH = `/api/${PANEL_ID}/video`;
 		AGNESCODE_PATH = `/api/${PANEL_ID}/agnescode`;
 		AGNES_SIGNUP_URL = "https://platform.agnes-ai.cn";
 		AGNESCODE_SITE_URL = "https://agnes-ai.cn/agnescode";
+		AGNES_INTL_LOGIN_URL = "https://app.agnes-ai.com/login";
 	}));
 
 //#endregion
@@ -52,6 +54,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"auth.title": "连接 Agnes 控制台",
 			"auth.registerHint": "还没有账号？前往官网注册，免费开通 Token Plan 额度 →",
 			"auth.portalHint": "前往官网管理额度 / 获取 API Key →",
+			"auth.intlTitle": "连接国际站控制台",
+			"auth.intlRegisterHint": "还没有国际站账号？前往国际站登录页注册 →",
+			"auth.intlPortalHint": "前往国际站管理额度 / 获取 API Key →",
 			"auth.username": "邮箱",
 			"auth.password": "密码",
 			"auth.show": "显示",
@@ -170,6 +175,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.switch": "向 DSH 注册（立即生效）",
 			"llm.switchBusy": "切换中…",
 			"llm.switchError": "切换失败：{error}",
+			"llm.intlTitle": "国际站（Agnes Intl）",
+			"llm.intlSwitch": "向 DSH 注册国际站 provider（立即生效）",
+			"llm.intlSwitchBusy": "切换中…",
+			"llm.intlSwitchError": "切换失败：{error}",
+			"llm.intlKeyField": "国际站 API Key",
+			"llm.intlKeyRegisterHint": "还没有国际站 API Key？前往国际站登录页获取 →",
+			"llm.intlKeyConsoleHint": "前往国际站管理额度 →",
 			"llm.roster": "推送到 DSH 的模型",
 			"llm.rosterHint": "勾选决定哪些模型推送进 DSH 模型列表；目录新增的模型默认不推送。",
 			"llm.rosterEmpty": "还没有可推送的模型——先在「API Key」卡片保存一次 Key 再回来。",
@@ -328,6 +340,9 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"auth.title": "Connect the Agnes console",
 			"auth.registerHint": "No account yet? Register on the official site for a free Token Plan quota →",
 			"auth.portalHint": "Manage quota / get API keys on the official site →",
+			"auth.intlTitle": "Connect the Intl console",
+			"auth.intlRegisterHint": "No Intl account yet? Register at the international sign-in page →",
+			"auth.intlPortalHint": "Manage quota / get API keys on the international site →",
 			"auth.username": "Email",
 			"auth.password": "Password",
 			"auth.show": "Show",
@@ -446,6 +461,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.switch": "Register with DSH (immediate)",
 			"llm.switchBusy": "Switching…",
 			"llm.switchError": "Switch failed: {error}",
+			"llm.intlTitle": "International site (Agnes Intl)",
+			"llm.intlSwitch": "Register the Intl provider with DSH (immediate)",
+			"llm.intlSwitchBusy": "Switching…",
+			"llm.intlSwitchError": "Switch failed: {error}",
+			"llm.intlKeyField": "Intl API key",
+			"llm.intlKeyRegisterHint": "No Intl API key yet? Get one at the international sign-in page →",
+			"llm.intlKeyConsoleHint": "Manage your quota on the international site →",
 			"llm.roster": "Models pushed to DSH",
 			"llm.rosterHint": "Ticking decides which models are pushed into DSH's model list; models the catalogue gains later are not pushed by default.",
 			"llm.rosterEmpty": "No models to push yet - save a key in the API key card first.",
@@ -1644,7 +1666,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 
 //#endregion
 //#region src/client/account-form.ts
-	function AccountForm({ auth, onDone, tt, bare, hasSnapshot }) {
+	function AccountForm({ auth, onDone, site, tt, bare, hasSnapshot }) {
 		const [username, setUsername] = useState("");
 		const [password, setPassword] = useState("");
 		const [showPassword, setShowPassword] = useState(false);
@@ -1686,6 +1708,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setFormDetail(null);
 			try {
 				const body = await postJson(ACCOUNT_PATH, {
+					...site === "intl" ? { site: "intl" } : {},
 					username: username.trim(),
 					password
 				});
@@ -1727,7 +1750,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setFormError(null);
 			setFormDetail(null);
 			try {
-				const body = await postJson(ACCOUNT_PATH, { forget: true });
+				const body = await postJson(ACCOUNT_PATH, {
+					...site === "intl" ? { site: "intl" } : {},
+					forget: true
+				});
 				if (body?.ok !== true) {
 					setFormError(body?.error ?? tt("auth.network"));
 					return;
@@ -1746,12 +1772,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		return h("div", { style: bare ? {} : {
 			...S.card,
 			maxWidth: 420
-		} }, bare ? null : h("div", { style: S.sectionTitle }, tt("auth.title")), h("a", {
-			href: AGNES_SIGNUP_URL,
+		} }, bare ? null : h("div", { style: S.sectionTitle }, tt(site === "intl" ? "auth.intlTitle" : "auth.title")), h("a", {
+			href: site === "intl" ? AGNES_INTL_LOGIN_URL : AGNES_SIGNUP_URL,
 			target: "_blank",
 			rel: "noreferrer",
 			style: S.externalLink
-		}, tt(auth?.hasAccount ? "auth.portalHint" : "auth.registerHint")), h("form", { onSubmit: submit }, h("label", { style: S.field }, h("span", { style: S.fieldLabel }, tt("auth.username")), h("input", {
+		}, tt(site === "intl" ? auth?.hasAccount ? "auth.intlPortalHint" : "auth.intlRegisterHint" : auth?.hasAccount ? "auth.portalHint" : "auth.registerHint")), h("form", { onSubmit: submit }, h("label", { style: S.field }, h("span", { style: S.fieldLabel }, tt("auth.username")), h("input", {
 			style: S.input,
 			value: username,
 			autoComplete: "username",
@@ -2577,6 +2603,52 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, switchError) : null);
 	}
 	/**
+	* The INTL row's live switch (ADR-021): the CN switch's exact twin, pointed
+	* at `/provider-intl` and reading the snapshot's `intl.llm` block. The echo
+	* lands on `intl.llm` (never on the CN `llm` — the two rows share nothing
+	* mutable, and a flip must not repaint the other row's card), and the label
+	* carries the site's own name so a machine running both rows can tell its
+	* two switches apart at a glance.
+	*/
+	function IntlProviderSwitch({ intl, onDone, onEcho, tt }) {
+		const [busy, setBusy] = useState(false);
+		const [switchError, setSwitchError] = useState(null);
+		const enabled = intl?.llm?.registerProvider === true;
+		const toggle = useCallback(async () => {
+			setBusy(true);
+			setSwitchError(null);
+			try {
+				const body = await postJsonOrThrow(PROVIDER_INTL_PATH, { enabled: !enabled });
+				if (onEcho) onEcho({
+					registerProvider: body.registerProvider === true,
+					registerSource: typeof body.registerSource === "string" ? body.registerSource : "",
+					providerRegistered: body.providerRegistered === true,
+					providerError: typeof body.providerError === "string" ? body.providerError : ""
+				});
+				else onDone?.();
+			} catch (error) {
+				setSwitchError(format(tt("llm.intlSwitchError"), { error: error instanceof Error ? error.message : String(error) }));
+			} finally {
+				setBusy(false);
+			}
+		}, [
+			enabled,
+			onDone,
+			onEcho,
+			tt
+		]);
+		return h("div", null, h(Switch, {
+			checked: enabled,
+			disabled: busy,
+			onChange: toggle,
+			label: busy ? tt("llm.intlSwitchBusy") : tt("llm.intlSwitch"),
+			rowStyle: { margin: "0 0 12px" }
+		}), switchError ? h("span", {
+			style: S.formError,
+			role: "alert"
+		}, switchError) : null);
+	}
+	/**
 	* The shared body of an agent-tool card (`DrawSwitch`, `VideoSwitch`).
 	*
 	* Both tools are mounted by the SAME Host ladder (`createToolMount` in
@@ -2829,7 +2901,22 @@ var dsh_connect_agnes_token_plan_client = (function() {
 
 //#endregion
 //#region src/client/api-key-form.ts
-	function ApiKeyForm({ llm, onDone, tt }) {
+/**
+	* The site this editor addresses (ADR-021): the CN reference by default,
+	* the INTL one when `site` is `"intl"`. The two editors post to ONE route
+	* (`API_KEY_PATH`); the body's `site` field tells the Host which reference —
+	* and which row's cache and publisher — the save or forget belongs to. The
+	* `llm` status prop always carries the SAME site's key facts (the caller
+	* passes `data.llm` for CN and `data.intl.llm` for INTL), so the editor's
+	* secret-free lines never mix two sites' provenance.
+	* @param {object} props - the form's props.
+	* @param {"intl"} [props.site] - address the INTL reference instead of the CN one.
+	* @param {LlmData|null|undefined} [props.llm] - the addressed site's key facts.
+	* @param {Function} [props.onDone] - the full-reload fallback for mounts without an echo hook.
+	* @param {Tt} props.tt - the translation function.
+	* @returns {unknown} the form element.
+	*/
+	function ApiKeyForm({ llm, onDone, site, tt }) {
 		const [apiKey, setApiKey] = useState("");
 		const [showKey, setShowKey] = useState(false);
 		const [busy, setBusy] = useState(false);
@@ -2837,6 +2924,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const [saved, setSaved] = useState(false);
 		const [forgotten, setForgotten] = useState(false);
 		const post = useCallback((payload) => postJson(API_KEY_PATH, payload), []);
+		const siteTag = site === "intl" ? { site: "intl" } : {};
 		const submit = useCallback(async (event) => {
 			event?.preventDefault?.();
 			if (apiKey.trim() === "") {
@@ -2846,7 +2934,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setBusy(true);
 			setFormError(null);
 			try {
-				const body = await post({ apiKey });
+				const body = await post({
+					...siteTag,
+					apiKey
+				});
 				if (body && body.ok === true) {
 					setApiKey("");
 					setSaved(true);
@@ -2870,7 +2961,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			setBusy(true);
 			setFormError(null);
 			try {
-				const body = await post({ forget: true });
+				const body = await post({
+					...siteTag,
+					forget: true
+				});
 				if (body?.ok !== true) {
 					setFormError(body?.error ?? tt("auth.network"));
 					return;
@@ -2890,7 +2984,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			tt
 		]);
 		const canForget = llm?.hasApiKey === true && llm?.keySource === "credentials";
-		const keyEditor = h("div", null, h("label", { style: S.field }, h("span", { style: S.fieldLabel }, tt("llm.keyField")), h("div", { style: {
+		const keyEditor = h("div", null, h("label", { style: S.field }, h("span", { style: S.fieldLabel }, tt(site === "intl" ? "llm.intlKeyField" : "llm.keyField")), h("div", { style: {
 			display: "flex",
 			gap: 6,
 			alignItems: "center"
@@ -2950,11 +3044,11 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			style: S.formError,
 			role: "alert"
 		}, formError) : null, h("p", { style: S.formNote }, tt("llm.footnote")), h("a", {
-			href: AGNES_SIGNUP_URL,
+			href: site === "intl" ? AGNES_INTL_LOGIN_URL : AGNES_SIGNUP_URL,
 			target: "_blank",
 			rel: "noreferrer",
 			style: S.externalLink
-		}, llm?.hasApiKey === true ? tt("llm.keyConsoleHint") : tt("llm.keyRegisterHint")));
+		}, llm?.hasApiKey === true ? tt(site === "intl" ? "llm.intlKeyConsoleHint" : "llm.keyConsoleHint") : tt(site === "intl" ? "llm.intlKeyRegisterHint" : "llm.keyRegisterHint")));
 		return h("form", { onSubmit: submit }, keyEditor, h(ProviderStatus, {
 			llm,
 			tt
@@ -4985,6 +5079,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			draw: true,
 			video: true,
 			llm: false,
+			intl: true,
 			agnescode: true
 		});
 		const [activeTab, setActiveTab] = useState("quota");
@@ -5062,6 +5157,24 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				llm: {
 					...current.llm ?? {},
 					...patch
+				}
+			});
+		}, [load]);
+		const echoIntl = useCallback((patch) => {
+			generation.current += 1;
+			inFlight.current?.abort?.();
+			if (dataRef.current === null) {
+				load();
+				return;
+			}
+			setData((current) => current === null ? current : {
+				...current,
+				intl: {
+					...current.intl ?? {},
+					llm: {
+						...current.intl?.llm ?? {},
+						...patch
+					}
 				}
 			});
 		}, [load]);
@@ -5255,6 +5368,18 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			tt,
 			bare: true,
 			hasSnapshot: true
+		})) : null, data?.intl !== void 0 ? h(SectionCard, {
+			title: tt("auth.intlTitle"),
+			open: openSections.account,
+			onToggle: () => toggleSection("account"),
+			tt
+		}, h(AccountForm, {
+			auth: data.intl?.auth ?? null,
+			onDone: () => void load(),
+			tt,
+			bare: true,
+			hasSnapshot: true,
+			site: "intl"
 		})) : null)) : activeTab === "agnescode" ? h("div", {
 			style: { marginTop: 22 },
 			role: "tabpanel",
@@ -5312,6 +5437,16 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			onDone: () => void load(),
 			tt,
 			bare: true
+		})), h(SectionCard, {
+			title: tt("llm.intlTitle"),
+			open: openSections.intl,
+			onToggle: () => toggleSection("intl"),
+			tt
+		}, h(IntlProviderCard, {
+			intl: data?.intl ?? null,
+			onDone: () => void load(),
+			onEcho: echoIntl,
+			tt
 		})), h(RpmNote, { tt })));
 		const plan = barPlan(activeTab, data !== null, tabStatus !== null && tabStatus.updatedAt > 0);
 		const stamp = plan.stamp === "snapshot" ? data ? format(tt("panel.updated"), { time: clock(updatedAt / 1e3) }) : "" : plan.stamp === "agnescode" ? format(tt("panel.updated"), { time: clock((tabStatus?.updatedAt ?? 0) / 1e3) }) : "";
@@ -5339,6 +5474,34 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			},
 			onClick: () => onClose()
 		}, tt("panel.back")) : null)), h("div", { style: S.scroll }, h("div", { style: S.content }, body)));
+	}
+	/**
+	* The INTL row's card body (ADR-021): its switch, its key editor and its
+	* registration status — the CN `ProviderForm`'s twin, reading ONLY the
+	* snapshot's `intl` block so the two cards can never show one site's facts
+	* on the other. Lives at the top of the import graph (this file imports its
+	* constituents, and none of them imports this one) to keep the cycle-free
+	* shape that `ApiKeyForm` ⇄ `provider-controls` already have. A Host that
+	* has not assembled the INTL row leaves the block absent, and every line
+	* degrades to its "no data" form independently (§5, per site).
+	*/
+	function IntlProviderCard({ intl, onDone, onEcho, tt }) {
+		const intlLlm = intl?.llm ?? null;
+		return h("div", null, h(IntlProviderSwitch, {
+			intl,
+			onDone,
+			onEcho,
+			tt
+		}), h(ApiKeyForm, {
+			llm: intlLlm,
+			onDone,
+			tt,
+			site: "intl",
+			bare: true
+		}), h(ProviderRegStatus, {
+			llm: intlLlm,
+			tt
+		}));
 	}
 	var init_panel_page = __esmMin((() => {
 		init_account_form();

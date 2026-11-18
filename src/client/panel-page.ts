@@ -11,10 +11,10 @@ import { clock, format } from "./format.ts";
 import { errorOfStatus, interpretSnapshot, viewOf, shouldShowAccountManagement } from "./snapshot.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import type { Tt } from "./runtime.ts";
-import type { LlmData, LlmEchoPatch, QuotaWindowData, SnapshotData, VisionModelData } from "./wire.ts";
+import type { IntlEchoPatch, LlmData, LlmEchoPatch, QuotaWindowData, SnapshotData, VisionModelData } from "./wire.ts";
 import { S } from "./styles.ts";
 import { PlanCard, CatalogueCard, SectionCard, UsageChart, UsageTotals } from "./cards.ts";
-import { DrawSwitch, RpmNote, VideoSwitch, ProviderForm } from "./provider-controls.ts";
+import { DrawSwitch, RpmNote, VideoSwitch, ProviderForm, ProviderRegStatus, IntlProviderSwitch } from "./provider-controls.ts";
 import { AgnescodeTab } from "./agnescode-tab.ts";
 import type { TabStatus } from "./agnescode-tab.ts";
 // The ONE spelling of the retry rate for the route BOTH readers poll. The panel
@@ -105,7 +105,10 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
   // it IS the tab's content, so it starts open and toggles like the rest —
   // a hardcoded `open: true` with a no-op `onToggle` would render a
   // collapse control that cannot do anything.
-  const [openSections, setOpenSections] = useState({ quota: true, catalogue: false, usage: true, account: false, provider: true, draw: true, video: true, llm: false, agnescode: true });
+  // The INTL card (ADR-021) starts OPEN like its CN twins: it is a reason to
+  // visit the tab, and a collapsed card that hides its own switch reads as
+  // "this does nothing" — the discoverability failure that asked for this row.
+  const [openSections, setOpenSections] = useState({ quota: true, catalogue: false, usage: true, account: false, provider: true, draw: true, video: true, llm: false, intl: true, agnescode: true });
   // Three fixed perspectives: "quota" (daily reading), "api" (Token Plan
   // wiring), and "agnescode" (desktop-app upstream, ROADMAP §6.3).
   // Inline union literal so `docs.test.mjs` check 9 can derive the tab set
@@ -274,6 +277,28 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
     // pick); spreading it over the current block and casting keeps the
     // `llm` reading's own type, which the echo itself must not widen.
     setData((current) => (current === null ? current : { ...current, llm: { ...(current.llm ?? {}), ...patch } as LlmData }));
+  }, [load]);
+  // The INTL row's echo twin (ADR-021): the SAME retirement dance — bump the
+  // generation, abort the in-flight poll, merge the POST answer — but on
+  // `intl.llm`, NEVER on the CN `llm`: a flipped INTL switch repainting the
+  // CN card would be the two-site coupling the split exists to prevent.
+  // `current.intl` absent (a Host that predates the row) still lands the
+  // patch: the card it belongs to is rendered from the same snapshot, so a
+  // card the panel can show can never be missing its block.
+  const echoIntl = useCallback((patch: IntlEchoPatch) => {
+    generation.current += 1;
+    inFlight.current?.abort?.();
+    if (dataRef.current === null) {
+      void load();
+      return;
+    }
+    setData((current) => (current === null ? current : {
+      ...current,
+      intl: {
+        ...(current.intl ?? {}),
+        llm: { ...((current.intl?.llm as Record<string, unknown> | null | undefined) ?? {}), ...patch }
+      }
+    }));
   }, [load]);
 
   // Typed to the section keys so a misspelled toggle target is a compile
@@ -564,6 +589,19 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                     { title: tt("auth.title"), open: openSections.account, onToggle: () => toggleSection("account"), tt },
                     h(AccountForm, { auth, onDone: () => void load(), tt, bare: true, hasSnapshot: true })
                   )
+                : null,
+              // The INTL account card (ADR-021): the second site's sign-in,
+              // in its own card so the two accounts' states never read as
+              // one line each. Rendered whenever the Host assembled the INTL
+              // row (the `intl` block's presence), and the card says so —
+              // hosts before ADR-021 have no `intl` field and no card, the
+              // same forward-only shape as the API tab's INTL card.
+              data?.intl !== undefined
+                ? h(
+                    SectionCard,
+                    { title: tt("auth.intlTitle"), open: openSections.account, onToggle: () => toggleSection("account"), tt },
+                    h(AccountForm, { auth: data.intl?.auth ?? null, onDone: () => void load(), tt, bare: true, hasSnapshot: true, site: "intl" })
+                  )
                 : null
             ))
           // One SectionCard per concern, parked on their own tab so the
@@ -611,6 +649,15 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                   SectionCard,
                   { title: tt("llm.title"), open: openSections.llm, onToggle: () => toggleSection("llm"), tt },
                   h(ApiKeyForm, { llm: data?.llm ?? null, onDone: () => void load(), tt, bare: true })
+                ),
+                // The INTL row's card (ADR-021): the second site's switch, key
+                // editor and registration status in ONE card, so a machine
+                // running both sites sees two self-contained halves — the
+                // "a site is a namespace" shape the CN card already is.
+                h(
+                  SectionCard,
+                  { title: tt("llm.intlTitle"), open: openSections.intl, onToggle: () => toggleSection("intl"), tt },
+                  h(IntlProviderCard, { intl: data?.intl ?? null, onDone: () => void load(), onEcho: echoIntl, tt })
                 ),
                 // The tab's closing note, OUTSIDE any card: RPM is a property
                 // of the provider as a whole (it follows the key type, not the
@@ -694,5 +741,34 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
       { style: S.scroll },
       h("div", { style: S.content }, body)
     )
+  );
+}
+
+/**
+ * The INTL row's card body (ADR-021): its switch, its key editor and its
+ * registration status — the CN `ProviderForm`'s twin, reading ONLY the
+ * snapshot's `intl` block so the two cards can never show one site's facts
+ * on the other. Lives at the top of the import graph (this file imports its
+ * constituents, and none of them imports this one) to keep the cycle-free
+ * shape that `ApiKeyForm` ⇄ `provider-controls` already have. A Host that
+ * has not assembled the INTL row leaves the block absent, and every line
+ * degrades to its "no data" form independently (§5, per site).
+ */
+function IntlProviderCard({ intl, onDone, onEcho, tt }: {
+  intl?: SnapshotData["intl"] | null;
+  onDone?: () => void;
+  onEcho?: (patch: IntlEchoPatch) => void;
+  tt: Tt;
+}): unknown {
+  // The INTL `llm` facts read through the CN `LlmData` shape: every field
+  // the card's lines need is optional in both, and the missing-block case
+  // answers "no data" line by line instead of hiding the card.
+  const intlLlm = (intl?.llm ?? null) as LlmData | null;
+  return h(
+    "div",
+    null,
+    h(IntlProviderSwitch, { intl, onDone, onEcho, tt }),
+    h(ApiKeyForm, { llm: intlLlm, onDone, tt, site: "intl", bare: true }),
+    h(ProviderRegStatus, { llm: intlLlm, tt })
   );
 }

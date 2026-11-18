@@ -470,11 +470,36 @@ export interface SnapshotData {
       keySource?: string | null;
       ephemeral?: boolean;
       providerId?: string;
+      /**
+       * The INTL row's effective switch value + where it came from
+       * ("config" / "panel", ADR-021 dialect A): the panel's switch card and
+       * this block are one fact, printed as "面板 / 配置" — a value without
+       * its source is a line the operator cannot act on.
+       */
       registerProvider?: boolean;
+      registerSource?: string;
       llmAvailable?: boolean;
       providerRegistered?: boolean;
       modelCount?: number;
       providerError?: string;
     } | null;
   } | null;
+}
+
+/**
+ * The INTL provider switch's echo patch (ADR-021): the `/provider-intl` POST
+ * answer merged into the snapshot's `intl.llm` block by the INTL switch card,
+ * exactly the way the CN switch card's answer merges into `llm`. Same keys as
+ * the INTL row's snapshot `llm` facts, so the echo and the next poll can
+ * never disagree about which half of the screen they are talking about.
+ */
+export interface IntlEchoPatch {
+  /** The INTL row's effective switch value, post-write. */
+  registerProvider: boolean;
+  /** Where the effective value came from (`"panel"` / `"config"` / `"off"`). */
+  registerSource: string;
+  /** Whether the INTL provider is registered right now, post-write. */
+  providerRegistered: boolean;
+  /** A post-write registration failure, `""` when none. */
+  providerError: string;
 }

@@ -296,12 +296,14 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
     "/api/dsh-connect-agnes-token-plan/account",
     "/api/dsh-connect-agnes-token-plan/api-key",
     "/api/dsh-connect-agnes-token-plan/provider",
+    // The INTL row's switch (ADR-021): registered right after its CN twin.
+    "/api/dsh-connect-agnes-token-plan/provider-intl",
     "/api/dsh-connect-agnes-token-plan/models",
     "/api/dsh-connect-agnes-token-plan/draw",
     "/api/dsh-connect-agnes-token-plan/video",
     "/api/dsh-connect-agnes-token-plan/agnescode"
   ];
-  check("all eight routes are registered on mount",
+  check("all nine routes are registered on mount",
     routes.every((path) => webServer.registered.has(path)),
     [...webServer.registered.keys()].join(", "));
   // The registered values must be callable handlers, not specs: the real
@@ -380,7 +382,7 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
 // in the real Host means a stale panel still polling a route nobody owns.
 {
   const { webServer, stop } = await bootPlugin();
-  check("all eight routes are present while mounted", webServer.registered.size === 8,
+  check("all nine routes are present while mounted", webServer.registered.size === 9,
     [...webServer.registered.keys()].join(", "));
   await stop();
   check("unmounting withdraws the routes", webServer.registered.size === 0,

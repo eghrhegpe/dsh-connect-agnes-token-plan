@@ -172,6 +172,15 @@ export interface CatalogEffectsDeps {
   logger?: PublisherLogger | null;
   /** Test seam: the catalogue fetch (defaults to the real gateway call). */
   fetchCatalog?: typeof fetchModelCatalog | undefined;
+  /**
+   * An optional REFRESH GATE (ADR-021, the INTL row): a promise that answers
+   * `false` when this row's switch is currently off, in which case the tick
+   * does NOTHING — no key resolution, no request — and keeps the off row
+   * inert exactly as the CN row's switch-off already is. The CN effects pass
+   * none: their refresh is the panel's own heartbeat, and the CN switch
+   * decides REGISTRATION, not whether the catalogue may be kept fresh.
+   */
+  gate?: (() => Promise<boolean | undefined>) | undefined;
 }
 
 /**
@@ -265,6 +274,12 @@ export function createCatalogEffects(deps: CatalogEffectsDeps): CatalogEffects {
   }
 
   async function refresh() {
+    // The gate exit comes before EVERYTHING (ADR-021): a row whose switch is
+    // off is inert — not even a key resolution — and the exit is free, so it
+    // cannot add latency to a row that wants to refresh.
+    if (deps.gate !== undefined && (await deps.gate()) === false) {
+      return;
+    }
     // The cheap exit FIRST: a fresh cache means there is nothing to fetch, so
     // no key resolution and no disk read happen on the ~119 ticks out of 120
     // that have nothing to do.

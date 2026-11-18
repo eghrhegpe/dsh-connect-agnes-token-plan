@@ -64,7 +64,11 @@ export function registerSnapshotRoute(ctx: HostCtx, wiring: HostWiring) {
         apiKeyStore: wiring.intlApiKeyStore,
         publisher: wiring.intlPublisher,
         catalogStore: wiring.intlCatalogStore,
-        catalogEffects: wiring.intlCatalogEffects
+        catalogEffects: wiring.intlCatalogEffects,
+        // The INTL row's switch store (ADR-021): the aggregate resolves the
+        // row's effective value from it, so the block's facts and its
+        // console batch are gated on the same resolved value.
+        providerStore: wiring.intlProviderStore
       }
     : undefined;
 

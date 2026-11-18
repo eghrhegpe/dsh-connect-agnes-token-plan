@@ -10,7 +10,9 @@
  * That question was previously re-answered at eleven call sites, in two
  * dialects that look alike and mean different things:
  *
- *   A. `(panel ?? settings.x) === true`  — 有配置默认（provider / draw / video）
+ *   A. `(panel ?? settings.x) === true`  — 有配置默认（provider / draw / video /
+ *                                          INTL provider（ADR-021，配置默认即
+ *                                          `registerProviderIntl`））
  *   B. `panel === true`                  — 无配置默认（AgnesCode provider 与
  *                                          AgnesCode 桌面源（ADR-020）：它们根
  *                                          本没有配置默认值，面板说关就是关）
@@ -21,14 +23,15 @@
  * function whose `configDefault` argument carries the distinction — B is A
  * with no default, not a separate rule.
  *
- * SCOPE: exactly the five opt-ins that have BOTH halves — a panel-saved value
+ * SCOPE: exactly the six opt-ins that have BOTH halves — a panel-saved value
  * in a `switch-store` file AND a patch default (provider / draw / video /
- * AgnesCode / AgnesCode desktop source; the last two as dialect B). A sixth
- * opt-in, `writeImageModelIds`, is deliberately NOT here:
- * it has one source (the patch row), no panel affordance, no state file and no
- * route, so it has nothing to arbitrate. `CONFIG_DEFAULTS.writeImageModelIds`
- * carries the reasoning; an entry in that list of five would be a false
- * claim about a `write-image-model-ids.json` that does not exist.
+ * AgnesCode / AgnesCode desktop source / INTL provider; AgnesCode and its
+ * desktop source as dialect B). A seventh opt-in, `writeImageModelIds`, is
+ * deliberately NOT here: it has one source (the patch row), no panel
+ * affordance, no state file and no route, so it has nothing to arbitrate.
+ * `CONFIG_DEFAULTS.writeImageModelIds` carries the reasoning; an entry in
+ * that list of six would be a false claim about a
+ * `write-image-model-ids.json` that does not exist.
  *
  * @module dsh-connect-agnes-token-plan/switch-precedence
  */

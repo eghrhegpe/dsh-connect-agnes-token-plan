@@ -16,6 +16,7 @@ import type { createTokenStore } from "./token-store.ts";
 import type { createApiKeyStore } from "./api-key-store.ts";
 import type { createFileCatalogStore } from "./catalog-store.ts";
 import type { createFileProviderStore } from "./provider-store.ts";
+import type { createFileIntlProviderStore } from "./intl-provider-store.ts";
 import type { createFileDrawStore } from "./draw-store.ts";
 import type { createFileVideoStore } from "./video-store.ts";
 import type { createProviderPublisher } from "./provider-publish.ts";
@@ -480,6 +481,8 @@ export interface HostWiring {
   // `exactOptionalPropertyTypes` refuses a plain `| undefined` value written
   // into a bare optional property, and the wiring bag is built with values
   // that genuinely may be undefined (an inactive row).
+  /** The INTL row's switch store (ADR-021, dialect A: panel beats the patch key). */
+  intlProviderStore?: ReturnType<typeof createFileIntlProviderStore> | undefined;
   intlApiKeyStore?: ReturnType<typeof createApiKeyStore> | undefined;
   intlCatalogStore?: ReturnType<typeof createFileCatalogStore> | undefined;
   intlTokenStore?: ReturnType<typeof createTokenStore> | undefined;

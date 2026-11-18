@@ -41,6 +41,7 @@ const SNAPSHOT_PATH = "/api/dsh-connect-agnes-token-plan/snapshot";
 const ACCOUNT_PATH = "/api/dsh-connect-agnes-token-plan/account";
 const API_KEY_PATH = "/api/dsh-connect-agnes-token-plan/api-key";
 const PROVIDER_PATH = "/api/dsh-connect-agnes-token-plan/provider";
+const PROVIDER_INTL_PATH = "/api/dsh-connect-agnes-token-plan/provider-intl";
 const MODELS_PATH = "/api/dsh-connect-agnes-token-plan/models";
 const DRAW_PATH = "/api/dsh-connect-agnes-token-plan/draw";
 const VIDEO_PATH = "/api/dsh-connect-agnes-token-plan/video";
@@ -1979,6 +1980,90 @@ async function withNetwork(stub, body) {
 
   await mountWith({ drawEnabled: true, pollSeconds: 45 }, quiet);
   check("a clean row logs no config warning", quiet.length === 0, JSON.stringify(quiet));
+}
+
+// === Q. the INTL row's routes (ADR-021): the second site's half ==========
+// The INTL half of the panel posts to the SAME paths with a `site: "intl"`
+// tag; these checks pin that tag to the right reference, the right record and
+// the right switch file — and that none of it touches the CN half.
+{
+  const intlRecordKey = credentialKey("dsh-connect-agnes-token-plan", "agnes-console-intl");
+  const credentials = makeCredentials(null);
+  // `loginNetwork` is async (its log bookkeeping), so the stub is a Promise
+  // until awaited — handing the Promise to `withNetwork` would install it as
+  // `globalThis.fetch`, and every login would die with "fetch is not a
+  // function".
+  const stub = await loginNetwork();
+  await withNetwork(stub, async () => {
+    const call = await mount(credentials, {
+      consoleBaseIntl: "https://console-intl.test",
+      apiBaseIntl: "https://gateway-intl.test/v1"
+    });
+    // Q1: the INTL switch route — off by default, the config key in charge.
+    const off = await call(PROVIDER_INTL_PATH, makeRequest());
+    check("Q1 the INTL switch answers off with the config source",
+      off.payload.ok === true && off.payload.registerProvider === false && off.payload.registerSource === "config",
+      JSON.stringify(off.payload));
+    check("Q1 the answer names the INTL row's provider",
+      off.payload.providerId === "agnes-token-plan-intl", JSON.stringify(off.payload));
+    const on = await call(PROVIDER_INTL_PATH, makePost({ enabled: true }));
+    check("Q1 an INTL switch save echoes the panel source",
+      on.payload.ok === true && on.payload.registerProvider === true && on.payload.registerSource === "panel",
+      JSON.stringify(on.payload));
+    const offAgain = await call(PROVIDER_INTL_PATH, makePost({ enabled: false }));
+    check("Q1 the INTL switch back to off keeps the panel source",
+      offAgain.payload.ok === true && offAgain.payload.registerProvider === false && offAgain.payload.registerSource === "panel",
+      JSON.stringify(offAgain.payload));
+    check("Q1 a malformed INTL switch payload is refused",
+      (await call(PROVIDER_INTL_PATH, makePost({ enabled: "yes" }))).statusCode === 400);
+
+    // Q2: the INTL key half of the api-key route — one reference, one row.
+    const saved = await call(API_KEY_PATH, makePost({ apiKey: "sk-intl-panel", site: "intl" }));
+    check("Q2 the INTL key save lands in the INTL reference only",
+      saved.payload.ok === true &&
+        credentials.refs.get("AGNES_TOKEN_PLAN_INTL_API_KEY") === "sk-intl-panel" &&
+        credentials.refs.has("AGNES_TOKEN_PLAN_API_KEY") === false,
+      JSON.stringify(saved.payload));
+    const withKey = await call(API_KEY_PATH, makeRequest());
+    check("Q2 the api-key GET reports the INTL key under `intl`",
+      withKey.payload.intl?.hasApiKey === true && withKey.payload.intl?.keySource === "credentials",
+      JSON.stringify(withKey.payload.intl));
+    const forgotten = await call(API_KEY_PATH, makePost({ forget: true, site: "intl" }));
+    check("Q2 the INTL forget removes the INTL reference and nothing else",
+      forgotten.payload.ok === true &&
+        credentials.refs.has("AGNES_TOKEN_PLAN_INTL_API_KEY") === false,
+      JSON.stringify(forgotten.payload));
+
+    // Q3: the INTL account half of the account route — its own record, its
+    // own origin, and no trace on the CN record.
+    const login = await call(ACCOUNT_PATH, makePost({ username: "intl@example.com", password: "p", site: "intl" }));
+    check("Q3 an INTL sign-in is accepted through the INTL row",
+      login.payload.ok === true, JSON.stringify(login.payload));
+    check("Q3 the INTL grant lands in the INTL record only",
+      credentials.records.has(intlRecordKey) && credentials.records.has(RECORD_KEY) === false,
+      `intl=${credentials.records.has(intlRecordKey)} cn=${credentials.records.has(RECORD_KEY)}`);
+    check("Q3 the INTL login hit the INTL origin",
+      stub.log.logins === 1, `logins=${stub.log.logins}`);
+    // The grant just landed: a configured state. (`hasAccount` stays false —
+    // the password was never stored, red line ①: a grant-only half-life is
+    // the designed shape, CN and INTL alike. The one-hop flow carries no
+    // refresh token, so the pin is on `configured`, not on `hasRefreshToken`.)
+    const intlGet = await call(ACCOUNT_PATH, makeRequest());
+    check("Q3 the account GET reports the INTL grant under `intl`",
+      intlGet.payload.intl?.configured === true && intlGet.payload.intl?.hasAccount === false,
+      JSON.stringify(intlGet.payload.intl));
+    // Forget the INTL account: the GRANT survives (the documented half-life —
+    // the one-hop token lives until it expires, and no refresh can renew it),
+    // so the pin is on the record's site, not on its disappearance. The
+    // forget answer spreads the acted-on SITE's state at the top level (the
+    // CN shape), never nested under `intl`.
+    const forget = await call(ACCOUNT_PATH, makePost({ forget: true, site: "intl" }));
+    check("Q3 the INTL forget keeps the INTL grant and leaves CN untouched",
+      forget.payload.ok === true &&
+        forget.payload.configured === true &&
+        credentials.records.has(intlRecordKey) === true && credentials.records.has(RECORD_KEY) === false,
+      JSON.stringify(forget.payload));
+  }).catch((error) => fail("Q: the INTL row's routes", error));
 }
 
 // reach the real one. See the same guard in test/auth.test.mjs.

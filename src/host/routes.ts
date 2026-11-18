@@ -19,6 +19,7 @@
  *   - `routes/account.ts`      — panel sign-in / forget, trace writes;
  *   - `routes/api-key.ts`      — the `sk-` reference, forget-and-republish;
  *   - `routes/provider.ts`     — the registration switch;
+ *   - `routes/provider-intl.ts`— the INTL row's registration switch (ADR-021);
  *   - `routes/models.ts`       — the curated allow-list;
  *   - `routes/tool-switch.ts`  — ONE handler body serving draw AND video;
  *   - `routes/agnescode.ts`    — the desktop-upstream provider (switch /
@@ -34,6 +35,7 @@ import { registerSnapshotRoute } from "./routes/snapshot.ts";
 import { registerAccountRoute } from "./routes/account.ts";
 import { registerApiKeyRoute } from "./routes/api-key.ts";
 import { registerProviderRoute } from "./routes/provider.ts";
+import { registerProviderIntlRoute } from "./routes/provider-intl.ts";
 import { registerModelsRoute } from "./routes/models.ts";
 import { registerDrawRoute, registerVideoRoute } from "./routes/tool-switch.ts";
 import { registerAgnescodeRoute } from "./routes/agnescode.ts";
@@ -80,9 +82,12 @@ export function registerRoutes(ctx: HostCtx, wiring: HostWiring) {
   const offAccount = registerAccountRoute(ctx, wiring);
   const offApiKey = registerApiKeyRoute(ctx, wiring);
   const offProvider = registerProviderRoute(ctx, wiring);
+  // The INTL row's switch route (ADR-021): registered right after its CN twin
+  // so the two sites' teardown order stays "switch, then everything else".
+  const offProviderIntl = registerProviderIntlRoute(ctx, wiring);
   const offModels = registerModelsRoute(ctx, wiring);
   const offDraw = registerDrawRoute(ctx, wiring);
   const offVideo = registerVideoRoute(ctx, wiring);
   const offAgnescode = registerAgnescodeRoute(ctx, wiring);
-  return [offRoute, offAccount, offApiKey, offProvider, offModels, offDraw, offVideo, offAgnescode];
+  return [offRoute, offAccount, offApiKey, offProvider, offProviderIntl, offModels, offDraw, offVideo, offAgnescode];
 }
