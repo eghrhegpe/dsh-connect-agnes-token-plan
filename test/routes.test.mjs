@@ -14,6 +14,9 @@
 import { loadPeer, installNetworkGuard, isolateHostEnv, isolateStateDir } from "./peer-roots.mjs";
 import { createFileThrottleStore } from "../src/host/throttle-store.ts";
 import { CODE } from "../src/host/codes.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /** Installed before anything runs, so an unstubbed call cannot escape. */
 const releaseNetworkGuard = installNetworkGuard();
@@ -1901,8 +1904,50 @@ async function withNetwork(stub, body) {
   const unknown = await call(AGNESCODE_PATH, makePost({ action: "nope" }));
   check("an unknown agnescode action is a 400 naming the allowed set",
     unknown.statusCode === 400 && typeof unknown.payload?.error === "string" &&
-      unknown.payload.error.includes("switch") && unknown.payload.error.includes("login"),
+      unknown.payload.error.includes("switch") && unknown.payload.error.includes("login")
+      && unknown.payload.error.includes("desktop-source"),
     JSON.stringify(unknown.payload));
+}
+
+// === the agnescode route: the desktop-source switch (ADR-020) =============
+// The flip writes the switch file (isolated $DSH_HOME) and answers the FULL
+// post-write state — which now carries the three flat `desktopSource*`
+// facts. Hermeticity: the production view reader resolves the App's data
+// directory from `process.env` at walk time, so on a machine that carries a
+// LIVE AgnesCode desktop session, flipping the source switch below would
+// serve that session's credential and the route's BFF reads would reach the
+// real platform. The section points `APPDATA` at an empty scratch directory
+// for its own duration — the view then answers the deterministic
+// `file_missing`, and the checks pin that, not the machine.
+{
+  const call = await mount(null);
+  const savedAppData = process.env.APPDATA;
+  const scratchAppData = mkdtempSync(join(tmpdir(), "dsh-agnescode-routes-appdata-"));
+  process.env.APPDATA = scratchAppData;
+  try {
+    const flipOn = await call(AGNESCODE_PATH, makePost({ action: "desktop-source", enabled: true }));
+    check("a desktop-source flip answers the post-write state with the source facts",
+      flipOn.statusCode === 200 && flipOn.payload?.ok !== false
+      && flipOn.payload?.desktopSourceEnabled === true,
+      JSON.stringify({ desktopSourceEnabled: flipOn.payload?.desktopSourceEnabled, error: flipOn.payload?.error }));
+    check("with an empty App directory the view is idle and names its reason (the panel's live/idle line)",
+      flipOn.payload?.desktopSourceServing === false
+      && flipOn.payload?.desktopSourceReason === "file_missing",
+      JSON.stringify({ serving: flipOn.payload?.desktopSourceServing, reason: flipOn.payload?.desktopSourceReason }));
+    const bad = await call(AGNESCODE_PATH, makePost({ action: "desktop-source", enabled: "yes" }));
+    check("a non-boolean desktop-source flip is a 400",
+      bad.statusCode === 400 && typeof bad.payload?.error === "string" && bad.payload.error.includes("desktop-source"),
+      JSON.stringify(bad.payload));
+    const flipOff = await call(AGNESCODE_PATH, makePost({ action: "desktop-source", enabled: false }));
+    check("flipping back off reports the switch off with no reason",
+      flipOff.statusCode === 200 && flipOff.payload?.desktopSourceEnabled === false
+      && flipOff.payload?.desktopSourceReason === null,
+      JSON.stringify({ desktopSourceEnabled: flipOff.payload?.desktopSourceEnabled, reason: flipOff.payload?.desktopSourceReason }));
+  } finally {
+    if (savedAppData === undefined) delete process.env.APPDATA;
+    else process.env.APPDATA = savedAppData;
+    rmSync(scratchAppData, { recursive: true, force: true });
+  }
 }
 
 // The Host routes are exercised against a stubbed console; nothing here may

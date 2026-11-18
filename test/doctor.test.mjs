@@ -137,6 +137,11 @@ function check(name, condition, detail = "") {
   await writeFile(join(profileDir, "agnescode-models.json"), JSON.stringify({
     version: 1, enabledModelIds: []
   }));
+  // The AgnesCode desktop-source switch (ADR-020) — its own file, its own
+  // version counter: a payload the provider switch's parser would reject.
+  await writeFile(join(sharedDir, "agnescode-desktop-source.json"), JSON.stringify({ version: 1, enabled: true }));
+  await writeFile(join(profileDir, "agnescode-desktop-source.json"), JSON.stringify({ version: 1, enabled: false }));
+  await writeFile(join(profileDir, "agnescode-provider.json"), JSON.stringify({ version: 99, enabled: true }));
 
   const report = await diagnose({ dshHome: home });
   check("diagnose sees the profile-scoped scope",
@@ -160,6 +165,15 @@ function check(name, condition, detail = "") {
   check("the profile scope reads its own video switch, not the shared one",
     web.videoPanel === false && web.videoModelPanel === null,
     JSON.stringify({ panel: web.videoPanel, model: web.videoModelPanel }));
+  // The desktop-source switch reads through its OWN parser (its own version
+  // counter): the profile's off beats nothing inherited — the shared copy's
+  // on is a different scope, and a foreign-version provider file is named.
+  check("the profile scope reads its desktop-source switch through its own parser",
+    web.agnescodeDesktopSourcePanel === false,
+    JSON.stringify({ desktopSource: web.agnescodeDesktopSourcePanel }));
+  check("a foreign-version agnescode-provider file is named unreadable, not skipped",
+    web.unreadable.includes("agnescode-provider.json"),
+    JSON.stringify(web.unreadable));
 
   // A machine that has a profile directory should NOT also report the shared
   // directory as a fake "profile" — the shared layout is only the pre-§23 answer.

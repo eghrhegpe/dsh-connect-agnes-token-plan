@@ -1,15 +1,15 @@
 /**
- * The four opt-in switch stores, measured against ONE shared behaviour list.
+ * The five opt-in switch stores, measured against ONE shared behaviour list.
  *
  * Why this file exists: the panel's opt-in switches (provider / draw / video /
- * AgnesCode) are FOUR separate state files that answer the same question —
- * "did the panel ever decide this, and what did it decide?" — with the same
- * integrity discipline (versioned payload, temp+rename atomic write, 0600,
- * "anything unrecognised reads as not set", a short-TTL read cache and the
- * §23 one-shot legacy adoption). They were written by copying each other, so
- * a fix or a rule that reached three of them could be missing from the fourth
- * with nothing noticing. This suite runs the SAME assertions against all four
- * so the four cannot quietly disagree.
+ * AgnesCode / AgnesCode desktop source) are FIVE separate state files that
+ * answer the same question — "did the panel ever decide this, and what did it
+ * decide?" — with the same integrity discipline (versioned payload,
+ * temp+rename atomic write, 0600, "anything unrecognised reads as not set",
+ * a short-TTL read cache and the §23 one-shot legacy adoption). They were
+ * written by copying each other, so a fix or a rule that reached three of
+ * them could be missing from the fifth with nothing noticing. This suite runs
+ * the SAME assertions against all five so the five cannot quietly disagree.
  *
  * It was written BEFORE the four were refactored onto one shared factory
  * (the token-store playbook: freeze first, then move) — every assertion here
@@ -26,7 +26,12 @@ import { isolateHostEnv, isolateStateDir } from "./peer-roots.mjs";
 import { PROVIDER_VERSION, createFileProviderStore } from "../src/host/provider-store.ts";
 import { DRAW_STORE_VERSION, createFileDrawStore } from "../src/host/draw-store.ts";
 import { VIDEO_STORE_VERSION, createFileVideoStore } from "../src/host/video-store.ts";
-import { AGNESCODE_SWITCH_VERSION, createFileAgnescodeStore } from "../src/host/agnescode-switch-store.ts";
+import {
+  AGNESCODE_SWITCH_VERSION,
+  createFileAgnescodeStore,
+  AGNESCODE_DESKTOP_SOURCE_SWITCH_VERSION,
+  createFileAgnescodeDesktopSourceStore
+} from "../src/host/agnescode-switch-store.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -37,7 +42,7 @@ function fail(name, error) {
 }
 
 /**
- * The four switches, and what makes each one different.
+ * The five switches, and what makes each one different.
  *
  * `modelKey: null` = a plain on/off switch (no model preference); a non-null
  * key is the persisted model-preference field, which the switch and the
@@ -47,7 +52,9 @@ const SWITCHES = [
   { key: "provider", file: "provider.json", version: PROVIDER_VERSION, create: createFileProviderStore, modelKey: null },
   { key: "draw", file: "draw.json", version: DRAW_STORE_VERSION, create: createFileDrawStore, modelKey: "drawModelId" },
   { key: "video", file: "video.json", version: VIDEO_STORE_VERSION, create: createFileVideoStore, modelKey: "videoModelId" },
-  { key: "agnescode", file: "agnescode-provider.json", version: AGNESCODE_SWITCH_VERSION, create: createFileAgnescodeStore, modelKey: null }
+  { key: "agnescode", file: "agnescode-provider.json", version: AGNESCODE_SWITCH_VERSION, create: createFileAgnescodeStore, modelKey: null },
+  // ADR-020: the desktop-source switch, a plain on/off like the one above.
+  { key: "agnescodeDesktopSource", file: "agnescode-desktop-source.json", version: AGNESCODE_DESKTOP_SOURCE_SWITCH_VERSION, create: createFileAgnescodeDesktopSourceStore, modelKey: null }
 ];
 
 /** Read the persisted payload, or `null` when the file is not there. */
@@ -59,7 +66,7 @@ function readPayload(file) {
   }
 }
 
-// --- 1. one shared behaviour list, run against all four switches ----------
+// --- 1. one shared behaviour list, run against all five switches ----------
 for (const spec of SWITCHES) {
   const restoreEnv = isolateHostEnv();
   const restoreHome = isolateStateDir();

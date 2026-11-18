@@ -13,7 +13,7 @@
  * — operational state, not an operator decision baked into the patch layer.
  *
  * **Precedence is not stated here on purpose** (see `draw-store.ts`): it is one
- * rule for all four opt-in switches, owned by `switch-precedence.ts`. What
+ * rule for all five opt-in switches, owned by `switch-precedence.ts`. What
  * belongs here is the WIRE KEY, the one that matters: this file spells the
  * preference `videoModelId`, the draw file spells it `drawModelId`, and a
  * parser that guessed would answer "no preference" for a file that plainly has

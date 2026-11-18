@@ -718,6 +718,129 @@ const GOOD_SESSION = {
   }
 }
 
+// --- 5b. desktop source precedence (ADR-020: two sources, one slot) --------
+{
+  section("desktop source precedence (ADR-020: two sources, one slot)");
+  try {
+    const saved = [];
+    const service = {
+      async set(ref, value) {
+        const index = saved.findIndex((entry) => entry.ref === ref);
+        if (index >= 0) saved[index] = { ref, value };
+        else saved.push({ ref, value });
+      },
+      async resolve(ref) { return saved.find((entry) => entry.ref === ref) ?? undefined; },
+      async unset(ref) { const i = saved.findIndex((entry) => entry.ref === ref); if (i >= 0) saved.splice(i, 1); }
+    };
+    const slotCred = { accessToken: makeJwt(), bffBase: "https://api-agnes-code.agnes-ai.cn/v1", userId: "slot", nickname: "slot-user" };
+    const viewCred = { accessToken: makeJwt(48), userId: "view-user", nickname: "view-user", bffBase: "https://api-agnes-code.agnes-ai.com/v1" };
+    let switchValue = null;
+    let viewReads = 0;
+    const desktopSource = {
+      enabled: async () => switchValue,
+      read: async () => { viewReads += 1; return { ok: true, credential: viewCred, reason: null }; }
+    };
+    const store = createAgnescodeStore({ credentials: () => service, desktopSource });
+    await store.save(slotCred);
+
+    // 1. The source switch is dialect B: an unset panel value is OFF, and an
+    // off switch must not even READ the view (the fallback costs nothing).
+    let resolved = await store.resolve();
+    check("an unset source switch resolves off: the slot answers and the view is never read",
+      resolved.source === "credentials" && resolved.credential.accessToken === slotCred.accessToken && viewReads === 0,
+      JSON.stringify({ source: resolved.source, viewReads }));
+
+    // 2. ON + a fresh view: the view wins the read.
+    switchValue = true;
+    resolved = await store.resolve();
+    check("a switched-on fresh view wins the read (desktop-file source)",
+      resolved.source === "desktop-file" && resolved.credential.accessToken === viewCred.accessToken,
+      JSON.stringify({ source: resolved.source }));
+    check("the view is a VIEW, not a copy: its token never reaches the credentials service",
+      saved.length === 1 && saved[0].value.includes(viewCred.accessToken) === false,
+      `entries=${saved.length}`);
+    const stateOn = await store.state();
+    check("state() reports the source facts (enabled, serving, no reason) with the view's identity",
+      stateOn.desktopSource?.enabled === true && stateOn.desktopSource?.serving === true && stateOn.desktopSource?.reason === null
+      && stateOn.nickname === "view-user" && stateOn.bffBase === viewCred.bffBase,
+      JSON.stringify(stateOn.desktopSource));
+
+    // 3. ON + an idle view: the slot answers untouched, and the reason prints.
+    const idleStore = createAgnescodeStore({
+      credentials: () => service,
+      desktopSource: {
+        enabled: async () => true,
+        read: async () => ({ ok: false, credential: null, reason: "file_missing" })
+      }
+    });
+    const idleResolved = await idleStore.resolve();
+    check("an idle view falls through to the stored slot (the source switch never empties it)",
+      idleResolved.source === "credentials" && idleResolved.credential.accessToken === slotCred.accessToken,
+      JSON.stringify({ source: idleResolved.source }));
+    const idleState = await idleStore.state();
+    check("... and state() names the idle reason for the panel's live/idle line",
+      idleState.desktopSource?.enabled === true && idleState.desktopSource?.serving === false
+      && idleState.desktopSource?.reason === "file_missing",
+      JSON.stringify(idleState.desktopSource));
+
+    // 4. A view that THROWs is read_failed, never a crash.
+    const throwingStore = createAgnescodeStore({
+      credentials: () => service,
+      desktopSource: {
+        enabled: async () => true,
+        read: async () => { throw new Error("view blew up"); }
+      }
+    });
+    const throwingResolved = await throwingStore.resolve();
+    check("a throwing view read falls through to the slot as read_failed",
+      throwingResolved.source === "credentials" && throwingResolved.desktopIdleReason === "read_failed",
+      JSON.stringify({ source: throwingResolved.source, reason: throwingResolved.desktopIdleReason }));
+
+    // 5. Expiry follows the SERVING source.
+    check("a serving view masks a fresh-slot read as not expired",
+      await store.isExpired() === false);
+    const deadStore = createAgnescodeStore({ credentials: () => service });
+    await deadStore.save({ accessToken: makeJwt(-1), bffBase: slotCred.bffBase, nickname: "dead" });
+    check("an absent (or idle) source with a dead slot credential is expired",
+      await deadStore.isExpired() === true);
+    check("... while a serving FRESH view over the same dead slot still serves (renewal is the view's)",
+      (await store.isExpired()) === false
+      && (await store.resolve()).source === "desktop-file");
+
+    // 6. forget() clears ONLY the slot — the view keeps serving.
+    await store.forget();
+    const afterForget = await store.resolve();
+    check("forget() clears only the slot: a switched-on view still serves",
+      afterForget.source === "desktop-file" && afterForget.credential.accessToken === viewCred.accessToken,
+      JSON.stringify({ source: afterForget.source }));
+
+    // 7. A store without the dependency (an older Host build) is unchanged.
+    // Its OWN service: checks 5/6 above mutate the shared one (a `forget()`
+    // empties the slot), and the legacy shape must read a populated slot.
+    {
+      const legacySaved = [];
+      const legacyService = {
+        async set(ref, value) {
+          const index = legacySaved.findIndex((entry) => entry.ref === ref);
+          if (index >= 0) legacySaved[index] = { ref, value };
+          else legacySaved.push({ ref, value });
+        },
+        async resolve(ref) { return legacySaved.find((entry) => entry.ref === ref) ?? undefined; },
+        async unset(ref) { const i = legacySaved.findIndex((entry) => entry.ref === ref); if (i >= 0) legacySaved.splice(i, 1); }
+      };
+      const legacyStore = createAgnescodeStore({ credentials: () => legacyService });
+      await legacyStore.save(slotCred);
+      const legacy = await legacyStore.resolve();
+      const legacyState = await legacyStore.state();
+      check("a store that predates the view answers the slot alone (desktop-source facts absent)",
+        legacy.source === "credentials" && legacyState.desktopSource === null,
+        JSON.stringify({ source: legacy.source, desktopSource: legacyState.desktopSource }));
+    }
+  } catch (error) {
+    fail("desktop source precedence", error);
+  }
+}
+
 // --- 6. roster → descriptors -------------------------------------------------
 {
   section("roster → pi-ai descriptors (agnescode-models.ts)");

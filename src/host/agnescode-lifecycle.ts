@@ -8,8 +8,10 @@
  *   - the single-flighted re-harvest walk (`harvestAgnescodeLocalSession`):
  *     one PowerShell spawn at a time, a failed walk buys a 60 s backoff
  *     window during which nobody retries;
- *   - the cross-account bffBase rebuild: a re-harvest that landed on another
- *     account/base must re-publish, or B's token rides to A's base;
+ *   - the cross-account bffBase rebuild (ADR-020): a SERVING credential —
+ *     the desktop view's or the slot's — that landed on another account/base
+ *     must re-publish, or the new token rides to the old base. One site
+ *     (`republishAcrossBase`), reached from every `resolveToken`;
  *   - the mount seed: if the switch survived a restart, re-register from the
  *     fallback roster + the stored credential's per-account base.
  *
@@ -111,6 +113,37 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
   // returns.
   const holder: { current: ReturnType<typeof createAgnescodePublisher> | null } = { current: null };
 
+  /**
+   * The cross-base republish, ONE site (ADR-020): whichever source the store
+   * is serving — the desktop VIEW or the stored slot — may point at a
+   * different per-account base than the registered adapter, and the new base
+   * must rebuild it or the new token rides to the old one and the gateway
+   * refuses it. A failure here is non-fatal (the credential itself is fine,
+   * only the picker is stale), but it must not vanish: the picker would keep
+   * pointing at the old base with no trace of why.
+   *
+   * This path publishes the FALLBACK roster, NOT the live catalogue —
+   * deliberately, unlike the route's `publishFromStore`. It runs inside
+   * `resolveToken`, the adapter's credential hot path, and a live catalogue
+   * fetch carries a 30 s network timeout that would block a user's inference
+   * call. The picker converges to the live list on the next route-driven
+   * publish (switch toggle / saveModels / the panel's entry GET self-heal).
+   *
+   * The early return on an unchanged base is the churn guard: every
+   * `resolveToken` pays one string comparison, and only a real move touches
+   * the publisher.
+   * @param {string} base - the base the serving credential carries.
+   * @returns {Promise<void>}
+   */
+  const republishAcrossBase = async (base: string) => {
+    const pub = holder.current;
+    if (pub === null || pub === undefined) return;
+    if (base === pub.state.bffBase) return;
+    await pub.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), base).catch((why: unknown) => {
+      logger?.warn?.(`agnescode: the serving credential moved the BFF base to ${base} but republishing the adapter failed (the picker still points at the previous base): ${redactSecrets(str((why as { message?: unknown })?.message ?? why, "unknown"))}`);
+    });
+  };
+
   const resolveToken = async () => {
     const { credential } = await store.resolve();
     if (credential === null) return "";
@@ -133,24 +166,6 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
               // it was handed would write one into the Host log.
               logger?.warn?.(`agnescode: re-harvest succeeded but the store refused it: ${redactSecrets(str((why as { message?: unknown })?.message ?? why, "unknown"))}`);
             });
-            const pub = holder.current;
-            if (pub && walk.session.bffBase !== pub.state.bffBase) {
-              // The re-harvest found a DIFFERENT per-account base, so the
-              // registered adapter is stale and must be rebuilt. A failure here
-              // is non-fatal (the harvest itself succeeded and is stored), but
-              // it must not vanish: the picker would keep pointing at the old
-              // base with no trace of why.
-              // This path publishes the fallback roster, NOT the live catalogue
-              // — deliberately, unlike the route's `publishFromStore`. It runs
-              // inside `resolveToken`, the adapter's credential hot path, and a
-              // live catalogue fetch carries a 30 s network timeout that would
-              // block a user's inference call. The picker converges to the live
-              // list on the next route-driven publish (switch toggle / saveModels
-              // / the panel's entry GET self-heal).
-              await pub.publish(filterAgnescodeRows(AGNESCODE_FALLBACK_MODELS, await curated()), walk.session.bffBase).catch((why: unknown) => {
-                logger?.warn?.(`agnescode: re-harvest moved the BFF base to ${walk.session.bffBase} but republishing the adapter failed (the picker still points at the previous base): ${redactSecrets(str((why as { message?: unknown })?.message ?? why, "unknown"))}`);
-              });
-            }
             return walk;
           })
           .catch(() => {
@@ -159,17 +174,23 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
           })
           .finally(() => {
             // Cleared here, not inside the `.then` body: the walk's bookkeeping
-            // (`store.save`, the cross-base republish) is part of the flight,
-            // and clearing on entry to it let a concurrent `resolveToken` see
-            // `null` mid-save and open a second walk — which defeats the
-            // single-flight this object exists for. `.finally` clears it once,
-            // for either outcome.
+            // (`store.save`) is part of the flight, and clearing on entry to it
+            // let a concurrent `resolveToken` see `null` mid-save and open a
+            // second walk — which defeats the single-flight this object exists
+            // for. `.finally` clears it once, for either outcome.
             harvest.inFlight = null;
           });
       }
       await Promise.resolve(harvest.inFlight).catch(() => null);
     }
+    // The serving credential after any renewal — whichever source the store
+    // just answered from (ADR-020: the desktop view now participates, and a
+    // re-harvest that ran above may have moved the slot). One cross-base
+    // check covers both; the early return makes it free when nothing moved.
     const { credential: live } = await store.resolve();
+    if (live !== null && live.bffBase !== undefined && live.bffBase !== "") {
+      await republishAcrossBase(live.bffBase);
+    }
     return live?.accessToken ?? "";
   };
 

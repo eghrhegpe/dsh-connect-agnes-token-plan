@@ -114,6 +114,29 @@ export function agnescodeView(
 }
 
 /**
+ * The harvest-tier reasons the desktop view can answer with (ADR-020): the
+ * SAME nine tier codes the panel's diagnosis rows already translate, so they
+ * reuse the tab's own `agnescode.tier.*` dictionary — "the button says X and
+ * the switch row says Y" is impossible by construction. The three view-only
+ * reasons have their own keys; an unknown code (a reason added Host-side
+ * without its dictionary entry) prints itself rather than a missing key.
+ * @param {string} reason - a `desktopSourceReason` value from the route.
+ * @param {Tt} tt - the dictionary.
+ * @returns {string} the translated reason.
+ */
+export function agnescodeDesktopSourceReasonText(reason: string, tt: Tt): string {
+  const tierReasons = [
+    "file_missing", "format_drift", "unreadable", "no_key", "decrypt_failed",
+    "malformed", "no_token", "untrusted_base", "unsupported_platform"
+  ];
+  if (tierReasons.includes(reason)) return tt(`agnescode.tier.${reason}`);
+  if (reason === "no_expiry" || reason === "expired" || reason === "read_failed") {
+    return tt(`agnescode.desktopReason.${reason}`);
+  }
+  return reason;
+}
+
+/**
  * The two muted lines that follow the credit-pool cards.
  *
  * Split out of {@link AgnescodeTab} for the same reason the rosters are: the
@@ -393,6 +416,23 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     }
   }, [tt]);
 
+  // The desktop-source flip (ADR-020): same discipline as `toggle` — the POST
+  // answer is the full post-write state (the flip re-published through the
+  // store-aware publish), so it lands whole. The note face names the switch
+  // it failed, not the provider one.
+  const toggleDesktopSource = useCallback(async (enabled: boolean) => {
+    setNote(null);
+    try {
+      const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "desktop-source", enabled });
+      if (alive.current) {
+        retireInFlight();
+        setState(body as unknown as AgnescodeState);
+      }
+    } catch (why) {
+      if (alive.current) setNote(format(tt("agnescode.desktopSourceError"), { error: why instanceof Error ? why.message : String(why) }));
+    }
+  }, [tt]);
+
   const harvest = useCallback(async () => {
     setHarvestBusy(true);
     setNote(null);
@@ -483,6 +523,16 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   const loginDisabled = harvestBusy || loginBusy;
 
   const enabled = state?.enabled === true;
+  // The desktop source (ADR-020): the second switch row and its status line.
+  // `hasDesktopSource` is false when the route predates the view (the three
+  // `desktopSource*` keys are absent) — a switch the Host cannot honour must
+  // never be offered, so the whole row hides on an older Host.
+  const hasDesktopSource = state !== null && state.desktopSourceEnabled !== undefined;
+  const desktopSourceEnabled = state?.desktopSourceEnabled === true;
+  const desktopSourceServing = state?.desktopSourceServing === true;
+  const desktopSourceReason = typeof state?.desktopSourceReason === "string" && state?.desktopSourceReason !== ""
+    ? state?.desktopSourceReason
+    : null;
   const view = agnescodeView(state, error);
   const loggedIn = view.linked;
   const models = Array.isArray(state?.models) ? state.models : [];
@@ -664,6 +714,31 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
             title: tt("agnescode.switchTip"),
             rowStyle: { marginTop: 10 }
           }),
+          // The desktop source (ADR-020): the raccoon §6.1.11 twin — a
+          // second switch row governing WHICH credential every read asks
+          // first (the App's session file, or the stored login state).
+          hasDesktopSource
+            ? h(Switch, {
+              checked: desktopSourceEnabled,
+              disabled: loginDisabled,
+              onChange: () => void toggleDesktopSource(!desktopSourceEnabled),
+              label: tt("agnescode.desktopSource"),
+              title: tt("agnescode.desktopSourceTip"),
+              rowStyle: { marginTop: 4 }
+            })
+            : null,
+          // Its status line: what the switch is achieving RIGHT NOW —
+          // serving from the App's file, or on-but-idle with the Host's
+          // own reason (the view's closed set, never a path or shape
+          // excerpt). An off switch draws no sentence.
+          hasDesktopSource && desktopSourceEnabled && desktopSourceServing
+            ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 2 }, role: "status" },
+                tt("agnescode.desktopLive"))
+            : null,
+          hasDesktopSource && desktopSourceEnabled && !desktopSourceServing && desktopSourceReason !== null
+            ? h("div", { style: { ...S.muted, fontSize: 12, marginTop: 2 }, role: "status" },
+                format(tt("agnescode.desktopIdle"), { reason: agnescodeDesktopSourceReasonText(desktopSourceReason, tt) }))
+            : null,
           // Registration status: the switch says "wants", the roster header pill
           // says "is" (小浣 shape). Only the NON-registered states stay as text
           // lines here — a successful registration needs no sentence of its own

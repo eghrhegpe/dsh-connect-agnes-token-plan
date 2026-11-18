@@ -312,6 +312,24 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   await stop();
 }
 
+// === B2. the /agnescode route carries the desktop-source facts (ADR-020) ==
+// The production wiring wires the view reader into the store, so the GET's
+// `desktopSource*` facts must exist from the first boot — a missing key would
+// mean the store shipped without its source dependency (the panel hides the
+// whole row in that case, and the reader deserves to notice).
+{
+  const { webServer, stop } = await bootPlugin();
+  const handler = webServer.registered.get("/api/dsh-connect-agnes-token-plan/agnescode");
+  const res = response();
+  await handler(request(), res);
+  check("the /agnescode GET carries the desktop-source switch facts",
+    res.payload?.ok === true
+    && typeof res.payload?.desktopSourceEnabled === "boolean"
+    && typeof res.payload?.desktopSourceServing === "boolean",
+    JSON.stringify({ desktopSourceEnabled: res.payload?.desktopSourceEnabled, desktopSourceServing: res.payload?.desktopSourceServing, error: res.payload?.error }));
+  await stop();
+}
+
 // === B. the routes answer through the container, not a stub ==============
 {
   const { webServer, stop } = await bootPlugin();

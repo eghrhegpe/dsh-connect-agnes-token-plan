@@ -17,7 +17,8 @@ Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/u
 3. **「AgnesCode」tab 是爱思办公桌面端上游**：接的是 AgnesCode 桌面端的登录态——本插件第一条**本机登录态采集**线（workbuddy 族先例）。
    - **采集面**：微信登录发生在桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（Chromium os_crypt + DPAPI + AES-256-GCM，逐文件 9 档分诊：file_missing / format_drift / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform，注入式可离线测，见 `test/agnescode.test.mjs`），provider `agnescode`，接口地址**按账号跟随**会话文件且钉死在 Agnes 域名族内。
    - **续期**：**它没有刷新端点（JWT 约 28 天）——这是已知限制，不是特性**：令牌不会被本插件续期，但**过期后的重采集是自动的**（`agnescode-lifecycle.ts` 的 `resolveToken`：距 `exp` 不足 5 分钟（`isExpired` 的 `leadMs` 默认值）就自己重读会话文件，单飞 + 失败退避 60 s（`AGNESCODE_REHARVEST_BACKOFF_MS`）），用户只需让桌面 App 重新登录一次；「检测本机登录态」按钮是主动触发、不是必须步骤——别再把它写成「必须手动点」。
-   - **撤销**：**采集侧写权限为零**（`agnescode*.ts` 无任何 `writeFile`/`rename`/`rm`），所以「撤销」在插件侧没有实现位置：开关只注销 provider（改开关后走一次 `publishFromStore`，由 publisher 的闸释放注册），`forget()` 是 store 原语、`src/` 里没有调用点（只有测试调它；「解除关联」按钮已撤，别加回来——它唯一独有的效果是删磁盘上的 JWT，那是隐私动作而非登出）。要吊销只能在桌面 App 里登出/改密码，或由操作者手动删凭据记录；**关开关 ≠ 吊销**，重新打开会复用已存的 JWT。
+   - **来源（两个源、一个槽、读时仲裁，ADR-020 / raccoon §6.1.11 镜像）**：桌面会话文件与槽内登录态（harvest / 扫码写入）是两个源；新开关 `agnescode-desktop-source.json`（opt-in 默认关、面板独占 dialect B，与 provider 开关各自独立文件）开且桌面视图新鲜（与 `isExpired` 同一条 5 分钟边界）时，`store.resolve()` 每次读**直接供 `desktop-file` 视图**——只读视图：不刷新、不回写、**永不拷入 DSH 凭据服务**；其余一切情况落回槽，**切源永不丢登录**。视图三 guard（`src/host/agnescode-desktop-view.ts`）：stat 键控成功缓存（免 DPAPI 风暴）+ 单飞 + 失败 60 s 退避；reason 是封闭集（九档 tier 直映 + `no_expiry`/`expired`/`read_failed`），面板 idle 行与 harvest 诊断行共用同一套 tier 字典。桌面 App 提前轮换 token / 换账号时插件每次读跟随 App（不再抱槽内旧 token 到 401）。
+   - **撤销**：**采集侧写权限为零**（`agnescode*.ts` 无任何 `writeFile`/`rename`/`rm`），所以「撤销」在插件侧没有实现位置：provider 开关只注销 provider（改开关后走一次 `publishFromStore`，由 publisher 的闸释放注册）；桌面源开关（ADR-020）只改读时仲裁——关闭只让槽源重新担读，不碰槽内凭据、不碰 App 文件；`forget()` 是 store 原语、`src/` 里没有调用点（只有测试调它；「解除关联」按钮已撤，别加回来——它唯一独有的效果是删磁盘上的 JWT，那是隐私动作而非登出）。要吊销只能在桌面 App 里登出/改密码，或由操作者手动删凭据记录；**关开关 ≠ 吊销**，重新打开会复用已存的 JWT。
    - **隔离**：两边 publisher、store、凭据引用全部与主 provider 同款隔离（见 `docs/ROADMAP.md` §6.3）。
    - **胶囊（第二条读数）**：`agnescode` 模型在输入框右侧画这套积分余额（前缀 `AgnesCode`），读的是同一个只读 GET，cadence 复用 tab 的 `AGNESCODE_POLL_MS`。
 
@@ -46,7 +47,8 @@ node test/store-baseline.test.mjs # token-store 全行为冻结基线：拆分/�
 node test/panel.test.mjs    # 面板决策、中英字典一致性
 node test/dom-render.test.mjs # 真 DOM 挂载：入库 client.js + 真 react/react-dom + jsdom，经 apply 挂 PanelPage 与对话框用量胶囊，并以点击/输入/提交/切 provider 驱动 hook 组件（需 devDependencies，缺席 SKIP；CI offline job 装依赖真跑）
 node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shape 漂移、分桶求和、四窗口
-node test/switch-store.test.mjs # 四个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」）
+node test/switch-store.test.mjs # 五个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」）
+node test/agnescode-desktop-view.test.mjs # 桌面源视图（ADR-020）：stat 键控缓存/单飞/退避、封闭 reason 集、过期半边
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）；新增 docs/ 顶层文件必须进 docs/README.md 索引表，否则 ORPHAN_DOCS 判红
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
 npm test                    # 全量离线测试门禁 + 末尾数道 gate（tsc-gate / build-gate / dup-gate / composer-slot-gate / e2e-gate，各自探到 tsc / tsdown / jscpd / 本机 DSH client 副本 / dsh CLI 才实跑，否则 SKIP；末道 any-budget-gate 无依赖故总跑；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）

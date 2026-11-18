@@ -9,7 +9,7 @@
  *
  * **Precedence is not stated here on purpose.** "A value saved from the panel
  * wins, an untouched file falls back to the patch's `drawEnabled`" is one rule
- * shared by all four opt-in switches and owned by `switch-precedence.ts`; this
+ * shared by all five opt-in switches and owned by `switch-precedence.ts`; this
  * header used to restate it, which made three copies that could drift from the
  * arbiter without any gate noticing. What belongs here is only what makes this
  * file its own: the file name, the shape version, the preference's WIRE KEY

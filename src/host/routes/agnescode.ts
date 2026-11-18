@@ -179,7 +179,7 @@ function readThroughAgnescode(
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
-  const { settings, agnescodeStore, agnescodeSwitch, agnescodePublisher, agnescodeModels, agnescodeRosterSeen, cache, inflight, agnescodeFetch } = wiring;
+  const { settings, agnescodeStore, agnescodeSwitch, agnescodeDesktopSource, agnescodePublisher, agnescodeModels, agnescodeRosterSeen, cache, inflight, agnescodeFetch } = wiring;
 
   // ── The AgnesCode route: the desktop-app upstream provider (ROADMAP §6.3) ──
   // The route-scoped state — declared BEFORE any handler runs, never after a
@@ -258,6 +258,13 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         let expired = false;
         let balance: unknown = null;
         let error: string | null = null;
+        // The desktop-source facts (ADR-020): the switch's resolved value,
+        // whether the view is SERVING, and why not when it is on but idle.
+        // All three stay `null` when the store predates the view (an older
+        // Host build of it), which is what makes the panel hide the row.
+        let desktopSourceEnabled: boolean | null = null;
+        let desktopSourceServing: boolean | null = null;
+        let desktopSourceReason: string | null = null;
         // Resolved ONCE and reused for both BFF calls. Each was its own
         // `resolve()`, so a walk landing between the two (the re-harvest is a
         // live path, not a rare one) could leave one account's balance beside
@@ -272,6 +279,12 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
             bffBase = state?.bffBase ?? "";
             expiresAtMs = state?.expiresAtMs ?? null;
             expired = state?.expired === true;
+            const desktopSource = state?.desktopSource;
+            if (desktopSource !== null && desktopSource !== undefined) {
+              desktopSourceEnabled = desktopSource.enabled === true;
+              desktopSourceServing = desktopSource.serving === true;
+              desktopSourceReason = typeof desktopSource.reason === "string" && desktopSource.reason !== "" ? desktopSource.reason : null;
+            }
             credential = (await agnescodeStore.resolve().catch(() => ({ credential: null }))).credential ?? null;
           }
         } catch (why) {
@@ -370,6 +383,13 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           bffBase,
           expiresAtMs,
           expired,
+          // The desktop-source switch's three facts (ADR-020), FLAT on
+          // purpose: the §11b contract fence walks this literal by brace
+          // depth, and a nested block would be a new fence level the client
+          // side does not declare. Absent when the store predates the view.
+          ...(desktopSourceEnabled !== null
+            ? { desktopSourceEnabled, desktopSourceServing, desktopSourceReason }
+            : {}),
           balance,
           rateLimit,
           // This plugin's OWN per-client usage roll (request count + token
@@ -635,7 +655,33 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         return;
       }
 
-      writeJson(response, 400, { ok: false, error: "expected { action: \"switch\"|\"harvest\"|\"saveModels\"|\"login\" }" }, { "cache-control": "no-store" });
+      // ── desktop-source: the read-only desktop-App source switch (ADR-020) ──
+      // Flipping it changes WHICH credential every later read serves (the
+      // App's session file, or the stored slot), so a flip re-publishes
+      // through the store-aware `publishFromStore` exactly like the provider
+      // switch above: the answer is the full post-write state, and a flip to
+      // OFF costs no login — the slot's credential is untouched either way.
+      if (action === "desktop-source") {
+        if (typeof body.value.enabled !== "boolean") {
+          writeJson(response, 400, { ok: false, error: 'expected { action: "desktop-source", enabled: boolean }' }, { "cache-control": "no-store" });
+          return;
+        }
+        if (agnescodeDesktopSource === null || agnescodeDesktopSource === undefined) {
+          await answer({ ok: false, error: "the agnescode desktop-source switch is unavailable" });
+          return;
+        }
+        try {
+          await agnescodeDesktopSource.save(body.value.enabled);
+          await publishFromStore();
+        } catch (error) {
+          await answer({ ok: false, error: redactError(error) });
+          return;
+        }
+        await answer();
+        return;
+      }
+
+      writeJson(response, 400, { ok: false, error: 'expected { action: "switch"|"harvest"|"saveModels"|"login"|"desktop-source" }' }, { "cache-control": "no-store" });
     }
   });
 }

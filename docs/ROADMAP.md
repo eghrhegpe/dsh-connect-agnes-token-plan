@@ -441,6 +441,16 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 - **限流阈值仍未实测、不写死**：与症状记录同一条红线——面板只呈现消耗合计与「至少」下限措辞，不反推 RPM / 按请求体积的限流触发条件。
 - 读法坑（测试钉出，`src/host/agnescode.ts` 已修）：`num()` 无 fallback 返回 `undefined` 而非 `null`——`created_at` / `direction` 走 `num(v, null)`（未知两侧都不计、只计 `fetchedCount`）；`pagination.total` 可合法为 0（空流水），故走 `numZeroOk` + `!== undefined` 判定，缺 pagination 保持 `null`。
 
+**桌面源开关（2026-11-18 落地，ADR-020）**：AgnesCode 凭据从「两条写路径共一个槽（harvest / 扫码登录，后写者胜）」升级为**「两个源、一个槽、读时仲裁」**——镜像兄弟插件 `dsh-connect-sensenova-token-plan` 的 raccoon §6.1.11（官方客户端只读源开关）形状，两仓各自实现、不共享代码（§5.5 隔离）：
+
+- **新开关**：`agnescode-desktop-source.json`（共享 `switch-store.ts` 工厂，profile 级 §23 纪律），**opt-in 默认关、面板独占**（dialect B：无配置默认值）；与 provider 开关 `agnescode-provider.json` 各自独立文件（一次翻转不得触碰另一家的发布决定）。
+- **读时优先级**（`createAgnescodeStore.resolve()`，不是模式切换）：开关**开**且桌面会话文件视图**新鲜**（JWT `exp` 距到期 > 5 分钟——**与 store `isExpired` 默认引导窗同一条边界**，两窗重叠会让「视图说供、store 说续」互相打架）→ 供 `desktop-file` 视图凭据；其余一切（关 / 文件缺 / 读不动 / 无 `exp` / 已过期 / 非 win32）→ 落回槽内凭据，**切源永不丢登录**。
+- **只读视图**（`src/host/agnescode-desktop-view.ts`）：桌面文件是 App 的记录所有人，插件是它的**视图**——不刷新、不回写、**永不拷入 DSH 凭据服务**（槽里只有显式 `save()` 的产物）。三 guard 管住热路径（每次取凭据都读）上的 DPAPI 子进程风暴：stat 键控成功缓存（会话文件 + `Local State` 的 mtime/size 不变即免重走；新优先文件出现时经 walk 自己的 `sortAgnescodeSessionFiles` 重判 winner，视图不得活过 walk 的排序）+ 单飞 + 失败 60 s 退避（`AGNESCODE_DESKTOP_VIEW_BACKOFF_MS`，与 lifecycle 重采集退避**同号异主**：一个存槽、一个从不存）。
+- **封闭 reason 集**：harvest 九档 tier 直映 + `no_expiry` / `expired` / `read_failed`；secret-free，绝不含路径/尺寸/解析片段。面板 idle 行与 harvest 诊断行**共用同一套 tier 字典**，「按钮说 X、开关行说 Y」结构上不可能。
+- **跨 base 重发布泛化**：`resolveToken` 的跨账号 BFF base 重建收敛为单一站点（`republishAcrossBase`）——桌面视图可能供一个与注册 adapter 不同的 base（App 换了账号），重采集后的槽源走同一条链；base 未动时每次只付一次字符串比较（churn guard）。
+- **面板**：AgnesCode tab 凭据卡内第二个开关行「使用桌面端登录态（只读）」+ live/idle 两行；`/agnescode` GET 增三个**扁平**字段 `desktopSourceEnabled` / `desktopSourceServing` / `desktopSourceReason`（§11b 契约围栏按 brace 深度走字面量，不许嵌套块），POST 增 `{action:"desktop-source", enabled}`（写后全量回显 + 经 store 感知的 `publishFromStore` 重发布）。
+- **净效果**：① 桌面 App 提前轮换 token 或换账号时插件**每次读跟随 App**（此前抱槽内旧 token 到 401）；② 「以桌面端为准、扫码兜底」变得可表达；③ 未开开关的机器行为与落地前逐字节相同（默认关 + 既有套件全绿即基线）。
+
 ### 6.3.1 契约复测（2026-10-01 深夜，本机凭据，只读端点）
 
 > 证据：`upstream/AgnesCode-desktop-1.0.68/probe-agnescode-credits.mjs`（与模型探针

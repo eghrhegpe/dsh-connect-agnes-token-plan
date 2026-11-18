@@ -1,8 +1,9 @@
 /**
  * The ONE shape every panel opt-in switch shares.
  *
- * This plugin has four opt-in switches — provider registration, the draw tool,
- * the video tool and the AgnesCode provider — and they answer the same two
+ * This plugin has five opt-in switches — provider registration, the draw tool,
+ * the video tool, the AgnesCode provider and the AgnesCode desktop source
+ * (ADR-020) — and they answer the same two
  * questions with the same integrity discipline:
  *
  *   - did THE PANEL ever decide this? (a saved value beats the config default);
@@ -16,7 +17,7 @@
  * by writing the whole `{enabled, modelId}` object into the `enabled` FIELD, so
  * an inherited switch read back as unset after the next Host start — silently,
  * which is the failure shape `doctor.ts` exists to end. The two boolean-only
- * copies (provider / AgnesCode) never had it. One factory, four callers: the
+ * copies (provider / AgnesCode) never had it. One factory, five callers: the
  * bug class is gone by construction rather than by review.
  *
  * What is deliberately NOT unified: the on-disk file name, the shape version,

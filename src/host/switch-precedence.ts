@@ -11,8 +11,9 @@
  * dialects that look alike and mean different things:
  *
  *   A. `(panel ?? settings.x) === true`  — 有配置默认（provider / draw / video）
- *   B. `panel === true`                  — 无配置默认（agnescode：它根本没有
- *                                          配置默认值，面板说关就是关）
+ *   B. `panel === true`                  — 无配置默认（AgnesCode provider 与
+ *                                          AgnesCode 桌面源（ADR-020）：它们根
+ *                                          本没有配置默认值，面板说关就是关）
  *
  * The two are easy to confuse by eye, and confusing them is not cosmetic:
  * reading B as A would make AgnesCode register itself whenever the patch's
@@ -20,12 +21,13 @@
  * function whose `configDefault` argument carries the distinction — B is A
  * with no default, not a separate rule.
  *
- * SCOPE: exactly the four opt-ins that have BOTH halves — a panel-saved value
+ * SCOPE: exactly the five opt-ins that have BOTH halves — a panel-saved value
  * in a `switch-store` file AND a patch default (provider / draw / video /
- * AgnesCode). A fifth opt-in, `writeImageModelIds`, is deliberately NOT here:
+ * AgnesCode / AgnesCode desktop source; the last two as dialect B). A sixth
+ * opt-in, `writeImageModelIds`, is deliberately NOT here:
  * it has one source (the patch row), no panel affordance, no state file and no
  * route, so it has nothing to arbitrate. `CONFIG_DEFAULTS.writeImageModelIds`
- * carries the reasoning; a fifth entry in that list of four would be a false
+ * carries the reasoning; an entry in that list of five would be a false
  * claim about a `write-image-model-ids.json` that does not exist.
  *
  * @module dsh-connect-agnes-token-plan/switch-precedence

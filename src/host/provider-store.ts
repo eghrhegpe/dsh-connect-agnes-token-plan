@@ -10,7 +10,7 @@
  *
  * **Precedence is not stated here on purpose.** "A value saved from the panel
  * wins, an untouched file falls back to the patch's `registerProvider`" is one
- * rule shared by all four opt-in switches and owned by `switch-precedence.ts`;
+ * rule shared by all five opt-in switches and owned by `switch-precedence.ts`;
  * restating it here (and in the two sibling stores) made three copies that
  * could drift from the arbiter with no gate to notice. Everything that makes
  * this file a switch — the versioned payload, the temp file plus atomic rename,

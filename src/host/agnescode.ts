@@ -98,6 +98,21 @@ export const AGNESCODE_APP_DATA_CANDIDATES = Object.freeze([
 ]);
 
 /**
+ * The walk order for a directory's session files: the CN build first, then
+ * alphabetical within (and across) the remaining files. Extracted from the
+ * walk so the desktop-source view reader (which re-determines the walk's
+ * WINNER on a cache hit, without re-walking) sorts the same names the same
+ * way — two sorters that drift would cache a different winner than the walk
+ * would pick.
+ * @param {string[]} fileNames - session-family file names from one directory.
+ * @returns {string[]} the names in walk order (the input array, sorted in place).
+ */
+export function sortAgnescodeSessionFiles(fileNames: string[]) {
+  fileNames.sort((a, b) => (a.endsWith(".cn.v1") === b.endsWith(".cn.v1") ? a.localeCompare(b) : a.endsWith(".cn.v1") ? -1 : 1));
+  return fileNames;
+}
+
+/**
  * The LOOSE family pattern — anything that reads like the session file. When
  * no strict match exists but a loose one does, the App has moved to a new file
  * shape: that is the FORMAT_DRIFT fact, not「文件不存在」. Shared by the walk
@@ -563,7 +578,7 @@ export async function harvestAgnescodeLocalSession(
       continue;
     }
     // Deterministic order: the CN build first, then alphabetical.
-    fileNames.sort((a, b) => (a.endsWith(".cn.v1") === b.endsWith(".cn.v1") ? a.localeCompare(b) : a.endsWith(".cn.v1") ? -1 : 1));
+    sortAgnescodeSessionFiles(fileNames);
 
     for (const fileName of fileNames) {
       const filePath = `${appDir}/${fileName}`;
