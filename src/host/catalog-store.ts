@@ -128,15 +128,20 @@ export function parseCatalogPayload(raw: Record<string, unknown> | null) {
  * @param {string|null} [options.profile] - the profile name, so two profiles
  *   each get their own catalog instead of overwriting one shared allow-list;
  *   defaults to `null` (the shared directory, i.e. today's behaviour).
+ * @param {string} [options.file] - the file name inside the state directory;
+ *   `catalog.json` (the CN row, ADR-021) by default, `catalog.intl.json` for
+ *   the INTL row — one record per site so the two sites' rosters and
+ *   allow-lists can never overwrite each other (the same site-isolation the
+ *   sibling plugins give their regions).
  * @param {() => number} [options.now] - clock source; injected by the tests.
  * @param {number} [options.ttlMs] - how long a parsed record may be reused
  *   before disk is consulted again; defaults to {@link STATE_READ_TTL_MS}.
  * @returns {CatalogStore} the store.
  */
 export function createFileCatalogStore(options: StoreOptions = {}) {
-  const { dir, profile = null, now = Date.now, ttlMs = STATE_READ_TTL_MS } = options;
+  const { dir, profile = null, now = Date.now, ttlMs = STATE_READ_TTL_MS, file: fileName = "catalog.json" } = options;
   const stateDir = dir ?? catalogDir(profile);
-  const file = join(stateDir, "catalog.json");
+  const file = join(stateDir, fileName);
   /**
    * Last known record, mirrored from {@link cache} so the writers can reuse the
    * allow-list without a second read. `undefined` means "never synced from
@@ -153,7 +158,10 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
   // live in the pre-§23 SHARED directory. The cache inherits that record ONCE,
   // when its own file is found missing, then writes it back. An explicit `dir`
   // (the tests) never inherits: it was never part of the shared layout.
-  const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), "catalog.json") : null;
+  // The §23 legacy adoption inherits THIS site's own record (the INTL row
+  // has no pre-§23 predecessor and adopts nothing — an absent file is a
+  // missing catalog, exactly like a fresh CN install).
+  const legacyFile = dir === undefined && profile ? join(sharedStateDir(name), fileName) : null;
 
   const cache = createStateReadCache(async () => parseCatalogPayload(await readStateJson(file)), {
     ttlMs,
@@ -189,7 +197,7 @@ export function createFileCatalogStore(options: StoreOptions = {}) {
    */
   const persist = async () => {
     if (held === null) return true;
-    const temporary = temporaryOf(stateDir, "catalog.json", now);
+    const temporary = temporaryOf(stateDir, fileName, now);
     try {
       await ensureStateDir(stateDir);
       await writeStateFile(file, JSON.stringify(held), { temporary });

@@ -82,12 +82,21 @@ import {
   loginFromAccount as loginFromAccountImpl,
   forgetAccount as forgetAccountImpl,
   USERNAME_REF,
-  PASSWORD_REF
+  PASSWORD_REF,
+  USERNAME_REF_INTL,
+  PASSWORD_REF_INTL
 } from "./token-store/account.ts";
 import { renewWithRefresh as renewWithRefreshImpl } from "./token-store/renewal.ts";
 import { acquire as acquireImpl } from "./token-store/acquire.ts";
 
-/** Record address: this plugin's own namespace, so a stranger cannot collide. */
+/**
+ * Record address: this plugin's own namespace, so a stranger cannot collide.
+ *
+ * The CN ROW's literals (ADR-021) — the INTL row passes its own ids through
+ * `createStoreContext` (`agnes-console-intl` / the `*_INTL` reference names),
+ * and these two stay the defaults every pre-ADR-021 caller (and the baseline
+ * suite) keeps using unchanged.
+ */
 const RECORD_ID = "agnes-console";
 
 /**
@@ -112,6 +121,16 @@ const credentialRef = (name) => name;
  * surface (`THROTTLE_ID`).
  */
 const THROTTLE_ID = "agnes-console-throttle";
+
+/**
+ * The INTL row's record addresses (ADR-021): the second site carries its own
+ * grant and its own legacy throttle sweep, so a CN grant is never read,
+ * rotated, or reaped by the INTL store, and vice versa. Exported for the
+ * same pinning reason as {@link RECORD_ID}: the offline suites assert the
+ * literals rather than re-deriving them.
+ */
+export const RECORD_ID_INTL = "agnes-console-intl";
+export const THROTTLE_ID_INTL = "agnes-console-intl-throttle";
 
 /**
  * Build the token store.
@@ -140,6 +159,19 @@ const THROTTLE_ID = "agnes-console-throttle";
  *   the sanitized hop list when a sign-in attempt ENDS, success or failure;
  *   the second argument is `null` on success and the thrown error otherwise
  *   (matching the contract `agnes-auth.ts` uses).
+ * @param {string} [options.recordId] - the grant record's id within this
+ *   plugin's scope; the CN row's `agnes-console` by default, the INTL row's
+ *   `agnes-console-intl` (ADR-021), so the two sites carry two grants the
+ *   wrong site's store can never read or rotate.
+ * @param {string} [options.throttleId] - the legacy throttle-record address
+ *   swept on a clear; the CN row's `agnes-console-throttle` by default.
+ * @param {string} [options.usernameRef] - the stored username's reference
+ *   name (`AGNES_USERNAME` by default, `AGNES_USERNAME_INTL` for the INTL
+ *   row). The environment carries the same name as its auto-recovery source.
+ * @param {string} [options.passwordRef] - the environment password's name
+ *   (`AGNES_PASSWORD` by default, `AGNES_PASSWORD_INTL` for the INTL row).
+ *   The password is still never persisted: the env is its only durable
+ *   source, per the red line, in both rows.
  * @returns the store: `getToken`, `invalidate`, `saveAccount`,
  *   `forgetAccount`, and `state`.
  */
@@ -364,6 +396,8 @@ export {
   RECORD_ID,
   USERNAME_REF,
   PASSWORD_REF,
+  USERNAME_REF_INTL,
+  PASSWORD_REF_INTL,
   THROTTLE_ID,
   DEFAULT_LOGIN_BACKOFF_MS,
   MAX_LOGIN_BACKOFF_MS

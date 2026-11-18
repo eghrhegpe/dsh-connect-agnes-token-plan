@@ -39,6 +39,15 @@ export const PROVIDER_ID = "agnes-token-plan";
  */
 export const AGNESCODE_PROVIDER_ID = "agnescode";
 
+/**
+ * The INTERNATIONAL-site provider id this plugin registers (ADR-021) — the
+ * Host's `LLM_PROVIDER_ID_INTL` (`src/host/llm-models.ts`) under a client-side
+ * spelling, for the same reason as {@link PROVIDER_ID}: it is the composer
+ * pill's third gate, and a rename on one side would make the INTL quota
+ * reading silently never mount. `test/contract.test.mjs` §11c pins the pair.
+ */
+export const PROVIDER_ID_INTL = "agnes-token-plan-intl";
+
 /** The Host snapshot route. Relative, same-origin. */
 export const SNAPSHOT_PATH = `/api/${PANEL_ID}/snapshot`;
 

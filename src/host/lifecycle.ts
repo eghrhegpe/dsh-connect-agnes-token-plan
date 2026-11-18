@@ -405,6 +405,21 @@ export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSid
     catalogSignature
   );
 
+  // The INTL row's seed (ADR-021): the second publisher reads the INTL
+  // catalog record (`catalog.intl.json`) and, behind its own switch gate,
+  // registers `LLM_PROVIDER_ID_INTL` — or stays unregistered, which is the
+  // whole point of a second row that is off: absence, not an empty offer.
+  // The gate lives inside the seed's publish, so an off row costs one read
+  // of a (typically missing) file and nothing else.
+  if (wiring.intlPublisher !== undefined && wiring.intlCatalogStore !== undefined) {
+    void seedPublisherFromCatalog(
+      wiring.intlPublisher,
+      () => wiring.intlCatalogStore!.list(),
+      () => wiring.intlCatalogStore!.listEnabledIds(),
+      catalogSignature
+    );
+  }
+
   // Draw absorption: opt-in, doubly degraded (no tools service / no peer).
   // The effective value is panel-saved > config default (draw-store). The mount
   // handle is stored on the wiring bag (`wiring.drawToolMount`) so the switch
@@ -507,17 +522,28 @@ export function startSideEffects(ctx: HostCtx, wiring: HostWiring, side: ToolSid
  * @param {object} wiring.publisher - the `createProviderPublisher` instance.
  * @param {Function[]} offs - the unregister callbacks from {@link registerRoutes}.
  * @param {Function} [stopTick] - the `catalogEffects.start()` stopper.
+ * @param {Function} [stopIntlTick] - the INTL row's tick stopper (ADR-021);
+ *   absent when the row's background refresh was never started (off or
+ *   misconfigured row), and the call is a no-op then.
  * @returns {void}
  */
-export function teardown(wiring: HostWiring, offs: Array<() => void>, stopTick?: () => void) {
+export function teardown(wiring: HostWiring, offs: Array<() => void>, stopTick?: () => void, stopIntlTick?: () => void) {
   const { publisher, releaseProvider, agnescodePublisher } = wiring;
-  // The background clock goes first: it is the one thing that can still START
-  // work, and every step below is about not letting work land in a Host that is
-  // letting this plugin go.
+  // The background clocks go first: they are the only thing that can still
+  // START work, and every step below is about not letting work land in a Host
+  // that is letting this plugin go.
   try {
     stopTick?.();
   } catch {
     // A stopper that throws is already stopped as far as this teardown cares.
+  }
+  // The INTL row's tick stops with the CN one, before its publisher is
+  // withdrawn — same order, same reason (ADR-021): a refresh that keeps
+  // running after the withdrawal re-registers into a Host that is gone.
+  try {
+    stopIntlTick?.();
+  } catch {
+    // Same as above: the stopper is best-effort by contract.
   }
   // Before anything else: a publish still in flight (the mount seed's, or a
   // poll's) must not register into a Host that is letting this plugin go.
@@ -526,6 +552,12 @@ export function teardown(wiring: HostWiring, offs: Array<() => void>, stopTick?:
   // §6.3): same order, same reason.
   agnescodePublisher?.dispose();
   agnescodePublisher?.release?.();
+  // The INTL provider is a FOURTH, independent registration (ADR-021): its
+  // queue and release path are its own, so both get the same two-step
+  // withdrawal — a publish still in flight must not register into a Host
+  // that is letting this plugin go, and the adapter goes before the routes.
+  wiring.intlPublisher?.dispose?.();
+  wiring.releaseIntlProvider?.();
   // Stop offering the provider first, so a request cannot be routed to an
   // adapter whose Host services are already half gone.
   releaseProvider();

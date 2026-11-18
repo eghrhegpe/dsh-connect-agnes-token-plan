@@ -39,7 +39,8 @@ import {
   thinkingLevelMapFor,
   FALLBACK_CONTEXT_WINDOW,
   PROBED_CONTEXT_WINDOWS,
-  LLM_PROVIDER_ID
+  LLM_PROVIDER_ID,
+  LLM_PROVIDER_ID_INTL
 } from "../src/host/llm-models.ts";
 import { countOf, timestampSeconds, checkShape, identifyVisionModel } from "../src/host/parsers.ts";
 import { retryableCodes, QUOTA_CODES } from "../src/host/llm-retry.ts";
@@ -834,14 +835,16 @@ function literalScan(text, opener, after) {
 //     silently stop the panel recognising the expected "switch on, no token
 //     yet" state — which is how a red error alert once flashed on the tab.
 //
-// A third and fourth belong to the same family and are the purest case of it —
-// one provider gate per upstream the composer pill serves:
-//   `PROVIDER_ID` (`client/const.ts`) = `LLM_PROVIDER_ID`, and
-//   `AGNESCODE_PROVIDER_ID` = the Host's constant of the same name. Each pill
-//     only mounts when the session's selected provider is its string, so a
-//     rename on either side makes that reading silently never appear — an
-//     outcome indistinguishable from "this provider has no quota", with no error
-//     text and no other suite to notice. Pinned here, where the spellings meet.
+// The third, fourth and fifth belong to the same family and are the purest
+// case of it — one provider gate per upstream the composer pill serves:
+//   `PROVIDER_ID` (`client/const.ts`) = `LLM_PROVIDER_ID`,
+//   `AGNESCODE_PROVIDER_ID` = the Host's constant of the same name, and
+//   `PROVIDER_ID_INTL` = `LLM_PROVIDER_ID_INTL` (the INTL row's pill gate,
+//   ADR-021 — the third gate, same silence on drift). Each pill only mounts
+//     when the session's selected provider is its string, so a rename on
+//     either side makes that reading silently never appear — an outcome
+//     indistinguishable from "this provider has no quota", with no error text
+//     and no other suite to notice. Pinned here, where the spellings meet.
 //
 // Pinned next to the other cross-half wire facts. The host call sites that spell
 // the AgnesCode code (`agnescode-publish.ts`, `routes/agnescode.ts`) now go
@@ -857,7 +860,8 @@ function literalScan(text, opener, after) {
     { name: "AGNESCODE_TIER_OK", file: "wire.ts", host: AGNESCODE_HARVEST_TIER.OK, hostLabel: "AGNESCODE_HARVEST_TIER.OK" },
     { name: "AGNESCODE_ERROR_NOT_CONFIGURED", file: "wire.ts", host: CODE.NOT_CONFIGURED, hostLabel: "CODE.NOT_CONFIGURED" },
     { name: "PROVIDER_ID", file: "const.ts", host: LLM_PROVIDER_ID, hostLabel: "LLM_PROVIDER_ID" },
-    { name: "AGNESCODE_PROVIDER_ID", file: "const.ts", host: AGNESCODE_PROVIDER_ID, hostLabel: "AGNESCODE_PROVIDER_ID" }
+    { name: "AGNESCODE_PROVIDER_ID", file: "const.ts", host: AGNESCODE_PROVIDER_ID, hostLabel: "AGNESCODE_PROVIDER_ID" },
+    { name: "PROVIDER_ID_INTL", file: "const.ts", host: LLM_PROVIDER_ID_INTL, hostLabel: "LLM_PROVIDER_ID_INTL" }
   ];
   for (const pin of PINS) {
     const found = sourceOf(pin.file).match(new RegExp(`export const ${pin.name} = "([^"]*)"`));

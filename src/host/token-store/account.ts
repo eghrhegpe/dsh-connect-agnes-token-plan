@@ -31,29 +31,38 @@ import { str, verbatim, pluginError } from "../util.ts";
  */
 const credentialRef = (name: string) => name;
 
-/** Where the account lives. The password is NEVER persisted. */
+/** Where the account lives (the CN row's reference names, ADR-021). The password is NEVER persisted. */
 export const USERNAME_REF = "AGNES_USERNAME";
 export const PASSWORD_REF = "AGNES_PASSWORD";
+
+/** The INTL row's account reference names: a second site, a second address. */
+export const USERNAME_REF_INTL = "AGNES_USERNAME_INTL";
+export const PASSWORD_REF_INTL = "AGNES_PASSWORD_INTL";
 
 /**
  * The account's identity: the stored username, with the environment as a
  * fallback. Kept apart from the password because only the username is ever
  * persisted — `state()` asks "is there an account to clear?" without
  * requiring a password to be available.
+ *
+ * The reference names come off the wiring (ADR-021): one block serves the CN
+ * row (`AGNES_USERNAME` / `AGNES_PASSWORD`) and the INTL row (the `*_INTL`
+ * pair) — a second hand-copied block is exactly the drift this split
+ * exists to prevent.
  * @returns {Promise<string>} the username, or `""` when none is known.
  */
 export async function readUsername(
-  wiring: { backend: () => { resolve: (ref: string) => Promise<{ value?: unknown }> }; env: Record<string, unknown> },
+  wiring: { backend: () => { resolve: (ref: string) => Promise<{ value?: unknown }> }; env: Record<string, unknown>; usernameRef: string },
   _state: unknown
 ) {
-  const { backend, env } = wiring;
+  const { backend, env, usernameRef } = wiring;
   const fromStore = async (ref: string) => {
     // `resolve` is per-call by contract: a value written a moment ago is
     // visible to the next read, with no restart in between.
     const resolved = await backend().resolve(credentialRef(ref)).catch(() => undefined);
     return verbatim(resolved?.value, "");
   };
-  return str(await fromStore(USERNAME_REF), "") || str(env[USERNAME_REF], "");
+  return str(await fromStore(usernameRef), "") || str(env[usernameRef], "");
 }
 
 /**
@@ -66,10 +75,10 @@ export async function readUsername(
  * @returns {Promise<{username: string, password: string, source: string}|undefined>}
  */
 export async function readAccount(
-  wiring: { backend: () => { resolve: (ref: string) => Promise<{ value?: unknown }>; unset: (ref: string) => Promise<unknown> }; env: Record<string, unknown> },
+  wiring: { backend: () => { resolve: (ref: string) => Promise<{ value?: unknown }>; unset: (ref: string) => Promise<unknown> }; env: Record<string, unknown>; usernameRef: string; passwordRef: string },
   state: { passwordSwept: boolean }
 ) {
-  const { backend, env } = wiring;
+  const { backend, env, passwordRef } = wiring;
   const username = await readUsername(wiring, state);
   // One-time sweep: a previous version stored the password in the
   // credentials service. The new policy keeps no password at rest, so a
@@ -78,9 +87,9 @@ export async function readAccount(
   // until the user re-saves, which still cannot leak it anywhere new.
   if (!state.passwordSwept) {
     state.passwordSwept = true;
-    await backend().unset(credentialRef(PASSWORD_REF)).catch(() => {});
+    await backend().unset(credentialRef(passwordRef)).catch(() => {});
   }
-  const password = verbatim(env[PASSWORD_REF], "");
+  const password = verbatim(env[passwordRef], "");
   if (username === "" || password.trim() === "") return undefined;
   return { username, password, source: "env" };
 }
@@ -112,6 +121,11 @@ export async function loginFromAccount(
     onTrace: any;
     backend: () => { resolve: (ref: string) => Promise<{ value?: unknown }>; unset: (ref: string) => Promise<unknown> };
     env: Record<string, unknown>;
+    // The row's account reference names (ADR-021): the login they name is
+    // the one `readAccount` answers, so the two rows can never log the wrong
+    // site in under a shared wiring.
+    usernameRef: string;
+    passwordRef: string;
   },
   state: { passwordSwept: boolean; cached?: any },
   explicit: { username: string; password: string } | undefined,
@@ -137,9 +151,12 @@ export async function loginFromAccount(
  * expired grant then, so nothing ownerless is left behind.
  * @returns {Promise<void>}
  */
-export async function forgetAccount(wiring: { backend: () => { unset: (ref: string) => Promise<unknown> } }, state: { cached: any }) {
-  const { backend } = wiring;
-  await backend().unset(credentialRef(USERNAME_REF));
-  await backend().unset(credentialRef(PASSWORD_REF));
+export async function forgetAccount(
+  wiring: { backend: () => { unset: (ref: string) => Promise<unknown> }; usernameRef: string; passwordRef: string },
+  state: { cached: any }
+) {
+  const { backend, usernameRef, passwordRef } = wiring;
+  await backend().unset(credentialRef(usernameRef));
+  await backend().unset(credentialRef(passwordRef));
   state.cached = null;
 }

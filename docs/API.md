@@ -138,6 +138,21 @@
     // 面板/配置钉死的视频模型偏好（effectiveVideoModelId 非空时才下发；未钉=自动选择，此键缺席）
     "videoPreferredModel": "agnes-video-v2.0"
   },
+  // 国际站行（ADR-021）：仅当 patch 行 `registerProviderIntl: true` 时 Host 装配
+  // INTL 半边、本块在场；未装配（默认）或该段批量致命失败时整个块缺席——
+  // 缺席即 pre-ADR-021 的逐字节形状。每个 INTL 源走同款软失败纪律，
+  // 整段致命失败降级为「无 intl 块」，绝不动 CN 半边。
+  "intl": {
+    "consoleBase": "https://platform-backend.agnes-ai.com",
+    "quota": { /* 与顶层 quota 同形：国际站自己的四个窗口 */ },
+    "auth":  { /* 与顶层 auth 同形：国际站控制台的登录态（env 引导 AGNES_USERNAME_INTL / AGNES_PASSWORD_INTL） */ },
+    "llm": {
+      "hasApiKey": true, "keySource": "credentials", "ephemeral": false,
+      "providerId": "agnes-token-plan-intl", "registerProvider": true,
+      "llmAvailable": true, "providerRegistered": true, "modelCount": 7,
+      "providerError": null
+    }
+  },
   "shapeWarnings": [/* 控制台返回结构与预期不符时非空 */]
 }
 ```
@@ -146,6 +161,7 @@
 - **控制台读不到时 body 仍然是 `ok:true`**：`quota.consoleConnected:false` 加上 `quota.error.code`（`not_configured` / `auth_error` / `console_error`）。这样 API Key tab 和 AgnesCode tab 仍然可达——它们一个不读控制台、一个连的是桌面 App 上游，被一个缺席模块一起埋掉正是 `ARCHITECTURE.md` §5 禁止的。
 - Host 内部：临近过期时用保存的账号重新登录一次；Agnes 不发 refresh_token，所以「续期」就是重登。
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
+- **`intl` 块（ADR-021）只在 patch 行 `registerProviderIntl: true` 时装配**：它由 INTL 行自己的 token store / key 引用 / publisher / 目录 / 目录写手五槽同时在场时才出现，与 CN 半边并行取数（共享 cache/inflight 按 URL 分家）并独立软失败。缺席 = 「这台机器没有国际站配置」，不是「国际站读失败了」——后者在块内以各源的 `quota.error` 报出。胶囊的第三根门控（`agnes-token-plan-intl` 模型）读的就是 `intl.quota`。
 - **额度与用量是两条独立事实**：`quota.windows` 的平台声明上限 +（`subscription.usage` 给到时的）窗口内 `used`；`quota.totals` 与 `usage` 是平台报出的累计 / 分桶量。窗口内的已用量由平台给，面板直接引用；Host 从不做 `limit - total`——累计值与窗口不同周期，相减会算出没人能负责的数。
 
 #### `auth` 块的两个节流字段（面板必须服从）
@@ -244,11 +260,13 @@
 
 ### `GET|POST /api/dsh-connect-agnes-token-plan/agnescode`
 
-桌面端上游（AgnesCode 桌面端登录态）的开关与状态，独立存证与凭据，与主链路完全隔离。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, expired, balance, rateLimit?, ledger?, models, enabledModelIds, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是会话文件里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`expiresAtMs` 是凭据到期时刻，`expired` 是**宿主算好的判决**（面板据此把中性日期换成告警，不在浏览器里重算一遍过期规则）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久，外加平台公布的 GRANTS 四字段 `dailyFreeCredits` / `subscriptionCredits` / `dailyEffectQuota` / `effectQuotaBalance`，0 是已公布事实非缺失），不是 Token Plan 的窗口语义；`rateLimit` 是**本地**限流症状记录（本插件自身请求撞限：今日 / 近 30 天次数 + 最近一次时间，未记过为 `{today:0,last30d:0,lastAt:null}`）；`ledger` 是 Host 对账户积分流水的只读聚合（今日 / 近 30 天入出合计 + `covered30d` 取不尽标志 + 最近扣减时间；**不含**流水条目的 `description`——账号级内容不出 Host；`null` = 未登录或后台聚合未 settled，下一拍轮询再取）；`models` 是**整份**花名册（有凭据取实时目录、否则用静态兜底，行带 `memberOnly` 标记，门槛是账号状态，标记而不隐藏），`enabledModelIds` 是面板勾选的**当前推送允许清单**（空列表 = 全推，与 Token Plan 侧同一约定）。`POST` 三个动作：
+桌面端上游（AgnesCode 桌面端登录态）的开关与状态，独立存证与凭据，与主链路完全隔离。`GET` 回 `{ok, enabled, switchSource, loggedIn, nickname, bffBase, expiresAtMs, expired, desktopSourceEnabled?, desktopSourceServing?, desktopSourceReason?, balance, rateLimit?, ledger?, models, enabledModelIds, providerRegistered, providerError?, harvest?, error?}`——`bffBase` 是**当前供出凭据**（桌面源视图或槽内登录态，见下）里**按账号跟随**的接口地址（钉死在 Agnes 域名族内）；`expiresAtMs` 是凭据到期时刻，`expired` 是**宿主算好的判决**（面板据此把中性日期换成告警，不在浏览器里重算一遍过期规则）；`desktopSource*` 三字段是 ADR-020 的桌面源开关事实（**扁平**出 wire，宿主 store 未接视图时整体缺席）：`desktopSourceEnabled` = 面板开关的解析值（默认关），`desktopSourceServing` = 本次供出的凭据是否来自桌面会话文件的**只读视图**（视图从不写入凭据服务），`desktopSourceReason` = 开而未供出时的封闭原因（harvest 九档 tier 直映 + `no_expiry` / `expired` / `read_failed`；供出或关闭时为 `null`）；`balance` 是订阅池口径（`totalBalance` / 时效 / 永久，外加平台公布的 GRANTS 四字段 `dailyFreeCredits` / `subscriptionCredits` / `dailyEffectQuota` / `effectQuotaBalance`，0 是已公布事实非缺失），不是 Token Plan 的窗口语义；`rateLimit` 是**本地**限流症状记录（本插件自身请求撞限：今日 / 近 30 天次数 + 最近一次时间，未记过为 `{today:0,last30d:0,lastAt:null}`）；`ledger` 是 Host 对账户积分流水的只读聚合（今日 / 近 30 天入出合计 + `covered30d` 取不尽标志 + 最近扣减时间；**不含**流水条目的 `description`——账号级内容不出 Host；`null` = 未登录或后台聚合未 settled，下一拍轮询再取）；`models` 是**整份**花名册（有凭据取实时目录、否则用静态兜底，行带 `memberOnly` 标记，门槛是账号状态，标记而不隐藏），`enabledModelIds` 是面板勾选的**当前推送允许清单**（空列表 = 全推，与 Token Plan 侧同一约定）。`POST` 五个动作：
 
 - `{action:"switch", enabled}` —— 注册 / 注销 AgnesCode provider（`switch:false` 即注销，无 `logout`）。
+- `{action:"desktop-source", enabled}` —— 桌面源开关（ADR-020，默认关）：开启后每次读凭据先看桌面 App 的会话文件（只读视图：不刷新、不回写、不拷入凭据服务），新鲜即以它为源，读不到 / 已过期自动落回槽内登录态（**切源永不丢登录**）。写后走 store 感知的 `publishFromStore()` 全量回显（与 `switch` 同纪律）。非布尔返回 400。
 - `{action:"harvest"}` —— 重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**（tier 代码 + 形状事实，令牌永不进响应）；凭据刷新靠 `harvest` 覆盖写入（非登出），「解除关联」按钮已移除——它删本地 JWT 之外没有 `harvest`/`switch` 做不了的事，桌面 App 自己的登录态本就不归本插件管。
 - `{action:"saveModels", enabledModelIds: string[]}` —— 持久化花名册勾选（profile 级 `agnescode-models.json`，空列表 = 不筛选 = 全推），并**立即**重发一次过滤后的 roster（不必等下次轮询；过滤只在发布前裁剪，不与 Token Plan 的 `enabledModelIds` 或 publisher 状态串味）。非数组返回 400。
+- `{action:"login", domain?}` —— 设备流扫码登录（跨平台替代 harvest，`docs/AGNESCODE-SCAN-LOGIN.md`；`domain` 仅 `"cn"` / `"intl"`）。
 
 **无 `logout`**：凭据刷新靠 `harvest` 覆盖写入，注销 provider 靠 `switch:false`。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
 

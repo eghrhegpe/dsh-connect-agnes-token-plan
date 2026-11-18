@@ -147,11 +147,16 @@ function parse(raw: unknown, now: () => number) {
  * retry of a password the user has not changed.
  * @param {object} [options] - wiring.
  * @param {string} [options.dir] - directory; defaults to {@link throttleDir}.
+ * @param {string} [options.file] - the file name; `throttle.json` (the CN row,
+ *   ADR-021) by default, `throttle.intl.json` for the INTL row. Same shared
+ *   directory as the CN file on purpose (PITFALLS §23: a throttle is a
+ *   machine-level "stop knocking" fact, shared across profiles) — the two
+ *   rows just never write each other's deadline.
  * @param {() => number} [options.now] - clock source; injected by the tests.
  * @returns {{read: Function, write: Function, clear: Function}} the store.
  */
-export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } = {}) {
-  const file = join(dir, "throttle.json");
+export function createFileThrottleStore({ dir = throttleDir(), now = Date.now, file: fileName = "throttle.json" } = {}) {
+  const file = join(dir, fileName);
 
   // There is deliberately no adoption of the pre-rename state directory. That
   // directory (`state/dsh-llm-rate-panel/`) belongs to the SenseNova plugin,
@@ -175,7 +180,7 @@ export function createFileThrottleStore({ dir = throttleDir(), now = Date.now } 
     // Returning a boolean is the same contract `catalog-store.replace()`
     // already uses, so the caller can warn on `false` without a try/catch.
     async write(state: Record<string, unknown>) {
-      const temporary = temporaryOf(dir, "throttle.json");
+      const temporary = temporaryOf(dir, fileName);
       try {
         await ensureStateDir(dir);
         const body = JSON.stringify({

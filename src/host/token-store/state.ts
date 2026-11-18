@@ -29,9 +29,19 @@ import { createAuth } from "../agnes-auth.ts";
 import { createMemoryThrottleStore } from "../throttle-store.ts";
 import { name as RECORD_SCOPE } from "../host-config.ts";
 
-/** Record address: this plugin's own namespace, so a stranger cannot collide. */
+/**
+ * Record address: this plugin's own namespace, so a stranger cannot collide.
+ *
+ * These are the CN ROW's addresses (ADR-021): the INTL row passes its own ids
+ * (`agnes-console-intl` / `agnes-console-intl-throttle`) and its own account
+ * reference names, so a machine holding both sites carries two grants that
+ * can never be read or renewed by the wrong site's store.
+ */
 const RECORD_ID = "agnes-console";
 const THROTTLE_ID = "agnes-console-throttle";
+/** The CN row's account reference names (the INTL row's are the `*_INTL` pair). */
+const USERNAME_REF = "AGNES_USERNAME";
+const PASSWORD_REF = "AGNES_PASSWORD";
 const DEFAULT_SKEW_MS = 120_000;
 
 /**
@@ -54,7 +64,15 @@ export function createStoreContext({
   throttleStore: injectedThrottleStore,
   now = Date.now,
   onTrace,
-  credentialKey
+  credentialKey,
+  // The row's record addresses (ADR-021). All four default to the CN row's
+  // literals, so a pre-ADR-021 caller (and the whole offline baseline suite)
+  // is byte-for-byte unchanged; the INTL row passes the `*-intl` grant and
+  // throttle ids and the `*_INTL` account references.
+  recordId = RECORD_ID,
+  throttleId = THROTTLE_ID,
+  usernameRef = USERNAME_REF,
+  passwordRef = PASSWORD_REF
 }: {
   credentials: any;
   auth?: any;
@@ -64,9 +82,13 @@ export function createStoreContext({
   now?: () => number;
   onTrace?: (hops: any, error: any) => void;
   credentialKey: (scope: string, id: string) => string;
+  recordId?: string;
+  throttleId?: string;
+  usernameRef?: string;
+  passwordRef?: string;
 }) {
-  const key = credentialKey(RECORD_SCOPE, RECORD_ID);
-  const THROTTLE_KEY = credentialKey(RECORD_SCOPE, THROTTLE_ID);
+  const key = credentialKey(RECORD_SCOPE, recordId);
+  const THROTTLE_KEY = credentialKey(RECORD_SCOPE, throttleId);
   // Resolved here rather than as a parameter default, for two reasons.
   //
   // It has to judge its window with the clock the rest of the store uses: a
@@ -133,6 +155,12 @@ export function createStoreContext({
     credentialKey,
     key,
     THROTTLE_KEY,
+    // The row's account reference names: `account.ts` reads these off the
+    // wiring so one store body serves the CN row (the `AGNES_USERNAME` /
+    // `AGNES_PASSWORD` pair) and the INTL row (the `*_INTL` pair) without a
+    // second copy of the block (ADR-021).
+    usernameRef,
+    passwordRef,
     backend,
     ephemeral
   };

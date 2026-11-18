@@ -96,6 +96,26 @@
         #「模型接入」switch (POST /api/<name>/provider) overrides it live,
         # with no restart. See docs/PROVIDER-HOT-RELOAD.md.
         registerProvider: false
+        # ------------------------------------------------------------------
+        # Step three for the INTERNATIONAL site (ADR-021): a SECOND,
+        # co-existing provider — `agnes-token-plan-intl`, aimed at
+        # `apiBaseIntl`, fed by the INTL catalog (`catalog.intl.json`) and
+        # the INTL key reference (`AGNES_TOKEN_PLAN_INTL_API_KEY`). The two
+        # sites' account systems do not interoperate, so this is a separate
+        # provider row, never a "site switch": a request's site is decided
+        # by the model's provider id, statically. Off = the whole INTL half
+        # is inert (no INTL catalog fetch, no INTL login, no registration),
+        # so a CN-only machine behaves exactly as before this block existed.
+        # When on, the console login for the INTL half is the env bootstrap
+        # `AGNES_USERNAME_INTL` / `AGNES_PASSWORD_INTL` (the panel's account
+        # form still covers the CN half; a panel form for the INTL half is
+        # follow-up work).
+        # The two bases ship as defaults from the 2026-11-18 live probe
+        # (upstream/probe-artifacts/intl-endpoints-20261118.json); override
+        # only if the platform moves them.
+        registerProviderIntl: false
+        # consoleBaseIntl: https://platform-backend.agnes-ai.com
+        # apiBaseIntl: https://apihub.agnes-ai.com/v1
         # Explicit per-model OUTPUT CEILING, for the AgnesCode route only.
         # Keys are EXACT model ids (no substring matching — unlike
         # trendMultipliers above, this value is a REQUEST PARAMETER, so a loose

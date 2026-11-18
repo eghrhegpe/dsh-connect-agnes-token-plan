@@ -57,6 +57,9 @@ plugin_manager { action: "install_bundle", target: "dsh-connect-agnes-token-plan
 | `fallbackExpiresInSeconds` | `0` → `604800` | access token 不是可读 JWT 时假定的寿命（7 天）。**方向是刻意的**：估短了每轮轮询都要花一次真实登录，而 Agnes 有失败次数锁定 |
 | `writeImageModelIds` | `false` | 视觉第二步（§5.1）：**opt-in**，是否把识别出的可看图模型清单写进本插件自己的 DSH settings row（`imageModelIds` / `visionModels` 两个字段），供后续 LLM connect 插件读取。默认关，纯读信息层 |
 | `registerProvider` | `false` | 第三步（§5.2）：**opt-in**，是否由本插件直接向 DSH 注册 OpenAI 兼容 LLM provider（id `agnes-token-plan`，直连 `apiBase`）。开启后在面板「接入 API」保存 API Key 即可（免费版 `sk-` 或 Token Plan `cpk-` 皆可），catalog 轮询自动建/刷新模型列表；Agnes 目录**不带** `input_modalities`，看图识别恒为 false（见 `AGNES-API.md` §7.1），所以模型不带图片输入是「读不到」而非「测过没有」；catalog 与允许清单只存插件私有状态文件。默认关——注册模型源是 Host 级变更 |
+| `registerProviderIntl` | `false` | 国际站的第三步（ADR-021）：**opt-in**，是否注册**第二个、并存**的 provider（id `agnes-token-plan-intl`，直连 `apiBaseIntl`）。两站账号体系不互通（`PITFALLS.md` §29），所以是**两条路由**而不是「站点开关」：请求打哪一站由模型所属 provider 静态决定。关 = 整个国际站半边全静默（不拉国际目录、不打国际登录、不注册）；开 = 需要国际站的 Key（凭据引用 `AGNES_TOKEN_PLAN_INTL_API_KEY`，面板环境兜底同名 env）+ 国际控制台登录走 env 引导（`AGNES_USERNAME_INTL` / `AGNES_PASSWORD_INTL`，显式 opt-in，密码不落盘——与 CN 半边同款纪律）。默认关 |
+| `consoleBaseIntl` | `https://platform-backend.agnes-ai.com` | 国际站控制台**后端**源站（2026-11-18 实测：`/api/usage/overview` 活路由，401 信封与 CN 同形）。仅当 `registerProviderIntl` 开时才被使用 |
+| `apiBaseIntl` | `https://apihub.agnes-ai.com/v1` | 国际站 OpenAI 兼容网关（2026-11-18 实测：`/v1/models` 401「Token not provided」活网关）。仅当 `registerProviderIntl` 开时才被使用 |
 | `maxTokensOverrides` | `{}` | **AgnesCode 路（`agnescode` provider）**的按模型输出上限覆盖：键是**模型 id 全等**（不做子串匹配——与 `trendMultipliers` 不同，这个值会变成请求参数，松散匹配会悄悄改掉你没点名的模型），值是正整数。优先级：本表 > 实时目录行的 `maxOutputLength` > 内置兜底花名册里同一模型的数字 > 不声明（交回宿主 `defaultMaxTokens ?? 32768`）。默认空 = 花名册说了算。**只有这一路有这个旋钮**：它的上限取决于环境（每账号 BFF，换会话可能报出不同花名册），BFF 低估某模型时本地没有别的真相来源，只能靠你补；Token Plan 路相反——上限是整平台实测的 65536 且恒定作为 `max_tokens` 发出，加旋钮只会让人填一个平台已证明会拒收的数（`max_tokens 不能超过 65536`）。面板「最大输出」徽标引用同一处解析，所以看到的数就是请求里发的数 |
 | `drawEnabled` | `false` | 出图吸收（§5.4 接法 B）：**opt-in**，是否给 agent 注册 `agnes_draw_image` 工具（POST `{apiBase}/images/generations`，用面板保存的 `AGNES_TOKEN_PLAN_API_KEY`）。出图模型由 catalog 的 `output_modalities` **当平台声明时**识别，未声明时退回模型 id 里 `image` 段匹配（Agnes 目录**不带**这个字段，见 `AGNES-API.md` §7.1，名字兜底才是实际命中的路径）；Key 每次调用现取；失败后 30s 冷却。默认关——agent 工具是 Host 级变更；无 tools 服务的 Host 上该工具静默缺席。面板「接入 API」区有真开关（`POST /api/<name>/draw`），勾选保存后在插件私有状态文件里记录，立即生效、无需重启 Host |
 | `drawModelId` | `""` | 首选出图模型 id；留空 = catalog 里第一把出图模型（按 `output_modalities` 字段 / `agnes-image-*` 名称判定，不写死示例）。工具调用显式传 `model` 时以调用为准 |
@@ -123,7 +126,7 @@ AgnesCode tab 读的是**另一个应用**（AgnesCode 桌面端）已经登录�
 
 ### 6.1 查这台机器的开关生效值（doctor）
 
-provider / 出图 / 视频 / AgnesCode 四个开关的生效值存在插件私有状态文件里（`$DSH_HOME/state/<name>/`），不在任何配置或路由上；`npm run doctor` 只读状态文件、不碰凭据，Host 没起也能跑：
+provider / 出图 / 视频 / AgnesCode provider / AgnesCode 桌面源 五个开关的生效值存在插件私有状态文件里（`$DSH_HOME/state/<name>/`），不在任何配置或路由上；`npm run doctor` 只读状态文件、不碰凭据，Host 没起也能跑：
 
 ```powershell
 npm run doctor          # 人读：每个 profile 的 provider / draw / video / agnescode 开关与模型清单

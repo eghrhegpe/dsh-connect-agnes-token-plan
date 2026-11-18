@@ -65,6 +65,23 @@ function check(name, condition, detail = "") {
     JSON.stringify(settings.auth));
 }
 
+// --- 1c. the INTL row's defaults (ADR-021) ------------------------------
+// The two INTL bases ship as defaults (the 2026-11-18 live probe values) and
+// the opt-in stays off, so a machine holding no INTL account pays nothing:
+// pin the three, and pin the two literals as the probe's origins the same
+// way red line 4 pins the CN pair (a one-sided edit to either literal would
+// otherwise point a shipped default at a host nobody probed).
+{
+  const { settings: resolved } = resolveSettings({});
+  check("consoleBaseIntl default", resolved.consoleBaseIntl === CONFIG_DEFAULTS.consoleBaseIntl, resolved.consoleBaseIntl);
+  check("apiBaseIntl default", resolved.apiBaseIntl === CONFIG_DEFAULTS.apiBaseIntl, resolved.apiBaseIntl);
+  check("registerProviderIntl is off by default", resolved.registerProviderIntl === false, String(resolved.registerProviderIntl));
+  check("the two shipped INTL base literals are the 2026-11-18 probe values",
+    CONFIG_DEFAULTS.consoleBaseIntl === "https://platform-backend.agnes-ai.com"
+      && CONFIG_DEFAULTS.apiBaseIntl === "https://apihub.agnes-ai.com/v1",
+    `${CONFIG_DEFAULTS.consoleBaseIntl} / ${CONFIG_DEFAULTS.apiBaseIntl}`);
+}
+
 // --- 2. the patch documents every user-facing key the code reads ----------
 // The list is DERIVED from CONFIG_DEFAULTS, not hand-written. It used to be a
 // literal array that quietly omitted half the keys (apiBase, pollSeconds,

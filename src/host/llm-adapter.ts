@@ -25,7 +25,30 @@ import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
 import { name } from "./host-config.ts";
-import { buildDescriptors, LLM_PROVIDER_ID, LLM_DISPLAY_NAME, DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
+import {
+  buildDescriptors,
+  LLM_PROVIDER_ID,
+  LLM_PROVIDER_ID_INTL,
+  LLM_DISPLAY_NAME,
+  LLM_DISPLAY_NAME_INTL,
+  DEFAULT_REASONING_EFFORT
+} from "./llm-models.ts";
+
+/**
+ * The provider ROW this adapter instance answers for (ADR-021).
+ *
+ * One plugin, two co-existing routes: the CN gateway and the INTL gateway are
+ * isomorphic but their account systems are not, so each site registers its own
+ * provider (the sibling-plugin shape: a site is a namespace, not a switch).
+ * The CN identity is the DEFAULT — an absent `provider` option is the exact
+ * pre-ADR-021 call — and `INTL_PROVIDER` is the second row. The descriptor
+ * builder already takes a `providerId` option; this object is how the factory
+ * carries one to it, to `createProvider`, and back out in `providerIds`.
+ */
+export const INTL_PROVIDER = Object.freeze({ id: LLM_PROVIDER_ID_INTL, name: LLM_DISPLAY_NAME_INTL });
+
+/** The CN provider row (the factory default, spelled out for the wiring). */
+export const CN_PROVIDER = Object.freeze({ id: LLM_PROVIDER_ID, name: LLM_DISPLAY_NAME });
 import { buildRetryPolicyConfig } from "./llm-retry.ts";
 import { createWrappedPiAiAdapter, STREAM_IDLE_TIMEOUT_MS, REQUEST_IMAGE_BUDGETS } from "./pi-ai-adapter-core.ts";
 
@@ -48,23 +71,34 @@ import { createWrappedPiAiAdapter, STREAM_IDLE_TIMEOUT_MS, REQUEST_IMAGE_BUDGETS
  *   the image hooks (`attachments`, `fs`).
  * @param {string[]} [options.unavailableModelIds] - model ids whose quota pool
  *   is exhausted; excluded from the offer so no doomed `429` request is sent.
+ * @param {{id: string, name: string}} [options.provider] - which provider row
+ *   this adapter answers for (ADR-021); the CN identity ({@link CN_PROVIDER})
+ *   when absent, so the pre-ADR-021 call is unchanged.
  * @returns {{adapter: object, providerIds: string[]}} the adapter and the ids
  *   it owns.
  */
-export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveApiKey, get, unavailableModelIds = [] }: {
+export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveApiKey, get, unavailableModelIds = [], provider: providerRow }: {
   entries: any;
   enabledIds?: string[];
   baseUrl?: string;
   resolveApiKey: any;
   get?: (service: string) => any;
   unavailableModelIds?: string[];
+  provider?: { id: string; name: string };
 }) {
-  const models = buildDescriptors(entries, { providerId: LLM_PROVIDER_ID, ...(baseUrl === undefined ? {} : { baseUrl }), enabledIds, unavailableModelIds });
+  // The row is the ONE identity the whole build answers for: the descriptor
+  // tag, the pi-ai provider, the profile key and the reported `providerIds`
+  // must all carry the same id, or the picker, the dispatch and the release
+  // path would name three different providers. Renamed from `provider` at the
+  // destructuring: the local pi-ai object below keeps that name, and reading
+  // the shadowed option would walk into the later `const`'s dead zone.
+  const identity = providerRow ?? CN_PROVIDER;
+  const models = buildDescriptors(entries, { providerId: identity.id, ...(baseUrl === undefined ? {} : { baseUrl }), enabledIds, unavailableModelIds });
 
   const provider = {
     ...createProvider({
-      id: LLM_PROVIDER_ID,
-      name: LLM_DISPLAY_NAME,
+      id: identity.id,
+      name: identity.name,
       auth: {
         apiKey: {
           name: "Agnes API key",
@@ -91,16 +125,18 @@ export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveA
 
   const profiles = new Map([
     [
-      LLM_PROVIDER_ID,
+      identity.id,
       {
-        provider: LLM_PROVIDER_ID,
-        displayName: LLM_DISPLAY_NAME,
+        provider: identity.id,
+        displayName: identity.name,
         streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
         // Quota-aware retry policy: explicit (not `undefined`) so a future peer
         // default change cannot silently alter this provider. Excludes the quota
         // codes (a depleted pool cannot be retried into health; see
         // `llm-retry.ts`), keeps `RATE_LIMIT` with a gentle shared-pool backoff.
-        retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${LLM_PROVIDER_ID}.retryPolicy`),
+        // The path carries the row's own id: the CN and the INTL route each
+        // hold their own retry namespace under this settings path.
+        retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${identity.id}.retryPolicy`),
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
         // The picker's "Default" pins to DEFAULT_REASONING_EFFORT (high).
@@ -126,13 +162,15 @@ export function createAgnesAdapter({ entries, enabledIds = [], baseUrl, resolveA
     ]
   ]);
 
-  // The stored API-key reference is the only credential this route presents; it
-  // is read per request, so rotating the key needs no re-registration.
+  // The stored API-key reference is the only credential this route presents
+  // (CN and INTL each carry their own reference, ADR-021 — the account systems
+  // are not shared, so one key must not serve both rows); it is read per
+  // request, so rotating the key needs no re-registration.
   const adapter = createWrappedPiAiAdapter({
     profiles,
     resolveApiKey: async () => resolveApiKey(),
     get
   });
 
-  return { adapter, providerIds: [LLM_PROVIDER_ID] };
+  return { adapter, providerIds: [identity.id] };
 }

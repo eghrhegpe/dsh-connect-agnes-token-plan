@@ -136,6 +136,23 @@ export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
    */
   const queue = createPublishQueue();
 
+  /**
+   * The provider row this publisher registers (ADR-021). The CN identity is
+   * the default: an absent `provider` dep is the exact pre-ADR-021 publisher.
+   * The INTL row (the `LLM_PROVIDER_ID_INTL` constant) passes `INTL_PROVIDER`
+   * from `llm-adapter.ts`; both rows share everything in this module — the
+   * queue, the rollback, the directory row — so a fix reaches both. The dep's
+   * shape is the adapter's `{id, name}` (the factory's option); the pair
+   * below is `registerProviderPair`'s — one field name apart, so the
+   * normalisation lives HERE, at the one place both halves meet: a missed
+   * rename would otherwise surface as a directory row without a `provider`
+   * (the models settings page losing the row) while the adapter itself
+   * registered fine.
+   */
+  const providerIdentity = deps.provider === undefined
+    ? { providerId: LLM_PROVIDER_ID, displayName: LLM_DISPLAY_NAME }
+    : { providerId: deps.provider.id, displayName: deps.provider.name };
+
   /** Resolve the peer-dependent adapter factory once and memoize it. */
   const resolveAdapterFactory = createAdapterFactoryResolver(
     effectiveLoadAdapterModule,
@@ -158,8 +175,8 @@ export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
    * @returns {void}
    */
   const registerPair = (llm, built, target) => registerProviderPair(llm, built, target, {
-    providerId: LLM_PROVIDER_ID,
-    displayName: LLM_DISPLAY_NAME
+    providerId: providerIdentity.providerId,
+    displayName: providerIdentity.displayName
   });
 
   /**
@@ -228,13 +245,18 @@ export function createProviderPublisher(deps: ProviderPublisherDeps = {}) {
       // would otherwise hand a Promise to `registerAdapter`, and the Host
       // would be offered a provider whose adapter is `undefined` — a failure
       // that surfaces as broken model routing, nowhere near its cause.
+      // The row identity travels with the build (ADR-021): the CN publisher
+      // passes none (the factory's CN default) and the INTL one passes its
+      // own, so a built adapter always tags its models for the row that
+      // registered it.
       built = await createAgnesAdapter({
         entries: state.entries,
         enabledIds: state.enabledIds,
         baseUrl: effectiveSettings.apiBase,
         resolveApiKey: effectiveResolveApiKey,
         get: effectiveGetLlm,
-        unavailableModelIds: state.unavailableIds
+        unavailableModelIds: state.unavailableIds,
+        ...(deps.provider !== undefined ? { provider: deps.provider } : {})
       });
       // The same reason, stated: an adapter is registered Host-wide, so a
       // factory that returns anything else must fail here rather than publish

@@ -48,6 +48,25 @@ function failureCode(error) {
  */
 export function registerSnapshotRoute(ctx: HostCtx, wiring: HostWiring) {
   const { settings, configError, cache, inflight, tokenStore, apiKeyStore, catalogStore, catalogEffects, providerStore, drawStore, videoStore, publisher, visionPublish, logger } = wiring;
+  // The INTL row's stores (ADR-021), one object so the aggregate's `intl`
+  // parameter stays a single named seam. `apply()` sets all five together, so
+  // the presence test is one slot; the whole five-tuple travels (or none of
+  // it), and a wiring that predates the row leaves the snapshot's `intl`
+  // block absent: the CN body stays exactly what the pinned snapshots and
+  // the pre-ADR-021 Hosts expect.
+  const intlStores = wiring.intlTokenStore !== undefined
+    && wiring.intlApiKeyStore !== undefined
+    && wiring.intlPublisher !== undefined
+    && wiring.intlCatalogStore !== undefined
+    && wiring.intlCatalogEffects !== undefined
+    ? {
+        tokenStore: wiring.intlTokenStore,
+        apiKeyStore: wiring.intlApiKeyStore,
+        publisher: wiring.intlPublisher,
+        catalogStore: wiring.intlCatalogStore,
+        catalogEffects: wiring.intlCatalogEffects
+      }
+    : undefined;
 
   return ctx.webServer.register({
     kind: "exact",
@@ -91,7 +110,9 @@ export function registerSnapshotRoute(ctx: HostCtx, wiring: HostWiring) {
           drawSwitch: async () => (drawStore ? await drawStore.enabled().catch(() => null) : null),
           drawModelId: async () => (drawStore ? await drawStore.modelId().catch(() => null) : null),
           videoSwitch: async () => (videoStore ? await videoStore.enabled().catch(() => null) : null),
-          videoModelId: async () => (videoStore ? await videoStore.modelId().catch(() => null) : null)
+          videoModelId: async () => (videoStore ? await videoStore.modelId().catch(() => null) : null),
+          // ADR-021: the INTL row's soft subset, when this wiring carries it.
+          ...(intlStores !== undefined ? { intl: intlStores } : {})
         });
         if (body.visionModels !== undefined) {
           // A write failure here is silent otherwise: the vision list fails to

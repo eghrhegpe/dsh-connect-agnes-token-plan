@@ -20,13 +20,23 @@
 import { verbatim } from "./util.ts";
 
 /**
- * The reference name the key is stored under.
+ * The reference name the key is stored under (the CN row, ADR-021).
  *
  * The hand-written `llm-pi-ai` provider resolves the same `apiKeyEnv` name, so
  * a key this panel saves lights that provider too — one stored value, both
  * routes.
  */
 export const API_KEY_REF = "AGNES_TOKEN_PLAN_API_KEY";
+
+/**
+ * The INTL row's own reference name (ADR-021): the two sites' account systems
+ * do not interoperate (PITFALLS §29), so a CN key must not be the credential
+ * the INTL gateway is offered — the operator saves the two keys side by side,
+ * each labeled by the site it belongs to. Same reference-value mechanism, a
+ * different name: the credentials service still holds one record per name,
+ * and no private record kind is invented (red line ②).
+ */
+export const API_KEY_REF_INTL = "AGNES_TOKEN_PLAN_INTL_API_KEY";
 
 /**
  * Every place a key can come from, in precedence order.
@@ -56,10 +66,17 @@ export const API_KEY_SOURCES = Object.freeze(["credentials", "memory", "env"]);
  */
 export function createApiKeyStore({
   credentials = null,
-  env = process.env
+  env = process.env,
+  ref = API_KEY_REF
 }: {
   credentials?: (() => any) | null;
   env?: Record<string, string | undefined>;
+  /**
+   * The reference name this store's row reads and writes (ADR-021): the CN
+   * row keeps {@link API_KEY_REF}, the INTL row passes {@link API_KEY_REF_INTL}.
+   * One store, one name — the two rows must never resolve the other row's key.
+   */
+  ref?: string;
 } = {}) {
   /** Fallback vault for a Host that has no credentials service. */
   const memory = new Map();
@@ -90,13 +107,13 @@ export function createApiKeyStore({
       if (service !== null && typeof service.set === "function") {
         // The durable copy first: a save the service refuses must propagate
         // and leave nothing behind, as the route reports it.
-        await service.set(API_KEY_REF, value);
+        await service.set(ref, value);
         // Mirror into this process's memory as well — the service may
         // unregister between this save and a later resolve, and a key that
         // was durably stored must not read back as absent when it does.
-        memory.set(API_KEY_REF, value);
+        memory.set(ref, value);
       } else {
-        memory.set(API_KEY_REF, value);
+        memory.set(ref, value);
       }
     },
 
@@ -108,11 +125,11 @@ export function createApiKeyStore({
      * @returns {Promise<void>}
      */
     async forget() {
-      memory.delete(API_KEY_REF);
+      memory.delete(ref);
       try {
         const service = resolveService();
         if (service !== null && typeof service.unset === "function") {
-          await service.unset(API_KEY_REF);
+          await service.unset(ref);
         }
       } catch {
         // The in-memory copy above is already gone; nothing else to do.
@@ -127,16 +144,16 @@ export function createApiKeyStore({
       try {
         const service = resolveService();
         if (service !== null && typeof service.resolve === "function") {
-          const resolved = await service.resolve(API_KEY_REF).catch(() => undefined);
+          const resolved = await service.resolve(ref).catch(() => undefined);
           const value = verbatim(resolved?.value, "");
           if (typeof value === "string" && value.trim() !== "") return { value, source: "credentials" };
         }
       } catch {
         // No usable answer from the service: fall through to memory/env.
       }
-      const held = memory.get(API_KEY_REF);
+      const held = memory.get(ref);
       if (typeof held === "string" && held.trim() !== "") return { value: held, source: "memory" };
-      const fromEnv = verbatim(env[API_KEY_REF], "");
+      const fromEnv = verbatim(env[ref], "");
       if (typeof fromEnv === "string" && fromEnv.trim() !== "") return { value: fromEnv, source: "env" };
       return { value: "", source: null };
     },

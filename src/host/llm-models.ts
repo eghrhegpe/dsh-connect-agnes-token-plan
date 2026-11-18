@@ -39,6 +39,31 @@ export const LLM_PROVIDER_ID = "agnes-token-plan";
 export const LLM_DISPLAY_NAME = "Agnes Token Plan";
 
 /**
+ * The provider id the INTERNATIONAL-site row registers under (ADR-021).
+ *
+ * The two Agnes sites are isomorphic gateways with INCOMPATIBLE account
+ * systems (PITFALLS §29), so a machine that holds both a CN and an INTL
+ * account needs TWO provider routes — the same shape every sibling converged
+ * on (qoder's `qoder` / `qoder-global`, minmax's region routes): the model ids
+ * are nearly identical across the two sites, so the model list cannot tell
+ * them apart, and the provider row is the only namespace the user sees.
+ * Registering one shared provider with a "current site" switch would be the
+ * accident shape: one flip re-aims every in-flight request, and the CN grant
+ * 401s on the INTL gateway the moment it is offered there. Two co-existing
+ * routes have no such switch — a request's site is decided by the model's
+ * provider id, statically.
+ *
+ * `LLM_PROVIDER_ID` (CN) is untouched and backward-compatible: existing picker
+ * selections and the `AGNES_TOKEN_PLAN_API_KEY` reference keep their CN
+ * meaning. The two spellings' two-sided agreement is pinned by
+ * `test/contract.test.mjs` §11c, like the CN pair.
+ */
+export const LLM_PROVIDER_ID_INTL = "agnes-token-plan-intl";
+
+/** What the DSH model picker shows as the INTL provider's name. */
+export const LLM_DISPLAY_NAME_INTL = "Agnes Token Plan (Intl)";
+
+/**
  * The thinking effort the profile pins as DSH's "Default" on this provider.
  *
  * One constant for two claims: `llm-adapter.ts` pins it into the profile, and

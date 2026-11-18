@@ -41,6 +41,17 @@ export const CONFIG_DEFAULTS = Object.freeze({
   consoleBase: "https://platform-backend.agnes-ai.cn",
   apiBase: "https://api.agnes-ai.cn/v1",
   /**
+   * The INTERNATIONAL site's console origin (ADR-021). Probed live on
+   * 2026-11-18 (`upstream/probe-artifacts/intl-endpoints-20261118.json`):
+   * `/api/usage/overview` answers the CN-identical 401 envelope, and
+   * `/api/user/login` exists as a POST route — a live, isomorphic backend.
+   * Inert until `registerProviderIntl` is set: the defaults exist so the
+   * opt-in needs no second line of configuration.
+   */
+  consoleBaseIntl: "https://platform-backend.agnes-ai.com",
+  /** The INTL site's OpenAI-compatible gateway base, same probe (401 "Token not provided"). */
+  apiBaseIntl: "https://apihub.agnes-ai.com/v1",
+  /**
    * How many days of usage the panel's chart covers, inclusive of today.
    *
    * Days, not hours: `/api/usage/series` takes `start_date` / `end_date` as
@@ -123,6 +134,28 @@ export const CONFIG_DEFAULTS = Object.freeze({
    * not suddenly offered two providers.
    */
   registerProvider: false,
+  /**
+   * Step three for the INTERNATIONAL site (ADR-021): register a SECOND,
+   * co-existing provider (`LLM_PROVIDER_ID_INTL`) aimed at `apiBaseIntl`,
+   * fed by the INTL catalog (`catalog.intl.json`) and the INTL key reference
+   * (`AGNES_TOKEN_PLAN_INTL_API_KEY`).
+   *
+   * A separate provider rather than a site switch, for the reason every
+   * sibling states: the two sites' model lists are near-identical, so one
+   * provider row cannot express "which site does this model address", while
+   * the account systems do not interoperate (PITFALLS §29) and a shared
+   * credential + "current site" knob would re-aim every in-flight request at
+   * once. With two routes the site is static per model, and a machine with
+   * only a CN account pays nothing: this key off means no INTL catalog
+   * fetch, no INTL login, no second registration.
+   *
+   * Off by default, like `registerProvider`: a second model source is a
+   * Host-wide change. This key is the ONLY INTL activation — deliberately a
+   * single-source patch-row value (the `writeImageModelIds` shape), not a
+   * panel switch: a panel-saved "current site" is exactly the global knob the
+   * two-route shape exists to avoid.
+   */
+  registerProviderIntl: false,
   /**
    * Explicit per-model output ceiling for the **AgnesCode** route, keyed by
    * EXACT model id; absent or empty means the roster's own figures stand.
@@ -349,11 +382,18 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
   const source = obj(config);
   const consoleBase = str(source.consoleBase, CONFIG_DEFAULTS.consoleBase).replace(/\/+$/, "");
   const apiBase = str(source.apiBase, CONFIG_DEFAULTS.apiBase).replace(/\/+$/, "");
+  // The INTL site's two bases (ADR-021): the same trailing-slash discipline,
+  // the probed 2026-11-18 values as shipped defaults (live-contract evidence in
+  // `upstream/probe-artifacts/intl-endpoints-20261118.json`).
+  const consoleBaseIntl = str(source.consoleBaseIntl, CONFIG_DEFAULTS.consoleBaseIntl).replace(/\/+$/, "");
+  const apiBaseIntl = str(source.apiBaseIntl, CONFIG_DEFAULTS.apiBaseIntl).replace(/\/+$/, "");
   try {
     return {
       settings: {
         consoleBase,
         apiBase,
+        consoleBaseIntl,
+        apiBaseIntl,
         // How many days of usage the chart covers (max 365). The series
         // endpoint takes dates, so this is a day count, not an hour count.
         usageDays: clampInt(source.usageDays, CONFIG_DEFAULTS.usageDays, 1, 365),
@@ -400,6 +440,10 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
         // Step three opt-in: register the OpenAI-compatible LLM provider
         // directly (strict boolean, like writeImageModelIds).
         registerProvider: source.registerProvider === true,
+        // Step three for the INTL site (ADR-021): the second, co-existing
+        // provider row. Same strict-boolean reading; when false the entire
+        // INTL half is inert (no catalog fetch, no registration, no login).
+        registerProviderIntl: source.registerProviderIntl === true,
         // Per-model AgnesCode output ceilings. Sanitized HERE so every
         // downstream reader (descriptor build, panel roster) sees one already-
         // valid map and none of them re-implements the rules.
@@ -435,6 +479,8 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
       settings: {
         consoleBase,
         apiBase,
+        consoleBaseIntl,
+        apiBaseIntl,
         usageDays: CONFIG_DEFAULTS.usageDays,
         trendMultipliers: CONFIG_DEFAULTS.trendMultipliers,
         cacheSeconds: CONFIG_DEFAULTS.cacheSeconds,
@@ -448,6 +494,7 @@ export function resolveSettings(config: Record<string, unknown>): { settings: Se
         // `imageModelIds` must not find it absent just because a typo elsewhere
         // pushed the whole row onto the default branch.
         registerProvider: CONFIG_DEFAULTS.registerProvider,
+        registerProviderIntl: CONFIG_DEFAULTS.registerProviderIntl,
         maxTokensOverrides: CONFIG_DEFAULTS.maxTokensOverrides,
         drawEnabled: CONFIG_DEFAULTS.drawEnabled,
         drawModelId: CONFIG_DEFAULTS.drawModelId,

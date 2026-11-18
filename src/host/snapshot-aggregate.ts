@@ -59,7 +59,7 @@ import {
   readSubscriptionExpiry,
   checkShape
 } from "./parsers.ts";
-import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER_ID, DEFAULT_REASONING_EFFORT, visionOf } from "./llm-models.ts";
+import { summarizeCatalog, filterByEnabled, rosterWithAvailability, LLM_PROVIDER_ID, LLM_PROVIDER_ID_INTL, DEFAULT_REASONING_EFFORT, visionOf } from "./llm-models.ts";
 import { imageGenModelIds, pickDrawModel } from "./draw.ts";
 import { pickVideoModel, videoGenModelIds, video25ModelIds } from "./video-models.ts";
 import { redactSecrets, str } from "./util.ts";
@@ -510,7 +510,16 @@ async function fetchQuotaSources({
  *   draw switch: the two modalities are independent.
  * @param {() => Promise<string|null>} context.videoModelId - the panel-saved
  *   video-model preference (`video-store.modelId()`); null when untouched.
- * @returns {Promise<object>} the snapshot body.
+ * @param {object} [context.intl] - the INTL row's stores (ADR-021), when the
+ *   Host assembled one: its token store, key store, publisher, catalog store
+ *   and the INTL catalogue's one writer. Absent (a pre-ADR-021 Host or a row
+ *   that did not opt in) the snapshot carries no `intl` block at all — the
+ *   CN row is unchanged down to the byte, and a machine with only a CN
+ *   account pays zero INTL network.
+ * @returns {Promise<object>} the snapshot body; when `intl` was passed and
+ *   survived, it carries an `intl` block shaped as a soft subset of the CN
+ *   one (`quota` / `auth` / `llm` — the composer pill's two request windows
+ *   plus the row's registration state).
  */
 export async function buildSnapshotBody({
   settings,
@@ -525,7 +534,12 @@ export async function buildSnapshotBody({
   drawSwitch,
   drawModelId,
   videoSwitch,
-  videoModelId
+  videoModelId,
+  // Renamed at the destructuring: the returned block's LOCAL is spelled the
+  // same as its key (`intl`, the shorthand the docs parser reads off the
+  // return literal — `test/docs.test.mjs` only recognises `{ key }`, so the
+  // conditional spread must be `...(intl !== null ? { intl } : {})`).
+  intl: intlStores
 }: {
   settings: Settings;
   cache: CacheMap;
@@ -541,8 +555,34 @@ export async function buildSnapshotBody({
   drawModelId?: () => Promise<string | null>;
   videoSwitch?: () => Promise<boolean | null>;
   videoModelId?: () => Promise<string | null>;
+  /**
+   * The INTL row's stores (ADR-021). The shared `cache` / `inflight` maps key
+   * every entry by URL, and the INTL row's bases differ from the CN row's,
+   * so the two rows share one batch machinery without sharing one entry.
+   */
+  intl?: {
+    tokenStore: ReturnType<typeof createTokenStore>;
+    apiKeyStore: ReturnType<typeof createApiKeyStore>;
+    publisher: ReturnType<typeof createProviderPublisher>;
+    catalogStore: ReturnType<typeof createFileCatalogStore>;
+    catalogEffects: CatalogEffects;
+  };
 }) {
   const providerState = publisher.state;
+  // The INTL row's fetch batch, kicked off BEFORE the CN await so the two
+  // rows' console calls run in parallel (ADR-021): a serial second batch would
+  // stack the INTL row's ~15 s deadlines onto the panel's poll, and the
+  // shared `cache` / `inflight` maps already keep the two from duplicating a
+  // request (every entry keys on its own URL, and the two rows' bases differ).
+  const intlBatch = intlStores === undefined
+    ? null
+    : fetchQuotaSources({
+        settings: { ...settings, consoleBase: settings.consoleBaseIntl, apiBase: settings.apiBaseIntl },
+        cache,
+        inflight,
+        tokenStore: intlStores.tokenStore,
+        apiKeyStore: intlStores.apiKeyStore
+      });
   const { overview, series, subscription, plans, catalog, catalogError } = await fetchQuotaSources({
     settings,
     cache,
@@ -712,6 +752,63 @@ export async function buildSnapshotBody({
     ...(providerState.error !== null ? { providerError: providerState.error } : {})
   };
 
+  // --- the INTL row's soft subset (ADR-021) ------------------------------
+  // A parallel, fully degraded second projection: its four console sources go
+  // through the SAME `soft` discipline the CN row uses (a failed source is
+  // `{value: null, error}`, never a rejection), and a FATAL failure of this
+  // whole section — a store read or the INTL catalogue writer — degrades to
+  // "no `intl` block", never to a broken CN snapshot (the §5 invariant: one
+  // module's absence leaves the rest usable, twice over here, per site).
+  let intl: Record<string, unknown> | null = null;
+  if (intlStores !== undefined) {
+    try {
+      // `intlBatch` was started above iff `intlStores` was passed, so a
+      // Promise is the only value this branch can hold; the assertion exists
+      // only because the conditional that established that cannot be carried
+      // across the `const` by the type system.
+      const intlSources = await (intlBatch as ReturnType<typeof fetchQuotaSources>);
+      const intlQuota = buildQuotaBlock(
+        intlSources.overview,
+        intlSources.series,
+        intlSources.subscription,
+        intlSources.plans
+      );
+      // The INTL catalogue's one writer persists + republishes the INTL row
+      // exactly like the CN one — and its failure is swallowed HERE rather
+      // than rejecting the whole body: a disk write on the second row must
+      // not blank the first.
+      const { offered: intlOffered } = await intlStores.catalogEffects.run(intlSources.catalog, undefined, []).catch(() => ({ offered: undefined }));
+      const intlEnabledIds = await intlStores.catalogStore.listEnabledIds().catch(() => intlStores.publisher.state.enabledIds);
+      const intlSummary = summarizeCatalog(
+        intlOffered === undefined ? [] : filterByEnabled(intlOffered, intlEnabledIds)
+      );
+      const intlKeyState = await intlStores.apiKeyStore.state().catch(() => ({ hasApiKey: false, keySource: null, ephemeral: false }));
+      const intlState = intlStores.publisher.state;
+      intl = {
+        consoleBase: settings.consoleBaseIntl,
+        // The INTL console's own four-window quota block, shaped exactly like
+        // the CN `quota` above — the composer pill's two request windows read
+        // it through the same `windowPercent` / `usageTier` pair.
+        quota: intlQuota,
+        // Secret-free, like the CN `auth` field: booleans and timings only.
+        auth: await intlStores.tokenStore.state().catch(() => null),
+        llm: {
+          ...intlKeyState,
+          providerId: LLM_PROVIDER_ID_INTL,
+          registerProvider: settings.registerProviderIntl,
+          llmAvailable: intlState.llmAvailable,
+          providerRegistered: intlState.registered,
+          modelCount: intlSummary.modelCount,
+          ...(intlState.error !== null ? { providerError: intlState.error } : {})
+        }
+      };
+    } catch {
+      // The INTL row's fatal failure is the ABSENT block — the CN half above
+      // already computed everything the panel's CN tabs need.
+      intl = null;
+    }
+  }
+
   return {
     ok: true,
     now: Date.now(),
@@ -740,6 +837,15 @@ export async function buildSnapshotBody({
     llm: llmStatus,
     quota,
     usage,
-    shapeWarnings
+    shapeWarnings,
+    // The INTL row's soft subset (ADR-021): present only when the Host
+    // assembled the INTL stores AND that section survived a fatal failure.
+    // Absent (stores not passed, or the fatal-catch path) the CN body is
+    // byte-identical to the pre-ADR-021 shape, which the pinned snapshots
+    // rely on. Spelled as the shorthand `{ intl }` on purpose: the docs
+    // parser that derives this contract from the return literal
+    // (`test/docs.test.mjs`) only recognises the same-name shorthand, and
+    // the local carries exactly that name so the parse stays alive.
+    ...(intl !== null ? { intl } : {})
   };
 }

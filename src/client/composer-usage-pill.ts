@@ -7,16 +7,21 @@
  * with no room in the body in the tooltip. The body stays short enough for the
  * composer toolbar: `<upstream> · <reading>`.
  *
- * TWO UPSTREAMS, ONE SEAT — and neither renders under the other's name. This
- * plugin has exactly the shape the sibling's capsule was built for: a console
- * quota (`agnes-token-plan`, windows as percentages) and a desktop-app credit
- * pool (`agnescode`, a balance in credits, harvested credentials, its own
- * route). The gate below sends `agnes-token-plan` to the console reader and
- * `agnescode` to the balance reader; any other provider mounts NOTHING. That
- * last part is the load-bearing half: a session pointed at a model from some
- * other plugin must never carry these numbers, and an `agnescode` session must
- * never be shown the console's windows (its quota universe is the desktop
- * gateway's own).
+ * THREE PROVIDER ROUTES, ONE SEAT — and none renders under another's name.
+ * This plugin has exactly the shape the sibling's capsule was built for: a
+ * console quota, and a desktop-app credit pool. The console quota now runs on
+ * TWO co-existing site rows (ADR-021) — `agnes-token-plan` (the CN gateway)
+ * and `agnes-token-plan-intl` (the INTL gateway, its own `intl.quota` block
+ * in the same snapshot) — plus the desktop-app credit pool (`agnescode`, a
+ * balance in credits, harvested credentials, its own route). The gate below
+ * sends `agnes-token-plan` to the console reader's CN reading,
+ * `agnes-token-plan-intl` to the same reader's INTL reading, and `agnescode`
+ * to the balance reader; any other provider mounts NOTHING. That last part
+ * is the load-bearing half: a session pointed at a model from some other
+ * plugin must never carry these numbers, an `agnescode` session must never be
+ * shown the console's windows (its quota universe is the desktop gateway's
+ * own), and one site's windows must never render under the other site's name
+ * (the two allowance universes are not shared, ADR-021).
  *
  * WHY THE GATE SITS AT THE COMPONENT BOUNDARY. `useProjection("modelSelection")`
  * is a session-scoped keyed hook the slot system materializes for the component
@@ -59,7 +64,7 @@
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import { S } from "./styles.ts";
 import { clockLong, clockSameDay, count, format } from "./format.ts";
-import { AGNESCODE_PATH, AGNESCODE_PROVIDER_ID, PROVIDER_ID, SNAPSHOT_PATH } from "./const.ts";
+import { AGNESCODE_PATH, AGNESCODE_PROVIDER_ID, PROVIDER_ID, PROVIDER_ID_INTL, SNAPSHOT_PATH } from "./const.ts";
 import { interpretSnapshot } from "./snapshot.ts";
 import { usageTier, windowPercent } from "./cards.ts";
 import { AGNESCODE_POLL_MS, agnescodeUsageText } from "./agnescode-tab.ts";
@@ -671,10 +676,21 @@ function firstInstant(...values: unknown[]): number {
  * The console reading: the two request windows and the tooltip that carries what
  * the body has no room for (which plan, which quota, when the window resets, and
  * whether this reading is the last known one).
+ *
+ * ONE component, TWO SITES (ADR-021): the `site` prop picks which quota block
+ * the same reading carries — the CN row's top-level `quota`, or the INTL row's
+ * nested `intl.quota` (both shaped identically, and both read through the same
+ * `windowPercent` / `usageTier` pair, so a second hand-kept copy of this body
+ * is exactly what the dup-gate refuses). A Host that assembled no INTL row
+ * sends no `intl` field at all — and then the INTL provider is unregistered, so
+ * this variant simply never mounts there: the absent block is unreachable, not
+ * a reading.
  */
-function ConsoleQuotaPill({ tt }: { tt: Tt }) {
+function ConsoleQuotaPill({ tt, site = "cn" }: { tt: Tt; site?: "cn" | "intl" }) {
   const reading = useConsoleQuota();
-  const quota = reading.data?.quota ?? null;
+  const quota = site === "intl"
+    ? reading.data?.intl?.quota ?? null
+    : reading.data?.quota ?? null;
   const windows = Array.isArray(quota?.windows) ? quota.windows : [];
   const fiveHour = windowByKey(windows, WINDOW_5H);
   const weekly = windowByKey(windows, WINDOW_WEEKLY);
@@ -731,7 +747,9 @@ function ConsoleQuotaPill({ tt }: { tt: Tt }) {
     { ref: rootRef, [PILL_ROOT_ATTR]: "true", style: S.pillRoot },
     h(PillBody, {
       tt,
-      planLabel: tt("composer.planPrefix"),
+      // The site's name (ADR-021): the two quota universes are not shared, so
+      // a bare window pair must say WHICH site's allowance is being spent.
+      planLabel: site === "intl" ? tt("composer.planPrefixIntl") : tt("composer.planPrefix"),
       tier,
       stale,
       title,
@@ -965,6 +983,10 @@ export function ComposerUsagePill(props: ComposerPillProps) {
   const projection = (useProjection ?? (() => undefined))("modelSelection");
   const provider = selectedProviderOf(projection);
   if (provider === PROVIDER_ID) return h(ConsoleQuotaPill, { tt });
+  // The INTL site's row (ADR-021): the same console-shaped reading, pointed at
+  // the snapshot's `intl.quota` block — the other site's windows are a
+  // different allowance universe and must never render under this name.
+  if (provider === PROVIDER_ID_INTL) return h(ConsoleQuotaPill, { tt, site: "intl" });
   if (provider === AGNESCODE_PROVIDER_ID) return h(AgnescodeBalancePill, { tt });
   return null;
 }
