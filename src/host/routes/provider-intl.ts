@@ -67,7 +67,8 @@ export function registerProviderIntlRoute(ctx: HostCtx, wiring: HostWiring) {
             registerSource: intlSwitch.source,
             providerId: LLM_PROVIDER_ID_INTL,
             providerRegistered: state?.registered === true,
-            ...(state?.error !== null && state?.error !== undefined ? { providerError: state.error } : {})
+            ...(state?.error !== null && state?.error !== undefined ? { providerError: state.error } : {}),
+            ...extra
           },
           { "cache-control": "no-store" }
         );
@@ -88,10 +89,15 @@ export function registerProviderIntlRoute(ctx: HostCtx, wiring: HostWiring) {
         return;
       }
       try {
+        // The row's machinery was NOT assembled (an INTL origin failed to
+        // create: the panel got no row at all): saving the value alone would
+        // flip a switch nothing reads — report it, write nothing.
+        //
+        // This branch is only reached by a misconfigured Host (or a Host that
+        // predates the row): on every Host that passed `configError` the
+        // wiring always carries `intlProviderStore`, so this is a
+        // defensive guard, not the normal path.
         if (intlProviderStore === undefined) {
-          // The row's switch file exists but the row's machinery was not
-          // assembled (a misconfigured host): saving the value alone would
-          // flip a switch nothing reads — report it, write nothing.
           throw new Error("the INTL row is not active on this host");
         }
         await intlProviderStore.save(body.value.enabled);

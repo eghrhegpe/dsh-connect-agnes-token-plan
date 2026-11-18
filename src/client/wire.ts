@@ -456,10 +456,13 @@ export interface SnapshotData {
   /**
    * The INTERNATIONAL site's row (ADR-021): a soft subset of this body — the
    * site's own `quota` block (the two request windows the composer pill reads),
-   * its `auth` state and its registration status. Absent when the Host did
-   * not assemble the INTL row (off by default, patch-key opt-in) or when that
-   * row's batch failed fatally — in both cases the CN fields above are the
-   * whole body, exactly the pre-ADR-021 shape.
+   * its `auth` state and its registration status.
+   *
+   * The row is ALWAYS assembled on Hosts that passed `configError`: the
+   * switch keeps it inert (no batch, no request). The block is ABSENT only
+   * when the Host predates ADR-021 or when that row's whole section failed
+   * fatally — in both cases the CN fields above are the whole body, exactly
+   * the pre-ADR-021 shape.
    */
   intl?: {
     consoleBase?: string;
@@ -471,10 +474,11 @@ export interface SnapshotData {
       ephemeral?: boolean;
       providerId?: string;
       /**
-       * The INTL row's effective switch value + where it came from
-       * ("config" / "panel", ADR-021 dialect A): the panel's switch card and
-       * this block are one fact, printed as "面板 / 配置" — a value without
-       * its source is a line the operator cannot act on.
+       * The INTL row's effective switch value + where it came from ("config" /
+       * "panel", ADR-021 dialect A): the panel's switch card and this block are
+       * one fact, so they cannot disagree with each other. The value rides the
+       * response for diagnostics; the panel's switch card is the first place it
+       * is rendered, and the card merges the POST answer on the same field.
        */
       registerProvider?: boolean;
       registerSource?: string;

@@ -276,13 +276,9 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   // CN grant 401s on the INTL gateway the moment it is offered there
   // (PITFALLS §29), which is exactly the accident the separation prevents.
   //
-  // Entirely inert until the patch row's `registerProviderIntl` is set: a
-  // machine that holds no INTL account carries no INTL state file and sends
-  // no INTL request — the CN half assembles and runs exactly as it did
-  // before this block existed. A malformed INTL origin degrades the INTL
-  // row (a log line), never the panel: the CN row below it is assembled
-  // independently, and blanking it would be the one-module-buries-the-rest
-  // shape ARCHITECTURE.md §5 forbids.
+  // A malformed INTL origin degrades the INTL row (a log line), never the
+  // panel: the CN row below it is assembled independently, and blanking it
+  // would be the one-module-buries-the-rest shape ARCHITECTURE.md §5 forbids.
   // The INTL row is assembled WHOLE whenever the row itself is sound (a
   // misconfiguration already set `configError`): the switch — not the
   // assembly — is what keeps it inert. A panel switch has to be flippable

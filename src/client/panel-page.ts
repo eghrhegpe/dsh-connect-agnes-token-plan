@@ -654,11 +654,17 @@ export function PanelPage({ onClose, tt, localeSubscribe }: {
                 // editor and registration status in ONE card, so a machine
                 // running both sites sees two self-contained halves — the
                 // "a site is a namespace" shape the CN card already is.
-                h(
-                  SectionCard,
-                  { title: tt("llm.intlTitle"), open: openSections.intl, onToggle: () => toggleSection("intl"), tt },
-                  h(IntlProviderCard, { intl: data?.intl ?? null, onDone: () => void load(), onEcho: echoIntl, tt })
-                ),
+                // Same forward-only gate as the quota tab's INTL account card:
+                // a pre-ADR-021 Host (or a Host whose INTL section failed
+                // fatally) has no intl block, and the card must not mount as a
+                // live write surface for an old Host that never has the row.
+                data?.intl !== undefined
+                  ? h(
+                      SectionCard,
+                      { title: tt("llm.intlTitle"), open: openSections.intl, onToggle: () => toggleSection("intl"), tt },
+                      h(IntlProviderCard, { intl: data?.intl ?? null, onDone: () => void load(), onEcho: echoIntl, tt })
+                    )
+                  : null,
                 // The tab's closing note, OUTSIDE any card: RPM is a property
                 // of the provider as a whole (it follows the key type, not the
                 // key card's own state), so hanging it on a single card would

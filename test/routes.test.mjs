@@ -14,7 +14,7 @@
 import { loadPeer, installNetworkGuard, isolateHostEnv, isolateStateDir } from "./peer-roots.mjs";
 import { createFileThrottleStore } from "../src/host/throttle-store.ts";
 import { CODE } from "../src/host/codes.ts";
-import { mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -2016,6 +2016,18 @@ async function withNetwork(stub, body) {
       JSON.stringify(offAgain.payload));
     check("Q1 a malformed INTL switch payload is refused",
       (await call(PROVIDER_INTL_PATH, makePost({ enabled: "yes" }))).statusCode === 400);
+
+    // Q1 error-path contract (review follow-up): the POST answer's `extra`
+    // must survive into the body as ok:false — a failed save/publish must
+    // not read as success (the defect this guards against: `return extra`
+    // with the body hard-coding ok:true). The wiring cannot inject a throwing
+    // store/publisher (the Host always builds the row), so the guard pins the
+    // ROUTE's own body shape: the answer body must spread `...extra` (as
+    // `provider.ts:64` does for its CN twin).
+    const providerIntlSrc = readFileSync(join(import.meta.dirname, "..", "src", "host", "routes", "provider-intl.ts"), "utf8");
+    check("Q1 the INTL switch answer body spreads extra (failure shape survives)",
+      providerIntlSrc.includes("...extra") && providerIntlSrc.includes("cache-control"),
+      "the answer body must spread `...extra` so a failure answer carries its own ok:false; provider.ts:64 spreads it, this route must match");
 
     // Q2: the INTL key half of the api-key route — one reference, one row.
     const saved = await call(API_KEY_PATH, makePost({ apiKey: "sk-intl-panel", site: "intl" }));

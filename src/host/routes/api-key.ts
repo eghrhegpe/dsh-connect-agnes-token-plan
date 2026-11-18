@@ -12,6 +12,7 @@
 
 import { name } from "../host-config.ts";
 import { isAdmittedWithAudit } from "../admission-audit.ts";
+import { CODE } from "../codes.ts";
 import { redactError } from "../util.ts";
 import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBodyOr400 } from "./http.ts";
 import type { HostCtx, HostWiring } from "../types.ts";
@@ -96,7 +97,7 @@ export function registerApiKeyRoute(ctx: HostCtx, wiring: HostWiring) {
       // could not explain.
       const site = keySite(body.value);
       if (site === "intl" && (wiring.intlApiKeyStore === undefined || wiring.intlCatalogStore === undefined)) {
-        await answer({ ok: false, error: "the INTL row is not active on this host", code: "intl_inactive" });
+        await answer({ ok: false, error: "the INTL row is not active on this host", code: CODE.INTL_INACTIVE });
         return;
       }
       const activeKeyStore = site === "intl" ? wiring.intlApiKeyStore! : apiKeyStore;
@@ -147,7 +148,13 @@ export function registerApiKeyRoute(ctx: HostCtx, wiring: HostWiring) {
         return;
       }
       try {
-        await activeKeyStore.save(String(body.value.apiKey));
+        // The raw value is passed through WITHOUT String(): a missing or
+        // non-string field must keep its original shape through the store's
+        // `verbatim` guard (rejects empty), which turns it into a clean
+        // local refusal instead of the literal "undefined" string this
+        // form would otherwise persist into the reference. A panel always
+        // sends a string, so this only guards third-party/malformed POSTs.
+        await activeKeyStore.save(body.value.apiKey);
       } catch (error) {
         await answer({ ok: false, error: redactError(error) });
         return;

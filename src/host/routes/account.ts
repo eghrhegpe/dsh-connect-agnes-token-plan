@@ -128,7 +128,14 @@ export function registerAccountRoute(ctx: HostCtx, wiring: HostWiring) {
         return;
       }
       try {
-        await activeStore.saveAccount({ username: String(body.value.username), password: String(body.value.password) });
+        // The raw values are passed through WITHOUT String(): a missing or
+        // non-string field keeps its original shape through the store's
+        // local guard (empty/missing → a local refusal, zero network), which
+        // turns a malformed POST into a clean ok:false instead of writing
+        // the literal "undefined" into the account reference and triggering a
+        // useless real login. A panel always sends strings, so this only
+        // guards third-party/malformed POSTs.
+        await activeStore.saveAccount({ username: body.value.username, password: body.value.password });
         // The success trace is persisted through `onTrace` (the INTL store's
         // own labelled trace writer, ADR-021); no path is owed to the panel
         // for a sign-in that worked.
