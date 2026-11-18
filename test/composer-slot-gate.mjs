@@ -76,6 +76,73 @@ const CONTRACT_PKGS = [
 ];
 
 /**
+ * The quote characters a minified string may be written with: `'`, `"`, or a
+ * backtick.
+ *
+ * THIS IS NOT COSMETIC, and the backtick is the whole reason it exists. These
+ * anchors used to accept only `'` and `"` on the stated belief that "after
+ * minification the gate must see either single or double quotes, and anything
+ * else is the new contract". That belief was WRONG, and it made the gate cry
+ * wolf on 0.2.2-rc.3: the bundler had switched every one of the four strings to
+ * backticks, so A–D all failed while the contract they pin was completely
+ * intact (measured — the live bundle reads
+ * ``renderSlot(`conversation.input.right`,{})``, ``keyedHooks:[`projection`]``,
+ * ``scope===`session-maybe` ``).
+ *
+ * A gate that fails on the bundler's choice of quote is worse than no gate: it
+ * trains the reader to ignore it, and the next REAL break hides behind the
+ * noise. So the quote style is matched loosely, on purpose — what stays pinned
+ * is the token itself (the exact seat name, the exact `renderSlot(` call, the
+ * exact `keyedHooks: ['projection']` entry, the exact `=== 'session-maybe'`
+ * comparison), which is the part a shell change would actually move.
+ *
+ * Note the `template` witness below: it fails a check when a scanned region
+ * holds a backtick, which guards a DIFFERENT hazard (a `${…}` in a template
+ * would unbalance the brace counter). That is about scanning arithmetic and
+ * has nothing to do with this class — the strings matched here are plain
+ * literals, not interpolations.
+ */
+const Q = "['\"`]";
+
+// ── The four anchor predicates ────────────────────────────────────────────
+// Extracted so the live checks AND the self-check at the bottom of this file
+// run the SAME objects. That is load-bearing rather than tidy: the self-check
+// proves each predicate still REJECTS a moved contract, and that proof is
+// worthless if it exercises a copy — the classic vacuous-gate failure.
+//
+// Every predicate answers about the CONTRACT, never about formatting: quote
+// style is deliberately free (see `Q`), while the token itself (the seat name,
+// the keyed-hook name, the `session-maybe` comparison) is pinned exactly.
+
+/** The seat's own declaration: `"conversation.input.right": { kind:"list", scope:"session" }`. */
+function seatDeclaration(text) {
+  const declared = text.match(new RegExp(`(${Q})conversation\\.input\\.right\\1:\\s*\\{([^}]*)\\}`));
+  const body = declared?.[2] ?? "";
+  return {
+    found: declared !== null,
+    body,
+    ok: declared !== null
+      && new RegExp(`kind:\\s*${Q}list${Q}`).test(body)
+      && new RegExp(`scope:\\s*${Q}session${Q}`).test(body)
+  };
+}
+
+/** The seat is actually rendered by the conversation package. */
+function seatRendered(text) {
+  return new RegExp(`renderSlot\\(\\s*${Q}conversation\\.input\\.right${Q}`).test(text);
+}
+
+/** `projection` is still a keyed hook of the session scope. */
+function projectionKeyed(text) {
+  return new RegExp(`keyedHooks:\\s*\\[\\s*${Q}projection${Q}\\s*\\]`).test(text);
+}
+
+/** How many call sites materialize a keyed hook with `optional = scope === "session-maybe"`. */
+function strictMaterializationSites(text) {
+  return (text.match(new RegExp(`materializeStandardBinding\\(\\s*[^,]+,\\s*[^)]*===\\s*${Q}session-maybe${Q}`, "g")) ?? []).length;
+}
+
+/**
  * The slot runtime `renderSlot` comes from, resolved by the shell's module loader.
  *
  * Not a packaging form and not a required package: see the module docblock for
@@ -261,28 +328,22 @@ for (const root of found) {
   const tag = `v${versionOf("dsh-client-ui-conversation")}`;
 
   // A. The seat is still declared, as a session-scoped list.
-  // The quotes are matched with a back-reference, not pinned: the gate must see
-  // either single or double quotes after minification, and anything else is the
-  // new contract, not a formatting change.
-  const declared = conversation.text.match(/(['"])conversation\.input\.right\1:\s*\{([^}]*)\}/);
-  const declaredBody = declared?.[2] ?? "";
+  const declaredSeat = seatDeclaration(conversation.text);
   check(`[A][${tag}] conversation.input.right is still declared kind:'list' + scope:'session'`,
-    declared !== null
-      && /kind:\s*['"]list['"]/.test(declaredBody)
-      && /scope:\s*['"]session['"]/.test(declaredBody),
-    declared === null ? "declaration not found in the package's type surface" : declaredBody.replace(/\s+/g, " ").trim());
+    declaredSeat.ok,
+    declaredSeat.found ? declaredSeat.body.replace(/\s+/g, " ").trim() : "declaration not found in the package's type surface");
 
   // B. The seat is still rendered.
-  const rendered = /renderSlot\(\s*['"]conversation\.input\.right['"]/.test(conversation.text);
+  const rendered = seatRendered(conversation.text);
   check(`[B][${tag}] the conversation package still renders that seat`,
     rendered,
-    rendered ? "renderSlot(\"conversation.input.right\", …) found" : "no renderSlot(\"conversation.input.right\") call found");
+    rendered ? "renderSlot(conversation.input.right, …) found" : "no renderSlot(conversation.input.right) call found");
 
   // C. `projection` is still a keyed hook of the session scope.
-  const keyed = /keyedHooks:\s*\[\s*['"]projection['"]\s*\]/.test(session.text);
+  const keyed = projectionKeyed(session.text);
   check(`[C][${tag}] the session scope still declares the \`projection\` keyed hook`,
     keyed,
-    keyed ? "keyedHooks: [\"projection\"] found" : "keyedHooks: [\"projection\"] not found");
+    keyed ? "keyedHooks: [projection] found" : "keyedHooks: [projection] not found");
 
   // D. The keyed hook is still materialized strictly for a session seat.
   // The call shape is matched structurally — local names and whitespace are the
@@ -294,13 +355,13 @@ for (const root of found) {
   // indeterminate — which call did the gate look at? — so one match is part
   // of the check. (The `[^)]*` argument class still cannot see past a nested
   // parenthesis in the second argument; that direction stays a known risk.)
-  const sessionMaybeCalls = renderer.text.match(/materializeStandardBinding\(\s*[^,]+,\s*[^)]*===\s*['"]session-maybe['"]/g) ?? [];
-  const materialized = sessionMaybeCalls.length === 1;
+  const sessionMaybeCalls = strictMaterializationSites(renderer.text);
+  const materialized = sessionMaybeCalls === 1;
   check(`[D][${tag}] useProjection is still strictly materialized (optional = scope === "session-maybe") at exactly one call site`,
     materialized
       && renderer.text.includes("standardHookPropName")
       && renderer.text.includes("strict keyed standard hook"),
-    `session-maybe call sites=${sessionMaybeCalls.length} standardHookPropName=${renderer.text.includes("standardHookPropName")} strict-throw=${renderer.text.includes("strict keyed standard hook")}`);
+    `session-maybe call sites=${sessionMaybeCalls} standardHookPropName=${renderer.text.includes("standardHookPropName")} strict-throw=${renderer.text.includes("strict keyed standard hook")}`);
 
   const readErrors = [...conversation.errors, ...session.errors, ...renderer.errors];
   check(`[read][${tag}] every contract file was readable`, readErrors.length === 0, readErrors.slice(0, 3).join(" | ") || "no read errors");
@@ -312,6 +373,47 @@ for (const root of found) {
   check(`[caps][${tag}] no walk cap was tripped (the bundles were read in full)`,
     capTrips.length === 0,
     capTrips.length ? capTrips.slice(0, 3).join(" | ") : "no cap tripped");
+}
+
+// --- [neg] can this gate still FAIL? -------------------------------------
+// A gate that only ever passes is indistinguishable from one that cannot fail,
+// and this gate HAS been in exactly that position: on 0.2.2-rc.3 all four
+// anchors went red over the bundler's quote choice, and the natural "fix" —
+// loosening them until green — is one step away from loosening them into
+// always-true. So the same predicates the checks above used are run against
+// FIXTURES: one faithful (must pass), five each moving a single pinned fact
+// (each must fail).
+//
+// No file IO, no peer needed: the strings are synthesized here. That keeps the
+// self-check cheap enough to always run, including on a machine with no DSH
+// runtime — where the A–D checks themselves SKIP and this is the only evidence
+// the anchors still bite.
+{
+  const good = {
+    seat: '"conversation.input.right":{kind:`list`,scope:`session`}',
+    rendered: "renderSlot(`conversation.input.right`,{})",
+    keyed: "keyedHooks:[`projection`]",
+    materialized: "materializeStandardBinding(b,scope===`session-maybe`)"
+  };
+  check("[neg] the faithful fixture satisfies every anchor (backtick quoting — the 0.2.2-rc.3 style)",
+    seatDeclaration(good.seat).ok && seatRendered(good.rendered)
+      && projectionKeyed(good.keyed) && strictMaterializationSites(good.materialized) === 1,
+    JSON.stringify({ seat: seatDeclaration(good.seat).ok, render: seatRendered(good.rendered), keyed: projectionKeyed(good.keyed) }));
+
+  /** Each entry: a label plus the predicate that must return FALSE for it. @type {Array<[string, () => boolean]>} */
+  const NEGATIVES = [
+    ["a moved seat (kind single instead of list)", () => seatDeclaration('"conversation.input.right":{kind:`single`,scope:`session`}').ok],
+    ["a non-session seat (scope global)", () => seatDeclaration('"conversation.input.right":{kind:`list`,scope:`global`}').ok],
+    ["a declared-but-never-rendered seat", () => seatRendered("renderSlot(`conversation.input.model`,{})")],
+    ["a dropped projection keyed hook", () => projectionKeyed("keyedHooks:[`other`]")],
+    ["a relaxed materialization (optional no longer derived from the scope)", () => strictMaterializationSites("materializeStandardBinding(b,false)") === 1]
+  ];
+  const undetected = NEGATIVES.filter(([, predicate]) => predicate() === true).map(([label]) => label);
+  check("[neg] every anchor still REJECTS a moved contract",
+    undetected.length === 0,
+    undetected.length === 0
+      ? `${NEGATIVES.length} mutations detected`
+      : `NOT detected: ${undetected.join("; ")} — an anchor has become always-true`);
 }
 
 console.log(JSON.stringify(results, null, 2));

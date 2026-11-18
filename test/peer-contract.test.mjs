@@ -244,15 +244,68 @@ for (const message of misjudgedMessages) {
 
   let classify = null;
   let extractError = "";
+  /** Module-private consts the probe pulled out of the peer (report line). */
+  let injectedNames = [];
   if (!existsSync(classifierPath)) {
     extractError = `peer 分类器文件不在预期路径：${classifierPath}`;
   } else {
     try {
-      const body = extractFunctionBody(readFileSync(classifierPath, "utf8"), "classifyPiAiError");
+      const source = readFileSync(classifierPath, "utf8");
+      const body = extractFunctionBody(source, "classifyPiAiError");
       if (body === null) throw new Error("未能在 peer 源码里定位 classifyPiAiError");
-      // 注入 peer 自己的两个依赖，其余全是字面正则，不需要外部符号。
-      classify = new Function("message", "isQuotaExceededError", "QUOTA_EXCEEDED_CODE", body);
-      classify("warmup", isQuotaExceededError, QUOTA_EXCEEDED_CODE);
+      // ── The dependency bag is DERIVED, not hand-listed ────────────────────
+      // The two module imports are supplied from the peer's own exports; the
+      // rest are module-PRIVATE consts inside this bundle. Those used to be
+      // hand-listed, and on 0.2.2-rc.3 the peer added one (`LEADING_HTTP_STATUS`,
+      // `= /^[45]\d\d\b/`) — the extracted body then threw
+      // "LEADING_HTTP_STATUS is not defined", the probe reported itself broken,
+      // and the gate looked like the CONTRACT had moved when only its own
+      // injection list was stale. Hand-listing cannot scale: every new peer
+      // helper would re-raise the same false alarm.
+      //
+      // The direction is INVERTED on purpose, and that is what makes it robust:
+      //
+      //   (a) enumerate the peer's module-level `const NAME = …;` declarations;
+      //   (b) keep the ones the body references as a WORD;
+      //   (c) drop any the body declares itself (a local would collide).
+      //
+      // Trying to enumerate FREE identifiers instead (the obvious way) needs a
+      // JS lexer: the body is full of regex literals whose TEXT is English
+      // prose (`/failed to buffer the request body: …/`), and a token scan
+      // reports `failed`, `to`, `buffer` … as free names. That was the first
+      // version of this block and it failed exactly that way. Walking the
+      // peer's own declarations has no such ambiguity.
+      //
+      // The VALUE is never transcribed into this test: each surviving const's
+      // own expression is carried into the constructed function verbatim, which
+      // is the "execute the peer's own code" discipline this probe exists for.
+      const bodyDeclared = new Set(
+        [...body.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)].map((m) => m[1])
+      );
+      const moduleConsts = [...source.matchAll(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([\s\S]*?);\s*$/gm)]
+        .map((m) => ({ name: m[1], expr: m[2] }));
+      const injected = moduleConsts.filter(
+        (c) => !bodyDeclared.has(c.name) && new RegExp(`(?<![.\\w$])${c.name}(?![\\w$])`).test(body)
+      );
+      // The peer's OWN const expressions ride along as declarations inside the
+      // constructed function, so the body reads the peer's values rather than a
+      // copy — no regex or table is ever transcribed into this test. Only the
+      // three genuinely external names stay parameters.
+      const prelude = injected.map((c) => `const ${c.name} = ${c.expr};`).join("\n");
+      classify = new Function("message", "isQuotaExceededError", "QUOTA_EXCEEDED_CODE", `${prelude}\n${body}`);
+      // Smoke call: turns an unresolved global into a NAMED failure here rather
+      // than a confusing one inside whichever check runs next.
+      try {
+        classify("warmup", isQuotaExceededError, QUOTA_EXCEEDED_CODE);
+      } catch (error) {
+        const missing = String(error?.message ?? error).match(/([A-Za-z_$][\w$]*) is not defined/)?.[1];
+        throw new Error(
+          missing === undefined
+            ? `执行 peer 的 classifyPiAiError 失败：${String(error?.message ?? error)}`
+            : `peer 的 classifyPiAiError 引用了模块级声明之外、本测试无法解析的符号：${missing}`
+        );
+      }
+      injectedNames = injected.map((c) => c.name);
     } catch (error) {
       classify = null;
       extractError = String(error?.message ?? error);
@@ -263,9 +316,47 @@ for (const message of misjudgedMessages) {
     "退出证探针可用：能定位并执行 peer 的 classifyPiAiError",
     classify !== null,
     extractError === ""
-      ? ""
+      ? `derived deps: [${injectedNames.join(", ")}]`
       : `${extractError}。peer 结构已变 → 人工复核 llm-error-fix.ts 是否仍必要（这是本补丁唯一的到期日，不可用 SKIP 糊过去）`
   );
+
+  // ── The probe's own mutation control ────────────────────────────────────
+  // The dependency bag is derived now, so the old failure mode (a hand-list
+  // going stale) is gone — but a NEW one is possible: an over-eager derivation
+  // that injects nothing and still "works", leaving the probe silently testing
+  // less than the peer. So: assert at least one module-private const was pulled
+  // in, and assert the probe OBSERVES a mutation of the peer. Both run on the
+  // in-memory source; no fixture files, no network.
+  check(
+    "退出证自检：派生注入包非空（peer 的模块私有依赖真的被带进来了）",
+    classify === null || injectedNames.length > 0,
+    classify === null ? "（peer 不可用时跳过，由上一行给出原因）" : `[${injectedNames.join(", ")}]`
+  );
+  if (classify !== null) {
+    const MUTATE_FROM = 'return "RATE_LIMIT";';
+    const mutatedText = readFileSync(classifierPath, "utf8").replace(MUTATE_FROM, 'return "RATE_LIMIT_MUTATED";');
+    const mutated = (() => {
+      try {
+        const body = extractFunctionBody(mutatedText, "classifyPiAiError");
+        if (body === null) return null;
+        const bodyDeclared = new Set([...body.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)].map((m) => m[1]));
+        const consts = [...mutatedText.matchAll(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([\s\S]*?);\s*$/gm)]
+          .map((m) => ({ name: m[1], expr: m[2] }))
+          .filter((c) => !bodyDeclared.has(c.name) && new RegExp(`(?<![.\\w$])${c.name}(?![\\w$])`).test(body));
+        const prelude = consts.map((c) => `const ${c.name} = ${c.expr};`).join("\n");
+        return new Function("message", "isQuotaExceededError", "QUOTA_EXCEEDED_CODE", `${prelude}\n${body}`);
+      } catch {
+        return null;
+      }
+    })();
+    check(
+      "退出证自检：变异的 peer 会被观察到（探针执行的是 peer 的字节，不是副本）",
+      mutatedText !== readFileSync(classifierPath, "utf8")
+        && mutated !== null
+        && mutated("HTTP 429 rate limit exceeded", isQuotaExceededError, QUOTA_EXCEEDED_CODE) === "RATE_LIMIT_MUTATED",
+      mutated === null ? "变异版无法组装（替换目标可能已变）" : `mutation observed`
+    );
+  }
 
   if (classify !== null) {
     const peerCode = (message) => classify(message, isQuotaExceededError, QUOTA_EXCEEDED_CODE);
