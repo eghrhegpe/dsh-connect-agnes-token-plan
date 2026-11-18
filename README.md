@@ -97,7 +97,7 @@
 
 2. **完全退出 DSH（含托盘）再启动**。
 
-3. 打开 DSH 的 **Plugins 页**，找到 `dsh-connect-agnes-token-plan` 的插件卡（面板是页内的内联卡片，**不在侧边栏**）。
+3. 打开 DSH 的 **Plugins 页**找到插件卡，或从 **设置页**的「接入 爱思」进入（同一个面板，**不在侧边栏**）。
 
 > 装到的是哪一版由源决定：安装器会询问 profile 配的 registry，**默认含 `registry.npmmirror.com`，刚发布的版本在镜像上可能延迟几分钟**，官方源立即可用；要确认拿到了哪一版，对照 `npm view dsh-connect-agnes-token-plan version --registry=https://registry.npmjs.org`。三种 target 形态（npm 包名 / git 地址 / 本地路径）见 [docs/SETUP.md](docs/SETUP.md)。
 
