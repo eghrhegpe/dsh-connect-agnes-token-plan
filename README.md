@@ -36,13 +36,13 @@
 
 ![「积分额度」tab](assets/panel-credit.png)
 
-首次使用在「连接 Agnes 控制台」填一次账号和密码。Agnes 不发 refresh token，**续期就是拿账号密码自动重登一次**——而**密码不落盘**，环境变量 `AGNES_PASSWORD` 是它唯一的持久来源（这是显式 opt-in）：设了它，令牌到期 Host 会自己重登；没设，令牌失效后面板会让你重新输一次（面板上那行「自动恢复」状态会直说当前是哪种）。登录失败时表单会直接显示 Agnes 返回的原因；密码错误属于**凭据型拒绝**，面板**绝不自动重试**（Agnes 有失败次数锁定）。想清除账号，用面板底部的按钮。
+首次使用在「连接国内站（Agnes CN）控制台」填一次账号和密码。Agnes 不发 refresh token，**续期就是拿账号密码自动重登一次**——而**密码不落盘**，环境变量 `AGNES_PASSWORD` 是它唯一的持久来源（这是显式 opt-in）：设了它，令牌到期 Host 会自己重登；没设，令牌失效后面板会让你重新输一次（面板上那行「自动恢复」状态会直说当前是哪种）。登录失败时表单会直接显示 Agnes 返回的原因；密码错误属于**凭据型拒绝**，面板**绝不自动重试**（Agnes 有失败次数锁定）。想清除账号，用面板底部的按钮。
 
 ## 接入 API（可选）
 
 把 Agnes 模型注册为 DSH provider，参与对话与出图。
 
-- **模型清单**：在「API Key」卡粘贴 Key 保存`AGNES_TOKEN_PLAN_API_KEY`，Host 以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新；
+- **模型清单**：在「国内站（Agnes CN）」卡粘贴 Key 保存`AGNES_TOKEN_PLAN_API_KEY`，Host 以 `agnes-token-plan` 之名注册 OpenAI 兼容 provider，模型列表随 `/v1/models` 自动刷新；
 - **语言模型**：显示当前 Key 实际能调哪些模型，其中哪些能看图（按平台 `input_modalities` 判定，不靠名字猜）。
 - **出图工具**：Host 给 agent 注册 `agnes_draw_image` ，出图模型按 catalog 的 `output_modalities` 结构化判定。
 - **视频工具**：Host 给 agent 注册 `agnes_video_generate`，按选中模型分派 V2.0 / 2.5 两套互斥参数。

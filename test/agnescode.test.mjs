@@ -1394,11 +1394,12 @@ const GOOD_SESSION = {
     check("the retired combined-split key is gone (three cards replaced it)",
       !("agnescode.balanceSplit" in dictionaries.zh) && !("agnescode.balanceSplit" in dictionaries.en));
 
-    // The three pool-notes lines carry the platform's GRANTS, this plugin's
-    // own rate-limit record, and the account's real SPEND (the ledger, which
-    // counts the whole account including the desktop app). Each must exist in
-    // both languages: a free account renders 每日免费 0 · 订阅 0, and that only
-    // reads correctly if the line is actually there to render a zero in.
+    // The pool-notes lines carry the platform's GRANTS, this plugin's own
+    // rate-limit record, and the account's real SPEND (the ledger, which
+    // counts the whole account including the desktop app). Each key must
+    // exist in both languages: a free account's all-zero grants draw NO line
+    // (a settled zero re-asserted every poll is clutter), so the keys must
+    // still serve the subscription accounts that render them.
     const poolNoteKeys = ["agnescode.grantLine", "agnescode.grantHint", "agnescode.rateLimitLine", "agnescode.rateLimitNever", "agnescode.rateLimitHint", "agnescode.ledgerLine", "agnescode.ledgerAtLeast", "agnescode.ledgerLastNever", "agnescode.ledgerHint", "agnescode.usageLine", "agnescode.usageHint"];
     check("the pool-notes keys exist in both languages",
       poolNoteKeys.every((key) => typeof dictionaries.zh[key] === "string" && dictionaries.zh[key] !== ""
@@ -1407,8 +1408,9 @@ const GOOD_SESSION = {
 
     // The pool-notes lines are hook-free on purpose: the tab's data is internal
     // state, so the unlinked frame never renders them. Mounted directly, they
-    // must report the platform grants (0 included — it is a published fact, not
-    // a missing value), this plugin's own hits, and the account's spend.
+    // must report this plugin's own hits, the account's spend, and the
+    // platform grants ONLY when some grant is non-zero — the all-zero sample
+    // below has none, so its text carries no grant line.
     const notes = clientSurface.agnescodePoolNotes(
       { totalBalance: 600, timeSensitiveBalance: 600, permanentBalance: 0, dailyFreeCredits: 0, subscriptionCredits: 0, dailyEffectQuota: 0, effectQuotaBalance: 0 },
       { today: 2, last30d: 5, lastAt: 1788408000000 },
@@ -1427,9 +1429,17 @@ const GOOD_SESSION = {
     check("the rate-limit record is demoted to LAST of the pool notes",
       notesText[notesText.length - 1].includes("限流记录") && notesText[notesText.length - 1].includes("今日 2 次"),
       notesText[notesText.length - 1]);
-    check("pool notes render the platform grants, zeros included",
-      notesText.some((t) => t.includes("每日免费 0") && t.includes("订阅 0")),
+    check("all-zero grants draw no line (a settled zero is clutter, not a fact to re-assert)",
+      !notesText.some((t) => t.includes("每日免费")),
       notesText.filter((t) => t.includes("每日免费")).join(" | "));
+    // A non-zero grant set DOES earn the line, and the still-zero fields render as 0.
+    const grantedNotes = texts(clientSurface.agnescodePoolNotes(
+      { totalBalance: 600, timeSensitiveBalance: 600, permanentBalance: 0, dailyFreeCredits: 0, subscriptionCredits: 500, dailyEffectQuota: 0, effectQuotaBalance: 0 },
+      null, null, null, tt
+    ));
+    check("a non-zero grant renders the line, still-zero fields included",
+      grantedNotes.some((t) => t.includes("每日免费 0") && t.includes("订阅 500")),
+      grantedNotes.filter((t) => t.includes("每日免费")).join(" | "));
     check("pool notes render the rate-limit record with counts and a time",
       notesText.some((t) => t.includes("今日 2 次") && t.includes("近 30 天 5 次")),
       notesText.filter((t) => t.includes("限流记录")).join(" | "));
@@ -1460,7 +1470,8 @@ const GOOD_SESSION = {
     check("usage text is null for an unread (null/undefined) roll",
       usageText(null) === null && usageText(undefined) === null);
     // Unrecorded ≠ a recorded zero: a roll that exists but has no traffic draws
-    // nothing (contrast the grant line, which renders its published zeros).
+    // nothing (the grant line shares this discipline: a settled all-zero grant
+    // set draws nothing either).
     check("usage text is null when the roll exists but recorded nothing",
       usageText({ todayRequests: 0, todayTotal: 0, todayCacheRead: 0 }) === null,
       String(usageText({ todayRequests: 0, todayTotal: 0, todayCacheRead: 0 })));

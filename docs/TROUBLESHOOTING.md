@@ -45,7 +45,7 @@
 
 | 界面原文 | 含义 | 第一动作 | 细节 |
 |---|---|---|---|
-| 模型目录暂时读不到：{error}（额度与聊天不受影响） [`llm.catalogFailed`] | 没有 API Key → 目录没拉（`catalogAvailable: false`）或目录端点失败；**额度面板不受牵连** | 面板「API Key」卡保存 Key（免费版 `sk-` 或 Token Plan `cpk-`），或用户级 env 配 `AGNES_TOKEN_PLAN_API_KEY`；下一轮 poll 自动恢复，无需重启 | [AGNES-API.md](./AGNES-API.md) §7.1 |
+| 模型目录暂时读不到：{error}（额度与聊天不受影响） [`llm.catalogFailed`] | 没有 API Key → 目录没拉（`catalogAvailable: false`）或目录端点失败；**额度面板不受牵连** | 面板「国内站（Agnes CN）」卡保存 Key（免费版 `sk-` 或 Token Plan `cpk-`），或用户级 env 配 `AGNES_TOKEN_PLAN_API_KEY`；下一轮 poll 自动恢复，无需重启 | [AGNES-API.md](./AGNES-API.md) §7.1 |
 | 提供方注册失败：{error} [`llm.error`] | 向 DSH 注册 provider 失败（Host 级动作） | 看 `{error}`；注册三件套与 descriptor 契约见 DSH-LLM-DEVELOP | [DSH-LLM-DEVELOP.md](./DSH-LLM-DEVELOP.md) |
 | 额度耗尽 [`llm.rosterExhausted`] | 模型花名册侧标记，不等于 402/429 已发生 | 区分额度不足（402）与速率上限（429），后者等一分钟即可 | [AGNES-API.md](./AGNES-API.md)、[PITFALLS.md](./PITFALLS.md) §45 |
 | 当前 API Key 目录里暂无出图模型；出图不可用。 [`draw.noCandidates`] | 目录里没识别出图模型（名称兜底也没命中） | 换有出图权限的 Key，或显式设 `drawModelId` | [SETUP.md](./SETUP.md) §3（`drawEnabled` / `drawModelId`） |

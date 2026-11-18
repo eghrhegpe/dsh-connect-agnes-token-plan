@@ -151,10 +151,13 @@ export function agnescodeDesktopSourceReasonText(reason: string, tt: Tt): string
  *     question the reader actually brings. It is per-client and labelled so
  *     (desktop app invisible), never the account total — that is the ledger's
  *     job. An all-zero day draws NOTHING (unrecorded ≠ a recorded zero).
- *   - `grantLine`: the platform's GRANTS (daily free / subscription / effect).
- *     A free account reads 每日免费 0 · 订阅 0 — that is the honest answer to
- *     "is there a hidden daily free quota I am about to hit", which is why a
- *     0 renders instead of disappearing.
+ *   - `grantLine`: the platform's GRANTS (daily free / subscription / effect),
+ *     answers "is there a hidden daily free quota I am about to hit". A free
+ *     account's answer is all four 0 — a SETTLED fact; re-asserting it every
+ *     poll is the same permanent-zero clutter that demoted the rate-limit
+ *     line. All-zero (or all-absent) grants therefore draw NOTHING, while any
+ *     non-zero grant (a subscription account) renders the line, zeros and
+ *     all, with the platform's published numbers.
  *   - `ledgerLine`: the account's real SPEND, aggregated by the Host from the
  *     platform's credits ledger (today and 30-day in/out). Unlike the usage
  *     line it counts the WHOLE account (desktop app included). When
@@ -195,6 +198,17 @@ export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, us
         : count(ledger.last30dDebits ?? 0))
     : "";
   const usageText = agnescodeUsageText(usage, tt);
+  // The grant line answers "will an invisible quota limit me". The all-four
+  // ZERO (or all-absent) set of a free account is a settled fact, so
+  // re-displaying it every poll is the same permanent-zero clutter that
+  // demoted the rate-limit line: only a NON-ZERO grant — a subscription
+  // account's figures — earns the line.
+  const grantsVisible = balance !== null && [
+    balance.dailyFreeCredits,
+    balance.subscriptionCredits,
+    balance.dailyEffectQuota,
+    balance.effectQuotaBalance
+  ].some((value) => typeof value === "number" && value > 0);
   return [
     // The per-client usage roll leads the diagnostic lines: it is the one fact
     // of this group the reader acts on ("what did MY calls spend"). The
@@ -206,7 +220,7 @@ export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, us
       ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.usageHint") },
           usageText)
       : null,
-    balance !== null
+    grantsVisible
       ? h("div", { style: { ...S.muted, fontSize: 12, marginBottom: 8 }, role: "status", title: tt("agnescode.grantHint") },
           format(tt("agnescode.grantLine"), {
             dailyFree: count(balance.dailyFreeCredits ?? 0),
@@ -785,12 +799,16 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     note !== null
       ? h("div", { style: { ...S.formNote, fontSize: 12, marginTop: 8 }, role: "status" }, note)
       : null,
-    // The credit pool is THREE small cards in one row, not one wide card: the
-    // panel is ~860px wide and a single left-aligned balance card left two
-    // thirds of it empty, and each figure is a fact of a different kind (the
-    // total, the expiring part, the permanent part). A min-width + `flex-wrap`
-    // row keeps them on one line when there is room and stacks them when the
-    // panel is narrow. The number keeps the `S.quotaRemaining` weight — it is
+    // The credit pool is THREE compact cards, not one wide card: the panel is
+    // ~860px wide and a single left-aligned balance card left two thirds of it
+    // empty, and each figure is a fact of a different kind (the total, the
+    // expiring part, the permanent part). Each card is a FIXED 120px chip
+    // (`flex: 0 0 120px`, no grow, no cap): the border hugs the figure — the
+    // previous grow-basis row stretched a card alone on a wrapped line to the
+    // whole row (a full-width border around one digit), and even a 50%-width
+    // cap still read half a panel wide. Chips wrap at 3×120+2×8 = 376px of
+    // row width; below that two sit on line one and the third drops alone,
+    // still 120px. The number keeps the `S.quotaRemaining` weight — it is
     // the fact the reader came to see. A pool the route could not read
     // (`balance === null`) draws NOTHING: a rendered zero would present an
     // unread figure as a measurement.
@@ -798,17 +816,17 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       ? h("div", { style: { marginTop: 12 } },
           balance !== null
             ? h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 } },
-                h("div", { style: { ...S.pool, flex: "1 1 160px", minWidth: 120 } },
+                h("div", { style: { ...S.pool, flex: "0 0 120px" } },
                   h("div", { style: S.cardHead },
                     h("span", { style: S.poolHead }, tt("agnescode.balanceLabel"))),
                   h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },
                     count(balance.totalBalance ?? 0))),
-                h("div", { style: { ...S.pool, flex: "1 1 160px", minWidth: 120 } },
+                h("div", { style: { ...S.pool, flex: "0 0 120px" } },
                   h("div", { style: S.cardHead },
                     h("span", { style: S.poolHead }, tt("agnescode.balanceTimeLabel"))),
                   h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },
                     count(balance.timeSensitiveBalance ?? 0))),
-                h("div", { style: { ...S.pool, flex: "1 1 160px", minWidth: 120 } },
+                h("div", { style: { ...S.pool, flex: "0 0 120px" } },
                   h("div", { style: S.cardHead },
                     h("span", { style: S.poolHead }, tt("agnescode.balancePermanentLabel"))),
                   h("div", { style: { ...S.quotaRemaining, marginTop: 4 } },

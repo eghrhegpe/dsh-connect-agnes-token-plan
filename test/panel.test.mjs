@@ -439,7 +439,7 @@ const healthy = {
   check("the API tab's three cards are all rendered as sections",
     at("llm.providerTitle") >= 0 && at("draw.title") >= 0 && at("llm.title") >= 0,
     order.join(" | "));
-  check("语言模型 leads, 出图工具 follows, API Key trails last",
+  check("语言模型 leads, 出图工具 follows, 国内站 card trails last",
     at("llm.providerTitle") < at("draw.title") && at("draw.title") < at("llm.title"),
     `providerTitle@${at("llm.providerTitle")} draw@${at("draw.title")} llm@${at("llm.title")}`);
 
@@ -460,8 +460,8 @@ const healthy = {
   // A cross-card hint must name the card, never point up or down: the two
   // cards it connects have already swapped places once.
   const dict = dictionaries.zh;
-  check("the cross-card hint names the API Key card instead of a direction",
-    /API Key/.test(dict["llm.rosterEmpty"] ?? "") && !/上方|下方/.test(dict["llm.rosterEmpty"] ?? ""),
+  check("the cross-card hint names the 国内站（Agnes CN）card instead of a direction",
+    /Agnes CN/.test(dict["llm.rosterEmpty"] ?? "") && !/上方|下方/.test(dict["llm.rosterEmpty"] ?? ""),
     dict["llm.rosterEmpty"]);
   check("the English hint matches the Chinese one on this point",
     !/\babove\b|\bbelow\b/.test(dictionaries.en["llm.rosterEmpty"] ?? ""),

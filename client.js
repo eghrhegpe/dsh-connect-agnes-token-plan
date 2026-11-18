@@ -51,10 +51,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"panel.configError": "插件配置有误：{error}",
 			"panel.consoleTransient": "Agnes 控制台暂时无法读取，通常下一次自动刷新即可恢复；若持续出现，请检查网络后稍再重试。",
 			"panel.shapeDrift": "上游返回的结构可能有变：{detail}",
-			"auth.title": "连接 Agnes 控制台",
+			"auth.title": "连接国内站（Agnes CN）控制台",
 			"auth.registerHint": "还没有账号？前往官网注册，免费开通 Token Plan 额度 →",
 			"auth.portalHint": "前往官网管理额度 / 获取 API Key →",
-			"auth.intlTitle": "连接国际站控制台",
+			"auth.intlTitle": "连接国际站（Agnes Intl）控制台",
 			"auth.intlRegisterHint": "还没有国际站账号？前往国际站登录页注册 →",
 			"auth.intlPortalHint": "前往国际站管理额度 / 获取 API Key →",
 			"auth.username": "邮箱",
@@ -146,7 +146,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.contextBadge": "{ctx} 上下文",
 			"auth.selfRenew": "令牌自动续期中",
 			"auth.needsLogin": "需要重新登录",
-			"llm.title": "API Key",
+			"llm.title": "国内站（Agnes CN）",
 			"llm.providerTitle": "语言模型",
 			"llm.keyField": "API Key",
 			"llm.placeholder": "粘贴 API Key（免费版 sk- 或 Token Plan cpk-）",
@@ -184,7 +184,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.intlKeyConsoleHint": "前往国际站管理额度 →",
 			"llm.roster": "推送到 DSH 的模型",
 			"llm.rosterHint": "勾选决定哪些模型推送进 DSH 模型列表；目录新增的模型默认不推送。",
-			"llm.rosterEmpty": "还没有可推送的模型——先在「API Key」卡片保存一次 Key 再回来。",
+			"llm.rosterEmpty": "还没有可推送的模型——先在「国内站（Agnes CN）」卡片保存一次 Key 再回来。",
 			"llm.rosterSearchPlaceholder": "搜索模型名或 ID",
 			"llm.rosterCount": "已勾选 {selected} / 共 {total}",
 			"llm.rosterAll": "全部勾选",
@@ -337,10 +337,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"panel.configError": "The plugin is misconfigured: {error}",
 			"panel.consoleTransient": "The Agnes console could not be read just now. This usually clears on the next automatic refresh; if it persists, check your network and try again shortly.",
 			"panel.shapeDrift": "The upstream payload shape may have changed: {detail}",
-			"auth.title": "Connect the Agnes console",
+			"auth.title": "Connect the CN site (Agnes CN) console",
 			"auth.registerHint": "No account yet? Register on the official site for a free Token Plan quota →",
 			"auth.portalHint": "Manage quota / get API keys on the official site →",
-			"auth.intlTitle": "Connect the Intl console",
+			"auth.intlTitle": "Connect the Intl site (Agnes Intl) console",
 			"auth.intlRegisterHint": "No Intl account yet? Register at the international sign-in page →",
 			"auth.intlPortalHint": "Manage quota / get API keys on the international site →",
 			"auth.username": "Email",
@@ -432,7 +432,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.contextBadge": "{ctx} context",
 			"auth.selfRenew": "Token renews itself",
 			"auth.needsLogin": "Sign-in required",
-			"llm.title": "API key",
+			"llm.title": "Domestic site (Agnes CN)",
 			"llm.providerTitle": "Language models",
 			"llm.keyField": "API key",
 			"llm.placeholder": "Paste your API key (free sk- or Token Plan cpk-)",
@@ -470,7 +470,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"llm.intlKeyConsoleHint": "Manage your quota on the international site →",
 			"llm.roster": "Models pushed to DSH",
 			"llm.rosterHint": "Ticking decides which models are pushed into DSH's model list; models the catalogue gains later are not pushed by default.",
-			"llm.rosterEmpty": "No models to push yet - save a key in the API key card first.",
+			"llm.rosterEmpty": "No models to push yet - save a key in the Domestic site (Agnes CN) card first.",
 			"llm.rosterSearchPlaceholder": "Search a model name or id",
 			"llm.rosterCount": "{selected} ticked / {total} total",
 			"llm.rosterAll": "Tick all",
@@ -3692,10 +3692,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	*     question the reader actually brings. It is per-client and labelled so
 	*     (desktop app invisible), never the account total — that is the ledger's
 	*     job. An all-zero day draws NOTHING (unrecorded ≠ a recorded zero).
-	*   - `grantLine`: the platform's GRANTS (daily free / subscription / effect).
-	*     A free account reads 每日免费 0 · 订阅 0 — that is the honest answer to
-	*     "is there a hidden daily free quota I am about to hit", which is why a
-	*     0 renders instead of disappearing.
+	*   - `grantLine`: the platform's GRANTS (daily free / subscription / effect),
+	*     answers "is there a hidden daily free quota I am about to hit". A free
+	*     account's answer is all four 0 — a SETTLED fact; re-asserting it every
+	*     poll is the same permanent-zero clutter that demoted the rate-limit
+	*     line. All-zero (or all-absent) grants therefore draw NOTHING, while any
+	*     non-zero grant (a subscription account) renders the line, zeros and
+	*     all, with the platform's published numbers.
 	*   - `ledgerLine`: the account's real SPEND, aggregated by the Host from the
 	*     platform's credits ledger (today and 30-day in/out). Unlike the usage
 	*     line it counts the WHOLE account (desktop app included). When
@@ -3729,6 +3732,12 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	function agnescodePoolNotes(balance, rateLimit, ledger, usage, tt) {
 		const debits30 = ledger !== null ? ledger.covered30d === false && (ledger.last30dDebits ?? 0) > 0 ? tt("agnescode.ledgerAtLeast") + " " + count(ledger.last30dDebits ?? 0) : count(ledger.last30dDebits ?? 0) : "";
 		const usageText = agnescodeUsageText(usage, tt);
+		const grantsVisible = balance !== null && [
+			balance.dailyFreeCredits,
+			balance.subscriptionCredits,
+			balance.dailyEffectQuota,
+			balance.effectQuotaBalance
+		].some((value) => typeof value === "number" && value > 0);
 		return [
 			usageText !== null ? h("div", {
 				style: {
@@ -3739,7 +3748,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				role: "status",
 				title: tt("agnescode.usageHint")
 			}, usageText) : null,
-			balance !== null ? h("div", {
+			grantsVisible ? h("div", {
 				style: {
 					...S.muted,
 					fontSize: 12,
@@ -4121,22 +4130,19 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			marginBottom: 6
 		} }, h("div", { style: {
 			...S.pool,
-			flex: "1 1 160px",
-			minWidth: 120
+			flex: "0 0 120px"
 		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balanceLabel"))), h("div", { style: {
 			...S.quotaRemaining,
 			marginTop: 4
 		} }, count(balance.totalBalance ?? 0))), h("div", { style: {
 			...S.pool,
-			flex: "1 1 160px",
-			minWidth: 120
+			flex: "0 0 120px"
 		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balanceTimeLabel"))), h("div", { style: {
 			...S.quotaRemaining,
 			marginTop: 4
 		} }, count(balance.timeSensitiveBalance ?? 0))), h("div", { style: {
 			...S.pool,
-			flex: "1 1 160px",
-			minWidth: 120
+			flex: "0 0 120px"
 		} }, h("div", { style: S.cardHead }, h("span", { style: S.poolHead }, tt("agnescode.balancePermanentLabel"))), h("div", { style: {
 			...S.quotaRemaining,
 			marginTop: 4
@@ -5437,7 +5443,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			onDone: () => void load(),
 			tt,
 			bare: true
-		})), h(SectionCard, {
+		})), data?.intl !== void 0 ? h(SectionCard, {
 			title: tt("llm.intlTitle"),
 			open: openSections.intl,
 			onToggle: () => toggleSection("intl"),
@@ -5447,7 +5453,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			onDone: () => void load(),
 			onEcho: echoIntl,
 			tt
-		})), h(RpmNote, { tt })));
+		})) : null, h(RpmNote, { tt })));
 		const plan = barPlan(activeTab, data !== null, tabStatus !== null && tabStatus.updatedAt > 0);
 		const stamp = plan.stamp === "snapshot" ? data ? format(tt("panel.updated"), { time: clock(updatedAt / 1e3) }) : "" : plan.stamp === "agnescode" ? format(tt("panel.updated"), { time: clock((tabStatus?.updatedAt ?? 0) / 1e3) }) : "";
 		const refresh = plan.refresh === "agnescode" ? tabStatus?.refresh ?? null : () => void load();
