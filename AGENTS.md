@@ -52,7 +52,7 @@ node test/agnescode-desktop-view.test.mjs # 桌面源视图（ADR-020）：stat 
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）；新增 docs/ 顶层文件必须进 docs/README.md 索引表，否则 ORPHAN_DOCS 判红
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
 npm test                    # 全量离线测试门禁 + 末尾数道 gate（tsc-gate / build-gate / dup-gate / composer-slot-gate / e2e-gate，各自探到 tsc / tsdown / jscpd / 本机 DSH client 副本 / dsh CLI 才实跑，否则 SKIP；末道 any-budget-gate 无依赖故总跑；套件清单与链以 package.json scripts.test 为准，不在本文件背书数字）
-npm run build               # 改 src/（host 或 client）后必跑：重建 lib/ 与根 client.js（两者是入库产物：重建后必须与 src/ 同一 commit 提交；build-gate 拦构建失败/产物缺失/漂移，CI 新鲜度门禁拦「改了 src 没重建」；别把 /lib/ 加回 .gitignore）
+npm run build               # 改 src/（host 或 client）后必跑：重建 lib/ 与根 client.js（两者由 `prepare` 在安装/发布时**现场构建、不入库**（gitignore）；build-gate 拦构建失败/产物缺失/漂移，与入库无关；GitHub 直装需先在对应 profile 的 `~/.dsh/profiles/<profile>/pnpm-workspace.yaml` 的 `allowBuilds` 批准本插件（未批准报 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，见 README 安装节））
 ```
 
 - **e2e 已在 `npm test` 门禁里**（经 `test/e2e-gate.mjs`），但只在这台机器装了 dsh CLI 时才真跑；

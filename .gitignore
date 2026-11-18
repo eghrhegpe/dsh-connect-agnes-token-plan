@@ -32,20 +32,18 @@ build/
 # 「未跟踪也未忽略、一次 git add -A 卷进历史」那条纪律描述的裸区形状。
 package-lock.json
 
-# 构建产物：lib/ 与根 client.js 由 `npm run build`（tsdown）从 src/ 重建，**随库提交**
-# （不忽略；qoder 同款裁定，本仓 2026-10-03 起生效，推翻上面旧的「绝不进版本库」；
-# 账本条目 docs/ADR.md 的 ADR-008）。
-# 为什么必须入库（完整理由，别只记半句）：DSH 市场 / `dsh plugin add` 的 git 直装走
-# pnpm git-dep 管线，而 pnpm 对 git 依赖**一律拒绝执行构建脚本**——报
-# ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED，唯一解法是把包名加进 `allowBuilds` 白名单，
-# 而装插件的用户没有这个入口。所以「把 prepack 换成 prepare、让安装时自构建」是死路
-# （npm 在 git 安装时确实会跑 prepare，pnpm 不会）。lib/ 不入库，装出来的包缺 main
-# 入口（./lib/index.js），卡片直接失效。
-# ⚠️ 不要把 /lib/ 或 /client.js 加回本文件。
-# 纪律：产物只由构建生成、禁止手改——改 src/ 后必跑 `npm run build`，把 lib/ 与
-# client.js 和 src/ 同一 commit 提交；本地门禁 test/build-gate.mjs 把 src/ 重建到
-# gitignored 的暂存目录与入库产物逐字节比对（不碰工作树），CI 另有 artifacts job
-# 以 `git diff --exit-code -- lib client.js` 拦「改了 src 没重建」。
+# 构建产物：lib/ 与根 client.js 由 `prepare`（=`npm run build`，tsdown）在安装/发布时
+# 现场构建，**不入库**（本仓 2026-11-18 起随 ADR-022 改为不入库，取代 ADR-008 的
+# 「随库提交」；账本条目 docs/ADR.md 的 ADR-022）。
+# 为什么不入库（完整理由，别只记半句）：DSH 市场 / `dsh plugin add` 的 git 直装走
+# pnpm git-dep 管线，pnpm 对 git 依赖只在 allowBuilds 批准后跑 prepare——未批准报
+# ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED（pnpm 打印要加的那行）。装插件的用户把该行
+# 加进 `~/.dsh/profiles/<profile>/pnpm-workspace.yaml` 的 allowBuilds（见 README 安装节），
+# prepare 现场重建 lib/ 与 client.js，装出来的包就不缺 main 入口（./lib/index.js）。
+# 纪律：产物只由构建生成、禁止手改——改 src/ 后必跑 `npm run build`；本地门禁
+# test/build-gate.mjs 把 src/ 重建到 gitignored 的暂存目录与磁盘产物逐字节比对（不碰工作树）。
+lib/
+client.js
 # 产物命名用 `chunkFileNames: "[name].js"`（不含内容哈希，见 tsdown.config.mjs）：
 # 改源码是**原地修改**而非删旧加新，diff 只出 1 个 M，不出 D + ?? 对。
 

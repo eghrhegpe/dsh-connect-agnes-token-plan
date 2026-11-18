@@ -81,7 +81,7 @@
 ## ADR-008 构建产物入库：取消忽略 lib/ 与根 client.js
 
 - **日期**：2026-10-03
-- **状态**：现行（取代 ROADMAP §6.2 的「产物彻底不入库」，即 2026-09-30 当晚裁定）
+- **状态**：已被 ADR-022 取代（原裁定见下；取代记录见 ADR-022）
 - **裁定**：`lib/`（Host ESM bundle + 切分 chunk）与根 `client.js`（Client IIFE）由 `npm run build`（tsdown）从 `src/` 重建，**随库提交**——`.gitignore` 不再忽略它们。改 `src/` 后必须重建，并把产物与源码放进**同一个 commit**；CI 新增 `artifacts` job：`npm run build` + `git diff --exit-code -- lib client.js`（双跑验可复现），拦「改了 src 没重建」。`prepack` 保留（registry 发布 tarball 新鲜度不变）；**不加 `prepare`**。
 - **理由**：DSH 市场 / `dsh plugin add` 的 git 直装走 pnpm git-dep 管线，pnpm 11 的 `packageShouldBeBuilt` 按「`main`（`./lib/index.js`）在克隆里是否存在」决定是否跑构建脚本——产物在库则克隆即可用（零构建、零 devDeps、零 `allowBuilds` 审批）；产物缺失则翻回「需要构建」，而 pnpm 未经 `allowBuilds` 批准不跑构建脚本，直接 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，装出来的插件没有宿主入口、卡片失效。2026-10-03 实测：`pnpm add git+https://github.com/eghrhegpe/dsh-connect-agnes-token-plan`（全新工作区、无 `allowBuilds`）在入库前撞该错、入库后 `exit 0` 且 `lib/index.js` + `client.js` 齐备。兄弟插件 `dsh-connect-qoder` 同款做法（`.gitignore` 不忽略 `lib/`，并留警告别加回）。
 - **为什么不是别的修法**：加 `prepare` 会让 `packageShouldBeBuilt` 翻回 true，零配置作废（`prepare` 本身还要 `allowBuilds` 批准）；建 `pnpm-workspace.yaml` 只影响本机、改不了市场用户侧 pnpm 的行为；只修文档不解决问题。唯一可靠解是产物入库。
@@ -146,7 +146,7 @@
 ## ADR-013 产物命名不含内容哈希；build-gate 改为「暂存重建 + 双向比对」
 
 - **日期**：2026-10-06
-- **状态**：现行（补充 ADR-008；不改变 ADR-008「产物入库」本身，也不改变 ADR-001～012 任何裁定）
+- **状态**：已被 ADR-022 取代（就「产物入库/不加 prepare」部分；其余裁定不变，取代记录见 ADR-022）
 - **裁定**：① `tsdown.config.mjs` 的 host 条目加 `outputOptions.entryFileNames: "index.js"` 与 `chunkFileNames: "[name].js"`——chunk 名只由模块名决定，**不含内容哈希**。② `test/build-gate.mjs` 重写：把 `tsdown.config.mjs` **原样**复制、只改两处 `outDir` 指向 gitignored 的暂存目录，跑真实构建，再与入库产物逐字节比对（`lib/` 与根 `client.js` **两边都查**）；不再在工作树里跑 `npm run build`。
 - **理由（四条独立成立，任一条都足以驱动改动）**：
   1. **改名噪音**：哈希命名下改一次源码 = git 里一对 `D` + `??`，diff 全是重命名，review 与 blame 都读不动。实测（2026-10-06）：改名后给 `src/host/codes.ts` 做一次内容变更再构建，`lib/` 6 个文件全部**原地修改**，0 个新增、0 个删除。一次性迁移成本是 5 个文件改名，此后不再发生。
@@ -261,4 +261,11 @@
 - **面板半边裁定（同日第二轮，「激活语义」与「为什么不是别的修法」③ 被本段取代）**：用户裁定面板必须能「看见切换到国际版的方式」，「面板开关 = 被否决的全局旋钮」的顾虑随之消解——否决的是「一个**站点**旋钮改道所有在飞任务」的形状，而「每站一个**自己的**开关、各管各的行」正是同类插件（qoder 双区域行各自可关）的收敛形状。落账：① **第 6 个开关** `intl-provider.json`（dialect A：面板值胜 patch 键 `registerProviderIntl`，与 `provider.json` 同款工厂与行为清单，`switch-store.test.mjs` 六店同测）；② **行恒装配**——开关不再门控装配只门控静默：publisher 闸、目录写手 `gate` 依赖（关着的 tick 一次 fetch 都不做）、快照 INTL 批量（关 = `quota: null`，缺数带因，不是零值块）三处接缝保「关 = 静默」，首次开闸即活（面板翻转下一个 tick 生效，无需重启）；③ **面板半边 UI**：「接入 API」tab 的 INTL 卡（开关 + `site:"intl"` 键位 + 注册状态，读 `intl.llm`，echo 只落 `intl` 半边）与「积分额度」tab 的 INTL 账号卡（`site:"intl"` 路由参数、INTL 登录态、国际登录页链接）；`api-key` / `account` 路由按 `site` 参数化，INTL 动作只碰 INTL 行自己的引用/记录/目录/发布，行未装配时答 `intl_inactive`（新码 `CODE.INTL_INACTIVE`）；④ 快照 `intl` 块升级为**装配即在场**（`quota` 可空 = 开关关、批量未跑），`llm` 半边常报 `registerProvider` + `registerSource`（开关卡与快照同一事实，不会互打脸）。**留白（后续批）**：INTL 花名册整选 UI（INTL provider 现注册整份 INTL 目录）；INTL 侧出图/视频工具（两工具恒走 CN `apiBase` + CN key）。
 - **受影响的文件**：`src/host/{llm-models,llm-adapter,provider-publish,host-config,catalog-store,api-key-store,throttle-store,token-store,token-store/state,token-store/account,snapshot-aggregate,routes/snapshot,lifecycle,index,doctor,types}.ts`、`src/client/{const,composer-usage-pill,wire,i18n}.ts`、`cordis.patch.yml`、`docs/{SETUP,API,PITFALLS,ADR}.md`、`test/{config,contract,docs,intl-provider}.test.mjs`、本账本条目、`lib/` + `client.js`（随 src 同 commit 重建）。
 - **与既有条目的关系**：PITFALLS §29 从「注意」升级为「设计」（该条修法行已回写指针）；继承 ADR-012 四问（第七个填完实例）与 ADR-005 申报（新容器先落账）；站点=provider 命名空间的裁定与兄弟仓 qoder/minmax/trae 的同族形状互为镜像（各仓独立实现，§5.5 隔离纪律下不共享代码）。
+## ADR-022 构建产物从「版本化入库」改为「prepare 现场构建、不入库」：安装说明教 allowBuilds 批准
 
+- **日期**：2026-11-18
+- **状态**：现行（实现见 `.gitignore`（gitignore `lib/` 与根 `client.js`）、`package.json` 的 `prepare`（=`npm run build`）、README 安装节（allowBuilds 批准步骤）、`ci.yml`（`artifacts` job 移除）、AGENTS.md 验证节；`test/build-gate.mjs` 保留）
+- **裁定**：`lib/` 与根 `client.js` 是**构建产物、不入库**（重新 gitignore）；由 `prepare` 在**安装/发布时现场构建**。DSH 市场的 `github:` 直装走 pnpm git-dep，pnpm 只在 `allowBuilds` 批准后跑 `prepare`——未批准则报 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`（**响亮、可修**，pnpm 会打印要加的那行）。安装说明见 README 安装节：把 pnpm 打印的 `allowBuilds:` 那行（形如 `dsh-connect-agnes-token-plan@git+https://…#<commit>: true`，含 commit hash）加进对应 profile 的 `~/.dsh/profiles/<profile>/pnpm-workspace.yaml`（桌面端即 `~/.dsh/profiles/desktop/pnpm-workspace.yaml`），再重试安装。CI 的 `artifacts` job 移除（比对「已提交产物」已无意义）；`test/build-gate.mjs` 保留（仍校验「产物是 src 的忠实重建 + 字节可复现」，与是否入库无关）。
+- **理由**：ADR-008 的「产物入库」是把 pnpm 构建批准（`allowBuilds`）绕开的替代路径——它不是对抗，但把安装机制藏进了预编译产物，社区学不到「这些插件要构建批准」。对齐 DeepSeek 构建流的正确姿势是走 `prepare` + 把批准步骤**写进安装说明**。实测（2026-11-18，最小 git-dep 仓库）：无批准 → `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`；带精确 `allowBuilds` 键（含 hash，错误信息即给）→ `prepare` 跑、产物现场生成（`exit=0`）。兄弟先例：`dsh-providers-hub` 在 desktop profile 的 `allowBuilds` 里（故能靠 prepare 构建）；`dsh-connect-workbuddy` 不在（其 `lib/` 是手动/link 构建，**不是**平台跑——不是范例）。
+- **取代**：ADR-008 的「`lib/` 与根 `client.js` 版本化入库 + 不加 prepare」裁定，以及 ADR-013「与既有条目的关系」里「仍不加 `prepare`」的复述（本条改为「`prepare` 现场构建 + README 教 allowBuilds」）。ADR-013 的「产物命名不含内容哈希、build-gate 暂存重建双向比对」结论不失效（`test/build-gate.mjs` 仍保留）；npm registry 分发仍走 `prepack`（不变）。
+- **边界**：只动**分发方式**（产物入库 → `prepare` 构建）；`lib/`、`client.js` 仍是 `files` 白名单成员与构建产物；`test/build-gate.mjs` 的 chunk 闭包 + 忠实重建校验保留。

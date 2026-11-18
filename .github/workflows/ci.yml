@@ -294,39 +294,6 @@ jobs:
       - name: Real DPAPI round-trip (PowerShell Protect → defaultDpapiUnprotect)
         run: node test/agnescode-dpapi.test.mjs
 
-  artifacts:
-    name: Committed artifacts in sync with src/ (hard gate)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          # No lockfile by design (the peerDependencies cannot resolve from any
-          # registry), so the npm cache keys off package.json instead.
-          cache: npm
-          cache-dependency-path: package.json
-      # tsdown for the rebuild; --legacy-peer-deps because the peerDependencies
-      # are Host-runtime packages that no registry serves (same shape as the
-      # offline job's install).
-      - name: Install dev dependencies (tsdown, for the rebuild)
-        run: npm install --legacy-peer-deps --no-audit --no-fund
-      # lib/ and the root client.js are TRACKED in git: a git/marketplace install
-      # clones them ready to load — pnpm refuses to run build scripts for git
-      # dependencies (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`), and the
-      # `allowBuilds` allowlist is not an install-time knob. So "src changed but
-      # nobody rebuilt + committed" would ship a stale plugin to every
-      # git-install user; this gate is the fence. A second build must change
-      # nothing — the artifacts are reproducible (chunk names are `[name].js`,
-      # not content hashes: same src in, byte-identical out).
-      - name: Freshness gate — committed artifacts equal a rebuild of src/
-        run: |
-          set -e
-          npm run build
-          git diff --exit-code -- lib client.js
-          npm run build
-          git diff --exit-code -- lib client.js
-
   e2e:
     name: End-to-end (hard gate)
     runs-on: ubuntu-latest
