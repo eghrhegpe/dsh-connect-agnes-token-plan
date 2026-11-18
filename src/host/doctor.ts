@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { name } from "./host-config.ts";
 import { isProfileSegment, dshHome as defaultDshHome, readStateJson } from "./state-store.ts";
 import { parseAgnescodePayload, parseAgnescodeDesktopSourcePayload } from "./agnescode-switch-store.ts";
+import { parseAgnescodeIntlProviderPayload } from "./agnescode-intl-provider-store.ts";
 
 /**
  * The switch payload parsers, re-exported from the stores that own the files.
@@ -60,6 +61,8 @@ export interface DoctorScope {
   agnescodePanel: boolean | null;
   /** The saved AgnesCode desktop-source switch (ADR-020); `null` = OFF. */
   agnescodeDesktopSourcePanel: boolean | null;
+  /** The saved international AgnesCode provider switch (ADR-023); `null` = OFF. */
+  agnescodeIntlProviderPanel: boolean | null;
   /** The saved INTL provider switch (ADR-021); `null` = the patch key rules. */
   intlProviderPanel: boolean | null;
   /** Stored catalog entries, `[]` when nothing usable is stored. */
@@ -197,6 +200,7 @@ async function readScope(stateDir: string, profile: string | null) {
     videoModelPanel: null,
     agnescodePanel: null,
     agnescodeDesktopSourcePanel: null,
+    agnescodeIntlProviderPanel: null,
     intlProviderPanel: null,
     catalogEntries: [],
     catalogEnabledIds: [],
@@ -256,6 +260,15 @@ async function readScope(stateDir: string, profile: string | null) {
     const parsed = parseAgnescodeDesktopSourcePayload(await readStateJson(agnescodeDesktopSourceFile));
     if (parsed !== null) scope.agnescodeDesktopSourcePanel = parsed.enabled;
     else scope.unreadable.push("agnescode-desktop-source.json");
+  }
+  // The international AgnesCode row's switch (ADR-023): the CN row's twin,
+  // its own plain {version, enabled} file. Absent on a CN-only install — the
+  // ordinary case, and not a finding.
+  const agnescodeIntlProviderFile = join(stateDir, "agnescode-intl-provider.json");
+  if (await present(agnescodeIntlProviderFile)) {
+    const parsed = parseAgnescodeIntlProviderPayload(await readStateJson(agnescodeIntlProviderFile));
+    if (parsed !== null) scope.agnescodeIntlProviderPanel = parsed.enabled;
+    else scope.unreadable.push("agnescode-intl-provider.json");
   }
   // The INTL provider switch (ADR-021): its own plain {version, enabled}
   // file, the same family; absent on a CN-only install (the ordinary case).
@@ -439,8 +452,14 @@ export function renderReport(report: any) {
     const intlProvider = scope.intlProviderPanel === null || scope.intlProviderPanel === undefined
       ? "unset (patch key rules)"
       : String(scope.intlProviderPanel);
+    // The international AgnesCode row's switch (ADR-023): the same tolerance
+    // (a report shape that predates the field renders as "unset", never
+    // "undefined").
+    const agnescodeIntlProvider = scope.agnescodeIntlProviderPanel === null || scope.agnescodeIntlProviderPanel === undefined
+      ? "unset (off)"
+      : String(scope.agnescodeIntlProviderPanel);
     lines.push(
-      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} agnescode-source=${agnescodeSource} catalog=${scope.catalogEntries.length} enabled=${enabledPart} agnescode-models=${agnescodeModelsPart} intl-provider=${intlProvider} intl-catalog=${catalogIntl}`
+      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} agnescode-source=${agnescodeSource} catalog=${scope.catalogEntries.length} enabled=${enabledPart} agnescode-models=${agnescodeModelsPart} intl-provider=${intlProvider} intl-catalog=${catalogIntl} agnescode-intl=${agnescodeIntlProvider}`
     );
     if (scope.unreadable.length > 0) lines.push(`${label}: unreadable state: ${scope.unreadable.join(", ")}`);
     // Only the failure is worth a line. `true` is the ordinary case and `null`

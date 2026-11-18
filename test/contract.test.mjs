@@ -46,7 +46,7 @@ import { countOf, timestampSeconds, checkShape, identifyVisionModel } from "../s
 import { retryableCodes, QUOTA_CODES } from "../src/host/llm-retry.ts";
 import { isCredentialRefusal, CODE } from "../src/host/codes.ts";
 import { AGNESCODE_HARVEST_TIER } from "../src/host/agnescode.ts";
-import { AGNESCODE_PROVIDER_ID } from "../src/host/agnescode-models.ts";
+import { AGNESCODE_PROVIDER_ID, AGNESCODE_PROVIDER_ID_INTL } from "../src/host/agnescode-models.ts";
 import { CONFIG_DEFAULTS, name } from "../src/host/host-config.ts";
 import { API_KEY_REF } from "../src/host/api-key-store.ts";
 
@@ -704,7 +704,12 @@ function literalScan(text, opener, after) {
   const readSource = (rel) => readFileSync(join(ROOT, rel), "utf8");
   const hostSrc = readSource(join("src", "host", "routes", "agnescode.ts"));
   const wireSrc = readSource(join("src", "client", "wire.ts"));
-  const hostScan = literalScan(hostSrc, /^ {2,}return \{$/, /const agnescodeState = async \(\) => \{/);
+  // The anchor names the block's HEAD line. It is deliberately loose about the
+  // parameter list: ADR-023 parameterized this state function (one block per
+  // site), and the fence's job is to LOCATE the served literal, not to freeze
+  // its signature. A reformat that changes the head's shape entirely still
+  // misses and fails loudly (empty key set, every anchor gone).
+  const hostScan = literalScan(hostSrc, /^ {2,}return \{$/, /const agnescodeState = async \(/);
   const host = hostScan.keys;
   const client = clientFields(wireSrc, "AgnescodeStateData");
   // Same assertion as §10b: this block's IIFE spreads are brace-heavy, so a
@@ -861,7 +866,8 @@ function literalScan(text, opener, after) {
     { name: "AGNESCODE_ERROR_NOT_CONFIGURED", file: "wire.ts", host: CODE.NOT_CONFIGURED, hostLabel: "CODE.NOT_CONFIGURED" },
     { name: "PROVIDER_ID", file: "const.ts", host: LLM_PROVIDER_ID, hostLabel: "LLM_PROVIDER_ID" },
     { name: "AGNESCODE_PROVIDER_ID", file: "const.ts", host: AGNESCODE_PROVIDER_ID, hostLabel: "AGNESCODE_PROVIDER_ID" },
-    { name: "PROVIDER_ID_INTL", file: "const.ts", host: LLM_PROVIDER_ID_INTL, hostLabel: "LLM_PROVIDER_ID_INTL" }
+    { name: "PROVIDER_ID_INTL", file: "const.ts", host: LLM_PROVIDER_ID_INTL, hostLabel: "LLM_PROVIDER_ID_INTL" },
+    { name: "AGNESCODE_PROVIDER_ID_INTL", file: "const.ts", host: AGNESCODE_PROVIDER_ID_INTL, hostLabel: "AGNESCODE_PROVIDER_ID_INTL" }
   ];
   for (const pin of PINS) {
     const found = sourceOf(pin.file).match(new RegExp(`export const ${pin.name} = "([^"]*)"`));

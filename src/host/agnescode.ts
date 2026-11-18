@@ -98,17 +98,73 @@ export const AGNESCODE_APP_DATA_CANDIDATES = Object.freeze([
 ]);
 
 /**
- * The walk order for a directory's session files: the CN build first, then
- * alphabetical within (and across) the remaining files. Extracted from the
- * walk so the desktop-source view reader (which re-determines the walk's
- * WINNER on a cache hit, without re-walking) sorts the same names the same
- * way — two sorters that drift would cache a different winner than the walk
- * would pick.
+ * Which AgnesCode SITE a piece of work belongs to (ADR-023).
+ *
+ * The two sites are the CN gateway (`*.agnes-ai.cn`) and the international one
+ * (`*.agnes-ai.com`), and they are as separate as two Token Plan rows
+ * (ADR-021): one provider id each, one credential reference each, one switch
+ * file each. The site decides the desktop App's session file (the CN build
+ * writes `code-auth-session.cn.v1`, the international build writes the
+ * untagged `code-auth-session.v1`), so the walk must know which site it is
+ * serving — otherwise the CN row could be fed the international account's
+ * session, which is exactly the cross-site mix-up ADR-021 was written to
+ * prevent.
+ */
+export type AgnescodeDomain = "cn" | "intl";
+
+/**
+ * The desktop session file that belongs to one site.
+ *
+ * The CN build TAGS its file (`code-auth-session.cn.v1`); the international
+ * build does not (`code-auth-session.v1`). The tag is the ONLY site marker the
+ * App leaves behind, so it is the only thing the walk can order by.
+ *
+ * The international build's file therefore has to be told apart from the CN
+ * one by the ABSENCE of the `.cn` tag — matching on the `.v1` suffix alone
+ * would put the CN file first on the international row, which is exactly the
+ * cross-site mix-up this ordering exists to prevent.
+ */
+export function agnescodeSessionSuffix(domain: AgnescodeDomain) {
+  return domain === "intl" ? ".v1" : ".cn.v1";
+}
+
+/**
+ * Whether one session file belongs to the given site.
+ *
+ * A file with NO site tag at all (a future build that drops the tag) belongs
+ * to NEITHER row specifically — it is a fallback for both, ordered last.
+ * @param {string} name - the session file name.
+ * @param {AgnescodeDomain} domain - the site asking.
+ * @returns {boolean} whether this file is that site's own.
+ */
+export function agnescodeSessionBelongsTo(name: string, domain: AgnescodeDomain) {
+  const lower = name.toLowerCase();
+  if (lower.includes(".cn.")) return domain === "cn";
+  if (lower.endsWith(".v1")) return domain === "intl";
+  return false;
+}
+
+/**
+ * The walk order for a directory's session files: the site this walk serves
+ * first, then the other site's, then the untagged ones, then alphabetical
+ * within (and across) the remaining files.
+ *
+ * Extracted from the walk so the desktop-source view reader (which
+ * re-determines the walk's WINNER on a cache hit, without re-walking) sorts
+ * the same names the same way — two sorters that drift would cache a different
+ * winner than the walk would pick.
+ *
+ * The site's OWN file comes first, and the other site's file stays in the list
+ * as a fallback: a machine that only ever ran one build still has a usable
+ * session, and the credential's own per-account base decides where the request
+ * actually goes — the file order only decides WHICH account is offered first.
  * @param {string[]} fileNames - session-family file names from one directory.
+ * @param {AgnescodeDomain} [domain] - the site this walk serves.
  * @returns {string[]} the names in walk order (the input array, sorted in place).
  */
-export function sortAgnescodeSessionFiles(fileNames: string[]) {
-  fileNames.sort((a, b) => (a.endsWith(".cn.v1") === b.endsWith(".cn.v1") ? a.localeCompare(b) : a.endsWith(".cn.v1") ? -1 : 1));
+export function sortAgnescodeSessionFiles(fileNames: string[], domain: AgnescodeDomain = "cn") {
+  const rank = (name: string) => (agnescodeSessionBelongsTo(name, domain) ? 0 : 1);
+  fileNames.sort((a, b) => (rank(a) === rank(b) ? a.localeCompare(b) : rank(a) - rank(b)));
   return fileNames;
 }
 
@@ -517,6 +573,9 @@ export async function surveyAgnescodeStorage(options: any = {}) {
  * @param {object} [options]
  * @param {object} [options.env] - the process env (defaults to `process.env`).
  * @param {object} [options.platform] - `process.platform` (defaults to real).
+ * @param {"cn"|"intl"} [options.domain] - which AgnesCode site this walk
+ *   serves (ADR-023): the site's own session file is walked FIRST, so the CN
+ *   row is never offered the international build's account (and vice versa).
  * @param {(path: string) => Promise<Buffer>} [options.readFile] - injected reader.
  * @param {(path: string) => Promise<string[]>} [options.readDir] - injected lister.
  * @param {(wrapped: Buffer) => Promise<Buffer>} [options.dpapiUnprotect] - injected DPAPI.
@@ -530,6 +589,7 @@ export async function harvestAgnescodeLocalSession(
 > {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
+  const domain: AgnescodeDomain = options.domain === "intl" ? "intl" : "cn";
   const readFile = options.readFile ?? (async (path: string) => (await import("node:fs/promises")).readFile(path));
   const readDir = options.readDir ?? (async (path: string) => (await import("node:fs/promises")).readdir(path));
   const dpapiUnprotect = options.dpapiUnprotect ?? defaultDpapiUnprotect;
@@ -577,8 +637,9 @@ export async function harvestAgnescodeLocalSession(
       }
       continue;
     }
-    // Deterministic order: the CN build first, then alphabetical.
-    sortAgnescodeSessionFiles(fileNames);
+    // Deterministic order: this site's own build first, then the other
+    // site's, then alphabetical (ADR-023).
+    sortAgnescodeSessionFiles(fileNames, domain);
 
     for (const fileName of fileNames) {
       const filePath = `${appDir}/${fileName}`;

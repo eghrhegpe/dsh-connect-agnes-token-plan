@@ -39,6 +39,8 @@ import {
   harvestAgnescodeLocalSession,
   dpapiChildEnv,
   classifyAgnescodeSessionFiles,
+  sortAgnescodeSessionFiles,
+  agnescodeSessionBelongsTo,
   surveyAgnescodeStorage,
   fetchAgnescodeCatalog,
   fetchAgnescodeBalance,
@@ -49,11 +51,15 @@ import {
   createAgnescodeStore,
   parseAgnescodeCredential,
   serializeAgnescodeCredential,
-  AGNESCODE_CREDENTIAL_REF
+  AGNESCODE_CREDENTIAL_REF,
+  AGNESCODE_CREDENTIAL_REF_INTL,
+  agnescodeCredentialRef
 } from "../src/host/agnescode-store.ts";
 import {
   AGNESCODE_PROVIDER_ID,
   AGNESCODE_DISPLAY_NAME,
+  AGNESCODE_PROVIDER_ID_INTL,
+  AGNESCODE_DISPLAY_NAME_INTL,
   agnescodeRoster,
   agnescodeToDescriptor,
   agnescodeVisionVerdict,
@@ -1507,12 +1513,28 @@ const GOOD_SESSION = {
     // state — it used to float above the card as its own line at the top of
     // the tab, so a reader saw two rectangles for one decision. Ordering is
     // the only thing that catches that drift: the switch text must follow the
-    // not-logged-in state, never precede it.
+    // state line, never precede it.
+    //
+    // WHICH state line, though, changed with ADR-024's site selector: this walk
+    // mounts the tab with NO reading, which is now a `pending` frame, so it
+    // says 「正在读取该站的登录态…」 rather than 「未关联」. That is the fix, not
+    // a regression — the unlinked copy was a claim about an account nobody had
+    // asked about yet. So the anchor moves to the pending line, and the
+    // unlinked copy is asserted to still EXIST (it must render once a reading
+    // says "not logged in") without being reachable from a cold mount.
     const switchAt = flat.indexOf(dictionaries.zh["agnescode.switch"]);
-    const notLoggedAt = flat.indexOf(dictionaries.zh["agnescode.notLogged"]);
-    check("the provider switch renders inside the credential card, after the login state",
-      switchAt > notLoggedAt && notLoggedAt >= 0,
-      `switch index ${switchAt}, notLogged ${notLoggedAt}`);
+    const pendingAt = flat.indexOf(dictionaries.zh["agnescode.readingSite"]);
+    check("the provider switch renders inside the credential card, after the state line",
+      switchAt > pendingAt && pendingAt >= 0,
+      `switch index ${switchAt}, pending ${pendingAt}`);
+    check("a cold mount does NOT accuse the reader of not being signed in",
+      flat.indexOf(dictionaries.zh["agnescode.notLogged"]) === -1,
+      `notLogged at ${flat.indexOf(dictionaries.zh["agnescode.notLogged"])}`);
+    check("the unlinked copy still exists for the branch that has evidence for it",
+      typeof dictionaries.zh["agnescode.notLogged"] === "string"
+        && readFileSync(new URL("../src/client/agnescode-tab.ts", import.meta.url), "utf8")
+          .includes('tt("agnescode.notLogged")'),
+      "the copy must stay reachable from the unlinked branch");
 
     // The switch row is SHORT: the full consequence lives in the label's
     // `title` tooltip, not on the panel (a hover away). The label text must
@@ -2439,6 +2461,202 @@ section("route: the /agnescode GET carries newModelIds (live roster + seen store
   }
 
 
+
+// --- 12. the dual-provider isolation (ADR-023) --------------------------------
+//
+// The shape ADR-021 established for the Token Plan rows, landed on the
+// AgnesCode upstream: TWO co-existing registrations, one per site, sharing
+// nothing mutable. These are the isolation FACES the decision names, each
+// asserted directly rather than through a comment:
+//
+//   1. the provider ids and display names differ (the picker's only visible
+//      site discriminator);
+//   2. the credential REFERENCES differ while the credentials SERVICE stays
+//      one — and no new record `kind` appears (red line 2);
+//   3. the session-file ORDER is per site (the CN build tags its file, the
+//      international build does not);
+//   4. the publisher registers under its OWN site's id.
+{
+  section("the dual-provider isolation (ADR-023)");
+
+  // 1. the identities.
+  check("the two AgnesCode rows have different provider ids",
+    AGNESCODE_PROVIDER_ID === "agnescode" && AGNESCODE_PROVIDER_ID_INTL === "agnescode-intl"
+    && AGNESCODE_PROVIDER_ID !== AGNESCODE_PROVIDER_ID_INTL,
+    `${AGNESCODE_PROVIDER_ID} / ${AGNESCODE_PROVIDER_ID_INTL}`);
+  check("the two rows have their own display names",
+    AGNESCODE_DISPLAY_NAME !== AGNESCODE_DISPLAY_NAME_INTL,
+    `${AGNESCODE_DISPLAY_NAME} / ${AGNESCODE_DISPLAY_NAME_INTL}`);
+
+  // 2. the credential references: same service, different names, no new kind.
+  check("each site's credential reference name is its own",
+    AGNESCODE_CREDENTIAL_REF === "AGNESCODE_CREDENTIAL"
+    && AGNESCODE_CREDENTIAL_REF_INTL === "AGNESCODE_CREDENTIAL_INTL"
+    && agnescodeCredentialRef("cn") === AGNESCODE_CREDENTIAL_REF
+    && agnescodeCredentialRef("intl") === AGNESCODE_CREDENTIAL_REF_INTL,
+    `${agnescodeCredentialRef("cn")} / ${agnescodeCredentialRef("intl")}`);
+  try {
+    // The two stores write under their own references into the SAME service —
+    // one account's credential must never be readable through the other row.
+    const written = new Map();
+    const service = {
+      async set(ref, value) { written.set(ref, value); },
+      async resolve(ref) { return written.has(ref) ? { value: written.get(ref) } : undefined; },
+      async unset(ref) { written.delete(ref); }
+    };
+    const cn = createAgnescodeStore({ credentials: () => service });
+    const intl = createAgnescodeStore({ credentials: () => service, domain: "intl" });
+    await cn.save({ accessToken: makeJwt(), bffBase: "https://api-agnes-code.agnes-ai.cn/v1" });
+    await intl.save({ accessToken: makeJwt(), bffBase: "https://api-agnes-code.agnes-ai.com/v1" });
+    check("the two rows' credentials live under two different references",
+      written.size === 2 && written.has(AGNESCODE_CREDENTIAL_REF) && written.has(AGNESCODE_CREDENTIAL_REF_INTL),
+      `refs=${[...written.keys()].join(",")}`);
+    const cnCred = await cn.resolve();
+    const intlCred = await intl.resolve();
+    check("each row reads back its OWN credential (never the other site's)",
+      cnCred.credential?.bffBase === "https://api-agnes-code.agnes-ai.cn/v1"
+      && intlCred.credential?.bffBase === "https://api-agnes-code.agnes-ai.com/v1",
+      JSON.stringify({ cn: cnCred.credential?.bffBase, intl: intlCred.credential?.bffBase }));
+  } catch (error) {
+    fail("the dual-provider credential isolation", error);
+  }
+
+  // 3. the session-file order is per site.
+  check("the CN build's tagged file belongs to the CN row, the untagged one to the international row",
+    agnescodeSessionBelongsTo("code-auth-session.cn.v1", "cn") === true
+    && agnescodeSessionBelongsTo("code-auth-session.cn.v1", "intl") === false
+    && agnescodeSessionBelongsTo("code-auth-session.v1", "intl") === true
+    && agnescodeSessionBelongsTo("code-auth-session.v1", "cn") === false,
+    "");
+  const cnOrder = sortAgnescodeSessionFiles(["code-auth-session.v1", "code-auth-session.cn.v1"], "cn");
+  const intlOrder = sortAgnescodeSessionFiles(["code-auth-session.v1", "code-auth-session.cn.v1"], "intl");
+  check("each site's own session file is walked FIRST",
+    cnOrder[0] === "code-auth-session.cn.v1" && intlOrder[0] === "code-auth-session.v1",
+    JSON.stringify({ cn: cnOrder, intl: intlOrder }));
+
+  // 4. the publisher registers under its own site's id.
+  try {
+    const registered = [];
+    const llm = {
+      registerAdapter: (adapter, meta) => {
+        registered.push({ provider: meta?.provider ?? meta?.id ?? null, name: meta?.name ?? null });
+        return () => {};
+      }
+    };
+    const build = async (domain) => {
+      const publisher = createAgnescodePublisher({
+        domain,
+        panelSwitch: async () => true,
+        resolveToken: async () => makeJwt(),
+        getLlm: () => llm,
+        loadAdapterModule: async () => ({
+          createAgnescodeAdapter: async (options) => ({
+            adapter: { id: options.domain === "intl" ? AGNESCODE_PROVIDER_ID_INTL : AGNESCODE_PROVIDER_ID },
+            providerIds: [options.domain === "intl" ? AGNESCODE_PROVIDER_ID_INTL : AGNESCODE_PROVIDER_ID]
+          })
+        })
+      });
+      await publisher.publish(
+        agnescodeRoster(null),
+        "https://api-agnes-code.agnes-ai.cn/v1"
+      );
+      return publisher;
+    };
+    const cnPublisher = await build("cn");
+    const intlPublisher = await build("intl");
+    check("the two rows register under their OWN provider ids",
+      registered.length === 2
+      && registered[0].provider === AGNESCODE_PROVIDER_ID
+      && registered[1].provider === AGNESCODE_PROVIDER_ID_INTL,
+      JSON.stringify(registered));
+    check("the two rows' registration states never touch each other",
+      cnPublisher.state.registered === true && intlPublisher.state.registered === true
+      && cnPublisher.state !== intlPublisher.state,
+      "");
+  } catch (error) {
+    fail("the dual-provider publisher isolation", error);
+  }
+}
+
+// --- 12b. the route picks the row by `domain` (ADR-023) -----------------------
+// The two rows are separate registrations, so the route MUST answer the
+// international request from the international row's store — not from the CN
+// one. The GET carries the site in the query, the POST in the body; both
+// default to CN.
+{
+  section("route surface (the /agnescode route picks its row by domain)");
+  try {
+    const { registerRoutes } = await import("../src/host/routes.ts");
+    const routes = new Map();
+    const ctx = {
+      webServer: {
+        register({ path, handler }) {
+          routes.set(path, handler);
+          return () => routes.delete(path);
+        }
+      }
+    };
+    const unused = new Proxy({}, { get: () => async () => null });
+    // Each row's store answers with ITS OWN nickname — the answer names the
+    // row that served it, which is what "the route picked the right row"
+    // means in one assertion.
+    const storeFor = (nickname) => ({
+      async state() {
+        return { hasCredential: true, source: "credentials", ephemeral: false, nickname, bffBase: "", expiresAtMs: null, expired: false };
+      },
+      async resolve() { return { credential: null, source: null }; },
+      async save() {},
+      async forget() {}
+    });
+    const cnSwitch = { async enabled() { return true; }, async save() {} };
+    const intlSwitch = { async enabled() { return false; }, async save() {} };
+    registerRoutes(ctx, {
+      settings: { allowedHosts: new Set(["127.0.0.1"]), registerProvider: false },
+      configError: null,
+      cache: new Map(),
+      inflight: new Map(),
+      tokenStore: unused,
+      apiKeyStore: unused,
+      catalogStore: unused,
+      providerStore: unused,
+      drawStore: unused,
+      videoStore: unused,
+      publisher: null,
+      providerState: { registered: false, error: null },
+      publishProvider: async () => {},
+      visionPublish: { current: null },
+      logger: { info() {}, warn() {}, error() {} },
+      agnescodeStore: storeFor("cn-user"),
+      agnescodeSwitch: cnSwitch,
+      agnescodePublisher: null,
+      agnescodeStoreIntl: storeFor("intl-user"),
+      agnescodeSwitchIntl: intlSwitch,
+      agnescodePublisherIntl: null
+    });
+    const handler = routes.get("/api/dsh-connect-agnes-token-plan/agnescode");
+    const read = async (request) => {
+      const response = {
+        status: 0,
+        body: "",
+        writeHead(status) { this.status = status; },
+        end(payload) { this.body = payload; }
+      };
+      await handler(request, response);
+      return JSON.parse(response.body);
+    };
+    const cnBody = await read({ method: "GET", url: "/api/dsh-connect-agnes-token-plan/agnescode", headers: { host: "127.0.0.1" } });
+    check("a GET with no domain answers from the CN row", cnBody.nickname === "cn-user", JSON.stringify(cnBody.nickname));
+    const intlBody = await read({ method: "GET", url: "/api/dsh-connect-agnes-token-plan/agnescode?domain=intl", headers: { host: "127.0.0.1" } });
+    check("a GET with ?domain=intl answers from the international row",
+      intlBody.nickname === "intl-user" && intlBody.enabled === false,
+      JSON.stringify({ nickname: intlBody.nickname, enabled: intlBody.enabled }));
+    const bogusBody = await read({ method: "GET", url: "/api/dsh-connect-agnes-token-plan/agnescode?domain=bogus", headers: { host: "127.0.0.1" } });
+    check("an unknown domain falls back to the CN row (it never lands on the international one)",
+      bogusBody.nickname === "cn-user", JSON.stringify(bogusBody.nickname));
+  } catch (error) {
+    fail("route surface (domain selection)", error);
+  }
+}
 
 // --- report ------------------------------------------------------------------
 releaseNetworkGuard();

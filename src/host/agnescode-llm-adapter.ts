@@ -30,18 +30,36 @@
  * live 2026-10-03: the BFF accepts `reasoning_effort` and defaults thinking ON,
  * so an unselected effort must not reach pi-ai as "no effort").
  *
+ * A SECOND domain is registered for the international AgnesCode gateway
+ * (ADR-023, the per-site twin of ADR-021's `agnes-token-plan-intl`): one
+ * per-domain id, display name and BFF-scoped catalog. The shared core above is
+ * identical; only the identity the descriptor carries differs, so one factory
+ * serves both with a `domain` argument.
+ *
  * @module dsh-connect-agnes-token-plan/agnescode-llm-adapter
  */
 import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
 import { name } from "./host-config.ts";
-import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME, buildAgnescodeDescriptors, agnescodeRoster } from "./agnescode-models.ts";
+import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME, AGNESCODE_PROVIDER_ID_INTL, AGNESCODE_DISPLAY_NAME_INTL, buildAgnescodeDescriptors, agnescodeRoster } from "./agnescode-models.ts";
 import { DEFAULT_REASONING_EFFORT } from "./llm-models.ts";
 import { buildRetryPolicyConfig } from "./llm-retry.ts";
 import { createWrappedPiAiAdapter, STREAM_IDLE_TIMEOUT_MS, REQUEST_IMAGE_BUDGETS } from "./pi-ai-adapter-core.ts";
 import { createFileAgnescodeStatsStore } from "./agnescode-stats-store.ts";
 import type { AgnescodeAdapterOptions } from "./types.ts";
+
+/** The per-domain provider identity this factory builds for (ADR-023). */
+export function agnescodeDomainIdentity(domain: "cn" | "intl") {
+  return domain === "intl"
+    ? { providerId: AGNESCODE_PROVIDER_ID_INTL, displayName: AGNESCODE_DISPLAY_NAME_INTL }
+    : { providerId: AGNESCODE_PROVIDER_ID, displayName: AGNESCODE_DISPLAY_NAME };
+}
+
+/** The per-domain credential source label this adapter reports (secret-free). */
+export function agnescodeDomainLabel(domain: "cn" | "intl") {
+  return domain === "intl" ? "agnescode-intl" : "agnescode";
+}
 
 /**
  * Assemble the AgnesCode adapter for one credential/catalogue snapshot.
@@ -66,19 +84,24 @@ export function createAgnescodeAdapter({
   bffBase,
   resolveToken,
   get,
-  maxTokensOverrides
-}: AgnescodeAdapterOptions = {}) {
+  maxTokensOverrides,
+  domain: domainArg = "cn"
+}: AgnescodeAdapterOptions & { domain?: "cn" | "intl" } = {}) {
+  const domain = domainArg === "intl" ? "intl" : "cn";
+  const identity = agnescodeDomainIdentity(domain);
   const models = buildAgnescodeDescriptors(rows ?? agnescodeRoster(null), {
     bffBase: String(bffBase ?? ""),
     // Threaded, never read back from settings here: the caller (`provider-publish`)
     // already holds the resolved row, and re-reading would add a second source.
-    ...(maxTokensOverrides ? { maxTokensOverrides } : {})
+    ...(maxTokensOverrides ? { maxTokensOverrides } : {}),
+    providerId: identity.providerId,
+    displayName: identity.displayName
   });
 
   const provider = {
     ...createProvider({
-      id: AGNESCODE_PROVIDER_ID,
-      name: AGNESCODE_DISPLAY_NAME,
+      id: identity.providerId,
+      name: identity.displayName,
       auth: {
         apiKey: {
           name: "AgnesCode access token",
@@ -86,7 +109,7 @@ export function createAgnescodeAdapter({
             const token = credential?.key;
             return token === undefined || token === ""
               ? undefined
-              : { auth: { apiKey: token }, source: AGNESCODE_DISPLAY_NAME };
+              : { auth: { apiKey: token }, source: identity.displayName };
           }
         }
       },
@@ -105,12 +128,12 @@ export function createAgnescodeAdapter({
   // through a level DSH would advertise as "off".
   const profiles = new Map([
     [
-      AGNESCODE_PROVIDER_ID,
+      identity.providerId,
       {
-        provider: AGNESCODE_PROVIDER_ID,
-        displayName: AGNESCODE_DISPLAY_NAME,
+        provider: identity.providerId,
+        displayName: identity.displayName,
         streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
-        retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${AGNESCODE_PROVIDER_ID}.retryPolicy`),
+        retryPolicy: resolveRetryPolicy(buildRetryPolicyConfig(), `${name}.${identity.providerId}.retryPolicy`),
         configuredMaxTokens: new Map(),
         modelErrors: new Map(),
         reasoning: DEFAULT_REASONING_EFFORT,
@@ -155,5 +178,5 @@ export function createAgnescodeAdapter({
     }
   });
 
-  return { adapter, providerIds: [AGNESCODE_PROVIDER_ID] };
+  return { adapter, providerIds: [identity.providerId] };
 }

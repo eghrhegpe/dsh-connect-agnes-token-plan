@@ -400,7 +400,27 @@ try {
     apiTab.getAttribute("aria-selected") === "true" && !text(container).includes("20.6%"),
     text(container).slice(0, 160));
   check("the API tab shows the provider card while the console tab is elsewhere",
-    text(container).includes(zh["llm.providerTitle"]), text(container).slice(0, 160));
+    text(container).includes(zh["llm.siteTitle"]), text(container).slice(0, 160));
+  // The card shows ONE site at a time and picks it with the shared selector
+  // (ADR-021's follow-up: the three per-site cards folded into one segmented
+  // card). This fixture's snapshot carries NO `intl` block — a pre-ADR-021
+  // Host — so the gate under test here is the FORWARD-ONLY one: the INTL
+  // segment must not exist where the Host never assembled that row, or the
+  // panel would offer a live write surface over nothing.
+  const siteTabs = [...container.querySelectorAll('[data-dsh-agnes-sites="true"] button[role="tab"]')];
+  check("the provider card names its site with the shared selector",
+    siteTabs.length === 1 && siteTabs[0].textContent === zh["site.cn"],
+    JSON.stringify(siteTabs.map((button) => button.textContent)));
+  check("no INTL segment is offered when the Host assembled no INTL row",
+    siteTabs.every((button) => button.textContent !== zh["site.intl"]),
+    JSON.stringify(siteTabs.map((button) => button.textContent)));
+  check("the CN site is selected by default",
+    siteTabs[0]?.getAttribute("aria-selected") === "true",
+    JSON.stringify(siteTabs.map((button) => button.getAttribute("aria-selected"))));
+  check("the segment reports its state as a dot with a spoken name",
+    siteTabs.every((button) => button.querySelector("[data-dsh-agnes-site-dot]") !== null)
+    && siteTabs.every((button) => (button.getAttribute("title") ?? "").length > 0),
+    JSON.stringify(siteTabs.map((button) => button.getAttribute("title"))));
   const quotaTab = [...container.querySelectorAll('button[role="tab"]')]
     .find((button) => button.textContent === zh["tab.quota"]);
   await click(quotaTab);
@@ -485,6 +505,171 @@ try {
   check("the successful sign-in replaces the form with the quota numbers",
     text(container).includes("20.6%") && container.querySelector('input[autocomplete="username"]') === null,
     text(container).slice(0, 200));
+} finally {
+  await unmountAll();
+}
+
+// ── 8b. scenario: the site selector drives ONE card (ADR-021 follow-up) ────
+// The three per-site cards on the API tab (CN provider / CN key / INTL
+// provider+key) folded into ONE card with the shared selector. The structural
+// pins live in `panel.test.mjs`; what can only be proved HERE is the wiring:
+// with the Host's `intl` row present the card offers both sites, the CN half is
+// what you see first, and clicking the other segment really swaps the body —
+// reading the INTL row's facts and echoing only into `intl`.
+try {
+  const bothSitesBody = {
+    ...healthyBody,
+    llm: {
+      hasApiKey: true, keySource: "credentials", registerProvider: true, llmAvailable: true,
+      providerRegistered: true, providerId: "agnes-token-plan",
+      models: [{ id: "nova-flash", name: "Nova Flash", vision: false }],
+      enabledModelIds: []
+    },
+    // The Host assembled the INTL row (ADR-021): its own auth, its own llm
+    // block, its own provider id — nothing shared with the CN half above.
+    intl: {
+      auth: { configured: false, hasAccount: false, needsAccount: true },
+      llm: {
+        hasApiKey: false, registerProvider: false, registerSource: "off", llmAvailable: true,
+        providerRegistered: false, providerId: "agnes-token-plan-intl",
+        models: [], enabledModelIds: []
+      }
+    }
+  };
+  route = async () => reply(bothSitesBody);
+  const container = await mountPanel();
+  const apiTab = [...container.querySelectorAll('button[role="tab"]')]
+    .find((button) => button.textContent === zh["tab.api"]);
+  await click(apiTab);
+
+  const segments = () => [...container.querySelectorAll('[data-dsh-agnes-sites="true"] button[role="tab"]')];
+  check("with the INTL row assembled the card offers BOTH sites",
+    segments().length === 2
+    && segments().map((button) => button.textContent).join("|") === `${zh["site.cn"]}|${zh["site.intl"]}`,
+    JSON.stringify(segments().map((button) => button.textContent)));
+  // The CN half is the default body: its roster picker's own rule line is what
+  // is on screen, and the INTL switch is not.
+  check("the CN half is the body on screen first",
+    text(container).includes(zh["llm.rosterHint"]), text(container).slice(0, 200));
+  check("the INTL half's switch is not rendered until its segment is selected",
+    !text(container).includes(zh["llm.intlSwitch"]), text(container).slice(0, 200));
+
+  // Selecting the INTL segment swaps the body: its switch appears and the CN
+  // roster hint does not.
+  await click(segments()[1]);
+  check("selecting the INTL segment renders the INTL half",
+    text(container).includes(zh["llm.intlSwitch"]), text(container).slice(0, 200));
+  check("the segments report the two rows' DIFFERENT states (CN serving, INTL off)",
+    segments()[0].getAttribute("data-tone") === "ok" && segments()[1].getAttribute("data-tone") === "off",
+    JSON.stringify(segments().map((button) => button.getAttribute("data-tone"))));
+} finally {
+  await unmountAll();
+}
+
+// ── 8c. the site switch must not invent an answer (ADR-023/024) ────────────
+// Two frames found by a headless-browser probe of the shipped bundle, both
+// introduced by the site selector and both invisible to a structural test:
+//
+//   1. the frame RIGHT AFTER clicking the other site had no reading for it, and
+//      the credential card's unlinked branch rendered「未关联——请先在 AgnesCode
+//      桌面端登录」— a false accusation about an account nobody had asked about
+//      yet. (`agnescodeView`'s comment #2 exists precisely to prevent this
+//      shape; the switch reintroduced it by a third route.)
+//   2. the OTHER site's dot was filled in as `off` =「未启用」from no data at
+//      all, so a registered, signed-in row read as "not set up".
+//
+// Both are pinned here because they are properties of the RENDERED frames.
+try {
+  const agyCn = {
+    ok: true, enabled: true, switchSource: "panel", loggedIn: true, nickname: "张三",
+    bffBase: "https://api-agnes-code.agnes-ai.cn/v1", expiresAtMs: Date.now() + 86_400_000, expired: false,
+    desktopSourceEnabled: false, desktopSourceServing: false, desktopSourceReason: null,
+    balance: { totalBalance: 1200, timeSensitiveBalance: 40, permanentBalance: 1160 },
+    rateLimit: { today: 0, last30d: 0, lastAt: null },
+    usage: { todayRequests: 0, todayTotal: 0, todayCacheRead: 0 },
+    ledger: null, models: [], modelsSource: "fallback", modelsAsOf: "2026-10-04",
+    enabledModelIds: [], providerRegistered: true
+  };
+  // The INTL read NEVER answers: the frame under test is the one before it lands.
+  route = async (path) => {
+    if (path === `${AGNESCODE_PATH}?domain=intl`) return new Promise(() => {});
+    if (path === AGNESCODE_PATH) return reply(agyCn);
+    return reply(healthyBody);
+  };
+  const container = await mountPanel();
+  const agyTab = [...container.querySelectorAll('button[role="tab"]')]
+    .find((button) => button.textContent === zh["tab.agnescode"]);
+  await click(agyTab);
+
+  const segments = () => [...container.querySelectorAll('[data-dsh-agnes-sites="true"] button[role="tab"]')];
+  const toneOf = (site) => segments().find((b) => b.getAttribute("data-site") === site)?.getAttribute("data-tone");
+  check("a site this tab has never read reports 'unknown', not a fabricated 'off'",
+    toneOf("intl") === "unknown", `tone=${toneOf("intl")}`);
+  check("a site this tab HAS read reports its real tone",
+    toneOf("cn") === "ok", `tone=${toneOf("cn")}`);
+
+  await click(segments()[1]);
+  check("the frame after a site switch does NOT accuse the reader of not being signed in",
+    !text(container).includes(zh["agnescode.notLogged"]),
+    text(container).slice(0, 200));
+  check("that frame says it is reading the site instead",
+    text(container).includes(zh["agnescode.readingSite"]), text(container).slice(0, 200));
+
+  // Switching BACK is instant: the CN reading was kept, not cleared on the way out.
+  await click(segments()[0]);
+  check("switching back restores the cached reading immediately",
+    text(container).includes("张三"), text(container).slice(0, 200));
+} finally {
+  await unmountAll();
+}
+
+// ── 8d. the INTL row can vanish under a reader standing on it ──────────────
+// The third frame the probe found: the segment row is built from the snapshot,
+// so when the Host stops assembling the INTL row (a row misconfigured, a Host
+// that lost it) while the reader is ON that segment, the stored selection stays
+// "intl" with no segment left to be selected — and the control rendered with
+// NOTHING highlighted, which reads as "the panel is broken" rather than "that
+// row is gone". `panel-page.ts` clamps the SHOWN site to the CN row instead of
+// writing the state back, so the reader's own choice survives the row returning.
+//
+// The reload is DRIVEN (a real click on the pinned bar's refresh) and the check
+// asserts the button was found first: a probe that silently skipped the click
+// would pass this without proving anything, which is how the first version of
+// this scenario lied.
+try {
+  const withIntl = {
+    ...healthyBody,
+    llm: { hasApiKey: true, registerProvider: true, llmAvailable: true, providerRegistered: true, providerId: "agnes-token-plan", models: [], enabledModelIds: [] },
+    intl: { auth: { configured: false, hasAccount: false, needsAccount: true }, llm: { hasApiKey: false, registerProvider: false, registerSource: "off", providerRegistered: false, providerId: "agnes-token-plan-intl", models: [], enabledModelIds: [] } }
+  };
+  const without = { ...healthyBody, llm: withIntl.llm };
+  let current = withIntl;
+  route = async () => reply(current);
+  const container = await mountPanel();
+  await click([...container.querySelectorAll('button[role="tab"]')].find((button) => button.textContent === zh["tab.api"]));
+
+  const segments = () => [...container.querySelectorAll('[data-dsh-agnes-sites="true"] button[role="tab"]')];
+  await click(segments()[1]);
+  check("the INTL segment can be selected on the API card",
+    segments()[1]?.getAttribute("aria-selected") === "true",
+    JSON.stringify(segments().map((b) => b.getAttribute("aria-selected"))));
+
+  // The Host loses the row; the reader reloads.
+  current = without;
+  const refresh = [...container.querySelectorAll("button")]
+    .find((button) => (button.textContent ?? "").trim() === zh["panel.refresh"]);
+  check("the pinned bar's refresh button was found (the reload below is real)",
+    refresh !== undefined, String(refresh?.textContent));
+  await click(refresh);
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 80)); });
+
+  const after = segments();
+  check("with the INTL row gone, only the CN segment is on screen",
+    after.length === 1 && after[0].textContent === zh["site.cn"],
+    JSON.stringify(after.map((b) => b.textContent)));
+  check("and one segment is still SELECTED (no card renders with nothing highlighted)",
+    after[0]?.getAttribute("aria-selected") === "true",
+    JSON.stringify(after.map((b) => b.getAttribute("aria-selected"))));
 } finally {
   await unmountAll();
 }
@@ -1144,7 +1329,9 @@ try {
   let posted = null;
   try { posted = JSON.parse(post?.opts?.body ?? "null"); } catch { posted = null; }
   check("the switch's POST carries the write, and the post-write state lands",
-    JSON.stringify(posted) === JSON.stringify({ action: "switch", enabled: false })
+    // The body carries the SITE too (ADR-023): the CN row is the tab's default
+    // site, and every write names the row it addresses.
+    JSON.stringify(posted) === JSON.stringify({ action: "switch", enabled: false, domain: "cn" })
       && switchInput()?.checked === false,
     JSON.stringify({ posted, checked: switchInput()?.checked }));
 

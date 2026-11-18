@@ -40,7 +40,7 @@ import { PROBED_VISION } from "./llm-models.ts";
 import { normalizeEnabledIds } from "./catalog-store.ts";
 
 /**
- * The provider id this plugin registers under for AgnesCode.
+ * The CN provider id this plugin registers under for AgnesCode (ROADMAP §6.3).
  *
  * The bare product name, the same granularity the sibling `dsh-connect-workbuddy`
  * uses for `workbuddy` / `workbuddy-global`: the vendor is implied by the
@@ -52,11 +52,27 @@ import { normalizeEnabledIds } from "./catalog-store.ts";
  * is rejected by `registerAdapter` as DUPLICATE_ADAPTER — one of the two would
  * silently vanish from the picker (ARCHITECTURE.md §5). `agnescode` sits in
  * neither namespace, so that collision is impossible either way.
+ *
+ * A second id — {@link AGNESCODE_PROVIDER_ID_INTL} — is registered for the
+ * international AgnesCode gateway under the same "a site is a namespace"
+ * convention (ADR-021): one credential, one catalog, one per-account base, all
+ * per-site, so the two sites' providers never cross-bill. See ADR-023.
  */
 export const AGNESCODE_PROVIDER_ID = "agnescode";
 
-/** What the DSH model picker shows as the AgnesCode provider's name. */
+/** What the DSH model picker shows as the AgnesCode (CN) provider's name. */
 export const AGNESCODE_DISPLAY_NAME = "AgnesCode";
+
+/**
+ * The international-site provider id this plugin registers under for AgnesCode
+ * (ADR-023, the AgnesCode dual-provider twin of ADR-021's `agnes-token-plan-intl`):
+ * the international gateway's one provider, isolated from the CN one's
+ * credential / catalog / per-account base / switch.
+ */
+export const AGNESCODE_PROVIDER_ID_INTL = "agnescode-intl";
+
+/** What the DSH model picker shows as the AgnesCode international provider's name. */
+export const AGNESCODE_DISPLAY_NAME_INTL = "AgnesCode Intl";
 
 /**
  * This model's output ceiling when the live roster row carries none.
@@ -290,12 +306,15 @@ export function agnescodeThinkingLevelMap(id: string) {
 /**
  * Map one AgnesCode row onto the pi-ai model descriptor the adapter offers.
  * @param {object} row - an {@link agnescodeRoster} row (must carry `id`).
- * @param {object} [options] - `{ bffBase }` — the pinned per-account base.
+ * @param {object} [options] - `{ bffBase, maxTokensOverrides, providerId, displayName }` —
+ *   the per-domain identity (ADR-023): the two AgnesCode sites register separate
+ *   provider rows, so the descriptor's provider field carries the row's id, and
+ *   the name carries the row's display name. The CN identity is the default.
  * @returns {object} the pi-ai descriptor.
  */
 export function agnescodeToDescriptor(
   row: Record<string, unknown>,
-  options: { bffBase?: string; maxTokensOverrides?: Record<string, number> | null } = {}
+  options: { bffBase?: string; maxTokensOverrides?: Record<string, number> | null; providerId?: string; displayName?: string } = {}
 ) {
   const id = str(row?.id, "");
   if (id === "") throw new Error("agnescodeToDescriptor: row has no id");
@@ -324,7 +343,12 @@ export function agnescodeToDescriptor(
     id,
     name: displayName,
     api: "openai-completions",
-    provider: AGNESCODE_PROVIDER_ID,
+    // The per-domain identity (ADR-023): the two AgnesCode sites register
+    // separate provider rows, so the descriptor's provider field carries the
+    // row's id. `provider` is the picker's route discriminator, not the
+    // display name — the row's display name rides the provider's own
+    // `name` in `createProvider` (set by the adapter per identity).
+    provider: options.providerId ?? AGNESCODE_PROVIDER_ID,
     baseUrl: bffBase,
     input: vision ? ["text", "image"] : ["text"],
     // See the module header: probed live 2026-10-03 — the BFF accepts
@@ -352,12 +376,13 @@ export function agnescodeToDescriptor(
 /**
  * Build the whole descriptor list for one AgnesCode roster.
  * @param {object[]} [roster] - the {@link agnescodeRoster} result.
- * @param {object} [options] - `{ bffBase, maxTokensOverrides }`.
+ * @param {object} [options] - `{ bffBase, maxTokensOverrides, providerId, displayName }` —
+ *   the per-domain identity (ADR-023), same as the row builder above.
  * @returns {object[]} the pi-ai descriptors.
  */
 export function buildAgnescodeDescriptors(
   roster: unknown,
-  options: { bffBase?: string; maxTokensOverrides?: Record<string, number> | null } = {}
+  options: { bffBase?: string; maxTokensOverrides?: Record<string, number> | null; providerId?: string; displayName?: string } = {}
 ) {
   const list = (Array.isArray(roster) ? roster : agnescodeRoster(null)) as Record<string, unknown>[];
   const out: ReturnType<typeof agnescodeToDescriptor>[] = [];

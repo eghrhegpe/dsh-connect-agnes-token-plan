@@ -47,6 +47,43 @@ import { startAgnescodeLogin } from "../agnescode-login.ts";
 import { writeJson, refuseOrigin, refuseMethod, requestMethod, readJsonBody } from "./http.ts";
 import type { CacheMap, HostCtx, HostWiring, InflightMap } from "../types.ts";
 
+/** Which AgnesCode site a request targets (ADR-023): the CN row is the
+ *  default; the international row is selected by the `domain` query/body field
+ *  the client sends with every request (both halves). */
+export type AgnescodeDomain = "cn" | "intl";
+
+/**
+ * The domain a GET targets, from the query string.
+ *
+ * The QUERY only, deliberately: a POST's body is a single-use stream, and
+ * reading it here would leave the action handler with nothing to parse. The
+ * POST branch therefore reads the domain out of the body it has already
+ * parsed (see {@link agnescodeDomainOfBody}), and falls back to this query
+ * answer when the body states none.
+ * @param request - the incoming HTTP request.
+ * @returns {AgnescodeDomain} the site; `"cn"` when nothing states one.
+ */
+export function agnescodeDomainOf(request: { url?: string }): AgnescodeDomain {
+  const url = new URL(request?.url ?? "/", "http://127.0.0.1");
+  const query = url.searchParams.get("domain");
+  return query === "intl" || query === "cn" ? query : "cn";
+}
+
+/**
+ * The domain a POST body targets, or `null` when it states none.
+ *
+ * A body that names a site the plugin does not serve is REFUSED by the action
+ * handler (the `login` branch already did this); every other action treats an
+ * unknown value as "no selection" and falls back to the query/default, so a
+ * stray field never sends a request to the wrong site's store.
+ * @param body - the parsed request body.
+ * @returns {AgnescodeDomain|null} the site, or `null` when the body states none.
+ */
+export function agnescodeDomainOfBody(body: unknown): AgnescodeDomain | null {
+  const domain = (body as { domain?: unknown } | null | undefined)?.domain;
+  return domain === "intl" || domain === "cn" ? domain : null;
+}
+
 /** One row of the harvest diagnosis the panel shows: which file was probed, how
  * it was classified, and why. `detail` is an error string, not a token — but it
  * is still red-line #1 material the moment it leaves the route, so every
@@ -173,24 +210,63 @@ function readThroughAgnescode(
 
 /**
  * Register the AgnesCode route. Wiring subset: `settings`, `agnescodeStore`,
- * `agnescodeSwitch`, `agnescodePublisher`.
+ * `agnescodeSwitch`, `agnescodePublisher` — and their international twins
+ * (ADR-023): `agnescodeStoreIntl`, `agnescodeSwitchIntl`,
+ * `agnescodePublisherIntl`.
  * @param ctx - the host root context (only `ctx.webServer` is used here).
  * @param {object} wiring - as assembled by `apply()` in `index.ts`.
  * @returns {Function} the `off()` unregister callback.
  */
 export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
-  const { settings, agnescodeStore, agnescodeSwitch, agnescodeDesktopSource, agnescodePublisher, agnescodeModels, agnescodeRosterSeen, cache, inflight, agnescodeFetch } = wiring;
+  const {
+    settings,
+    agnescodeDesktopSource,
+    agnescodeModels,
+    agnescodeRosterSeen,
+    cache,
+    inflight,
+    agnescodeFetch
+  } = wiring;
 
   // ── The AgnesCode route: the desktop-app upstream provider (ROADMAP §6.3) ──
   // The route-scoped state — declared BEFORE any handler runs, never after a
   // branch that reads it (the shipped TDZ bug lived exactly there).
-  let lastHarvest: { ok: boolean; attempts: Array<{ file: string | null; tier: string; detail: string }> } | null = null;
-  let agnescodeHarvestInFlight: Promise<{ ok: boolean; attempts: Array<{ file: string | null; tier: string; detail: string }> }> | null = null;
-  let agnescodeLoginInFlight: Promise<{ ok: boolean; error?: string }> | null = null;
-  // The GET self-heal's cooldown stamp (see the GET branch): one repair
-  // publish per window, so a persistently failing publish cannot rebuild the
-  // adapter on every panel poll.
-  let agnescodeSelfHealAt = 0;
+  //
+  // PER SITE (ADR-023): the two AgnesCode rows are separate registrations with
+  // separate credentials, so their route-scoped state is separate too. The
+  // harvest diagnosis, the two single-flight slots and the self-heal cooldown
+  // are all facts ABOUT ONE SITE's account — the international row's walk must
+  // never land in the CN row's `lastHarvest`, and the CN row's in-flight walk
+  // must never swallow the international row's login.
+  type SiteState = {
+    domain: AgnescodeDomain;
+    store: HostWiring["agnescodeStore"];
+    switchStore: HostWiring["agnescodeSwitch"];
+    publisher: HostWiring["agnescodePublisher"];
+    lastHarvest: { ok: boolean; attempts: Array<{ file: string | null; tier: string; detail: string }> } | null;
+    harvestInFlight: Promise<{ ok: boolean; attempts: Array<{ file: string | null; tier: string; detail: string }> }> | null;
+    loginInFlight: Promise<{ ok: boolean; error?: string }> | null;
+    selfHealAt: number;
+  };
+  const siteState = (domain: AgnescodeDomain): SiteState => {
+    const intl = domain === "intl";
+    return {
+      domain,
+      store: (intl ? wiring.agnescodeStoreIntl : wiring.agnescodeStore) as SiteState["store"],
+      switchStore: (intl ? wiring.agnescodeSwitchIntl : wiring.agnescodeSwitch) as SiteState["switchStore"],
+      publisher: (intl ? wiring.agnescodePublisherIntl : wiring.agnescodePublisher) as SiteState["publisher"],
+      lastHarvest: null,
+      harvestInFlight: null,
+      loginInFlight: null,
+      selfHealAt: 0
+    };
+  };
+  // The two sites' state holders, created ONCE at mount (the mutable fields
+  // live on them, so a per-request re-creation would throw the history away).
+  const sites: Record<AgnescodeDomain, SiteState> = {
+    cn: siteState("cn"),
+    intl: siteState("intl")
+  };
   // The plugin's own rate-limit record. NOT per-profile: the count is a fact
   // about this machine's traffic against the account, so a restarted profile
   // must still see what the other logged minutes ago (PITFALLS §23, same
@@ -236,17 +312,25 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         refuseOrigin(response);
         return;
       }
+      // WHICH SITE this request is about (ADR-023). The GET carries it in the
+      // query; a POST carries it in the body (parsed below) and falls back to
+      // the query. The CN row is the default, so an old client that knows
+      // nothing about sites keeps working unchanged.
+      const queryDomain = agnescodeDomainOf(request);
       // The GET's secret-free state, reused by every POST branch. The
       // `harvest` block carries the last walk's diagnosis rows (tier codes
       // and shape facts only — a token NEVER enters this payload).
-      const agnescodeState = async () => {
+      const agnescodeState = async (site: SiteState) => {
+        const store = site.store;
+        const switchStore = site.switchStore;
+        const publisher = site.publisher;
         // AgnesCode has NO config default — `Settings` carries no key for it.
         // Omitting the second argument is what says so: an unset panel value
         // resolves to "off", never to a default nobody declared. Writing this
         // as `(switch ?? settings.x) === true` would make the provider
         // register itself the day such a key is added to the patch schema.
         const { enabled: effectiveEnabled, source: switchSource } = resolveSwitchEnabled(
-          await readPanelValue(() => agnescodeSwitch?.enabled())
+          await readPanelValue(() => switchStore?.enabled())
         );
         let loggedIn = false;
         let nickname = "";
@@ -272,8 +356,8 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // presents as a single identity.
         let credential: { accessToken: string; bffBase?: string } | null = null;
         try {
-          if (agnescodeStore !== null && agnescodeStore !== undefined) {
-            const state = await agnescodeStore.state().catch(() => null);
+          if (store !== null && store !== undefined) {
+            const state = await store.state().catch(() => null);
             loggedIn = state?.hasCredential === true;
             nickname = state?.nickname ?? "";
             bffBase = state?.bffBase ?? "";
@@ -285,7 +369,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
               desktopSourceServing = desktopSource.serving === true;
               desktopSourceReason = typeof desktopSource.reason === "string" && desktopSource.reason !== "" ? desktopSource.reason : null;
             }
-            credential = (await agnescodeStore.resolve().catch(() => ({ credential: null }))).credential ?? null;
+            credential = (await store.resolve().catch(() => ({ credential: null }))).credential ?? null;
           }
         } catch (why) {
           error = redactError(why);
@@ -343,7 +427,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // panel would have shown the platform's claim while the wire sent the
         // operator's correction.
         const roster = agnescodeRoster(liveRoster ? models : AGNESCODE_FALLBACK_MODELS, settings.maxTokensOverrides);
-        const publisherState = agnescodePublisher?.state ?? null;
+        const publisherState = publisher?.state ?? null;
         // The curated subset (empty = no curation = push the roster whole).
         const enabledModelIds = agnescodeModels !== null && agnescodeModels !== undefined
           ? await agnescodeModels.listEnabledIds().catch(() => [])
@@ -412,7 +496,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           enabledModelIds,
           providerRegistered: publisherState?.registered === true,
           ...(publisherState?.error !== null && publisherState?.error !== undefined ? { providerError: publisherState.error } : {}),
-          ...(lastHarvest !== null ? { harvest: lastHarvest } : {}),
+          ...(site.lastHarvest !== null ? { harvest: site.lastHarvest } : {}),
           ...(error !== null ? { error } : {})
         };
       };
@@ -420,8 +504,10 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
       /** Drive the registration from the CURRENT stored credential: the live
        *  catalogue wins over the fallback, the base comes from the credential
        *  (empty when there is none — the publisher's gate then releases). */
-      const publishFromStore = async () => {
-        if (agnescodePublisher === null || agnescodePublisher === undefined) return;
+      const publishFromStore = async (site: SiteState) => {
+        const publisher = site.publisher;
+        const store = site.store;
+        if (publisher === null || publisher === undefined) return;
         // Annotated (not inferred from the fallback): the fallback happens to
         // carry `multiplier` on every row, so inference would make it required
         // and reject a LIVE catalogue row whose model has no published price
@@ -429,7 +515,7 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         let rows: ReadonlyArray<{ id: string; name: string; vision: boolean; memberOnly: boolean; multiplier?: number; contextWindow?: number; maxOutputLength: number }> = AGNESCODE_FALLBACK_MODELS;
         let bffBase = "";
         try {
-          const { credential } = agnescodeStore ? await agnescodeStore.resolve().catch(() => ({ credential: null })) : { credential: null };
+          const { credential } = store ? await store.resolve().catch(() => ({ credential: null })) : { credential: null };
           if (credential?.accessToken) {
             // The catalogue read is shared with the GET (same key), so a
             // self-heal publish does not add a third call on a poll that just
@@ -451,12 +537,13 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         const enabledIds = agnescodeModels !== null && agnescodeModels !== undefined
           ? await agnescodeModels.listEnabledIds().catch(() => [])
           : [];
-        await agnescodePublisher.publish(filterAgnescodeRows(rows, enabledIds), bffBase);
+        await publisher.publish(filterAgnescodeRows(rows, enabledIds), bffBase);
       };
 
       const method = requestMethod(request, "GET");
       if (method === "GET") {
-        let state = await agnescodeState();
+        const site = sites[queryDomain];
+        let state = await agnescodeState(site);
         // Self-heal: an UNREGISTERED state alongside a stored credential is a
         // STALE publish — the switch was toggled before the harvest (leaving
         // `not_configured`), or the mount seed ran before the `llm`/credentials
@@ -466,16 +553,17 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         // reader never has to click anything to converge; a publish that fails
         // again stops holding this exact condition only if it reports
         // differently, so the cooldown keeps a persistently failing publish
-        // from rebuilding the adapter every 60 s.
+        // from rebuilding the adapter every 60 s. The cooldown is PER SITE: one
+        // site's failing publish must not mute the other's repair.
         const staleRegistration = state.providerRegistered !== true
           && state.providerError !== null && state.providerError !== undefined && state.providerError !== "";
         if (
           state.enabled === true && state.loggedIn === true && staleRegistration
-          && Date.now() - agnescodeSelfHealAt > AGNESCODE_SELF_HEAL_COOLDOWN_MS
+          && Date.now() - site.selfHealAt > AGNESCODE_SELF_HEAL_COOLDOWN_MS
         ) {
-          agnescodeSelfHealAt = Date.now();
-          await publishFromStore();
-          state = await agnescodeState();
+          site.selfHealAt = Date.now();
+          await publishFromStore(site);
+          state = await agnescodeState(site);
         }
         writeJson(response, 200, state, { "cache-control": "no-store" });
         return;
@@ -490,8 +578,12 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         return;
       }
       const { action } = body.value;
+      // The site this POST is about (ADR-023): the body states it, the query
+      // string is the fallback, and the CN row is the default. A body that
+      // names no site never lands on the international row by accident.
+      const site = sites[agnescodeDomainOfBody(body.value) ?? queryDomain];
       const answer = async (extra = {}) => {
-        const state = await agnescodeState();
+        const state = await agnescodeState(site);
         writeJson(response, 200, { ...state, ...extra }, { "cache-control": "no-store" });
       };
 
@@ -501,13 +593,13 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           writeJson(response, 400, { ok: false, error: "expected { action: \"switch\", enabled: boolean }" }, { "cache-control": "no-store" });
           return;
         }
-        if (agnescodeSwitch === null || agnescodeSwitch === undefined) {
+        if (site.switchStore === null || site.switchStore === undefined) {
           await answer({ ok: false, error: "the agnescode switch is unavailable" });
           return;
         }
         try {
-          await agnescodeSwitch.save(body.value.enabled);
-          await publishFromStore();
+          await site.switchStore.save(body.value.enabled);
+          await publishFromStore(site);
         } catch (error) {
           await answer({ ok: false, error: redactError(error) });
           return;
@@ -530,7 +622,11 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         }
         try {
           await agnescodeModels.save(body.value.enabledModelIds);
-          await publishFromStore();
+          // Both sites re-publish: the curation is a filter over the roster,
+          // and the two rows carry the SAME enabled ids (one panel curation for
+          // the plugin), so a change must reach whichever row is registered.
+          await publishFromStore(sites.cn);
+          await publishFromStore(sites.intl);
         } catch (error) {
           await answer({ ok: false, error: redactError(error) });
           return;
@@ -541,29 +637,31 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
 
       // ── harvest: re-read the desktop App's session file and store it ──
       if (action === "harvest") {
-        if (agnescodeStore === null || agnescodeStore === undefined) {
+        if (site.store === null || site.store === undefined) {
           await answer({ ok: false, error: "the agnescode credential store is unavailable" });
           return;
         }
         try {
           // Single-flighted: the WHOLE walk (harvest + store save) runs once;
           // a concurrent request joins the same promise and shares both the
-          // saved credential and the diagnosis rows.
-          if (agnescodeHarvestInFlight === null) {
-            agnescodeHarvestInFlight = (async () => {
-              const walk = await harvestAgnescodeLocalSession();
+          // saved credential and the diagnosis rows. The flight is PER SITE:
+          // the international row's walk is its own, and the CN row's walk
+          // never answers for it.
+          if (site.harvestInFlight === null) {
+            site.harvestInFlight = (async () => {
+              const walk = await harvestAgnescodeLocalSession({ domain: site.domain });
               // The rows carry tier codes and shape facts — never the token —
               // but each `detail` is an error string (a file path, a fs reason)
               // that reaches the panel, so it is redacted at this single choke
               // point rather than trusting the harvest to remember.
               const attempts = redactHarvestAttempts(walk.attempts);
               if (walk.ok !== true) {
-                lastHarvest = { ok: false, attempts };
+                site.lastHarvest = { ok: false, attempts };
                 return { ok: false, attempts };
               }
               const expMs = decodeAgnescodeJwtExpMs(walk.session.accessToken);
               try {
-                await agnescodeStore.save({
+                await site.store.save({
                   accessToken: walk.session.accessToken,
                   bffBase: walk.session.bffBase,
                   ...(walk.session.userId !== "" ? { userId: walk.session.userId } : {}),
@@ -575,16 +673,16 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
                 // nothing was persisted. Mark the attempt failed so the next GET
                 // does not report success for a save that never landed, then
                 // rethrow so the route's catch answers the POST with the error.
-                lastHarvest = { ok: false, attempts };
+                site.lastHarvest = { ok: false, attempts };
                 throw saveError;
               }
-              lastHarvest = { ok: true, attempts };
+              site.lastHarvest = { ok: true, attempts };
               return { ok: true, attempts };
             })().finally(() => {
-              agnescodeHarvestInFlight = null;
+              site.harvestInFlight = null;
             });
           }
-          const walk = await agnescodeHarvestInFlight;
+          const walk = await site.harvestInFlight;
           if (walk.ok !== true) {
             await answer({ ok: false, status: "not_found", error: "no usable session found in the desktop App's session file", harvest: walk });
             return;
@@ -593,9 +691,9 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
           await answer({ ok: false, error: redactError(error) });
           return;
         }
-        if (agnescodePublisher !== null && agnescodePublisher !== undefined && agnescodePublisher.isDisposed() === false) {
-          if (resolveSwitchEnabled(await readPanelValue(() => agnescodeSwitch?.enabled())).enabled) {
-            await publishFromStore();
+        if (site.publisher !== null && site.publisher !== undefined && site.publisher.isDisposed() === false) {
+          if (resolveSwitchEnabled(await readPanelValue(() => site.switchStore?.enabled())).enabled) {
+            await publishFromStore(site);
           }
         }
         await answer({ ok: true, status: "harvested" });
@@ -611,31 +709,42 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
       // the login), and a cancelled-then-reclicked login simply joins this
       // flight, which is the same double-click semantics.
       if (action === "login") {
-        if (agnescodeStore === null || agnescodeStore === undefined) {
+        if (site.store === null || site.store === undefined) {
           await answer({ ok: false, error: "the agnescode credential store is unavailable" });
           return;
         }
-        const domain = body.value.domain;
-        if (domain !== undefined && domain !== "cn" && domain !== "intl") {
+        // The site's own device flow: the CN row opens the CN login page and
+        // exchanges against the CN BFF; the international row opens the
+        // international one. The row's site is decided by the body's `domain`
+        // (the same field every other action carries), NOT by the request's
+        // query — a login that asked for the international site must not be
+        // answered by the CN flow, whatever the query said.
+        //
+        // A `domain` that names NEITHER site is REFUSED here (before the flow
+        // starts): the login branch is the one action whose domain picks an
+        // ENDPOINT, so a typo in it must not silently fall back to the CN
+        // login page — the user would scan a QR for the wrong site and end up
+        // with a credential the other row cannot use.
+        const rawDomain = (body.value as { domain?: unknown }).domain;
+        if (rawDomain !== undefined && rawDomain !== "cn" && rawDomain !== "intl") {
           await answer({ ok: false, error: "domain must be 'cn' or 'intl'" });
           return;
         }
-        if (agnescodeLoginInFlight === null) {
-          agnescodeLoginInFlight = (async () => {
+        const loginDomain: AgnescodeDomain = rawDomain === "intl" ? "intl" : rawDomain === "cn" ? "cn" : queryDomain;
+        if (site.loginInFlight === null) {
+          site.loginInFlight = (async () => {
             try {
-              const result = await startAgnescodeLogin({
-                domain: domain === "intl" ? "intl" : "cn"
-              });
-              await agnescodeStore.save({
+              const result = await startAgnescodeLogin({ domain: loginDomain });
+              await site.store.save({
                 accessToken: result.accessToken,
                 bffBase: result.bffBase,
                 ...(result.userId !== "" ? { userId: result.userId } : {}),
                 ...(result.nickname !== "" ? { nickname: result.nickname } : {}),
                 ...(result.expiresAtMs !== null ? { expiresAtMs: result.expiresAtMs } : {})
               });
-              if (agnescodePublisher !== null && agnescodePublisher !== undefined && agnescodePublisher.isDisposed() === false) {
-                if (resolveSwitchEnabled(await readPanelValue(() => agnescodeSwitch?.enabled())).enabled) {
-                  await publishFromStore();
+              if (site.publisher !== null && site.publisher !== undefined && site.publisher.isDisposed() === false) {
+                if (resolveSwitchEnabled(await readPanelValue(() => site.switchStore?.enabled())).enabled) {
+                  await publishFromStore(site);
                 }
               }
               return { ok: true as const };
@@ -643,10 +752,10 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
               return { ok: false as const, error: redactError(error) };
             }
           })().finally(() => {
-            agnescodeLoginInFlight = null;
+            site.loginInFlight = null;
           });
         }
-        const result = await agnescodeLoginInFlight;
+        const result = await site.loginInFlight;
         if (result.ok !== true) {
           await answer({ ok: false, error: result.error });
           return;
@@ -661,6 +770,11 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
       // through the store-aware `publishFromStore` exactly like the provider
       // switch above: the answer is the full post-write state, and a flip to
       // OFF costs no login — the slot's credential is untouched either way.
+      //
+      // The switch is SHARED by the two sites (one file, one decision — it
+      // names the App's file, which is a machine fact, not a site fact), so a
+      // flip re-publishes BOTH rows: each site's store consults the same
+      // switch, and only the row whose view changed needs a new registration.
       if (action === "desktop-source") {
         if (typeof body.value.enabled !== "boolean") {
           writeJson(response, 400, { ok: false, error: 'expected { action: "desktop-source", enabled: boolean }' }, { "cache-control": "no-store" });
@@ -672,7 +786,8 @@ export function registerAgnescodeRoute(ctx: HostCtx, wiring: HostWiring) {
         }
         try {
           await agnescodeDesktopSource.save(body.value.enabled);
-          await publishFromStore();
+          await publishFromStore(sites.cn);
+          await publishFromStore(sites.intl);
         } catch (error) {
           await answer({ ok: false, error: redactError(error) });
           return;

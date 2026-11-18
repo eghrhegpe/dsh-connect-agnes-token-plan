@@ -7,21 +7,23 @@
  * with no room in the body in the tooltip. The body stays short enough for the
  * composer toolbar: `<upstream> · <reading>`.
  *
- * THREE PROVIDER ROUTES, ONE SEAT — and none renders under another's name.
+ * FOUR PROVIDER ROUTES, ONE SEAT — and none renders under another's name.
  * This plugin has exactly the shape the sibling's capsule was built for: a
- * console quota, and a desktop-app credit pool. The console quota now runs on
- * TWO co-existing site rows (ADR-021) — `agnes-token-plan` (the CN gateway)
- * and `agnes-token-plan-intl` (the INTL gateway, its own `intl.quota` block
- * in the same snapshot) — plus the desktop-app credit pool (`agnescode`, a
- * balance in credits, harvested credentials, its own route). The gate below
- * sends `agnes-token-plan` to the console reader's CN reading,
- * `agnes-token-plan-intl` to the same reader's INTL reading, and `agnescode`
- * to the balance reader; any other provider mounts NOTHING. That last part
+ * console quota, and a desktop-app credit pool. BOTH now run on TWO
+ * co-existing site rows: the console quota on `agnes-token-plan` (the CN
+ * gateway) and `agnes-token-plan-intl` (the INTL gateway, its own `intl.quota`
+ * block in the same snapshot) — ADR-021 — and the desktop-app credit pool on
+ * `agnescode` and `agnescode-intl`, each with its own route, credential and
+ * per-account base — ADR-023. The gates below send `agnes-token-plan` to the
+ * console reader's CN reading, `agnes-token-plan-intl` to the same reader's
+ * INTL reading, `agnescode` to the CN balance reader and `agnescode-intl` to
+ * the international one; any other provider mounts NOTHING. That last part
  * is the load-bearing half: a session pointed at a model from some other
  * plugin must never carry these numbers, an `agnescode` session must never be
  * shown the console's windows (its quota universe is the desktop gateway's
  * own), and one site's windows must never render under the other site's name
- * (the two allowance universes are not shared, ADR-021).
+ * (the two allowance universes are not shared, ADR-021 — and neither are the
+ * two credit stocks, ADR-023).
  *
  * WHY THE GATE SITS AT THE COMPONENT BOUNDARY. `useProjection("modelSelection")`
  * is a session-scoped keyed hook the slot system materializes for the component
@@ -64,7 +66,7 @@
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
 import { S } from "./styles.ts";
 import { clockLong, clockSameDay, count, format } from "./format.ts";
-import { AGNESCODE_PATH, AGNESCODE_PROVIDER_ID, PROVIDER_ID, PROVIDER_ID_INTL, SNAPSHOT_PATH } from "./const.ts";
+import { AGNESCODE_PATH, AGNESCODE_PROVIDER_ID, AGNESCODE_PROVIDER_ID_INTL, PROVIDER_ID, PROVIDER_ID_INTL, SNAPSHOT_PATH } from "./const.ts";
 import { interpretSnapshot } from "./snapshot.ts";
 import { usageTier, windowPercent } from "./cards.ts";
 import { AGNESCODE_POLL_MS, agnescodeUsageText } from "./agnescode-tab.ts";
@@ -442,6 +444,13 @@ const SNAPSHOT_ROUTE: RemoteRoute<SnapshotData> = {
  * Reading it is read-only: the route serves cached store state plus the two
  * gateway reads the tab already performs while open, and its one write
  * (a cooldown-bounded self-heal publish) is bounded per 60 s inside the route.
+ *
+ * TWO SITES (ADR-023): the CN row's route and the international row's route
+ * are the SAME path with a different `domain` — the Host reads that field and
+ * answers from the other site's credential store, switch and publisher. The
+ * two route objects are separate constants (not one with a mutable path),
+ * because a route object is module-scope precisely so the poll loop is not
+ * rebuilt by a fresh literal per render.
  */
 const AGNESCODE_ROUTE: RemoteRoute<AgnescodeStateData> = {
   path: AGNESCODE_PATH,
@@ -451,6 +460,12 @@ const AGNESCODE_ROUTE: RemoteRoute<AgnescodeStateData> = {
     if (state === null || typeof state !== "object" || state.ok !== true) return { data: null };
     return { data: state, cadenceMs: AGNESCODE_POLL_MS };
   }
+};
+
+/** The international site's twin of {@link AGNESCODE_ROUTE} (ADR-023). */
+const AGNESCODE_ROUTE_INTL: RemoteRoute<AgnescodeStateData> = {
+  path: `${AGNESCODE_PATH}?domain=intl`,
+  parse: AGNESCODE_ROUTE.parse
 };
 
 /**
@@ -482,8 +497,8 @@ function useConsoleQuota(): RemoteReading<SnapshotData> {
 }
 
 /** The desktop-app reader (the pill's `/agnescode` loop). */
-function useAgnescodeState(): RemoteReading<AgnescodeStateData> {
-  return useRemoteRead(AGNESCODE_ROUTE, AGNESCODE_POLL_MS);
+function useAgnescodeState(site: "cn" | "intl" = "cn"): RemoteReading<AgnescodeStateData> {
+  return useRemoteRead(site === "intl" ? AGNESCODE_ROUTE_INTL : AGNESCODE_ROUTE, AGNESCODE_POLL_MS);
 }
 
 /**
@@ -837,8 +852,8 @@ function partOf(state: AgnescodeStateData | null | undefined, key: "timeSensitiv
  * the balance a reader glancing at the pill wants. It renders only when a turn
  * has actually been recorded, so it adds nothing to the empty-state clutter.
  */
-function AgnescodeBalancePill({ tt }: { tt: Tt }) {
-  const reading = useAgnescodeState();
+function AgnescodeBalancePill({ tt, site = "cn" }: { tt: Tt; site?: "cn" | "intl" }) {
+  const reading = useAgnescodeState(site);
   const state = reading.data;
   const balance = balanceOf(state);
   const tier: PillTier = balance === null ? "unknown" : balance <= 0 ? "error" : "ok";
@@ -885,7 +900,7 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
     ? null
     : `${tt("agnescd.newModelsTitle")}${shownNames.join(tt("agnescd.newModelsSep"))}${newIds.length > shownNames.length ? "…" : ""}`;
   const title = [
-    tt("composer.balanceTitle"),
+    tt(site === "intl" ? "composer.balanceTitleIntl" : "composer.balanceTitle"),
     split,
     why,
     newModelTitle,
@@ -903,7 +918,7 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
   const { popoverId, open, setOpen, rootRef, cardRef, triggerRef } = usePillPopover();
 
   const popoverRows = [
-    h("div", { key: "bal-title", style: S.pillPopTitle }, tt("composer.balanceTitle")),
+    h("div", { key: "bal-title", style: S.pillPopTitle }, tt(site === "intl" ? "composer.balanceTitleIntl" : "composer.balanceTitle")),
     h("div", { key: "bal", style: S.quotaRemaining },
       pending ? "…" : balance === null ? "—" : `${count(balance)} ${tt("composer.balanceUnit")}`),
     split !== null ? h("div", { key: "split", style: S.pillPopMuted }, split) : null,
@@ -925,7 +940,9 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
     { ref: rootRef, [PILL_ROOT_ATTR]: "true", style: S.pillRoot },
     h(PillBody, {
       tt,
-      planLabel: tt("composer.balancePrefix"),
+      // The site's name (ADR-023): the two credit stocks do not interoperate,
+      // so the balance must say WHICH site's stock it is.
+      planLabel: tt(site === "intl" ? "composer.balancePrefixIntl" : "composer.balancePrefix"),
       tier,
       stale,
       title,
@@ -956,7 +973,7 @@ function AgnescodeBalancePill({ tt }: { tt: Tt }) {
           id: popoverId,
           tabIndex: -1,
           role: "dialog",
-          "aria-label": tt("composer.balanceTitle"),
+          "aria-label": tt(site === "intl" ? "composer.balanceTitleIntl" : "composer.balanceTitle"),
           style: S.pillPopover
         },
         ...popoverRows)
@@ -988,5 +1005,9 @@ export function ComposerUsagePill(props: ComposerPillProps) {
   // different allowance universe and must never render under this name.
   if (provider === PROVIDER_ID_INTL) return h(ConsoleQuotaPill, { tt, site: "intl" });
   if (provider === AGNESCODE_PROVIDER_ID) return h(AgnescodeBalancePill, { tt });
+  // The international AgnesCode row (ADR-023): the same credit-stock reading,
+  // pointed at the international site's own route — the two sites' stocks are
+  // different credit universes and must never render under this name.
+  if (provider === AGNESCODE_PROVIDER_ID_INTL) return h(AgnescodeBalancePill, { tt, site: "intl" });
   return null;
 }

@@ -22,6 +22,16 @@ export const zh = {
   "panel.consoleTransient": "Agnes 控制台暂时无法读取，通常下一次自动刷新即可恢复；若持续出现，请检查网络后稍再重试。",
   "panel.shapeDrift": "上游返回的结构可能有变：{detail}",
   "auth.title": "连接国内站（Agnes CN）控制台",
+  // ADR-021/023 的站点选择器：一个上游一张卡，卡内分段选站点（取代两张并列卡）。
+  // 三条 tab 共用同一个控件与同一套状态点语义。
+  "site.label": "站点",
+  "site.cn": "国内站",
+  "site.intl": "国际站",
+  "site.toneOk": "已配置并在服务",
+  "site.toneWarn": "已开启，尚未配置完成",
+  "site.toneOff": "未启用",
+  "site.toneUnknown": "尚未读取该站",
+  "auth.siteTitle": "Agnes 控制台账号",
   "auth.registerHint": "还没有账号？前往官网注册，免费开通 Token Plan 额度 →",
   "auth.portalHint": "前往官网管理额度 / 获取 API Key →",
   "auth.intlTitle": "连接国际站（Agnes Intl）控制台",
@@ -106,7 +116,11 @@ export const zh = {
   // （`agnescode.unregistered` / `agnescode.notLogged`），只有「网关这次没答」是本胶囊
   // 自己的话。
   "composer.balancePrefix": "AgnesCode",
+  // ADR-023：国际版 AgnesCode 胶囊的前缀——两站的积分存量同样不互通，
+  // 读数必须说明是哪一站的（与 `composer.planPrefixIntl` 同一个道理）。
+  "composer.balancePrefixIntl": "国际版 AgnesCode",
   "composer.balanceTitle": "AgnesCode 积分余额",
+  "composer.balanceTitleIntl": "国际版 AgnesCode 积分余额",
   "composer.balanceUnit": "积分",
   "composer.balanceUnread": "本次没能读到余额",
   "composer.stale": "上次数据",
@@ -127,8 +141,9 @@ export const zh = {
   "llm.contextBadge": "{ctx} 上下文",
   "auth.selfRenew": "令牌自动续期中",
   "auth.needsLogin": "需要重新登录",
-  "llm.title": "国内站（Agnes CN）",
-  "llm.providerTitle": "语言模型",
+  // 接入 API tab 的一张卡：卡内分段选站点（CN 半边 = 开关 + 花名册 + Key + 注册状态；
+  // INTL 半边 = 开关 + Key + 注册状态，花名册整选 UI 仍留白，ADR-021）。
+  "llm.siteTitle": "提供方与 API Key",
   "llm.keyField": "API Key",
   "llm.placeholder": "粘贴 API Key（免费版 sk- 或 Token Plan cpk-）",
   "llm.save": "保存 API Key",
@@ -156,7 +171,6 @@ export const zh = {
   "llm.switch": "向 DSH 注册（立即生效）",
   "llm.switchBusy": "切换中…",
   "llm.switchError": "切换失败：{error}",
-  "llm.intlTitle": "国际站（Agnes Intl）",
   "llm.intlSwitch": "向 DSH 注册国际站 provider（立即生效）",
   "llm.intlSwitchBusy": "切换中…",
   "llm.intlSwitchError": "切换失败：{error}",
@@ -167,7 +181,7 @@ export const zh = {
   "llm.rosterHint": "勾选决定哪些模型推送进 DSH 模型列表；目录新增的模型默认不推送。",
   // 指向卡片名而非「上方/下方」：本卡片与国内站（Agnes CN）卡片的先后已经换过一次，
   // 方向词指错过一次就不该再写方向词。
-  "llm.rosterEmpty": "还没有可推送的模型——先在「国内站（Agnes CN）」卡片保存一次 Key 再回来。",
+  "llm.rosterEmpty": "还没有可推送的模型——先在「提供方与 API Key」卡片的国内站保存一次 Key 再回来。",
   "llm.rosterSearchPlaceholder": "搜索模型名或 ID",
   "llm.rosterCount": "已勾选 {selected} / 共 {total}",
   "llm.rosterAll": "全部勾选",
@@ -229,6 +243,7 @@ export const zh = {
   "tab.api": "接入 API",
   "tab.agnescode": "AgnesCode",
   "agnescode.title": "AgnesCode（爱思编程）",
+  // ADR-023：两条并存的 AgnesCode 注册（国内 / 国际），各自的凭据与开关互不相干。
   "agnescode.desc": "读取本机 AgnesCode 桌面端的登录态（微信登录在桌面 App 内完成，本插件不碰你的密码），模型经 DSH 提供方注册后可对话。凭据独立，与积分额度互不影响。",
   "agnescode.switch": "启用 AgnesCode 提供方",
   "agnescode.switchTip": "关闭后 AgnesCode 模型不会出现在 DSH 的模型下拉框里；凭据与模型设置都会保留，重新开启即恢复。",
@@ -243,6 +258,8 @@ export const zh = {
   "agnescode.desktopReason.no_expiry": "会话文件里没有可解析的到期时间",
   "agnescode.desktopReason.expired": "会话文件里的令牌已过期——重开桌面 App 登录一次即可",
   "agnescode.desktopReason.read_failed": "会话文件读取失败",
+  // ADR-024：切站那一帧还没读到本站数据——说「读取中」，绝不说「未关联」（那是假指控）。
+  "agnescode.readingSite": "正在读取该站的登录态…",
   "agnescode.harvest": "检测本机登录态",
   "agnescode.harvesting": "正在读取本机登录态…",
   "agnescode.loggedIn": "已关联：{nick}",
@@ -376,6 +393,18 @@ export const en: typeof zh = {
   "panel.consoleTransient": "The Agnes console could not be read just now. This usually clears on the next automatic refresh; if it persists, check your network and try again shortly.",
   "panel.shapeDrift": "The upstream payload shape may have changed: {detail}",
   "auth.title": "Connect the CN site (Agnes CN) console",
+  // The site selector (ADR-021/023): one card per upstream, the site picked
+  // inside it — replacing the two side-by-side cards. Shared by all three tabs,
+  // with one set of dot meanings. (Spelled "CN site" / "Intl site", not
+  // "Domestic" — the latter reads as someone else's country to half the users.)
+  "site.label": "Site",
+  "site.cn": "CN site",
+  "site.intl": "Intl site",
+  "site.toneOk": "configured and serving",
+  "site.toneWarn": "switched on, not set up yet",
+  "site.toneOff": "not enabled",
+  "site.toneUnknown": "not read yet",
+  "auth.siteTitle": "Agnes console account",
   "auth.registerHint": "No account yet? Register on the official site for a free Token Plan quota →",
   "auth.portalHint": "Manage quota / get API keys on the official site →",
   "auth.intlTitle": "Connect the Intl site (Agnes Intl) console",
@@ -451,7 +480,11 @@ export const en: typeof zh = {
   "composer.notConnected": "console not connected",
   "composer.noWindows": "the console returned no quota windows",
   "composer.balancePrefix": "AgnesCode",
+  // ADR-023: the INTL site's AgnesCode pill prefix — the two sites' credit
+  // stocks do not interoperate either, so the reading names its site too.
+  "composer.balancePrefixIntl": "Intl AgnesCode",
   "composer.balanceTitle": "AgnesCode credit balance",
+  "composer.balanceTitleIntl": "Intl AgnesCode credit balance",
   "composer.balanceUnit": "credits",
   "composer.balanceUnread": "the balance could not be read this time",
   "composer.stale": "last reading",
@@ -472,8 +505,10 @@ export const en: typeof zh = {
   "llm.contextBadge": "{ctx} context",
   "auth.selfRenew": "Token renews itself",
   "auth.needsLogin": "Sign-in required",
-  "llm.title": "Domestic site (Agnes CN)",
-  "llm.providerTitle": "Language models",
+  // The API tab's single card, site picked inside it (see the zh dictionary's
+  // note: the CN half is switch + roster + key + status, the INTL half is
+  // switch + key + status — the INTL roster picker is still a documented gap).
+  "llm.siteTitle": "Provider & API key",
   "llm.keyField": "API key",
   "llm.placeholder": "Paste your API key (free sk- or Token Plan cpk-)",
   "llm.save": "Save API key",
@@ -501,7 +536,6 @@ export const en: typeof zh = {
   "llm.switch": "Register with DSH (immediate)",
   "llm.switchBusy": "Switching…",
   "llm.switchError": "Switch failed: {error}",
-  "llm.intlTitle": "International site (Agnes Intl)",
   "llm.intlSwitch": "Register the Intl provider with DSH (immediate)",
   "llm.intlSwitchBusy": "Switching…",
   "llm.intlSwitchError": "Switch failed: {error}",
@@ -510,7 +544,7 @@ export const en: typeof zh = {
   "llm.intlKeyConsoleHint": "Manage your quota on the international site →",
   "llm.roster": "Models pushed to DSH",
   "llm.rosterHint": "Ticking decides which models are pushed into DSH's model list; models the catalogue gains later are not pushed by default.",
-  "llm.rosterEmpty": "No models to push yet - save a key in the Domestic site (Agnes CN) card first.",
+  "llm.rosterEmpty": "No models to push yet - save a key on the CN site of the Provider & API key card first.",
   "llm.rosterSearchPlaceholder": "Search a model name or id",
   "llm.rosterCount": "{selected} ticked / {total} total",
   "llm.rosterAll": "Tick all",
@@ -573,6 +607,8 @@ export const en: typeof zh = {
   "tab.api": "API Integration",
   "tab.agnescode": "AgnesCode",
   "agnescode.title": "AgnesCode",
+  // ADR-023: the two co-existing AgnesCode registrations (CN / international),
+  // each with its own credential and its own switch.
   "agnescode.desc": "Uses the locally signed-in AgnesCode desktop App (the WeChat login happens inside the App — this plugin never touches your password). Models register with DSH as a provider. Credentials stay independent of the quota tab.",
   "agnescode.switch": "Enable AgnesCode provider",
   "agnescode.switchTip": "When off, AgnesCode models do not appear in DSH's model dropdown; the credential and model settings are kept and return when you switch it back on.",
@@ -588,6 +624,10 @@ export const en: typeof zh = {
   "agnescode.desktopReason.no_expiry": "the session file carries no decodable expiry",
   "agnescode.desktopReason.expired": "the session file's token is expired — sign in once inside the desktop App",
   "agnescode.desktopReason.read_failed": "reading the session file failed",
+  // ADR-024: the frame right after a site switch has no reading for that site
+  // yet. Saying so is not cosmetic — the alternative was the "not linked"
+  // accusation about an account nobody had asked about.
+  "agnescode.readingSite": "Reading this site's login state…",
   "agnescode.harvest": "Detect local login state",
   "agnescode.harvesting": "Reading the local login state…",
   "agnescode.loggedIn": "Linked: {nick}",

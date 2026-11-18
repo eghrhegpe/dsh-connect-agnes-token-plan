@@ -27,10 +27,17 @@
  * to `import("./agnescode-llm-adapter.ts")`), so the offline suites substitute
  * a fake factory without touching the Host's node_modules.
  *
+ * A SECOND domain is registered for the international AgnesCode gateway
+ * (ADR-023, the per-site twin of ADR-021's `agnes-token-plan-intl`): one
+ * publisher instance per domain, each carrying its own identity (`provider`
+ * row id + display name) and its own switch store, so the two sites'
+ * registrations never touch each other's state. The shared control plane
+ * (`publish-core.ts`) is one copy for both.
+ *
  * @module dsh-connect-agnes-token-plan/agnescode-publish
  */
 
-import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME } from "./agnescode-models.ts";
+import { AGNESCODE_PROVIDER_ID, AGNESCODE_DISPLAY_NAME, AGNESCODE_PROVIDER_ID_INTL, AGNESCODE_DISPLAY_NAME_INTL } from "./agnescode-models.ts";
 import { CODE } from "./codes.ts";
 import { str } from "./util.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
@@ -49,6 +56,13 @@ import {
 } from "./publish-core.ts";
 import type { PublisherState } from "./publish-core.ts";
 import type { AgnescodePublisherDeps } from "./types.ts";
+
+/** The per-domain provider identity this publisher registers for (ADR-023). */
+export function agnescodePublisherIdentity(domain: "cn" | "intl") {
+  return domain === "intl"
+    ? { providerId: AGNESCODE_PROVIDER_ID_INTL, displayName: AGNESCODE_DISPLAY_NAME_INTL }
+    : { providerId: AGNESCODE_PROVIDER_ID, displayName: AGNESCODE_DISPLAY_NAME };
+}
 
 /**
  * The AgnesCode provider publisher.
@@ -76,8 +90,9 @@ import type { AgnescodePublisherDeps } from "./types.ts";
  *   isDisposed: () => boolean
  * }}
  */
-export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
+export function createAgnescodePublisher(deps: AgnescodePublisherDeps & { domain?: "cn" | "intl" } = {}) {
   const {
+    domain: domainArg = "cn",
     panelSwitch,
     resolveToken,
     getLlm,
@@ -86,6 +101,8 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
     logger,
     settings
   } = deps;
+  const domain = domainArg === "intl" ? "intl" : "cn";
+  const identity = agnescodePublisherIdentity(domain);
   const effectivePanelSwitch = panelSwitch ?? (async () => null);
   const effectiveResolveToken = resolveToken ?? (async () => "");
   // Read on EVERY publish, not snapshotted at construction: editing the override
@@ -137,8 +154,8 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
    * §19), used by both the publish and the rollback path.
    */
   const registerPair = (llm: any, built: any, target: any) => registerProviderPair(llm, built, target, {
-    providerId: AGNESCODE_PROVIDER_ID,
-    displayName: AGNESCODE_DISPLAY_NAME
+    providerId: identity.providerId,
+    displayName: identity.displayName
   });
 
   /**
@@ -199,7 +216,11 @@ export function createAgnescodePublisher(deps: AgnescodePublisherDeps = {}) {
         bffBase: state.bffBase,
         resolveToken: effectiveResolveToken,
         get: effectiveGetLlm,
-        ...(Object.keys(maxTokensOverrides).length > 0 ? { maxTokensOverrides } : {})
+        ...(Object.keys(maxTokensOverrides).length > 0 ? { maxTokensOverrides } : {}),
+        // Thread the per-domain identity (ADR-023): the two AgnesCode sites
+        // register separate provider rows, so the descriptor's provider field
+        // carries each site's id and the adapter's profile uses the same id.
+        domain
       });
       if (!isBuiltAdapter(built)) throw new Error(BAD_FACTORY_SHAPE_ERROR);
     } catch (error) {

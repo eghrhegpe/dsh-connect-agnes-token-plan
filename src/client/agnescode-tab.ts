@@ -26,10 +26,11 @@
  * {@link AgnescodeRoster}, which the suite CAN mount and pin, and this tab's
  * route is covered by `test/agnescode.test.mjs`.
  */
-import { AGNESCODE_PATH, AGNESCODE_SITE_URL } from "./const.ts";
-import { clockLong, count, format, tokenSize } from "./format.ts";
+import { AGNESCODE_PATH, AGNESCODE_SITE_URL } from "./const.ts";import { clockLong, count, format, tokenSize } from "./format.ts";
 import { postJson, postJsonOrThrow } from "./http.ts";
 import { modelIsOn } from "./models.ts";
+import { SiteTabs, siteTone } from "./site-tabs.ts";
+import type { Site } from "./site-tabs.ts";
 import { useRosterDraft } from "./roster-draft.ts";
 import { RosterCheckbox, RosterTools } from "./roster-shared.ts";
 import { h, useCallback, useEffect, useRef, useState } from "./runtime.ts";
@@ -74,6 +75,32 @@ type AgnescodeState = AgnescodeStateData;
 export const AGNESCODE_POLL_MS = 60_000;
 
 /**
+ * Which AgnesCode site the tab is showing (ADR-023).
+ *
+ * The two sites are separate registrations with separate credentials, so the
+ * tab is a SITE SELECTOR over two independent rows — NOT one row with a
+ * "which account" dropdown. The site is carried on every read and every write
+ * (`domain` in the query / the body), so a flip re-reads the other site's
+ * state instead of reusing this site's.
+ *
+ * An ALIAS of the shared {@link Site}, not a second spelling: the same two keys
+ * ride the quota and API cards, and a local re-declaration would let one tab
+ * rename a site the others still call by the old name.
+ */
+export type AgnescodeSite = Site;
+
+/**
+ * The tab's route for one site: the CN row is the bare path, the international
+ * row adds the `domain` query the Host reads to pick its store, switch and
+ * publisher.
+ * @param {AgnescodeSite} site - the site.
+ * @returns {string} the route path.
+ */
+export function agnescodeRouteFor(site: AgnescodeSite) {
+  return site === "intl" ? `${AGNESCODE_PATH}?domain=intl` : AGNESCODE_PATH;
+}
+
+/**
  * The tab's rendering decisions, lifted out of the JSX so they can be nailed.
  *
  * Three decisions here were each a REAL repair, and each is explained in a
@@ -97,19 +124,33 @@ export const AGNESCODE_POLL_MS = 60_000;
  *     pins.)
  *  3. `linked` — reads `loggedIn` off the state, never inferred from the
  *     absence of an error.
+ *  4. `pending` — NOTHING has ever been read for the site on screen (its first
+ *     read is in flight). This is the FOURTH member, added with ADR-024's site
+ *     selector and for exactly the reason #2 exists: switching sites briefly
+ *     left `state === null` with no error, which rendered the unlinked copy —
+ *     「未关联——请先在桌面端登录」— as a claim about an account nobody had
+ *     asked yet. A switching frame is not evidence of a signed-out desktop App,
+ *     so it says "reading" and nothing else. `linked` is false either way; the
+ *     UI branches on `pending` BEFORE it can print the accusation.
  *
  * @param {AgnescodeState|null} state - the last body the route answered, if any.
  * @param {string|null} error - the last read failure, if any.
- * @returns {{showError: boolean, credentialCard: boolean, linked: boolean}}
+ * @param {boolean} [pending] - true when this site has no reading yet.
+ * @returns {{showError: boolean, credentialCard: boolean, linked: boolean, pending: boolean}}
  */
 export function agnescodeView(
   state: AgnescodeState | null,
-  error: string | null
-): { showError: boolean; credentialCard: boolean; linked: boolean } {
+  error: string | null,
+  pending = false
+): { showError: boolean; credentialCard: boolean; linked: boolean; pending: boolean } {
+  // A pending frame with an error is a FAILED first read, which is what #1
+  // names — the error line wins and the card is withheld, as before.
+  const waiting = pending && error === null;
   return {
     showError: error !== null,
     credentialCard: !(state === null && error !== null),
-    linked: state?.loggedIn === true
+    linked: state?.loggedIn === true,
+    pending: waiting
   };
 }
 
@@ -262,7 +303,34 @@ export function agnescodePoolNotes(balance: any, rateLimit: any, ledger: any, us
  * @returns {unknown} the tab's card tree.
  */
 export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: TabStatus) => void }): unknown {
-  const [state, setState] = useState<AgnescodeState | null>(null);
+  // WHICH SITE this tab is showing (ADR-023). The two AgnesCode rows are
+  // independent registrations with independent credentials, so the tab shows
+  // one at a time and the site rides on every read and every write.
+  const [site, setSite] = useState<AgnescodeSite>("cn");
+  /**
+   * ONE CACHE PER SITE, not one slot.
+   *
+   * This started as a single `state` that got CLEARED on a site switch, which
+   * produced a false accusation: the cleared frame is `state === null` with no
+   * error, and the unlinked copy then rendered「未关联——请先在 AgnesCode 桌面端
+   * 登录」about an account the tab had simply not asked yet — the exact
+   * regression `agnescodeView`'s comment #2 exists to prevent, reintroduced by
+   * the switch. Three things fix it at once:
+   *
+   *   - the frame after a switch reads `pending` (see `agnescodeView`) and says
+   *     "reading", never "not linked";
+   *   - switching BACK shows the other site immediately, from its cache, with
+   *     no blank frame at all;
+   *   - each site's DOT can report the truth instead of a guess: a site with a
+   *     cached answer gets its real tone, and one never visited gets `unknown`
+   *     (an honest "not measured"), never a fabricated「未启用」.
+   */
+  const [states, setStates] = useState<{ cn: AgnescodeState | null; intl: AgnescodeState | null }>({ cn: null, intl: null });
+  const state = states[site];
+  /** Write one site's reading without disturbing the other's. */
+  const putState = (target: AgnescodeSite, body: AgnescodeState | null) => {
+    setStates((current) => ({ ...current, [target]: body }));
+  };
   const [error, setError] = useState<string | null>(null);
   // When this tab last read its route successfully. The bar quotes it instead
   // of the snapshot's stamp: two different routes, two different cadences.
@@ -302,8 +370,13 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     inFlight.current?.abort?.();
     const controller = typeof AbortController === "function" ? new AbortController() : null;
     inFlight.current = controller;
+    // The site THIS read was issued for, captured now: the answer must be filed
+    // under the site it was asked about, never under whichever site happens to
+    // be on screen when it lands (`site` is a dependency, so a switch rebuilds
+    // this callback — but the generation guard is what actually decides).
+    const forSite = site;
     try {
-      const response = await fetch(AGNESCODE_PATH, {
+      const response = await fetch(agnescodeRouteFor(forSite), {
         headers: { accept: "application/json" },
         cache: "no-store",
         signal: controller ? controller.signal : null
@@ -324,7 +397,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
         setError(typeof body?.error === "string" && body.error !== "" ? body.error : tt("agnescode.loadErrorDetail"));
         return;
       }
-      setState(body);
+      putState(forSite, body);
       setError(null);
       setUpdatedAt(Date.now());
     } catch {
@@ -334,7 +407,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       if (!isCurrent()) return;
       setError(tt("agnescode.hostUnreachable"));
     }
-  }, [tt]);
+  }, [tt, site]);
 
   // Retire the in-flight GET before a POST's post-write state is applied: that
   // GET's snapshot was taken BEFORE the write, and letting it land afterwards
@@ -415,7 +488,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   const toggle = useCallback(async (enabled: boolean) => {
     setNote(null);
     try {
-      const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "switch", enabled });
+      const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "switch", enabled, domain: site });
       // The POST answer is the Host's FULL post-write state (the route's
       // `answer()` spreads `agnescodeState()` under every POST branch, see
       // `routes/agnescode.ts`) — apply it whole: a two-field patch would
@@ -423,12 +496,12 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       // patch-onto-null would be a no-op on a tab whose first GET failed.
       if (alive.current) {
         retireInFlight();
-        setState(body as unknown as AgnescodeState);
+        putState(site, body as unknown as AgnescodeState);
       }
     } catch (why) {
       if (alive.current) setNote(format(tt("agnescode.switchError"), { error: why instanceof Error ? why.message : String(why) }));
     }
-  }, [tt]);
+  }, [tt, site]);
 
   // The desktop-source flip (ADR-020): same discipline as `toggle` — the POST
   // answer is the full post-write state (the flip re-published through the
@@ -437,15 +510,15 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   const toggleDesktopSource = useCallback(async (enabled: boolean) => {
     setNote(null);
     try {
-      const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "desktop-source", enabled });
+      const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "desktop-source", enabled, domain: site });
       if (alive.current) {
         retireInFlight();
-        setState(body as unknown as AgnescodeState);
+        putState(site, body as unknown as AgnescodeState);
       }
     } catch (why) {
       if (alive.current) setNote(format(tt("agnescode.desktopSourceError"), { error: why instanceof Error ? why.message : String(why) }));
     }
-  }, [tt]);
+  }, [tt, site]);
 
   const harvest = useCallback(async () => {
     setHarvestBusy(true);
@@ -455,7 +528,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       // WITH the diagnosis rows — the rows ARE the message, and the throw
       // face would reduce them to a bare "HTTP 200". The branch below reads
       // the refusal payload the same way the Host writes it.
-      const body = await postJson(AGNESCODE_PATH, { action: "harvest" });
+      const body = await postJson(AGNESCODE_PATH, { action: "harvest", domain: site });
       if (alive.current) {
         // The same full post-write state — its `harvest` block carries the
         // walk's diagnosis rows, so a successful walk flips the credential
@@ -463,7 +536,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
         // that can hold the upstream's 30 s timeout) to learn what the POST
         // just answered. The 60 s poll re-syncs on its own.
         retireInFlight();
-        if (body !== null) setState(body as unknown as AgnescodeState);
+        if (body !== null) putState(site, body as unknown as AgnescodeState);
         if (body?.ok === true) {
           setNote(tt("agnescode.harvestOk"));
         } else {
@@ -475,18 +548,18 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     } finally {
       if (alive.current) setHarvestBusy(false);
     }
-  }, [tt]);
+  }, [tt, site]);
 
   // The curation write: persist the allow-list. The POST answer is the full
   // post-write state, so the picker's `hostIds` echo lands from the response
   // itself rather than a reload through the upstream-holding GET.
   const saveModels = useCallback(async (ids: string[]) => {
-    const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "saveModels", enabledModelIds: ids });
+    const body = await postJsonOrThrow(AGNESCODE_PATH, { action: "saveModels", enabledModelIds: ids, domain: site });
     if (alive.current) {
       retireInFlight();
-      setState(body as unknown as AgnescodeState);
+      putState(site, body as unknown as AgnescodeState);
     }
-  }, []);
+  }, [site]);
 
   // The scan-to-sign-in POST. The Host's login branch is a single-flight
   // device flow (opens the browser, waits for the callback, exchanges the
@@ -501,10 +574,10 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     setLoginBusy(true);
     setNote(null);
     try {
-      const body = await postJson(AGNESCODE_PATH, { action: "login" }, controller.signal);
+      const body = await postJson(AGNESCODE_PATH, { action: "login", domain: site }, controller.signal);
       if (alive.current) {
         retireInFlight();
-        if (body !== null) setState(body as unknown as AgnescodeState);
+        if (body !== null) putState(site, body as unknown as AgnescodeState);
         if (body?.ok === true) {
           setNote(tt("agnescode.loginOk"));
         } else {
@@ -527,7 +600,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       if (loginAbort.current === controller) loginAbort.current = null;
       if (alive.current) setLoginBusy(false);
     }
-  }, [tt]);
+  }, [tt, site]);
 
   const cancelLogin = useCallback(() => {
     loginAbort.current?.abort();
@@ -547,7 +620,7 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
   const desktopSourceReason = typeof state?.desktopSourceReason === "string" && state?.desktopSourceReason !== ""
     ? state?.desktopSourceReason
     : null;
-  const view = agnescodeView(state, error);
+  const view = agnescodeView(state, error, state === null);
   const loggedIn = view.linked;
   const models = Array.isArray(state?.models) ? state.models : [];
   const attempts = Array.isArray(state?.harvest?.attempts) ? state.harvest.attempts : [];
@@ -577,6 +650,48 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
     view.showError
       ? h("div", { style: S.formError, role: "alert" }, format(tt("agnescode.error"), { error }))
       : null,
+    // The SITE selector (ADR-023), the SAME control every tab uses
+    // (`site-tabs.ts`) with the same dot semantics.
+    //
+    // Each segment's dot reports the truth for ITS OWN site, from that site's
+    // cached reading. A site this tab has never read gets `unknown` — an honest
+    // "not measured yet" — because the two rows answer through different
+    // stores: filling in `off` would print「未启用」over an account that is
+    // registered and signed in, which is exactly the kind of unearned claim the
+    // credential card has already been repaired for twice. (Verified by probe:
+    // the first version did print「未启用」on the CN dot while the CN row was
+    // logged in.)
+    h(SiteTabs, {
+      active: site,
+      onSelect: (next) => {
+        if (next === site) return;
+        // Retire the in-flight read BEFORE the flip: it was issued against the
+        // previous site's route, and letting it land would paint the CN
+        // account's balance under the international site's name. Its answer is
+        // dropped by the generation guard, so `states` keeps the last reading
+        // each site actually produced.
+        retireInFlight();
+        setError(null);
+        setNote(null);
+        // NOT `setStates` — the previous site's reading stays cached, so
+        // switching back is instant and the frame after a switch is a
+        // `pending` "reading" frame rather than a blank one (see `states`).
+        setSite(next);
+      },
+      options: (["cn", "intl"] as AgnescodeSite[]).map((candidate) => {
+        const cached = states[candidate];
+        return {
+          site: candidate,
+          label: tt(candidate === "intl" ? "site.intl" : "site.cn"),
+          tone: cached === null
+            // Never read: no claim. `unknown` is a TONE, not a hole — omitting
+            // the dot would make the segment look like a different control.
+            ? ("unknown" as const)
+            : siteTone(cached.enabled === true, cached.loggedIn === true)
+        };
+      }),
+      tt
+    }),
     // The provider switch and the credential card are ONE card now. They used
     // to be two separate things — the switch floated alone at the top of the
     // tab and the linked account sat in its own card below — so a reader saw
@@ -591,7 +706,16 @@ export function AgnescodeTab({ tt, onStatus }: { tt: Tt; onStatus?: (status: Tab
       ? h(
           "div",
           { style: { ...S.card, marginTop: 4 } },
-          loggedIn
+          // A PENDING frame — this site's first read has not landed yet — says
+          // so and nothing else. Without this branch the click that switches
+          // sites landed on the unlinked copy below, which printed「未关联——请
+          // 先在桌面端登录」about an account nobody had asked about yet; that is
+          // the same false accusation the error line and the withheld card were
+          // each added to stop, arriving by a third route. No buttons either:
+          // they act on the site's credential, and there is no reading yet.
+          view.pending
+            ? h("div", { style: { ...S.muted, fontSize: 13 }, role: "status" }, tt("agnescode.readingSite"))
+            : loggedIn
             ? h(
                 "div",
                 null,

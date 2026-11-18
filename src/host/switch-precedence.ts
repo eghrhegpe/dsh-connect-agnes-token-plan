@@ -23,14 +23,15 @@
  * function whose `configDefault` argument carries the distinction — B is A
  * with no default, not a separate rule.
  *
- * SCOPE: exactly the six opt-ins that have BOTH halves — a panel-saved value
+ * SCOPE: exactly the seven opt-ins that have BOTH halves — a panel-saved value
  * in a `switch-store` file AND a patch default (provider / draw / video /
- * AgnesCode / AgnesCode desktop source / INTL provider; AgnesCode and its
- * desktop source as dialect B). A seventh opt-in, `writeImageModelIds`, is
+ * AgnesCode / AgnesCode desktop source / INTL provider / AgnesCode INTL
+ * provider; the three AgnesCode ones as dialect B). An eighth opt-in,
+ * `writeImageModelIds`, is
  * deliberately NOT here: it has one source (the patch row), no panel
  * affordance, no state file and no route, so it has nothing to arbitrate.
  * `CONFIG_DEFAULTS.writeImageModelIds` carries the reasoning; an entry in
- * that list of six would be a false claim about a
+ * that list of seven would be a false claim about a
  * `write-image-model-ids.json` that does not exist.
  *
  * @module dsh-connect-agnes-token-plan/switch-precedence

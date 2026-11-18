@@ -40,6 +40,16 @@ export const PROVIDER_ID = "agnes-token-plan";
 export const AGNESCODE_PROVIDER_ID = "agnescode";
 
 /**
+ * The INTERNATIONAL-site AgnesCode provider id this plugin registers
+ * (ADR-023) — the Host's `AGNESCODE_PROVIDER_ID_INTL`
+ * (`src/host/agnescode-models.ts`) under a client-side spelling, for the same
+ * reason as {@link AGNESCODE_PROVIDER_ID}: it is the composer pill's fourth
+ * gate, and a rename on one side would make the international balance reading
+ * silently never mount. `test/contract.test.mjs` §11c pins the pair.
+ */
+export const AGNESCODE_PROVIDER_ID_INTL = "agnescode-intl";
+
+/**
  * The INTERNATIONAL-site provider id this plugin registers (ADR-021) — the
  * Host's `LLM_PROVIDER_ID_INTL` (`src/host/llm-models.ts`) under a client-side
  * spelling, for the same reason as {@link PROVIDER_ID}: it is the composer

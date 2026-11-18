@@ -49,8 +49,22 @@ import { decodeAgnescodeJwtExpMs, trustAgnescodeBffBase } from "./agnescode.ts";
 import { AGNESCODE_DESKTOP_REASON, type AgnescodeDesktopViewRead } from "./agnescode-desktop-view.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 
-/** The reference name the credential is stored under. */
+/** The reference name the credential is stored under, for the site it serves (ADR-023). */
 export const AGNESCODE_CREDENTIAL_REF = "AGNESCODE_CREDENTIAL";
+/** The international-site row's credential reference name (ADR-023): the two
+ *  sites' credentials live in the SAME credentials service under DIFFERENT
+ *  names — a per-domain `kind` is NOT invented (red line 2: the service admits
+ *  only `grant` / `api-key`), the reference NAME carries the site. */
+export const AGNESCODE_CREDENTIAL_REF_INTL = "AGNESCODE_CREDENTIAL_INTL";
+
+/**
+ * The credential reference name a store instance serves.
+ * @param {"cn"|"intl"} domain - which AgnesCode site this store belongs to.
+ * @returns {string} the stored reference name.
+ */
+export function agnescodeCredentialRef(domain: "cn" | "intl") {
+  return domain === "intl" ? AGNESCODE_CREDENTIAL_REF_INTL : AGNESCODE_CREDENTIAL_REF;
+}
 
 /**
  * Parse the stored credential JSON; a malformed or absent value reads as no
@@ -126,20 +140,30 @@ export interface AgnescodeDesktopSourceState {
  *   unset) and `read()` one read of the App's session file. Absent or `null`
  *   keeps the pre-ADR-020 behaviour byte for byte (the slot only answers
  *   `resolve()`), which is what a Host that predates the switch ships.
+ * @param {"cn"|"intl"} [options.domain] - which AgnesCode site this store serves
+ *   (ADR-023): the two sites register separate provider rows, and their
+ *   credentials live in the SAME credentials service under DIFFERENT reference
+ *   names (`agnescodeCredentialRef`). The CN identity is the default.
  * @returns {{save, forget, resolve, isExpired, state}}
  */
 export function createAgnescodeStore({
   credentials = null,
-  desktopSource = null
+  desktopSource = null,
+  domain: domainArg = "cn"
 }: {
   credentials?: (() => any) | null;
   desktopSource?: {
     enabled: () => Promise<boolean | null>;
     read: () => Promise<AgnescodeDesktopViewRead>;
   } | null;
+  domain?: "cn" | "intl";
 } = {}) {
   /** Fallback vault for a Host that has no credentials service. */
   const memory = new Map();
+  // The site this store serves: `agnescodeCredentialRef` picks the stored
+  // reference name, and every write/read uses the same id.
+  const domain = domainArg === "intl" ? "intl" : "cn";
+  const ref = agnescodeCredentialRef(domain);
   /**
    * The desktop source's last answer when the switch is ON but the view is
    * idle (ADR-020): `state()` prints it, the slot never does. Set inside
@@ -157,9 +181,9 @@ export function createAgnescodeStore({
     const serialized = serializeAgnescodeCredential(credential);
     const service = resolveService();
     if (service !== null && typeof service.set === "function") {
-      await service.set(AGNESCODE_CREDENTIAL_REF, serialized);
+      await service.set(ref, serialized);
     }
-    memory.set(AGNESCODE_CREDENTIAL_REF, serialized);
+    memory.set(ref, serialized);
   };
 
   return {
@@ -183,11 +207,11 @@ export function createAgnescodeStore({
      * that used to call it was removed, but the primitive stays because it is
      * part of the interface every store implements and the tests call it. */
     async forget() {
-      memory.delete(AGNESCODE_CREDENTIAL_REF);
+      memory.delete(ref);
       try {
         const service = resolveService();
         if (service !== null && typeof service.unset === "function") {
-          await service.unset(AGNESCODE_CREDENTIAL_REF);
+          await service.unset(ref);
         }
       } catch {
         // The in-memory copy is already gone; nothing else to do.
@@ -239,14 +263,14 @@ export function createAgnescodeStore({
       try {
         const service = resolveService();
         if (service !== null && typeof service.resolve === "function") {
-          const resolved = await service.resolve(AGNESCODE_CREDENTIAL_REF).catch(() => undefined);
+          const resolved = await service.resolve(ref).catch(() => undefined);
           const credential = parseAgnescodeCredential(resolved?.value);
           if (credential !== null) return { credential, source: "credentials", desktopIdleReason };
         }
       } catch {
         // No usable answer from the service: fall through to memory.
       }
-      const held = parseAgnescodeCredential(memory.get(AGNESCODE_CREDENTIAL_REF));
+      const held = parseAgnescodeCredential(memory.get(ref));
       if (held !== null) return { credential: held, source: "memory", desktopIdleReason };
       return { credential: null, source: null, desktopIdleReason };
     },

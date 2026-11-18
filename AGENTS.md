@@ -12,14 +12,16 @@ Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/u
 
 **三条事实**（写代码前先认清你在动哪一条）：
 
-1. 「积分额度」tab 是地基，走 Host 登录 + 自动重登，只读 Agnes 控制台（`platform-backend.agnes-ai.cn`）。**对话框用量胶囊横跨这一条与事实 3**：它按当前会话模型的 provider 门控（`useProjection("modelSelection")`，三根门控），`agnes-token-plan` 模型画控制台 5 小时 / 本周百分比、`agnes-token-plan-intl` 模型画国际站同一套窗口（读快照 `intl.quota` 块，前缀「国际版 Token Plan」，ADR-021）、`agnescode` 模型画桌面端积分余额（存量，不造百分比），别的 provider 一律不挂载。座席注册在 `src/client/apply.ts`；两条读数各读 `/snapshot` 与 `/agnescode`，共用同一个 `useRemoteRead` 轮询核心；控制台侧与面板同源（`windowPercent` / `usageTier`，INTL 模型读 `intl.quota`），余额侧与 tab 同源（`balanceOf` / `AGNESCODE_POLL_MS`）。
+1. 「积分额度」tab 是地基，走 Host 登录 + 自动重登，只读 Agnes 控制台（`platform-backend.agnes-ai.cn`）。**对话框用量胶囊横跨这一条与事实 3**：它按当前会话模型的 provider 门控（`useProjection("modelSelection")`，**四根门控**），`agnes-token-plan` 模型画控制台 5 小时 / 本周百分比、`agnes-token-plan-intl` 模型画国际站同一套窗口（读快照 `intl.quota` 块，前缀「国际版 Token Plan」，ADR-021）、`agnescode` 模型画桌面端积分余额（存量，不造百分比）、`agnescode-intl` 模型画国际站桌面端的同一套积分存量（前缀「国际版 AgnesCode」，ADR-023），别的 provider 一律不挂载。座席注册在 `src/client/apply.ts`；两条读数各读 `/snapshot` 与 `/agnescode`，共用同一个 `useRemoteRead` 轮询核心；控制台侧与面板同源（`windowPercent` / `usageTier`，INTL 模型读 `intl.quota`），余额侧与 tab 同源（`balanceOf` / `AGNESCODE_POLL_MS`）。
 2. 「接入 API」tab 与出图/视频工具会把本插件**升级为推理通道**——注册 provider `agnes-token-plan`、给 agent 挂 `agnes_draw_image` 与 `agnes_video_generate`。它们都是 **opt-in 默认关**，任何失败必须降级为「面板照常用、该模块缺席」。
+   - **面板画法（ADR-024）**：**一个上游一张卡，站点是卡内的分段选择器**——三条 tab 共用 `src/client/site-tabs.ts` 的 `SiteTabs` 与同一个 `siteTone()`，别再为某条 tab 手搓第二份（旧版就是「积分额度 / 接入 API 用两张并列卡、AgnesCode 用卡内按钮对」，两种画法一个意思）。分段**只是视图选择器**：点它不改道在飞任务，每站开关仍写自己的文件——这正是 ADR-021/023 否决「全局站点旋钮」时留下、也**唯一**允许的形态。
 3. **「AgnesCode」tab 是爱思办公桌面端上游**：接的是 AgnesCode 桌面端的登录态——本插件第一条**本机登录态采集**线（workbuddy 族先例）。
    - **采集面**：微信登录发生在桌面 App 里，插件只读 App 的 os_crypt 加密会话文件（Chromium os_crypt + DPAPI + AES-256-GCM，逐文件 9 档分诊：file_missing / format_drift / unreadable / malformed / no_key / decrypt_failed / no_token / untrusted_base / unsupported_platform，注入式可离线测，见 `test/agnescode.test.mjs`），provider `agnescode`，接口地址**按账号跟随**会话文件且钉死在 Agnes 域名族内。
    - **续期**：**它没有刷新端点（JWT 约 28 天）——这是已知限制，不是特性**：令牌不会被本插件续期，但**过期后的重采集是自动的**（`agnescode-lifecycle.ts` 的 `resolveToken`：距 `exp` 不足 5 分钟（`isExpired` 的 `leadMs` 默认值）就自己重读会话文件，单飞 + 失败退避 60 s（`AGNESCODE_REHARVEST_BACKOFF_MS`）），用户只需让桌面 App 重新登录一次；「检测本机登录态」按钮是主动触发、不是必须步骤——别再把它写成「必须手动点」。
    - **来源（两个源、一个槽、读时仲裁，ADR-020 / raccoon §6.1.11 镜像）**：桌面会话文件与槽内登录态（harvest / 扫码写入）是两个源；新开关 `agnescode-desktop-source.json`（opt-in 默认关、面板独占 dialect B，与 provider 开关各自独立文件）开且桌面视图新鲜（与 `isExpired` 同一条 5 分钟边界）时，`store.resolve()` 每次读**直接供 `desktop-file` 视图**——只读视图：不刷新、不回写、**永不拷入 DSH 凭据服务**；其余一切情况落回槽，**切源永不丢登录**。视图三 guard（`src/host/agnescode-desktop-view.ts`）：stat 键控成功缓存（免 DPAPI 风暴）+ 单飞 + 失败 60 s 退避；reason 是封闭集（九档 tier 直映 + `no_expiry`/`expired`/`read_failed`），面板 idle 行与 harvest 诊断行共用同一套 tier 字典。桌面 App 提前轮换 token / 换账号时插件每次读跟随 App（不再抱槽内旧 token 到 401）。
    - **撤销**：**采集侧写权限为零**（`agnescode*.ts` 无任何 `writeFile`/`rename`/`rm`），所以「撤销」在插件侧没有实现位置：provider 开关只注销 provider（改开关后走一次 `publishFromStore`，由 publisher 的闸释放注册）；桌面源开关（ADR-020）只改读时仲裁——关闭只让槽源重新担读，不碰槽内凭据、不碰 App 文件；`forget()` 是 store 原语、`src/` 里没有调用点（只有测试调它；「解除关联」按钮已撤，别加回来——它唯一独有的效果是删磁盘上的 JWT，那是隐私动作而非登出）。要吊销只能在桌面 App 里登出/改密码，或由操作者手动删凭据记录；**关开关 ≠ 吊销**，重新打开会复用已存的 JWT。
    - **隔离**：两边 publisher、store、凭据引用全部与主 provider 同款隔离（见 `docs/ROADMAP.md` §6.3）。
+   - **双站（ADR-023）**：AgnesCode 也有**国内 / 国际两条并存的注册**（`agnescode` / `agnescode-intl`），惯例与 ADR-021 的 Token Plan 双行同形：一站一条路由，**不做「当前站点」开关**。按站隔离的是 provider id、凭据引用（`AGNESCODE_CREDENTIAL` / `AGNESCODE_CREDENTIAL_INTL`——同一凭据服务、不同引用名，**不发明按站 `kind`**）、开关文件（`agnescode-provider.json` / `agnescode-intl-provider.json`）、publisher、以及**桌面会话文件的采集顺序**（CN 构建写 `.cn.v1`、国际构建写不带标记的 `.v1`，walk 按站把本站的文件排前面）。**两站共用**的只有三样机器级事实：模型勾选清单、桌面源开关（ADR-020）、插件自身的用量 / 限流统计。路由用 `domain` 选站（GET 取查询串、POST 取请求体，缺省 `cn`）。
    - **胶囊（第二条读数）**：`agnescode` 模型在输入框右侧画这套积分余额（前缀 `AgnesCode`），读的是同一个只读 GET，cadence 复用 tab 的 `AGNESCODE_POLL_MS`。
 
 **定位变更（2026-09-29）**：从「只做额度信息、n 个插件分散行动」转向**大统一——商汤全过程集成的单点入口**（额度 + provider + 出图路由对接 + 429 自愈（退避/分诊，不做多 Key 池），逐块 opt-in 吸收）。边界与三条不变量见 `docs/ARCHITECTURE.md` §5，同类插件核实事实见 §5.3；吸收路线图见 docs/ROADMAP.md，设计裁定见 docs/ADR.md，2026-09 的研究原稿已归档为 docs/ARCHIVE-IMPROVEMENTS-2026-09.md（不作现行依据）。
@@ -35,6 +37,7 @@ Host（Node/cordis）走**一跳**账号密码登录（`POST {consoleBase}/api/u
 | **它坏了 / 只有现象** | `docs/PITFALLS.md` 按症状码（§42 进程分界 / §45 进度条 / §46 令牌失效 / §47 市场图） | 对应 `src/host/*` | 先按症状定位，别按模块名猜 |
 | 改登录 / 节流 / 续期 / 失败分类 | 本文件红线 1/2/5 → `docs/AUTH.md` → `docs/AGNES-API.md` | `src/host/agnes-auth.ts` | `node test/agnes-auth.test.mjs` |
 | 改面板 / 对话框用量胶囊 | 本文件三条事实 1 → `src/client/composer-usage-pill.ts` | `test/dom-render.test.mjs` | **改 `src/` 必先 `npm run build`**，否则 render 套件 eval 旧 `client.js` |
+| 改**面板布局 / 站点选择器**（一个上游一张卡、卡内分段） | `docs/ADR.md` ADR-024 → `src/client/site-tabs.ts`（共用控件与三 tone 语义，模块头写死了「视图选择器 ≠ 站点电源开关」） | `src/client/panel-page.ts`、`src/client/agnescode-tab.ts` | `panel.test.mjs` F5/F5b（结构）+ `dom-render.test.mjs` 8b（真 DOM 切换）；**别再手搓第二份分段控件** |
 | 动 token-store / publisher 大文件 | `docs/TOKEN-STORE-SPLIT.md`、`docs/PUBLISH-CORE-SPLIT.md` | `src/host/token-store/*` | 先冻结基线 `test/store-baseline.test.mjs`，再按蓝图搬 |
 | 改文案 / README / `cordis.patch.yml` | `test/docs.test.mjs`（tab 全覆盖 + 槽位一致） | — | 不进 `src/`、不 build、不跑全量 |
 | 加配置字段 / 改路由 | `docs/API.md`、`docs/SETUP.md` | `src/host/index.ts` 的 `apply`（唯一装配点） | `npm test` 里 wiring 门禁 |
@@ -47,7 +50,7 @@ node test/store-baseline.test.mjs # token-store 全行为冻结基线：拆分/�
 node test/panel.test.mjs    # 面板决策、中英字典一致性
 node test/dom-render.test.mjs # 真 DOM 挂载：入库 client.js + 真 react/react-dom + jsdom，经 apply 挂 PanelPage 与对话框用量胶囊，并以点击/输入/提交/切 provider 驱动 hook 组件（需 devDependencies，缺席 SKIP；CI offline job 装依赖真跑）
 node test/parsers.test.mjs  # 响应解析层：字符串数值/epoch/ISO、shape 漂移、分桶求和、四窗口
-node test/switch-store.test.mjs # 六个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」；第 6 个是 INTL provider 开关，ADR-021）
+node test/switch-store.test.mjs # 七个 opt-in 开关商店跑同一份行为清单（含「继承后重开仍读得到」；第 6 个是 INTL provider 开关 ADR-021，第 7 个是 INTL AgnesCode provider 开关 ADR-023）
 node test/agnescode-desktop-view.test.mjs # 桌面源视图（ADR-020）：stat 键控缓存/单飞/退避、封闭 reason 集、过期半边
 node test/docs.test.mjs  # 文档一致性：内部链接、跨文件表格去重、README 行数上限、教学快照、API 契约、考古纪律（ADR 账本）、peer 静态边界、活文档计数护栏（活文档不得写死会漂移的模块数/规模/行数）；新增 docs/ 顶层文件必须进 docs/README.md 索引表，否则 ORPHAN_DOCS 判红
 node test/e2e.mjs           # 端到端单独跑：拉起真 Host + 假平台，约 10 秒（需 dsh CLI）
@@ -121,7 +124,7 @@ npm run build               # 改 src/（host 或 client）后必跑：重建 li
 | 排查登录失败 / 改一跳登录、失败分类、重登、节流 | `docs/AUTH.md` → `docs/AGNES-API.md` §1–§2 |
 | 动桌面端上游（AgnesCode / `agnescode`） | `docs/ROADMAP.md` §6.3（契约探针 + 隔离裁定）→ `src/host/agnescode*.ts` |
 | 给用户看的文案（README / `cordis.patch.yml`）改了 | `test/docs.test.mjs` 检查 `README_TABS`/`SELF_DESCRIPTION`（tab 全覆盖 + 槽位一致），两者都进 npm 包 |
-| 改**对话框用量胶囊**（座席注册、三处 provider 门控、窗口/余额读数、软失败/降级） | `src/client/composer-usage-pill.ts`（控制台读数走 `cards.ts` 的 `windowPercent` / `usageTier`——INTL 模型读快照 `intl.quota` 块（ADR-021）；余额读数走 `balanceOf`；两条路由共用同一个 `useRemoteRead` 核心）→ 座席注册在 `src/client/apply.ts`；三个 provider id（CN / AgnesCode / INTL）的双侧拼写由 `test/contract.test.mjs` §11c 钉住；座席与 `useProjection` 的 peer 契约见 `test/composer-slot-gate.mjs`；真 DOM 行为见 `test/dom-render.test.mjs` |
+| 改**对话框用量胶囊**（座席注册、四处 provider 门控、窗口/余额读数、软失败/降级） | `src/client/composer-usage-pill.ts`（控制台读数走 `cards.ts` 的 `windowPercent` / `usageTier`——INTL 模型读快照 `intl.quota` 块（ADR-021）；余额读数走 `balanceOf`；两条路由共用同一个 `useRemoteRead` 核心）→ 座席注册在 `src/client/apply.ts`；四个 provider id（CN / AgnesCode / INTL / AgnesCode-INTL）的双侧拼写由 `test/contract.test.mjs` §11c 钉住；座席与 `useProjection` 的 peer 契约见 `test/composer-slot-gate.mjs`；真 DOM 行为见 `test/dom-render.test.mjs` |
 | 理解 Host/Client 分流、双仓库关系 | `docs/ARCHITECTURE.md` |
 | 理解「这是一个 DSH 插件」（bundle 结构、Loader 条目、`cordis.patch.yml`、安装重启、peer 分工） | `docs/DSH-PLUGIN.md` |
 | 拍/改裁定、回溯边界与定位沿革（现行表述 vs 历史依据） | `docs/ADR.md`（决策账本；取代关系与举证链在此，现行规则见 `docs/ARCHITECTURE.md` §5）；**现行正文禁内联「修订（日期）」补丁**，`docs.test.mjs` 检查 `ARCHAEOLOGY` 把关 |

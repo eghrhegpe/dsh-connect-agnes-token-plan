@@ -156,6 +156,10 @@ type CachedSession = {
  * @param {(wrapped: Buffer) => Promise<Buffer>} [options.dpapiUnprotect] - injected DPAPI.
  * @param {(path: string) => Promise<{mtimeMs: number, size: number}>} [options.stat] - injected stat.
  * @param {Function} [options.walk] - the harvest walk (defaults to the real one).
+ * @param {"cn"|"intl"} [options.domain] - which AgnesCode site this reader
+ *   serves (ADR-023): the walk's file ORDER is the site's own build first, so
+ *   the CN row is never served the international build's account. ONE reader
+ *   instance per site (the cache and the backoff are per-instance state).
  * @param {() => number} [options.now] - the clock.
  * @param {number} [options.leadMs] - the freshness margin.
  * @param {number} [options.backoffMs] - the failure quiet window.
@@ -169,6 +173,7 @@ export function createAgnescodeDesktopViewReader(options: {
   dpapiUnprotect?: (wrapped: Buffer) => Promise<Buffer>;
   stat?: (path: string) => Promise<{ mtimeMs: number; size: number }>;
   walk?: typeof harvestAgnescodeLocalSession;
+  domain?: "cn" | "intl";
   now?: () => number;
   leadMs?: number;
   backoffMs?: number;
@@ -180,6 +185,7 @@ export function createAgnescodeDesktopViewReader(options: {
   const dpapiUnprotect = options.dpapiUnprotect ?? defaultDpapiUnprotect;
   const statImpl = options.stat ?? fsStat;
   const walk = options.walk ?? harvestAgnescodeLocalSession;
+  const domain: "cn" | "intl" = options.domain === "intl" ? "intl" : "cn";
   const now = options.now ?? Date.now;
   const leadMs = options.leadMs ?? AGNESCODE_DESKTOP_LEAD_MS;
   const backoffMs = options.backoffMs ?? AGNESCODE_DESKTOP_VIEW_BACKOFF_MS;
@@ -208,7 +214,7 @@ export function createAgnescodeDesktopViewReader(options: {
     } catch {
       return null; // an absent directory is a walk fact, not a cache fact
     }
-    const matched = sortAgnescodeSessionFiles(classifyAgnescodeSessionFiles(names).matched.slice());
+    const matched = sortAgnescodeSessionFiles(classifyAgnescodeSessionFiles(names).matched.slice(), domain);
     if (matched.length === 0) return null;
     return `${appDir}/${matched[0]}`;
   };
@@ -280,7 +286,7 @@ export function createAgnescodeDesktopViewReader(options: {
   const runWalk = async (): Promise<AgnescodeDesktopViewRead> => {
     let result: Awaited<ReturnType<typeof harvestAgnescodeLocalSession>>;
     try {
-      result = await walk({ env, platform, readFile, readDir, dpapiUnprotect });
+      result = await walk({ env, platform, readFile, readDir, dpapiUnprotect, domain });
     } catch {
       blockedUntil = now() + backoffMs;
       lastReason = AGNESCODE_DESKTOP_REASON.READ_FAILED;

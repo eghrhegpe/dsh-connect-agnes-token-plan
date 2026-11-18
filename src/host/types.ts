@@ -27,6 +27,7 @@ import type { createAgnescodeStore } from "./agnescode-store.ts";
 import type { createFileAgnescodeStore, createFileAgnescodeDesktopSourceStore } from "./agnescode-switch-store.ts";
 import type { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
 import type { createFileAgnescodeRosterSeenStore } from "./agnescode-roster-seen-store.ts";
+import type { createFileAgnescodeIntlProviderStore } from "./agnescode-intl-provider-store.ts";
 import type { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
 
 /** A failure code this plugin can produce or carry (a `CODE` wire value). */
@@ -244,6 +245,8 @@ export interface ProviderPublisherDeps {
 
 /** Dependency bag for the AgnesCode provider publisher (`agnescode-publish.ts`). */
 export interface AgnescodePublisherDeps {
+  /** Which AgnesCode site this publisher serves (ADR-023): `"cn"` or `"intl"`. */
+  domain?: "cn" | "intl";
   /** Panel-saved switch value; `null` = state file untouched (provider stays OFF). */
   panelSwitch?: () => Promise<boolean | null>;
   /** Resolve the live AgnesCode JWT per request (empty when not harvested). */
@@ -264,7 +267,12 @@ export interface AgnescodePublisherDeps {
   settings?: Partial<Settings>;
 }
 
-/** Options for the AgnesCode adapter factory (`agnescode-llm-adapter.ts`). */
+/**
+ * Options for the AgnesCode adapter factory (`agnescode-llm-adapter.ts`).
+ * @param {string} [options.domain] - which AgnesCode site this adapter serves
+ *  (ADR-023): `"cn"` or `"intl"`. Determines the provider id, display name and
+ *  credential source label the descriptors carry. The CN identity is the default.
+ */
 export interface AgnescodeAdapterOptions {
   /** The roster rows to offer (`agnescodeRoster` result). */
   rows?: any[];
@@ -279,6 +287,8 @@ export interface AgnescodeAdapterOptions {
    * sanitized). Absent or empty = the roster rows' own `maxOutputLength` stands.
    */
   maxTokensOverrides?: Record<string, number> | null;
+  /** Which site this adapter belongs to (ADR-023); see the interface above. */
+  domain?: "cn" | "intl";
 }
 
 /**
@@ -497,7 +507,11 @@ export interface HostWiring {
     info?: (message: string, ...rest: unknown[]) => void;
   };
   agnescodeStore: ReturnType<typeof createAgnescodeStore>;
+  /** The international-site AgnesCode credential store (ADR-023). */
+  agnescodeStoreIntl?: ReturnType<typeof createAgnescodeStore> | undefined;
   agnescodeSwitch: ReturnType<typeof createFileAgnescodeStore>;
+  /** The international-site AgnesCode switch store (ADR-023). */
+  agnescodeSwitchIntl?: ReturnType<typeof createFileAgnescodeIntlProviderStore> | undefined;
   /**
    * The AgnesCode desktop-SOURCE switch (ADR-020): the read-only view of the
    * desktop App's session file that `createAgnescodeStore` consults per read
@@ -515,6 +529,8 @@ export interface HostWiring {
    */
   agnescodeRosterSeen?: ReturnType<typeof createFileAgnescodeRosterSeenStore>;
   agnescodePublisher: ReturnType<typeof wireAgnescodePublisher>["publisher"];
+  /** The international-site AgnesCode publisher (ADR-023). */
+  agnescodePublisherIntl?: ReturnType<typeof wireAgnescodePublisher>["publisher"] | undefined;
   /** The fetch the `/agnescode` route's two BFF reads use (see `HostDeps`). */
   agnescodeFetch?: (...args: any[]) => Promise<any>;
   /**

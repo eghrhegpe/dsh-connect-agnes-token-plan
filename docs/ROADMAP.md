@@ -451,6 +451,13 @@ workbuddy 五档原因的承重场景；② 三个 provider tab 的重复结构�
 - **面板**：AgnesCode tab 凭据卡内第二个开关行「使用桌面端登录态（只读）」+ live/idle 两行；`/agnescode` GET 增三个**扁平**字段 `desktopSourceEnabled` / `desktopSourceServing` / `desktopSourceReason`（§11b 契约围栏按 brace 深度走字面量，不许嵌套块），POST 增 `{action:"desktop-source", enabled}`（写后全量回显 + 经 store 感知的 `publishFromStore` 重发布）。
 - **净效果**：① 桌面 App 提前轮换 token 或换账号时插件**每次读跟随 App**（此前抱槽内旧 token 到 401）；② 「以桌面端为准、扫码兜底」变得可表达；③ 未开开关的机器行为与落地前逐字节相同（默认关 + 既有套件全绿即基线）。
 
+**双站并存（2026-11-18 落地，ADR-023）**：AgnesCode 从「国内一条注册」升级为**国内 / 国际两条并存的注册**（`agnescode` / `agnescode-intl`），惯例与 ADR-021 的 Token Plan 双行同形——**一站一条路由，不做「当前站点」全局开关**（切换瞬间在飞的会话全部改道，且一站的凭据打另一站的网关必 401）：
+
+- **按站隔离的五个面**：① provider id 与显示名（`AGNESCODE_PROVIDER_ID` / `_INTL`，descriptor 的 `provider` 字段与 pi-ai profile 一并跟随）；② 凭据引用（`AGNESCODE_CREDENTIAL` / `AGNESCODE_CREDENTIAL_INTL`——**同一凭据服务、不同引用名**，红线②不破：仍是 `grant` / `api-key` 两种 kind 里的引用值）；③ 开关文件（`agnescode-provider.json` / `agnescode-intl-provider.json`，各走共享 `switch-store.ts` 工厂，dialect B）；④ publisher（同一套 `publish-core`，两个实例、两份队列与注册状态）；⑤ **桌面会话文件的采集顺序**（CN 构建写 `code-auth-session.cn.v1`、国际构建写不带标记的 `.v1`——`sortAgnescodeSessionFiles` 按站把本站的文件排前面，另一站留作兜底）。
+- **两站共用三样机器级事实**（不是站点事实，所以不按站切）：模型勾选清单 `agnescode-models.json`、桌面源开关 `agnescode-desktop-source.json`（ADR-020）、插件自身的用量 / 限流统计。勾选保存与源开关翻转时**两行各自重发布**。
+- **路由选站**：同一个 `/agnescode` 路由按 `domain` 选站——GET 取查询串、POST 取请求体，缺省 `cn`（不认识站点的旧客户端行为逐字节不变）。路线作用域状态（harvest 诊断、采集 / 登录单飞、self-heal 冷却）**按站分开**。
+- **面板**：AgnesCode tab 顶部「国内版 / 国际版」站点切换（切换即换行读数，切换前的在飞读被作废——免得把一站的余额画在另一站的名字下）；胶囊多一根门控 `agnescode-intl`（前缀「国际版 AgnesCode」）。
+
 ### 6.3.1 契约复测（2026-10-01 深夜，本机凭据，只读端点）
 
 > 证据：`upstream/AgnesCode-desktop-1.0.68/probe-agnescode-credits.mjs`（与模型探针

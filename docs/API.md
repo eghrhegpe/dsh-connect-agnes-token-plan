@@ -146,7 +146,7 @@
   "intl": {
     "consoleBase": "https://platform-backend.agnes-ai.com",
     "quota": { /* 与顶层 quota 同形；行开关关着时为 null */ },
-    "auth":  { /* 与顶层 auth 同形：国际站控制台的登录态（面板 INTL 账号卡或 env 引导 AGNES_USERNAME_INTL / AGNES_PASSWORD_INTL） */ },
+    "auth":  { /* 与顶层 auth 同形：国际站控制台的登录态（面板「Agnes 控制台账号」卡的国际站分段，或 env 引导 AGNES_USERNAME_INTL / AGNES_PASSWORD_INTL） */ },
     "llm": {
       "hasApiKey": true, "keySource": "credentials", "ephemeral": false,
       "providerId": "agnes-token-plan-intl", "registerProvider": true,
@@ -163,7 +163,7 @@
 - **控制台读不到时 body 仍然是 `ok:true`**：`quota.consoleConnected:false` 加上 `quota.error.code`（`not_configured` / `auth_error` / `console_error`）。这样 API Key tab 和 AgnesCode tab 仍然可达——它们一个不读控制台、一个连的是桌面 App 上游，被一个缺席模块一起埋掉正是 `ARCHITECTURE.md` §5 禁止的。
 - Host 内部：临近过期时用保存的账号重新登录一次；Agnes 不发 refresh_token，所以「续期」就是重登。
 - `shapeWarnings` 非空说明控制台字段可能改名，面板会明说而非永远「暂无数据」。
-- **`intl` 块（ADR-021）随 INTL 行装配即在场**（行恒装配：配置错或 pre-ADR-021 Host 才缺席）：它由 INTL 行自己的 token store / key 引用 / publisher / 目录 / 目录写手槽同时在场时出现，与 CN 半边并行取数（共享 cache/inflight 按 URL 分家）并独立软失败。**行开关关着时 `intl.quota` 为 `null`**（批量未跑——关着的一行不发国际请求），块内各源失败仍以 `quota.error` 报出，不是整块缺席。胶囊的第三根门控（`agnes-token-plan-intl` 模型）读的就是 `intl.quota`；面板 INTL 开关卡读的是 `intl.llm.registerProvider` + `registerSource`。
+- **`intl` 块（ADR-021）随 INTL 行装配即在场**（行恒装配：配置错或 pre-ADR-021 Host 才缺席）：它由 INTL 行自己的 token store / key 引用 / publisher / 目录 / 目录写手槽同时在场时出现，与 CN 半边并行取数（共享 cache/inflight 按 URL 分家）并独立软失败。**行开关关着时 `intl.quota` 为 `null`**（批量未跑——关着的一行不发国际请求），块内各源失败仍以 `quota.error` 报出，不是整块缺席。胶囊的第三根门控（`agnes-token-plan-intl` 模型）读的就是 `intl.quota`；面板「提供方与 API Key」卡的国际站分段读的是 `intl.llm.registerProvider` + `registerSource`。
 - **额度与用量是两条独立事实**：`quota.windows` 的平台声明上限 +（`subscription.usage` 给到时的）窗口内 `used`；`quota.totals` 与 `usage` 是平台报出的累计 / 分桶量。窗口内的已用量由平台给，面板直接引用；Host 从不做 `limit - total`——累计值与窗口不同周期，相减会算出没人能负责的数。
 
 #### `auth` 块的两个节流字段（面板必须服从）
@@ -277,6 +277,8 @@ INTL 行注册开关的去密状态与写入（ADR-021，`/provider` 的国际�
 - `{action:"harvest"}` —— 重读本机桌面 App 的 os_crypt 会话文件并入库，失败时回**逐文件诊断行**（tier 代码 + 形状事实，令牌永不进响应）；凭据刷新靠 `harvest` 覆盖写入（非登出），「解除关联」按钮已移除——它删本地 JWT 之外没有 `harvest`/`switch` 做不了的事，桌面 App 自己的登录态本就不归本插件管。
 - `{action:"saveModels", enabledModelIds: string[]}` —— 持久化花名册勾选（profile 级 `agnescode-models.json`，空列表 = 不筛选 = 全推），并**立即**重发一次过滤后的 roster（不必等下次轮询；过滤只在发布前裁剪，不与 Token Plan 的 `enabledModelIds` 或 publisher 状态串味）。非数组返回 400。
 - `{action:"login", domain?}` —— 设备流扫码登录（跨平台替代 harvest，`docs/AGNESCODE-SCAN-LOGIN.md`；`domain` 仅 `"cn"` / `"intl"`）。
+
+**站点选择（ADR-023）**：AgnesCode 有**两条并存的注册**（国内站 `agnescode` / 国际站 `agnescode-intl`），两站的凭据、开关、发布决定互不相干（同一惯例见 ADR-021 的 Token Plan 双行）。路由用 `domain` 选站：`GET` 从**查询串**取（`?domain=intl`），`POST` 从**请求体**取（`{"domain":"intl"}`），**缺省 `cn`**——一个不认识站点的旧客户端行为逐字节不变。选站影响的是这一站自己的凭据引用（`AGNESCODE_CREDENTIAL` / `AGNESCODE_CREDENTIAL_INTL`）、开关文件（`agnescode-provider.json` / `agnescode-intl-provider.json`）、publisher 与桌面会话文件的采集顺序。**面板的模型勾选清单与桌面源开关是两站共用的**（前者是名册的过滤，后者是机器事实）。
 
 **无 `logout`**：凭据刷新靠 `harvest` 覆盖写入，注销 provider 靠 `switch:false`。契约探针记录见 [ROADMAP.md](./ROADMAP.md) §6.3。
 

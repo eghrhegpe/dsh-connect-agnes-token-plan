@@ -1,15 +1,16 @@
 /**
- * The six opt-in switch stores, measured against ONE shared behaviour list.
+ * The seven opt-in switch stores, measured against ONE shared behaviour list.
  *
  * Why this file exists: the panel's opt-in switches (provider / draw / video /
- * AgnesCode / AgnesCode desktop source / INTL provider, ADR-021) are SIX
+ * AgnesCode / AgnesCode desktop source / INTL provider (ADR-021) / INTL
+ * AgnesCode provider (ADR-023)) are SEVEN
  * separate state files that answer the same question — "did the panel ever
  * decide this, and what did it decide?" — with the same integrity discipline
  * (versioned payload, temp+rename atomic write, 0600, "anything unrecognised
  * reads as not set", a short-TTL read cache and the §23 one-shot legacy
  * adoption). They were written by copying each other, so a fix or a rule that
  * reached three of them could be missing from the sixth with nothing
- * noticing. This suite runs the SAME assertions against all six so the six
+ * noticing. This suite runs the SAME assertions against all seven so the seven
  * cannot quietly disagree.
  *
  * It was written BEFORE the four were refactored onto one shared factory
@@ -34,6 +35,7 @@ import {
   createFileAgnescodeDesktopSourceStore
 } from "../src/host/agnescode-switch-store.ts";
 import { INTL_PROVIDER_VERSION, createFileIntlProviderStore } from "../src/host/intl-provider-store.ts";
+import { AGNESCODE_INTL_PROVIDER_VERSION, createFileAgnescodeIntlProviderStore } from "../src/host/agnescode-intl-provider-store.ts";
 
 const results = [];
 function check(name, condition, detail = "") {
@@ -58,7 +60,11 @@ const SWITCHES = [
   // ADR-020: the desktop-source switch, a plain on/off like the one above.
   { key: "agnescodeDesktopSource", file: "agnescode-desktop-source.json", version: AGNESCODE_DESKTOP_SOURCE_SWITCH_VERSION, create: createFileAgnescodeDesktopSourceStore, modelKey: null },
   // ADR-021: the INTL row's switch, a plain on/off like the provider's.
-  { key: "intlProvider", file: "intl-provider.json", version: INTL_PROVIDER_VERSION, create: createFileIntlProviderStore, modelKey: null }
+  { key: "intlProvider", file: "intl-provider.json", version: INTL_PROVIDER_VERSION, create: createFileIntlProviderStore, modelKey: null },
+  // ADR-023: the international AgnesCode row's switch — the CN row's twin, its
+  // OWN file so flipping one site's switch never writes the other's publish
+  // decision.
+  { key: "agnescodeIntlProvider", file: "agnescode-intl-provider.json", version: AGNESCODE_INTL_PROVIDER_VERSION, create: createFileAgnescodeIntlProviderStore, modelKey: null }
 ];
 
 /** Read the persisted payload, or `null` when the file is not there. */

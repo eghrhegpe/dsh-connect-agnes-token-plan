@@ -425,23 +425,28 @@ const healthy = {
 }
 
 // === F5. the API tab's card order and its open-by-default set ==============
-// The three cards answer "what did the reader come here for", not "what
-// depends on what": 语言模型 and 出图工具 lead and open, the API key editor
-// trails because it is the PREREQUISITE they point back at. Both halves have
-// drifted before — the cards were reordered once while a hint inside one of
-// them still said 「在上方保存 API Key」, pointing at a card that had moved
-// below it. So: pin the order, pin the defaults, and pin the hint to a CARD
-// NAME rather than a direction (a name survives a reorder, "上方" does not).
+// The cards answer "what did the reader come here for", not "what depends on
+// what": the two AGENT TOOLS lead and open, the provider+key card trails
+// because it is the PREREQUISITE they point back at.
+//
+// WHAT THIS SECTION NO LONGER PINS, and why: it used to assert THREE site
+// cards (CN provider / CN key / INTL provider+key) and their order. ADR-021's
+// follow-up folded those three into ONE site-segmented card (`llm.siteTitle`),
+// because the halves were never the same shape (the CN key lived in its own
+// card while the INTL key sat inside the INTL card) and a single-site machine
+// paid a whole empty「未配置」card on every tab. The invariants that survive
+// are the two that were ever load-bearing: the tools lead, and the
+// prerequisite trails. The site selector itself is pinned in F5b below.
 {
   const source = await readFile(new URL("../src/client/panel-page.ts", import.meta.url), "utf8");
   const order = [...source.matchAll(/title:\s*tt\("([^"]+)"\)/g)].map((m) => m[1]);
   const at = (key) => order.indexOf(key);
-  check("the API tab's three cards are all rendered as sections",
-    at("llm.providerTitle") >= 0 && at("draw.title") >= 0 && at("llm.title") >= 0,
+  check("the API tab's provider/key card and both tool cards are rendered as sections",
+    at("llm.siteTitle") >= 0 && at("draw.title") >= 0 && at("video.title") >= 0,
     order.join(" | "));
-  check("语言模型 leads, 出图工具 follows, 国内站 card trails last",
-    at("llm.providerTitle") < at("draw.title") && at("draw.title") < at("llm.title"),
-    `providerTitle@${at("llm.providerTitle")} draw@${at("draw.title")} llm@${at("llm.title")}`);
+  check("出图工具 and 视频工具 lead, the provider/key card trails last",
+    at("draw.title") < at("llm.siteTitle") && at("video.title") < at("llm.siteTitle"),
+    `draw@${at("draw.title")} video@${at("video.title")} siteTitle@${at("llm.siteTitle")}`);
 
   // `openSections` is the FIRST half of a destructured pair, so the `=` sits
   // after `setOpenSections]` — anchoring on `openSections\s*=useState` matches
@@ -453,19 +458,75 @@ const healthy = {
   );
   check("the panel's open-by-default map was actually read (not silently empty)",
     Object.keys(defaults).length >= 6, JSON.stringify(defaults));
-  check("语言模型 and 出图工具 start expanded, the key editor starts collapsed",
-    defaults.provider === true && defaults.draw === true && defaults.llm === false,
+  check("the two tool cards and the provider/key card start expanded",
+    defaults.provider === true && defaults.draw === true && defaults.video === true,
     JSON.stringify(defaults));
+  // The folded-away section keys must NOT come back: a stale `llm` / `intl`
+  // entry is a toggle nothing renders — the dead-affordance shape this panel
+  // keeps having to delete.
+  check("the retired per-site section keys are gone from the open map",
+    !("llm" in defaults) && !("intl" in defaults),
+    JSON.stringify(Object.keys(defaults)));
 
   // A cross-card hint must name the card, never point up or down: the two
-  // cards it connects have already swapped places once.
+  // cards it connects have already swapped places once. The card is now the
+  // site-segmented one, so the hint names THAT plus the site inside it.
   const dict = dictionaries.zh;
-  check("the cross-card hint names the 国内站（Agnes CN）card instead of a direction",
-    /Agnes CN/.test(dict["llm.rosterEmpty"] ?? "") && !/上方|下方/.test(dict["llm.rosterEmpty"] ?? ""),
+  check("the cross-card hint names the card and the site instead of a direction",
+    /提供方与 API Key/.test(dict["llm.rosterEmpty"] ?? "") && /国内站/.test(dict["llm.rosterEmpty"] ?? "")
+    && !/上方|下方/.test(dict["llm.rosterEmpty"] ?? ""),
     dict["llm.rosterEmpty"]);
   check("the English hint matches the Chinese one on this point",
     !/\babove\b|\bbelow\b/.test(dictionaries.en["llm.rosterEmpty"] ?? ""),
     dictionaries.en["llm.rosterEmpty"]);
+}
+
+// === F5b. ONE site selector, all three tabs (ADR-021 / ADR-023) ============
+// The shape ADR-021 and ADR-023 landed on the Host side, on the panel side: a
+// site is a namespace, so a card shows ONE site at a time and picks it with the
+// SAME control everywhere. Before this the quota and API tabs drew the two
+// sites as side-by-side cards while the AgnesCode tab drew an in-card pair of
+// buttons — two shapes for one idea. These checks pin that the shared control
+// is actually shared (a regression here is a card silently growing its own
+// selector again, which is how the two shapes appeared the first time).
+{
+  const panel = await readFile(new URL("../src/client/panel-page.ts", import.meta.url), "utf8");
+  const tab = await readFile(new URL("../src/client/agnescode-tab.ts", import.meta.url), "utf8");
+  const sites = await readFile(new URL("../src/client/site-tabs.ts", import.meta.url), "utf8");
+
+  check("both panel cards and the AgnesCode tab use the shared SiteTabs",
+    /SiteTabs/.test(panel) && /SiteTabs/.test(tab),
+    `panel=${/SiteTabs/.test(panel)} tab=${/SiteTabs/.test(tab)}`);
+  // One implementation, no local re-spelling: the old in-card button pair is
+  // gone, and neither consumer builds its own segmented control.
+  check("the AgnesCode tab no longer hand-rolls a segmented button pair",
+    !/aria-pressed/.test(tab), "the ad-hoc pair must be gone");
+  check("the selector is a real tablist of native buttons",
+    /role:\s*"tablist"/.test(sites) && /role:\s*"tab"/.test(sites) && /aria-selected/.test(sites),
+    "a custom div-based control would lose keyboard and AT support for free");
+
+  // The dot is load-bearing (see `site-tabs.ts`): without it the collapsed
+  // half hides its own state, so the reader must click in to learn whether the
+  // other site is even configured. Three tones, one function, no re-mapping.
+  check("the tone is resolved by ONE shared function",
+    /export function siteTone/.test(sites) && !/function siteTone/.test(panel) && !/function siteTone/.test(tab),
+    "a second resolver would let two cards call one state by two names");
+  check("the three tones are all reachable and all named in the dictionary",
+    /ok:/.test(sites) && /warn:/.test(sites) && /off:/.test(sites)
+    && ["site.toneOk", "site.toneWarn", "site.toneOff"].every((k) => k in dictionaries.zh && k in dictionaries.en),
+    JSON.stringify(["site.toneOk", "site.toneWarn", "site.toneOff"].map((k) => k in dictionaries.zh)));
+  // The colour must never be the only carrier of the state.
+  check("each segment carries its tone in words, not just as ink",
+    /title:\s*tt\(TONE_KEY\[option\.tone\]\)/.test(sites), "title must name the tone");
+
+  // The site defaults to the CN row on both cards — the site every existing
+  // install has, and the one the pre-ADR-021 snapshots carried.
+  check("both panel site selectors default to the CN row",
+    /useState<Site>\("cn"\)/.test(panel), "a non-CN default would change what every install opens on");
+  // Per card, not per panel: the two cards read two independent upstreams, so
+  // one selector would make a flip on one tab silently repaint the other.
+  check("the two panel cards keep INDEPENDENT site state",
+    /accountSite/.test(panel) && /apiSite/.test(panel), "one shared selector would couple two unrelated reads");
 }
 
 // === F6. one route per tab, one status line per tab =======================

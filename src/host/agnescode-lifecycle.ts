@@ -74,7 +74,7 @@ export const AGNESCODE_SEED_DELAY_MS = 300;
  * @returns {{publisher: object, seed: () => Promise<void>}} the publisher and
  *   its mount-seed function.
  */
-export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm, loadAdapterModule, emit, logger, settings, seedOptions = {} }: {
+export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm, loadAdapterModule, emit, logger, settings, domain: domainArg = "cn", seedOptions = {} }: {
   store: {
     resolve: () => Promise<{ credential: { accessToken: string; bffBase?: string } | null }>;
     isExpired: () => Promise<boolean>;
@@ -88,8 +88,22 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
   logger?: any;
   /** The resolved settings row, read for `maxTokensOverrides` only. */
   settings?: Partial<import("./types.ts").Settings>;
+  /**
+   * Which AgnesCode site this wiring serves (ADR-023): `"cn"` (the default,
+   * `agnescode`) or `"intl"` (`agnescode-intl`). The domain selects the
+   * publisher's provider identity — the two sites' registrations never share
+   * an id — and rides into the adapter factory so the descriptor's provider
+   * field matches the row the picker shows.
+   */
+  domain?: "cn" | "intl";
   seedOptions?: { attempts?: number; delayMs?: number };
 }) {
+  // The site this wiring serves (ADR-023). Normalized once, here, so every
+  // consumer below (the re-harvest walk, the publisher's identity) names the
+  // SAME site — a wiring that passed `"intl"` to the publisher but walked the
+  // CN session file would register one site's account under the other site's
+  // provider id.
+  const domain: "cn" | "intl" = domainArg === "intl" ? "intl" : "cn";
   // Single-flight + backoff state shared across all resolveToken calls for
   // this wiring instance (the equivalent of the closure variables the old
   // inline version held in apply()'s scope).
@@ -149,7 +163,7 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
     if (credential === null) return "";
     if (await store.isExpired().catch(() => false)) {
       if (harvest.inFlight === null && Date.now() >= harvest.blockedUntil) {
-        harvest.inFlight = harvestAgnescodeLocalSession()
+        harvest.inFlight = harvestAgnescodeLocalSession({ domain })
           .then(async (walk) => {
             if (walk?.ok !== true) {
               harvest.blockedUntil = Date.now() + AGNESCODE_REHARVEST_BACKOFF_MS;
@@ -201,6 +215,11 @@ export function wireAgnescodePublisher({ store, panelSwitch, enabledIds, getLlm,
     loadAdapterModule: loadAdapterModule ?? (() => import("./agnescode-llm-adapter.ts")),
     emit: emit ?? (() => {}),
     logger,
+    // The site's identity (ADR-023): the CN row registers `agnescode`, the
+    // international row `agnescode-intl`. Two registrations, two ids — the
+    // picker's site is decided by WHICH provider the model belongs to, never
+    // by a global switch.
+    domain,
     ...(settings ? { settings } : {})
   });
   holder.current = publisher;

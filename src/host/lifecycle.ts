@@ -552,6 +552,13 @@ export function teardown(wiring: HostWiring, offs: Array<() => void>, stopTick?:
   // §6.3): same order, same reason.
   agnescodePublisher?.dispose();
   agnescodePublisher?.release?.();
+  // The international AgnesCode row is a FOURTH, independent registration
+  // (ADR-023): its own queue, its own pair, its own switch — so it gets the
+  // same two-step withdrawal, and it is withdrawn AFTER the CN one so the
+  // CN row's release (which the Host sees first) is never racing the
+  // international row's.
+  wiring.agnescodePublisherIntl?.dispose?.();
+  wiring.agnescodePublisherIntl?.release?.();
   // The INTL provider is a FOURTH, independent registration (ADR-021): its
   // queue and release path are its own, so both get the same two-step
   // withdrawal — a publish still in flight must not register into a Host

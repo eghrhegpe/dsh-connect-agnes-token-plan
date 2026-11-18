@@ -332,6 +332,32 @@ async function bootPlugin({ withCredentials = true, withLlm = false, config = {}
   await stop();
 }
 
+// === B2b. the international AgnesCode row is wired (ADR-023) ================
+// The second AgnesCode registration is a WHOLE row (store + switch file +
+// publisher), not a flag on the CN one. The wiring must therefore answer the
+// international request from ITS OWN row: the CN row's switch is on and the
+// international one is off (its state file is untouched), so a `?domain=intl`
+// GET must report the international row as OFF and the CN row as ON — the
+// two rows' publish decisions are isolated by file.
+{
+  const { webServer, stop } = await bootPlugin();
+  const handler = webServer.registered.get("/api/dsh-connect-agnes-token-plan/agnescode");
+  const read = async (url) => {
+    const res = response();
+    await handler({ ...request(), url }, res);
+    return res.payload;
+  };
+  const cn = await read("/api/dsh-connect-agnes-token-plan/agnescode");
+  const intl = await read("/api/dsh-connect-agnes-token-plan/agnescode?domain=intl");
+  check("the international AgnesCode row answers on its own (the domain selects the row)",
+    cn?.ok === true && intl?.ok === true,
+    JSON.stringify({ cn: cn?.ok, intl: intl?.ok, error: intl?.error }));
+  check("the two AgnesCode rows' switches are separate files (each row answers its own decision)",
+    cn?.enabled === false && intl?.enabled === false,
+    JSON.stringify({ cn: cn?.enabled, intl: intl?.enabled }));
+  await stop();
+}
+
 // === B. the routes answer through the container, not a stub ==============
 {
   const { webServer, stop } = await bootPlugin();

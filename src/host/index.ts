@@ -48,6 +48,7 @@ import { LLM_PROVIDER_ID_INTL, LLM_DISPLAY_NAME_INTL } from "./llm-models.ts";
 import { readPanelValue, resolveSwitchEnabled } from "./switch-precedence.ts";
 import { createAgnescodeStore } from "./agnescode-store.ts";
 import { createFileAgnescodeStore, createFileAgnescodeDesktopSourceStore } from "./agnescode-switch-store.ts";
+import { createFileAgnescodeIntlProviderStore } from "./agnescode-intl-provider-store.ts";
 import { createAgnescodeDesktopViewReader } from "./agnescode-desktop-view.ts";
 import { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
 import { createFileAgnescodeRosterSeenStore } from "./agnescode-roster-seen-store.ts";
@@ -396,6 +397,12 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   // consults it only while its switch resolves ON, and a Host that predates
   // the switch simply never wires it (the store answers from the slot alone).
   const agnescodeDesktopView = createAgnescodeDesktopViewReader();
+  // The INTERNATIONAL site's desktop view (ADR-023): a SECOND reader, because
+  // the two sites walk DIFFERENT session files (the CN build tags its file,
+  // the international build does not) and each reader's cache and backoff are
+  // per-instance state. Sharing one reader would make the CN row cache the
+  // international build's account.
+  const agnescodeDesktopViewIntl = createAgnescodeDesktopViewReader({ domain: "intl" });
   const agnescodeStore = createAgnescodeStore({
     credentials: () => ctx.get("credentials") ?? null,
     desktopSource: {
@@ -403,7 +410,23 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
       read: () => agnescodeDesktopView.read()
     }
   });
+  // The international-site AgnesCode credential store (ADR-023): the two AgnesCode
+  // sites register separate provider rows, and their credentials live in the
+  // SAME credentials service under DIFFERENT reference names. The CN store is
+  // the default; the intl row builds its own (same factory, same shape), and
+  // the routes/publisher select by domain.
+  const agnescodeStoreIntl = createAgnescodeStore({
+    credentials: () => ctx.get("credentials") ?? null,
+    desktopSource: {
+      enabled: () => agnescodeDesktopSource.enabled().catch(() => null),
+      read: () => agnescodeDesktopViewIntl.read()
+    },
+    domain: "intl"
+  });
   const agnescodeSwitch = createFileAgnescodeStore({ profile });
+  // The international-site AgnesCode switch store (ADR-023): its own state file
+  // so flipping one site's switch never touches the other's publish decision.
+  const agnescodeSwitchIntl = createFileAgnescodeIntlProviderStore({ profile });
   // The panel's curation of which roster models the adapter offers. EMPTY means
   // "no curation" — the roster rides whole, so an untouched install keeps the
   // old behaviour; only a ticked list filters.
@@ -429,9 +452,29 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     logger: ctx.logger,
     settings
   });
+  // The international-site publisher (ADR-023): same control plane, same state
+  // shape, different domain identity and its OWN switch store (the two sites'
+  // publish decisions are isolated by file). The `domain` argument selects the
+  // identity; the `panelSwitch` argument reads the intl switch file.
+  const { publisher: agnescodePublisherIntl, seed: agnescodeSeedIntl } = wireAgnescodePublisher({
+    domain: "intl",
+    store: agnescodeStoreIntl,
+    panelSwitch: () => agnescodeSwitchIntl.enabled().catch(() => null),
+    enabledIds: () => agnescodeModels.listEnabledIds().catch(() => []),
+    getLlm: (service) => getService(service),
+    loadAdapterModule: deps.loadAgnescodeAdapterModule,
+    emit: emitAdaptersUpdate,
+    logger: ctx.logger,
+    settings
+  });
   // Mount seed: if the switch survived a restart, re-register from the
   // fallback roster + the stored credential's per-account base.
   void agnescodeSeed();
+  // The international row's own mount seed (ADR-023): the same discipline on
+  // the international site's own switch file and its own credential — a CN
+  // switch that survived a restart must never re-register the international
+  // provider, and vice versa.
+  void agnescodeSeedIntl();
 
   // The credentials service is how the console token and account are held and
   // renewed. It is optional: a Host without one still gets a working panel,
@@ -514,15 +557,20 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     // AgnesCode (desktop-app upstream provider, ROADMAP §6.3): an independent
     // registration that never touches the Token Plan publisher above; its
     // credential is HARVESTED from the desktop App's session file (the route
-    // owns the harvest-then-save walk) rather than logged-in here.
+    // owns the harvest-then-save walk) rather than logged-in here. Two sites
+    // (ADR-023): the CN store/switch/publisher below, and the international
+    // store/switch/publisher built beside them (own files, own switches).
     agnescodeStore,
+    agnescodeStoreIntl,
     agnescodeSwitch,
+    agnescodeSwitchIntl,
     // The desktop-source switch (ADR-020): the `/agnescode` route's
     // `desktop-source` action writes it; the store consults it per read.
     agnescodeDesktopSource,
     agnescodeModels,
     agnescodeRosterSeen,
     agnescodePublisher,
+    agnescodePublisherIntl,
     // The BFF fetch the agnescode route's cache + single-flight wraps. Absent
     // (the real Loader) it falls back to the Host's own `fetch` at the call
     // site; present (the offline suites) it lets a COUNTING stub prove the
