@@ -14,7 +14,7 @@ import { readdir, stat, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { name } from "./host-config.ts";
 import { isProfileSegment, dshHome as defaultDshHome, readStateJson } from "./state-store.ts";
-import { parseAgnescodePayload } from "./agnescode-switch-store.ts";
+import { parseAgnescodePayload, parseAgnescodeDesktopSourcePayload } from "./agnescode-switch-store.ts";
 
 /**
  * The switch payload parsers, re-exported from the stores that own the files.
@@ -57,12 +57,20 @@ export interface DoctorScope {
   videoModelPanel: string | null;
   /** The saved AgnesCode provider switch; `null` = fall back to OFF (opt-in default). */
   agnescodePanel: boolean | null;
+  /** The saved AgnesCode desktop-source switch (ADR-020); `null` = OFF. */
+  agnescodeDesktopSourcePanel: boolean | null;
   /** Stored catalog entries, `[]` when nothing usable is stored. */
   catalogEntries: object[];
   /** The stored model allow-list; `[]` means "no filter". */
   catalogEnabledIds: string[];
   /** When the catalog was fetched (ms), or 0 when unknown. */
   catalogFetchedAt: number;
+  /**
+   * The INTL row's stored catalog entries (ADR-021), `[]` when the machine
+   * has never fetched an INTL catalogue — the ordinary case on a CN-only
+   * install, not a finding.
+   */
+  catalogIntlEntries: object[];
   /**
    * The AgnesCode roster curation, `[]` when nothing is curated.
    *
@@ -185,9 +193,11 @@ async function readScope(stateDir: string, profile: string | null) {
     videoPanel: null,
     videoModelPanel: null,
     agnescodePanel: null,
+    agnescodeDesktopSourcePanel: null,
     catalogEntries: [],
     catalogEnabledIds: [],
     catalogFetchedAt: 0,
+    catalogIntlEntries: [],
     agnescodeEnabledIds: [],
     writable: null,
     unreadable: []
@@ -235,6 +245,14 @@ async function readScope(stateDir: string, profile: string | null) {
     if (parsed !== null) scope.agnescodePanel = parsed.enabled;
     else scope.unreadable.push("agnescode-provider.json");
   }
+  // The desktop-source switch (ADR-020): the SAME plain {version, enabled}
+  // payload family, its own file, the same unreadable discipline.
+  const agnescodeDesktopSourceFile = join(stateDir, "agnescode-desktop-source.json");
+  if (await present(agnescodeDesktopSourceFile)) {
+    const parsed = parseAgnescodeDesktopSourcePayload(await readStateJson(agnescodeDesktopSourceFile));
+    if (parsed !== null) scope.agnescodeDesktopSourcePanel = parsed.enabled;
+    else scope.unreadable.push("agnescode-desktop-source.json");
+  }
   const catalogFile = join(stateDir, "catalog.json");
   if (await present(catalogFile)) {
     const parsed = parseCatalogPayload(await readStateJson(catalogFile));
@@ -243,6 +261,15 @@ async function readScope(stateDir: string, profile: string | null) {
       scope.catalogEnabledIds = parsed.enabledModelIds;
       scope.catalogFetchedAt = parsed.fetchedAt;
     } else scope.unreadable.push("catalog.json");
+  }
+  // The INTL row's catalogue (ADR-021): the same parser, its own file. Absent
+  // on a CN-only machine — and that is the ordinary case, not a finding, so
+  // only a PRESENT-but-unparseable file reaches `unreadable`.
+  const catalogIntlFile = join(stateDir, "catalog.intl.json");
+  if (await present(catalogIntlFile)) {
+    const parsed = parseCatalogPayload(await readStateJson(catalogIntlFile));
+    if (parsed !== null) scope.catalogIntlEntries = parsed.entries;
+    else scope.unreadable.push("catalog.intl.json");
   }
   // The AgnesCode roster curation, through its own store's parser like every
   // other file above — the sixth state file, and the one this survey skipped
@@ -387,8 +414,17 @@ export function renderReport(report: any) {
     const agnescodeModels = scope.agnescodeEnabledIds ?? [];
     const agnescodeModelsPart = agnescodeModels.length === 0 ? "(no filter)" : String(agnescodeModels.length);
     const agnescode = scope.agnescodePanel === null ? "unset (off)" : String(scope.agnescodePanel);
+    // Read with `=== undefined` tolerated as well: a report shape that
+    // predates the field (ADR-020) must render as unset, never "undefined".
+    const agnescodeSource = scope.agnescodeDesktopSourcePanel === null || scope.agnescodeDesktopSourcePanel === undefined
+      ? "unset (off)"
+      : String(scope.agnescodeDesktopSourcePanel);
+    // The INTL row's catalogue count (ADR-021): read through `?? []` like the
+    // agnescode curation above, so a report shape that predates the field
+    // renders as 0 instead of "undefined".
+    const catalogIntl = (scope.catalogIntlEntries ?? []).length;
     lines.push(
-      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} catalog=${scope.catalogEntries.length} enabled=${enabledPart} agnescode-models=${agnescodeModelsPart}`
+      `${label}: provider=${provider} draw=${draw}${modelPart} video=${video}${videoModelPart} agnescode=${agnescode} agnescode-source=${agnescodeSource} catalog=${scope.catalogEntries.length} enabled=${enabledPart} agnescode-models=${agnescodeModelsPart} intl-catalog=${catalogIntl}`
     );
     if (scope.unreadable.length > 0) lines.push(`${label}: unreadable state: ${scope.unreadable.join(", ")}`);
     // Only the failure is worth a line. `true` is the ordinary case and `null`

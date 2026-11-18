@@ -13,12 +13,13 @@ var dsh_connect_agnes_token_plan_client = (function() {
 
 //#endregion
 //#region src/client/const.ts
-	var PANEL_ID, NS, PROVIDER_ID, AGNESCODE_PROVIDER_ID, SNAPSHOT_PATH, ACCOUNT_PATH, API_KEY_PATH, PROVIDER_PATH, MODELS_PATH, DRAW_PATH, VIDEO_PATH, AGNESCODE_PATH, AGNES_SIGNUP_URL, AGNESCODE_SITE_URL;
+	var PANEL_ID, NS, PROVIDER_ID, AGNESCODE_PROVIDER_ID, PROVIDER_ID_INTL, SNAPSHOT_PATH, ACCOUNT_PATH, API_KEY_PATH, PROVIDER_PATH, MODELS_PATH, DRAW_PATH, VIDEO_PATH, AGNESCODE_PATH, AGNES_SIGNUP_URL, AGNESCODE_SITE_URL;
 	var init_const = __esmMin((() => {
 		PANEL_ID = "dsh-connect-agnes-token-plan";
 		NS = PANEL_ID;
 		PROVIDER_ID = "agnes-token-plan";
 		AGNESCODE_PROVIDER_ID = "agnescode";
+		PROVIDER_ID_INTL = "agnes-token-plan-intl";
 		SNAPSHOT_PATH = `/api/${PANEL_ID}/snapshot`;
 		ACCOUNT_PATH = `/api/${PANEL_ID}/account`;
 		API_KEY_PATH = `/api/${PANEL_ID}/api-key`;
@@ -112,6 +113,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"quota.total.activeDays": "活跃天数",
 			"quota.usageMissing": "{label}：暂未读到。",
 			"composer.planPrefix": "Token Plan",
+			"composer.planPrefixIntl": "国际版 Token Plan",
 			"composer.window5h": "5 小时",
 			"composer.windowWeekly": "本周",
 			"composer.pillTitle": "Token Plan 额度",
@@ -235,6 +237,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.switch": "启用 AgnesCode 提供方",
 			"agnescode.switchTip": "关闭后 AgnesCode 模型不会出现在 DSH 的模型下拉框里；凭据与模型设置都会保留，重新开启即恢复。",
 			"agnescode.switchError": "切换失败：{error}",
+			"agnescode.desktopSource": "使用桌面端登录态（只读）",
+			"agnescode.desktopSourceTip": "开启后每次取凭据都先读本机 AgnesCode 桌面端的会话文件：新鲜就以它为源（只读——不刷新、不回写、不拷入 DSH 凭据服务）；读不到或已过期时自动落回已存登录态（检测写入或扫码登录的那份）。默认关；关掉也从不丢登录。",
+			"agnescode.desktopSourceError": "桌面端源开关切换失败：{error}",
+			"agnescode.desktopLive": "正在使用桌面端登录态（只读；本插件不刷新也不改写它）。",
+			"agnescode.desktopIdle": "桌面端源已开，但本机现在没有可用的桌面端登录态——正使用已存登录态。原因：{reason}",
+			"agnescode.desktopReason.no_expiry": "会话文件里没有可解析的到期时间",
+			"agnescode.desktopReason.expired": "会话文件里的令牌已过期——重开桌面 App 登录一次即可",
+			"agnescode.desktopReason.read_failed": "会话文件读取失败",
 			"agnescode.harvest": "检测本机登录态",
 			"agnescode.harvesting": "正在读取本机登录态…",
 			"agnescode.loggedIn": "已关联：{nick}",
@@ -379,6 +389,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"quota.total.activeDays": "Active days",
 			"quota.usageMissing": "{label}: not read yet.",
 			"composer.planPrefix": "Token Plan",
+			"composer.planPrefixIntl": "Intl Token Plan",
 			"composer.window5h": "5h",
 			"composer.windowWeekly": "this week",
 			"composer.pillTitle": "Token Plan quota",
@@ -502,6 +513,14 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			"agnescode.switch": "Enable AgnesCode provider",
 			"agnescode.switchTip": "When off, AgnesCode models do not appear in DSH's model dropdown; the credential and model settings are kept and return when you switch it back on.",
 			"agnescode.switchError": "Switch failed: {error}",
+			"agnescode.desktopSource": "Use desktop-app login state (read-only)",
+			"agnescode.desktopSourceTip": "When on, every credential read first looks at the AgnesCode desktop App's session file on this machine: if it is fresh, it is the source (read-only — never refreshed, never written back, never copied into the DSH credentials service); when unreadable or expired, the stored login state (the detection write or the scan sign-in) is used instead. Off by default; turning it off never loses a sign-in.",
+			"agnescode.desktopSourceError": "Desktop-source switch failed: {error}",
+			"agnescode.desktopLive": "Serving from the desktop App's login state (read-only; this plugin neither refreshes nor rewrites it).",
+			"agnescode.desktopIdle": "The desktop source is on, but no usable desktop-app sign-in exists on this machine — serving from the stored login state. Reason: {reason}",
+			"agnescode.desktopReason.no_expiry": "the session file carries no decodable expiry",
+			"agnescode.desktopReason.expired": "the session file's token is expired — sign in once inside the desktop App",
+			"agnescode.desktopReason.read_failed": "reading the session file failed",
 			"agnescode.harvest": "Detect local login state",
 			"agnescode.harvesting": "Reading the local login state…",
 			"agnescode.loggedIn": "Linked: {nick}",
@@ -3539,6 +3558,32 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		};
 	}
 	/**
+	* The harvest-tier reasons the desktop view can answer with (ADR-020): the
+	* SAME nine tier codes the panel's diagnosis rows already translate, so they
+	* reuse the tab's own `agnescode.tier.*` dictionary — "the button says X and
+	* the switch row says Y" is impossible by construction. The three view-only
+	* reasons have their own keys; an unknown code (a reason added Host-side
+	* without its dictionary entry) prints itself rather than a missing key.
+	* @param {string} reason - a `desktopSourceReason` value from the route.
+	* @param {Tt} tt - the dictionary.
+	* @returns {string} the translated reason.
+	*/
+	function agnescodeDesktopSourceReasonText(reason, tt) {
+		if ([
+			"file_missing",
+			"format_drift",
+			"unreadable",
+			"no_key",
+			"decrypt_failed",
+			"malformed",
+			"no_token",
+			"untrusted_base",
+			"unsupported_platform"
+		].includes(reason)) return tt(`agnescode.tier.${reason}`);
+		if (reason === "no_expiry" || reason === "expired" || reason === "read_failed") return tt(`agnescode.desktopReason.${reason}`);
+		return reason;
+	}
+	/**
 	* The two muted lines that follow the credit-pool cards.
 	*
 	* Split out of {@link AgnescodeTab} for the same reason the rosters are: the
@@ -3757,6 +3802,21 @@ var dsh_connect_agnes_token_plan_client = (function() {
 				if (alive.current) setNote(format(tt("agnescode.switchError"), { error: why instanceof Error ? why.message : String(why) }));
 			}
 		}, [tt]);
+		const toggleDesktopSource = useCallback(async (enabled) => {
+			setNote(null);
+			try {
+				const body = await postJsonOrThrow(AGNESCODE_PATH, {
+					action: "desktop-source",
+					enabled
+				});
+				if (alive.current) {
+					retireInFlight();
+					setState(body);
+				}
+			} catch (why) {
+				if (alive.current) setNote(format(tt("agnescode.desktopSourceError"), { error: why instanceof Error ? why.message : String(why) }));
+			}
+		}, [tt]);
 		const harvest = useCallback(async () => {
 			setHarvestBusy(true);
 			setNote(null);
@@ -3813,6 +3873,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		}, []);
 		const loginDisabled = harvestBusy || loginBusy;
 		const enabled = state?.enabled === true;
+		const hasDesktopSource = state !== null && state.desktopSourceEnabled !== void 0;
+		const desktopSourceEnabled = state?.desktopSourceEnabled === true;
+		const desktopSourceServing = state?.desktopSourceServing === true;
+		const desktopSourceReason = typeof state?.desktopSourceReason === "string" && state?.desktopSourceReason !== "" ? state?.desktopSourceReason : null;
 		const view = agnescodeView(state, error);
 		const loggedIn = view.linked;
 		const models = Array.isArray(state?.models) ? state.models : [];
@@ -3896,7 +3960,28 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			label: tt("agnescode.switch"),
 			title: tt("agnescode.switchTip"),
 			rowStyle: { marginTop: 10 }
-		}), state !== null ? state.providerError === "not_configured" && loggedIn ? h("div", {
+		}), hasDesktopSource ? h(Switch, {
+			checked: desktopSourceEnabled,
+			disabled: loginDisabled,
+			onChange: () => void toggleDesktopSource(!desktopSourceEnabled),
+			label: tt("agnescode.desktopSource"),
+			title: tt("agnescode.desktopSourceTip"),
+			rowStyle: { marginTop: 4 }
+		}) : null, hasDesktopSource && desktopSourceEnabled && desktopSourceServing ? h("div", {
+			style: {
+				...S.muted,
+				fontSize: 12,
+				marginTop: 2
+			},
+			role: "status"
+		}, tt("agnescode.desktopLive")) : null, hasDesktopSource && desktopSourceEnabled && !desktopSourceServing && desktopSourceReason !== null ? h("div", {
+			style: {
+				...S.muted,
+				fontSize: 12,
+				marginTop: 2
+			},
+			role: "status"
+		}, format(tt("agnescode.desktopIdle"), { reason: agnescodeDesktopSourceReasonText(desktopSourceReason, tt) })) : null, state !== null ? state.providerError === "not_configured" && loggedIn ? h("div", {
 			style: {
 				...S.muted,
 				fontSize: 12,
@@ -4534,10 +4619,19 @@ var dsh_connect_agnes_token_plan_client = (function() {
 	* The console reading: the two request windows and the tooltip that carries what
 	* the body has no room for (which plan, which quota, when the window resets, and
 	* whether this reading is the last known one).
+	*
+	* ONE component, TWO SITES (ADR-021): the `site` prop picks which quota block
+	* the same reading carries — the CN row's top-level `quota`, or the INTL row's
+	* nested `intl.quota` (both shaped identically, and both read through the same
+	* `windowPercent` / `usageTier` pair, so a second hand-kept copy of this body
+	* is exactly what the dup-gate refuses). A Host that assembled no INTL row
+	* sends no `intl` field at all — and then the INTL provider is unregistered, so
+	* this variant simply never mounts there: the absent block is unreachable, not
+	* a reading.
 	*/
-	function ConsoleQuotaPill({ tt }) {
+	function ConsoleQuotaPill({ tt, site = "cn" }) {
 		const reading = useConsoleQuota();
-		const quota = reading.data?.quota ?? null;
+		const quota = site === "intl" ? reading.data?.intl?.quota ?? null : reading.data?.quota ?? null;
 		const windows = Array.isArray(quota?.windows) ? quota.windows : [];
 		const fiveHour = windowByKey(windows, WINDOW_5H);
 		const weekly = windowByKey(windows, WINDOW_WEEKLY);
@@ -4592,7 +4686,7 @@ var dsh_connect_agnes_token_plan_client = (function() {
 			style: S.pillRoot
 		}, h(PillBody, {
 			tt,
-			planLabel: tt("composer.planPrefix"),
+			planLabel: site === "intl" ? tt("composer.planPrefixIntl") : tt("composer.planPrefix"),
 			tier,
 			stale,
 			title,
@@ -4779,6 +4873,10 @@ var dsh_connect_agnes_token_plan_client = (function() {
 		const { tt, useProjection } = props;
 		const provider = selectedProviderOf((useProjection ?? (() => void 0))("modelSelection"));
 		if (provider === "agnes-token-plan") return h(ConsoleQuotaPill, { tt });
+		if (provider === "agnes-token-plan-intl") return h(ConsoleQuotaPill, {
+			tt,
+			site: "intl"
+		});
 		if (provider === "agnescode") return h(AgnescodeBalancePill, { tt });
 		return null;
 	}

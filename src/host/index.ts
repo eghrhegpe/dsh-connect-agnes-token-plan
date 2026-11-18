@@ -28,7 +28,13 @@
  */
 
 import { createAuth } from "./agnes-auth.ts";
-import { createTokenStore } from "./token-store.ts";
+import {
+  createTokenStore,
+  RECORD_ID_INTL,
+  THROTTLE_ID_INTL,
+  USERNAME_REF_INTL,
+  PASSWORD_REF_INTL
+} from "./token-store.ts";
 import { fetchModelCatalog } from "./console-client.ts";
 import { createFileThrottleStore } from "./throttle-store.ts";
 import { createFileCatalogStore } from "./catalog-store.ts";
@@ -36,9 +42,11 @@ import { createFileProviderStore } from "./provider-store.ts";
 import { createFileDrawStore } from "./draw-store.ts";
 import { createFileVideoStore } from "./video-store.ts";
 import { profileSegment } from "./state-store.ts";
-import { createApiKeyStore } from "./api-key-store.ts";
+import { createApiKeyStore, API_KEY_REF_INTL } from "./api-key-store.ts";
+import { LLM_PROVIDER_ID_INTL, LLM_DISPLAY_NAME_INTL } from "./llm-models.ts";
 import { createAgnescodeStore } from "./agnescode-store.ts";
-import { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
+import { createFileAgnescodeStore, createFileAgnescodeDesktopSourceStore } from "./agnescode-switch-store.ts";
+import { createAgnescodeDesktopViewReader } from "./agnescode-desktop-view.ts";
 import { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
 import { createFileAgnescodeRosterSeenStore } from "./agnescode-roster-seen-store.ts";
 import { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
@@ -60,7 +68,7 @@ import {
   inject,
   name
 } from "./host-config.ts";
-import { str, forget } from "./util.ts";
+import { str, forget, redactSecrets } from "./util.ts";
 import type { HostCtx, HostDeps } from "./types.ts";
 
 /**
@@ -256,6 +264,108 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     fetchCatalog: deps.fetchCatalog ?? fetchModelCatalog
   });
 
+  // ── The INTERNATIONAL site's row (ADR-021) ────────────────────────────
+  // A second, co-existing provider for the INTL gateway — the sibling
+  // plugins' "a site is a namespace" shape: `LLM_PROVIDER_ID_INTL`, its own
+  // catalog record (`catalog.intl.json`), its own key reference
+  // (`AGNES_TOKEN_PLAN_INTL_API_KEY`), its own console grant
+  // (`agnes-console-intl`) and its own publisher. The two rows share NOTHING
+  // mutable: a site's state never feeds the other site's registration, and a
+  // CN grant 401s on the INTL gateway the moment it is offered there
+  // (PITFALLS §29), which is exactly the accident the separation prevents.
+  //
+  // Entirely inert until the patch row's `registerProviderIntl` is set: a
+  // machine that holds no INTL account carries no INTL state file and sends
+  // no INTL request — the CN half assembles and runs exactly as it did
+  // before this block existed. A malformed INTL origin degrades the INTL
+  // row (a log line), never the panel: the CN row below it is assembled
+  // independently, and blanking it would be the one-module-buries-the-rest
+  // shape ARCHITECTURE.md §5 forbids.
+  let intlAuth: ReturnType<typeof createAuth> | null = null;
+  if (configError === null && settings.registerProviderIntl === true) {
+    try {
+      // The CN row's operator overrides (login path / deadlines) travel to
+      // the INTL origin as well — they are platform-agnostic facts about the
+      // one-hop login shape; only the origin itself is site-specific.
+      intlAuth = createAuth({ ...settings.auth, consoleOrigin: settings.consoleBaseIntl });
+    } catch (error) {
+      ctx.logger?.warn?.(`${name}: the INTL console origin was refused (${redactSecrets(error instanceof Error ? error.message : String(error))}); the INTL row stays absent and the CN row is unaffected`);
+    }
+  }
+  const intlRowActive = configError === null
+    && settings.registerProviderIntl === true
+    && intlAuth !== null;
+  const intlApiKeyStore = intlRowActive
+    ? createApiKeyStore({
+        credentials: () => ctx.get("credentials") ?? null,
+        ref: API_KEY_REF_INTL
+      })
+    : undefined;
+  const intlCatalogStore = intlRowActive
+    ? deps.intlCatalogStore ?? createFileCatalogStore({ profile, file: "catalog.intl.json" })
+    : undefined;
+  const resolveIntlApiKey = intlApiKeyStore !== undefined
+    ? async () => (await intlApiKeyStore.resolve()).value
+    : undefined;
+  const intlTokenStore = intlRowActive && intlAuth !== null
+    ? createTokenStore({
+        // The INTL row's own one-hop login: the same flow pointed at the INTL
+        // origin, its own grant record, its own throttle file and its own
+        // `*_INTL` account references (the env bootstrap names, ADR-021).
+        auth: intlAuth,
+        credentials: () => ctx.get("credentials") ?? null,
+        credentialKey,
+        skewMs: settings.tokenSkewSeconds * 1000,
+        throttleStore: createFileThrottleStore({ file: "throttle.intl.json" }),
+        onTrace: (hops: object[] | undefined, error: { code?: unknown } | null) => {
+          forget(
+            writeLoginTrace(hops, error === null ? "ok" : str(error?.code, CODE.AUTH_ERROR), { logger: ctx.logger }),
+            { logger: ctx.logger, label: `${name}: intl login trace write` }
+          );
+        },
+        recordId: RECORD_ID_INTL,
+        throttleId: THROTTLE_ID_INTL,
+        usernameRef: USERNAME_REF_INTL,
+        passwordRef: PASSWORD_REF_INTL
+      })
+    : undefined;
+  // The INTL publisher: the SAME control plane (queue / rollback / directory)
+  // as the CN one, a different row identity, and no panel switch — a
+  // panel-saved "current site" would be the global knob the two-route shape
+  // exists to avoid, so its gate reads the patch key alone.
+  const intlPublisher = intlRowActive && intlCatalogStore !== undefined
+    ? createProviderPublisher({
+        settings: { ...settings, registerProvider: settings.registerProviderIntl, apiBase: settings.apiBaseIntl },
+        panelSwitch: () => Promise.resolve(null),
+        loadAdapterModule,
+        getLlm: (service: string) => getService(service),
+        resolveApiKey: resolveIntlApiKey ?? (async () => ""),
+        emit: emitAdaptersUpdate,
+        logger: ctx.logger,
+        provider: { id: LLM_PROVIDER_ID_INTL, name: LLM_DISPLAY_NAME_INTL }
+      })
+    : undefined;
+  // The INTL catalogue's one writer: the same single-flight discipline the CN
+  // one has (ADR-015), keyed off the INTL row's own key, catalog and
+  // publisher. Its background tick starts only for an active row, so an
+  // off row keeps the Host exactly as quiet as it was before.
+  // The guard names every store the writer needs: `intlRowActive` alone
+  // cannot NARROW the sibling consts (the compiler does not track that they
+  // were built under the same condition), and `createCatalogEffects` takes
+  // non-undefined parameters.
+  const intlCatalogEffects = intlRowActive && intlPublisher !== undefined && intlApiKeyStore !== undefined && intlCatalogStore !== undefined
+    ? createCatalogEffects({
+        settings: { ...settings, apiBase: settings.apiBaseIntl },
+        cache,
+        inflight,
+        apiKeyStore: intlApiKeyStore,
+        catalogStore: intlCatalogStore,
+        publisher: intlPublisher,
+        logger: ctx.logger,
+        fetchCatalog: deps.intlFetchCatalog ?? fetchModelCatalog
+      })
+    : undefined;
+
   // ── Desktop-app upstream provider: AgnesCode (爱思编程) — ROADMAP §6.3 ──
   // The plugin's FIRST "local-login-state harvest" line (workbuddy precedent
   // family): the credential is read from the desktop App's os_crypt session
@@ -263,8 +373,18 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   // credential + registration pair — it NEVER touches the Token Plan
   // publisher's state — and the switch is opt-in default OFF: a Host that
   // never opens the AgnesCode tab registers no AgnesCode provider.
+  const agnescodeDesktopSource = createFileAgnescodeDesktopSourceStore({ profile });
+  // The desktop-source VIEW (ADR-020): one instance per mount, so its
+  // stat-keyed cache and failure backoff survive across every read; the store
+  // consults it only while its switch resolves ON, and a Host that predates
+  // the switch simply never wires it (the store answers from the slot alone).
+  const agnescodeDesktopView = createAgnescodeDesktopViewReader();
   const agnescodeStore = createAgnescodeStore({
-    credentials: () => ctx.get("credentials") ?? null
+    credentials: () => ctx.get("credentials") ?? null,
+    desktopSource: {
+      enabled: () => agnescodeDesktopSource.enabled().catch(() => null),
+      read: () => agnescodeDesktopView.read()
+    }
   });
   const agnescodeSwitch = createFileAgnescodeStore({ profile });
   // The panel's curation of which roster models the adapter offers. EMPTY means
@@ -360,6 +480,16 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     // object rather than of the number of callers.
     catalogEffects,
     resolveApiKey,
+    // The INTL row (ADR-021): set together or not at all (an off or broken
+    // row leaves every slot `undefined`), so the snapshot route's five-slot
+    // presence test is a single fact. Absent slots keep the pre-ADR-021
+    // wiring byte-compatible for every test that assembles a CN-only bag.
+    intlApiKeyStore,
+    intlCatalogStore,
+    intlTokenStore,
+    intlPublisher,
+    releaseIntlProvider: () => intlPublisher?.release(),
+    intlCatalogEffects,
     visionPublish,
     logger: ctx.logger,
     // AgnesCode (desktop-app upstream provider, ROADMAP §6.3): an independent
@@ -368,6 +498,9 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
     // owns the harvest-then-save walk) rather than logged-in here.
     agnescodeStore,
     agnescodeSwitch,
+    // The desktop-source switch (ADR-020): the `/agnescode` route's
+    // `desktop-source` action writes it; the store consults it per read.
+    agnescodeDesktopSource,
     agnescodeModels,
     agnescodeRosterSeen,
     agnescodePublisher,
@@ -404,13 +537,19 @@ function apply(ctx: HostCtx, config: Record<string, unknown> = {}, deps: HostDep
   const stopCatalogTick = configError === null
     ? catalogEffects.start(settings.pollSeconds * 1_000)
     : () => {};
+  // The INTL tick starts ONLY for an active INTL row (ADR-021): an off row
+  // keeps the Host exactly as quiet as it was before this line existed —
+  // no cache check, no key resolution, no request.
+  const stopIntlCatalogTick = intlCatalogEffects !== undefined
+    ? intlCatalogEffects.start(settings.pollSeconds * 1_000)
+    : () => {};
 
   ctx.effect(() => {
     // The effect callback returns the unmount cleanup: Cordis runs it when
     // this fiber disposes, NOT at registration — a teardown that ran early
     // would unregister every route the moment they were created.
     return () => {
-      teardown(wiring, offs, stopCatalogTick);
+      teardown(wiring, offs, stopCatalogTick, stopIntlCatalogTick);
     };
   }, `${name}: routes`);
 }

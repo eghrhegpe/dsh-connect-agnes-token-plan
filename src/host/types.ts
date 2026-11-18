@@ -21,8 +21,9 @@ import type { createFileVideoStore } from "./video-store.ts";
 import type { createProviderPublisher } from "./provider-publish.ts";
 import type { PublisherLogger } from "./publish-core.ts";
 import type { CatalogEffects } from "./catalog-refresh.ts";
+import type { fetchModelCatalog } from "./console-client.ts";
 import type { createAgnescodeStore } from "./agnescode-store.ts";
-import type { createFileAgnescodeStore } from "./agnescode-switch-store.ts";
+import type { createFileAgnescodeStore, createFileAgnescodeDesktopSourceStore } from "./agnescode-switch-store.ts";
 import type { createFileAgnescodeModelsStore } from "./agnescode-models-store.ts";
 import type { createFileAgnescodeRosterSeenStore } from "./agnescode-roster-seen-store.ts";
 import type { wireAgnescodePublisher } from "./agnescode-lifecycle.ts";
@@ -82,6 +83,21 @@ export interface HostDeps {
    * exactly as they were.
    */
   fetchCatalog?: any;
+  /**
+   * The INTL row's catalog store (ADR-021), injected the same way the CN one
+   * is: so the INTL row's swallowed-write path can be driven end to end by
+   * the offline suites. Absent (the ordinary case) the row builds its own
+   * file-backed store under `catalog.intl.json`. Typed against the real
+   * store (not the CN seam's `any`) so the INTL row's surface is the same
+   * shape the wiring bag carries, and the `any` budget stays untouched.
+   */
+  intlCatalogStore?: ReturnType<typeof createFileCatalogStore> | undefined;
+  /**
+   * The INTL row's `/v1/models` fetch (ADR-021), the INTL twin of
+   * {@link fetchCatalog}: the offline suites point it at a stub so the INTL
+   * row's refresh branches run without a network.
+   */
+  intlFetchCatalog?: typeof fetchModelCatalog | undefined;
 }
 
 /**
@@ -147,6 +163,13 @@ export interface StoreOptions {
   ttlMs?: number;
   /** Directory the store persists into. */
   dir?: string;
+  /**
+   * The file name inside the state directory (ADR-021): the catalog store
+   * takes `catalog.intl.json` for the INTL row, the throttle store
+   * `throttle.intl.json`. Every store without a `file` option keeps its own
+   * name, so the option is read only where it is declared.
+   */
+  file?: string;
 }
 
 /** A draw (image generation) request body. */
@@ -209,6 +232,13 @@ export interface ProviderPublisherDeps {
   emit?: (event: string) => void;
   /** Cordis logger for the build-failure warning (shared shape with the sibling publisher). */
   logger?: PublisherLogger;
+  /**
+   * Which provider row this publisher registers (ADR-021). Absent = the CN
+   * row (the exact pre-ADR-021 publisher); the INTL row passes
+   * `{ id: LLM_PROVIDER_ID_INTL, name: LLM_DISPLAY_NAME_INTL }` and the
+   * factory builds that row's descriptors, directory entry and release path.
+   */
+  provider?: { id: string; name: string };
 }
 
 /** Dependency bag for the AgnesCode provider publisher (`agnescode-publish.ts`). */
@@ -288,6 +318,10 @@ export interface AuthOverrides {
 export interface Settings {
   consoleBase: string;
   apiBase: string;
+  /** The INTL site's console origin (ADR-021); inert unless `registerProviderIntl`. */
+  consoleBaseIntl: string;
+  /** The INTL site's gateway base (ADR-021); inert unless `registerProviderIntl`. */
+  apiBaseIntl: string;
   usageDays: number;
   cacheSeconds: number;
   pollSeconds: number;
@@ -296,6 +330,8 @@ export interface Settings {
   allowedHosts: Set<string>;
   trendMultipliers: Record<string, number>;
   registerProvider: boolean;
+  /** The INTL site's registration opt-in (ADR-021); off = the whole INTL half is inert. */
+  registerProviderIntl: boolean;
   /** Exact model id → AgnesCode output ceiling; empty = the roster is authoritative. */
   maxTokensOverrides: Record<string, number>;
   drawEnabled: boolean;
@@ -430,6 +466,27 @@ export interface HostWiring {
   publishProvider: (entries: any[], enabledIds: string[], unavailableModelIds?: any[]) => unknown;
   releaseProvider: () => unknown;
   resolveApiKey: () => Promise<string | undefined>;
+  /**
+   * The INTERNATIONAL site's row (ADR-021): the second, co-existing provider
+   * registration — its own catalog record (`catalog.intl.json`), its own key
+   * reference (`AGNES_TOKEN_PLAN_INTL_API_KEY`), its own console grant
+   * (`agnes-console-intl`) and publisher (`LLM_PROVIDER_ID_INTL`). Every
+   * slot is optional: a test wiring that predates ADR-021 leaves them unset
+   * and the snapshot's `intl` block simply stays absent, exactly like the
+   * agnescode slots below. The two rows share nothing mutable — a site's
+   * state never feeds the other site's publisher, catalog, grant or key.
+   */
+  // `| undefined` is spelled out (not just `?`) because the tsconfig's
+  // `exactOptionalPropertyTypes` refuses a plain `| undefined` value written
+  // into a bare optional property, and the wiring bag is built with values
+  // that genuinely may be undefined (an inactive row).
+  intlApiKeyStore?: ReturnType<typeof createApiKeyStore> | undefined;
+  intlCatalogStore?: ReturnType<typeof createFileCatalogStore> | undefined;
+  intlTokenStore?: ReturnType<typeof createTokenStore> | undefined;
+  intlPublisher?: ReturnType<typeof createProviderPublisher> | undefined;
+  releaseIntlProvider?: (() => unknown) | undefined;
+  /** The INTL catalogue's one writer, when the row is active (ADR-021). */
+  intlCatalogEffects?: CatalogEffects | undefined;
   visionPublish: { current: ((visionEntries: unknown[], ids: string[]) => Promise<void>) | null };
   logger?: {
     warn?: (message: string, ...rest: unknown[]) => void;
@@ -438,6 +495,14 @@ export interface HostWiring {
   };
   agnescodeStore: ReturnType<typeof createAgnescodeStore>;
   agnescodeSwitch: ReturnType<typeof createFileAgnescodeStore>;
+  /**
+   * The AgnesCode desktop-SOURCE switch (ADR-020): the read-only view of the
+   * desktop App's session file that `createAgnescodeStore` consults per read
+   * when this switch resolves ON. The `/agnescode` route's `desktop-source`
+   * action writes it. Absent (a test wiring that predates it) the store never
+   * consults a view — the slot answers `resolve()` alone, exactly as before.
+   */
+  agnescodeDesktopSource?: ReturnType<typeof createFileAgnescodeDesktopSourceStore>;
   agnescodeModels?: ReturnType<typeof createFileAgnescodeModelsStore>;
   /**
    * The AgnesCode roster's first-sighting history (`agnescode-roster-seen-store.ts`) —

@@ -226,4 +226,40 @@
 - **边界**：只在 `modelsSource === "live"` 时差分——回退快照表是插件自己的六行文本，拿它差分会在登录/离线那几帧凭空造出「新模型」。差分对象是**整张 live 目录**，不是用户勾选的子集：某个模型是不是网关的新闻，与这台机器勾了哪些框无关；拿子集差分还会让一个上架很久的模型在「被勾上」的那天冒充新模型。`newModelIds` 缺席（旧生产者、离线、首次播种）时胶囊什么都不画，不画空段、不留悬空分隔符。该标记只出现在 agnescode provider 被选中的胶囊上；Token Plan 侧名册没有这个字段。
 - **复核条件**：若网关开始提供「上架时间」字段，差分就应改成读那个字段，本文件降级为离线兜底；若 DSH 之后提供通知服务，这段可以迁过去，胶囊只留计数。
 
+## ADR-020 AgnesCode 桌面源开关：两个源一个槽，读时仲裁（raccoon §6.1.11 镜像）
+
+- **日期**：2026-11-18
+- **状态**：现行（细化 AGENTS.md 事实 3「采集/续期/撤销」段；不改变红线①～⑦、ADR-004/007 软失败不变量，也不改变 AgnesCode 与主 provider 的隔离裁定 §5.5）
+- **裁定**：AgnesCode 凭据从「两条写路径共一个槽（最后写入者胜）」升级为**「两个源、一个槽、读时仲裁」**，镜像兄弟插件 `dsh-connect-sensenova-token-plan` 的 raccoon §6.1.11（官方客户端只读源开关）：
+  1. **新开关**：`agnescode-desktop-source.json`（共享 `switch-store.ts` 工厂，profile 级 §23 纪律），**opt-in 默认关、面板独占**（dialect B：无配置默认值，面板说开才是开），与 provider 开关 `agnescode-provider.json` 各自独立文件（一次翻转不得触碰另一家的发布决定）。
+  2. **读时优先级**（`createAgnescodeStore.resolve()`，不是模式切换）：开关**开**且桌面会话文件视图**新鲜**（JWT `exp` 距到期 > 60 s 引导窗，`AGNESCODE_DESKTOP_LEAD_MS`）→ 供 `desktop-file` 视图凭据；其余一切情况（关 / 文件缺 / 读不动 / 无 `exp` / 已过期 / 平台不支持）→ 落回槽内凭据（`credentials` / `memory`），**关掉源从不丢登录**。
+  3. **只读视图**（`src/host/agnescode-desktop-view.ts`，peer-free）：桌面文件是 App 的记录所有人，本插件是它的**视图**——不刷新、不回写、**不把视图凭据拷进 DSH 凭据服务**（槽里只有显式 `save()` 的产物：harvest 覆盖写 / 扫码登录）。缓存纪律：stat 键控成功缓存（会话文件 + Local State 的 mtime/size 不变即免重走 walk，DPAPI 子进程只在 miss 时出生）+ 单飞 + 失败退避 60 s（`AGNESCODE_DESKTOP_VIEW_BACKOFF_MS`，与 lifecycle 重采集退避同号异主）；失败不缓存（文件改名中不得粘住 TTL）。
+  4. **封闭 reason 集**（视图对面板的回答，绝不含路径/尺寸/解析片段）：harvest 九档 tier 直映（`file_missing` / `format_drift` / `unreadable` / `no_key` / `decrypt_failed` / `malformed` / `no_token` / `untrusted_base` / `unsupported_platform`）+ `no_expiry` / `expired`（成功解密但过期判决）+ `read_failed`（walk 抛错）。
+  5. **跨 base 重发布泛化**：`resolveToken` 的跨账号 BFF base 重建原只在重采集成功路径上跑；改由 store 供凭据的 `bffBase` 与 publisher 现行 base 对比——**视图源与槽源共用同一条重建链**（桌面 App 换账号、扫码登国际站账号等场景不再让旧 base 带着新 token 打 401）。
+  6. **面板**：AgnesCode tab 凭据卡内第二个开关行「使用桌面端登录态（只读）」+ raccoon 同款 live/idle 两行（`desktopLive` / `desktopIdle` + reason 字典）；`/agnescode` GET 增 `desktopSource: {enabled, serving, reason?}`，POST 增 `{action:"desktop-source", enabled}`（写后走 `publishFromStore()` 全量回显，与既有三动作同纪律）。
+- **理由（现状的三个缺口，缺一个都足以驱动）**：① **槽内凭据只在过期时才被重采集**——桌面 App 提前轮换 token 或换账号登录时，槽里的旧 token（未过期）继续被服务，直到上游 401 才触发重走；读时仲裁让「App 文件新鲜 = 直接跟随」，App 是登录态的真源，插件不再抱快照（raccoon 原文：「the panel FOLLOWS the App instead of holding a snapshot of it」）。② **两条写路径无优先级**——harvest 与扫码登录共槽、后写者胜，读者无法表达「我要以桌面端为准、扫码只是兜底」；③ 兄弟插件 raccoon 已有此形状（§6.1.11，2026-11-17 翻转 §6.1.10），两仓同族纪律漂移本身就是缺陷面。
+- **爆炸半径四问（ADR-012）**：① **承重面归类**：落在既有第四类「桌面端密钥采集」内，零新承重面——视图只读、开关走既有 switch-store 工厂、不碰 publisher 共享机制（隔离 §5.5 不变）。② **新增状态窝点**：一个 state 文件 `agnescode-desktop-source.json`（switch-store 工厂统一纪律：版本化载荷 + 原子写 + §23 共享目录一次性继承 + doctor 盘点行）；视图缓存与退避计时器是进程内对象，随装配消亡，不落盘。③ **失败域边界**：全软失败——视图读失败只在本 tab 内降级为「用槽内凭据」，reason 行可诊；开关默认关，未开机的机器行为与今日逐字节相同（现有测试全绿即基线）；不碰 Token Plan 五源、不碰出图/视频。④ **基线可冻结**：store 优先级 + 视图行为先落 `test/agnescode.test.mjs` 扩展段与 `test/agnescode-desktop-view.test.mjs`（注入式离线，DPAPI/时钟/文件全部可注），开关商店进 `test/switch-store.test.mjs` 第五项共享行为清单。
+- **为什么不是别的修法**：① 把桌面文件读取并进现有 harvest 按钮（用户手动点）——raccoon 形状的价值正在于**每次读自动跟随**，手动按钮是快照，不是视图；② 开关做成「登录方式互斥」（选桌面即禁止扫码）——丢登录的开关违反 raccoon 同款不变量「切源永不丢登录」；③ 视图凭据入库（拷进凭据服务）——副本一旦与 App 文件漂移就是「别人登录态的一具过期尸体」（raccoon 原文），且「读」从此不再读 App，App 换账号插件不知道；④ 不加开关直接让桌面文件永远优先——行为静默改变所有现有装机（后写槽内扫码凭据的人发现自己打的是桌面账号），违背 opt-in 家族纪律。
+- **撤销语义（与 provider 开关并列钉死）**：关**源**开关 ≠ 丢凭据（槽原样、App 文件原样）；关 **provider** 开关 ≠ 吊销（重开即复用）。真吊销仍在桌面 App 内登出/改密码，或操作者手删 `AGNESCODE_CREDENTIAL` 记录——插件侧采集写权限为零的裁定不变。
+- **受影响的文件**：`src/host/agnescode-desktop-view.ts`（新）、`src/host/agnescode-store.ts`（优先级 + `state()` 源事实 + `desktopSource` 依赖）、`src/host/agnescode-switch-store.ts`（第二开关）、`src/host/agnescode-lifecycle.ts`（跨 base 重建泛化）、`src/host/agnescode.ts`（walk 排序器导出，单一真源）、`src/host/{switch-store,switch-precedence}.ts`（头注四→五开关）、`src/host/routes/agnescode.ts`（GET 块 + POST 动作 + 400 尾行）、`src/host/{index,types,doctor}.ts`（装配/线型/盘点行）、`src/client/{wire,agnescode-tab,i18n}.ts`（状态字段 + 开关行 + live/idle 行 + 中英文案）、`test/{switch-store,agnescode,agnescode-desktop-view,routes,wiring,doctor,dom-render}.test.mjs`、本账本条目、`docs/{ROADMAP,API}.md` + `AGENTS.md` 事实 3、`lib/` + `client.js`（随 src 同 commit 重建）。
+- **与既有条目的关系**：镜像兄弟仓 `dsh-connect-sensenova-token-plan` ROADMAP §6.1.11（其 §6.1.10 的「不做」翻转先例）——两仓各自实现同一形状（凭据/store/publisher 隔离纪律下不共享代码，§5.5）；继承 ADR-005 申报（新容器 = 视图模块 + 一个 state 文件，均已先于实现落账）与 ADR-012 四问（本条为其第六个填完实例）。
+
+## ADR-021 国际站双 provider 并存：一站点一条路由，不做站点开关
+
+- **日期**：2026-11-18
+- **状态**：现行（细化 PITFALLS §29「两站凭据不互通」为设计裁定；不改变红线①～⑦，不改变 ADR-007 软失败不变量；新增开关不进 switch 家族）
+- **裁定**：国内站与国际站各持一条**并存**的 LLM provider 路由——`agnes-token-plan`（CN，存量，全部既有行为字节不动）与 `agnes-token-plan-intl`（INTL，新增）——由**单一 patch 键** `registerProviderIntl`（默认 `false`）激活。两站账号体系不互通（PITFALLS §29），模型目录几乎同形，provider 行是**唯一**用户可见的站点区分面；「一套凭据 + 一个当前站点开关」被刻意否决：开关是全局非原子旋钮，切换瞬间在飞的 LLM 流 / 出图 / 视频任务全部改道，而 CN grant 打 INTL 网关必 401——正是「防止意外」要防的形状。同类插件的收敛形状即此（qoder `qoder` / `qoder-global` 两区域同时在线、minmax 区域路由 + 碰撞防护、trae 区域→provider 映射「两区域 provider 不交叉计费」）。
+- **隔离面（两行互不可见，全部按站切分）**：
+  1. **provider id**：`LLM_PROVIDER_ID` / `LLM_PROVIDER_ID_INTL`（双侧拼写由 `test/contract.test.mjs` §11c 五钉之一）；adapter 工厂参数化 provider 身份（CN 为默认，INTL 传 `INTL_PROVIDER`），目录/发布/回滚全走共享 `publish-core`（一次修复两行同得）。
+  2. **目录**：`catalog.json`（CN）/ `catalog.intl.json`（INTL），同一目录、两个文件（`catalog-store` 的 `file` 参数）；INTL 无 §23 前身，不做继承。
+  3. **API key 引用**：`AGNES_TOKEN_PLAN_API_KEY`（CN）/ `AGNES_TOKEN_PLAN_INTL_API_KEY`（INTL）——同一 reference 机制、不同引用名（红线②不破：仍是 `grant` / `api-key` 两种 kind 里的引用值，无私有 kind）。
+  4. **控制台 grant**：`agnes-console` / `agnes-console-intl` 两条 grant 记录，`AGNES_USERNAME(_INTL)` / `AGNES_PASSWORD(_INTL)` 账号引用对、`throttle.json` / `throttle.intl.json` 节流文件（节流仍按 §23 共享目录、只按站分文件：跨 profile 共享的语义是「这台机器别再敲」，两站各守各的）。
+  5. **快照**：INTL 半边只在 `registerProviderIntl: true` 时装配（五个 wiring 槽同时在场），以**并行软批量**进同一快照（共享 cache/inflight 按 URL 天然分家）；INTL 段任何致命失败降级为「无 `intl` 块」，CN 半边逐字节不动（§5 不变量按站再执行一次）。
+- **激活语义**：`registerProviderIntl` 是**唯一的 INTL 激活开关**，且刻意是 patch 行单源值（`writeImageModelIds` 形状）而非面板开关——面板存一个「当前站点」就是被否决的全局旋钮本身。关闭时整个 INTL 半边全静默：不拉 INTL 目录、不打 INTL 登录、不注册 provider、无第二只 tick；CN 装机行为与加此键之前逐字节相同。
+- **为什么不是别的修法**：① **两行插件**（装两遍、各自 patch 国际 base）——同一 profile 内插件按包名唯一，双行不可行，双站只能单行内 per-site 槽（qoder/trae 同款）；② **站点开关**（单 provider + 当前站点）——全局非原子旋钮 + 401 改道事故面，同类插件「完全一致也分两条」正为此；③ **INTL 做面板开关**（进 switch 家族第六个）——面板可存的「站点」状态正是被否决的形状，且兄弟会话正在 switch-store/precedence 上做工（ADR-020），加第六项把撞车面扩大到全部开关语义。
+- **爆炸半径四问（ADR-012）**：① **承重面归类**：落在既有第三类「直接注册 provider」内，零新承重面——publisher/队列/回滚/目录全复用 `publish-core`；新容器 = 两个 state 文件（`catalog.intl.json` 按 profile 段、`throttle.intl.json` 共享目录）+ 两条凭据引用名，均按 ADR-005 先申报后实现。② **新增状态窝点**：如上；进程内无新增（第二组 publisher/tick 随装配生灭）。③ **失败域边界**：全软失败——INTL 段致命降级为缺块、CN 不动；INTL origin 畸形只伤 INTL 行（日志一行），不写 `configError`（不埋 CN 面板）；开关默认关 = 未配置的机器零行为变化。④ **基线可冻结**：`test/config.test.mjs` 1c 段（三键默认 + 探针值字面量钉）、`test/contract.test.mjs` §11c 第五钉、`test/store-baseline.test.mjs`（token-store 参数化后零漂移）、`test/intl-provider.test.mjs`（新：双行装配/门控/隔离面注入式离线驱动）。
+- **留白（后续批）**：面板「接入 API」/「积分额度」tab 的 INTL 半边 UI（intl key 输入槽、intl 账号表单、intl 花名册）与 i18n 扩展；INTL 侧出图/视频工具（现两工具恒走 CN `apiBase` + CN key）；`composer` 胶囊 INTL 读数已随本条落地（`intl.quota` 块 + 第三根门控）。
+- **受影响的文件**：`src/host/{llm-models,llm-adapter,provider-publish,host-config,catalog-store,api-key-store,throttle-store,token-store,token-store/state,token-store/account,snapshot-aggregate,routes/snapshot,lifecycle,index,doctor,types}.ts`、`src/client/{const,composer-usage-pill,wire,i18n}.ts`、`cordis.patch.yml`、`docs/{SETUP,API,PITFALLS,ADR}.md`、`test/{config,contract,docs,intl-provider}.test.mjs`、本账本条目、`lib/` + `client.js`（随 src 同 commit 重建）。
+- **与既有条目的关系**：PITFALLS §29 从「注意」升级为「设计」（该条修法行已回写指针）；继承 ADR-012 四问（第七个填完实例）与 ADR-005 申报（新容器先落账）；站点=provider 命名空间的裁定与兄弟仓 qoder/minmax/trae 的同族形状互为镜像（各仓独立实现，§5.5 隔离纪律下不共享代码）。
+
 

@@ -91,6 +91,8 @@ export const zh = {
   // 所以窗口名比面板卡片里的更短（「5 小时 / 本周」）。数值与阈值仍与面板同源
   // （`windowPercent` / `usageTier`），只有字面量分家。
   "composer.planPrefix": "Token Plan",
+  // ADR-021：国际站胶囊的前缀——两站额度宇宙不互通，读数必须说明是哪一站的。
+  "composer.planPrefixIntl": "国际版 Token Plan",
   "composer.window5h": "5 小时",
   "composer.windowWeekly": "本周",
   "composer.pillTitle": "Token Plan 额度",
@@ -221,6 +223,16 @@ export const zh = {
   "agnescode.switch": "启用 AgnesCode 提供方",
   "agnescode.switchTip": "关闭后 AgnesCode 模型不会出现在 DSH 的模型下拉框里；凭据与模型设置都会保留，重新开启即恢复。",
   "agnescode.switchError": "切换失败：{error}",
+  // ADR-020：raccoon §6.1.11 的同款「只读桌面源」开关——它决定的是**读凭据时
+  // 先问谁**（桌面端会话文件 vs 已存登录态），不是「登出/换登录方式」。
+  "agnescode.desktopSource": "使用桌面端登录态（只读）",
+  "agnescode.desktopSourceTip": "开启后每次取凭据都先读本机 AgnesCode 桌面端的会话文件：新鲜就以它为源（只读——不刷新、不回写、不拷入 DSH 凭据服务）；读不到或已过期时自动落回已存登录态（检测写入或扫码登录的那份）。默认关；关掉也从不丢登录。",
+  "agnescode.desktopSourceError": "桌面端源开关切换失败：{error}",
+  "agnescode.desktopLive": "正在使用桌面端登录态（只读；本插件不刷新也不改写它）。",
+  "agnescode.desktopIdle": "桌面端源已开，但本机现在没有可用的桌面端登录态——正使用已存登录态。原因：{reason}",
+  "agnescode.desktopReason.no_expiry": "会话文件里没有可解析的到期时间",
+  "agnescode.desktopReason.expired": "会话文件里的令牌已过期——重开桌面 App 登录一次即可",
+  "agnescode.desktopReason.read_failed": "会话文件读取失败",
   "agnescode.harvest": "检测本机登录态",
   "agnescode.harvesting": "正在读取本机登录态…",
   "agnescode.loggedIn": "已关联：{nick}",
@@ -417,6 +429,9 @@ export const en: typeof zh = {
   "quota.total.activeDays": "Active days",
   "quota.usageMissing": "{label}: not read yet.",
   "composer.planPrefix": "Token Plan",
+  // ADR-021: the INTL site's pill prefix — the two sites' allowance universes
+  // do not interoperate, so the reading must name which site it spends.
+  "composer.planPrefixIntl": "Intl Token Plan",
   "composer.window5h": "5h",
   "composer.windowWeekly": "this week",
   "composer.pillTitle": "Token Plan quota",
@@ -542,6 +557,17 @@ export const en: typeof zh = {
   "agnescode.switch": "Enable AgnesCode provider",
   "agnescode.switchTip": "When off, AgnesCode models do not appear in DSH's model dropdown; the credential and model settings are kept and return when you switch it back on.",
   "agnescode.switchError": "Switch failed: {error}",
+  // ADR-020: the raccoon §6.1.11 twin — the read-only desktop SOURCE switch.
+  // It decides WHO the plugin asks first when it reads a credential (the
+  // App's session file, or the stored login state), not "sign out / re-login".
+  "agnescode.desktopSource": "Use desktop-app login state (read-only)",
+  "agnescode.desktopSourceTip": "When on, every credential read first looks at the AgnesCode desktop App's session file on this machine: if it is fresh, it is the source (read-only — never refreshed, never written back, never copied into the DSH credentials service); when unreadable or expired, the stored login state (the detection write or the scan sign-in) is used instead. Off by default; turning it off never loses a sign-in.",
+  "agnescode.desktopSourceError": "Desktop-source switch failed: {error}",
+  "agnescode.desktopLive": "Serving from the desktop App's login state (read-only; this plugin neither refreshes nor rewrites it).",
+  "agnescode.desktopIdle": "The desktop source is on, but no usable desktop-app sign-in exists on this machine — serving from the stored login state. Reason: {reason}",
+  "agnescode.desktopReason.no_expiry": "the session file carries no decodable expiry",
+  "agnescode.desktopReason.expired": "the session file's token is expired — sign in once inside the desktop App",
+  "agnescode.desktopReason.read_failed": "reading the session file failed",
   "agnescode.harvest": "Detect local login state",
   "agnescode.harvesting": "Reading the local login state…",
   "agnescode.loggedIn": "Linked: {nick}",

@@ -328,6 +328,20 @@ export interface AgnescodeStateData {
   bffBase?: string;
   expiresAtMs?: number | null;
   expired?: boolean;
+  /**
+   * The desktop-source switch (ADR-020), flat on purpose (the §11b fence
+   * walks the GET literal by brace depth). Absent when the Host's store
+   * predates the view — the panel hides its row then.
+   */
+  desktopSourceEnabled?: boolean;
+  /** Whether the read-only desktop view is the credential the route just served. */
+  desktopSourceServing?: boolean;
+  /**
+   * Why the view is NOT serving, only when enabled and idle: the view's
+   * closed reason set (a harvest tier, or `no_expiry` / `expired` /
+   * `read_failed`). `null` when serving or when the switch is off.
+   */
+  desktopSourceReason?: string | null;
   balance?: {
     totalBalance?: number;
     timeSensitiveBalance?: number;
@@ -439,4 +453,28 @@ export interface SnapshotData {
   quota?: QuotaData | null;
   usage?: UsageData | null;
   shapeWarnings?: ShapeWarningData[];
+  /**
+   * The INTERNATIONAL site's row (ADR-021): a soft subset of this body — the
+   * site's own `quota` block (the two request windows the composer pill reads),
+   * its `auth` state and its registration status. Absent when the Host did
+   * not assemble the INTL row (off by default, patch-key opt-in) or when that
+   * row's batch failed fatally — in both cases the CN fields above are the
+   * whole body, exactly the pre-ADR-021 shape.
+   */
+  intl?: {
+    consoleBase?: string;
+    quota?: QuotaData | null;
+    auth?: AuthData | null;
+    llm?: {
+      hasApiKey?: boolean;
+      keySource?: string | null;
+      ephemeral?: boolean;
+      providerId?: string;
+      registerProvider?: boolean;
+      llmAvailable?: boolean;
+      providerRegistered?: boolean;
+      modelCount?: number;
+      providerError?: string;
+    } | null;
+  } | null;
 }
